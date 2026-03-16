@@ -1,0 +1,8 @@
+std_msgs/Header header
+uint32 command_id
+bool active
+bool goal_reached
+bool obstacle_detected
+geometry_msgs/PoseStamped current_pose
+float64 remaining_distance
+float64 heading_error

@@ -1,0 +1,6 @@
+geometry_msgs/PoseStamped start
+geometry_msgs/PoseStamped[] waypoints
+---
+bool success
+nav_msgs/Path[] plans
+string message

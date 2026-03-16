@@ -1,0 +1,12 @@
+string route_id
+---
+bool success
+string message
+---
+string route_id
+string current_node_id
+geometry_msgs/PoseStamped current_pose
+float64 remaining_distance
+float64 heading_error
+uint32 current_waypoint_index
+uint32 waypoint_count
