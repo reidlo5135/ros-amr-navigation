@@ -53,15 +53,24 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[bringup_params_file()],
     )
+    motion_controller = LifecycleNode(
+        package="amr_motion_controller",
+        executable="amr_motion_controller",
+        name="motion_controller",
+        namespace="amr",
+        output="screen",
+        parameters=[bringup_params_file()],
+    )
     bt_navigator = LifecycleNode(
         package="amr_bt_navigator",
         executable="amr_bt_navigator",
-        name="bt_navigator",
+        name="navigator",
         namespace="amr",
         output="screen",
         parameters=[bringup_params_file()],
     )
 
     add_lifecycle_node(ld, local_planner)
+    add_lifecycle_node(ld, motion_controller)
     add_lifecycle_node(ld, bt_navigator)
     return ld

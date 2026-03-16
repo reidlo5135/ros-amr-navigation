@@ -14,7 +14,7 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/ExecuteRoute.action"
+  "action/NavigateToPose.action"
   "msg/MotionCommand.msg"
   "msg/MotionStatus.msg"
   "srv/PlanSegment.srv"

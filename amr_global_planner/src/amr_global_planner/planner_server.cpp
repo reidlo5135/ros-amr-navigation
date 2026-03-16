@@ -10,10 +10,10 @@ namespace amr_global_planner
 
 PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("global_planner", options),
-  map_topic_("map"),
-  computed_plan_topic_("computed_plan"),
-  plan_segment_service_name_("plan_segment"),
-  plan_route_service_name_("plan_route"),
+  map_topic_("/amr/map_server/map"),
+  computed_plan_topic_("/amr/global_planner/plan"),
+  plan_segment_service_name_("/amr/global_planner/plan_segment"),
+  plan_route_service_name_("/amr/global_planner/plan_route"),
   obstacle_threshold_(50),
   connectivity_(8),
   allow_unknown_(false),

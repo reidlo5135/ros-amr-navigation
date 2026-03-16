@@ -1,3 +1,4 @@
+geometry_msgs/PoseStamped goal_pose
 string route_id
 ---
 bool success

@@ -1,24 +1,33 @@
 /amr/map_server:
   ros__parameters:
-    frame_id: map
-    publish_topic: map
-    width: 20
-    height: 20
-    resolution: 0.25
+    files:
+      yaml: "/home/reidlo/ws/data/maps/map_office_260310.yaml"
+    frames:
+      map: map
+    topics:
+      map: /amr/map_server/map
+    services:
+      get: /amr/map_server/get_map
 
 /amr/localization:
   ros__parameters:
-    odom_topic: localization/odom
+    odom_topic: /odom
+    initial_pose_topic: /amr/localization/initial_pose
+    estimated_pose_topic: /amr/localization/pose
+    estimated_odom_topic: /amr/localization/odometry
     map_frame: map
+    odom_frame: odom
     base_frame: base_link
-    publish_period_ms: 100
+    initial_pose.x: 0.0
+    initial_pose.y: 0.0
+    initial_pose.yaw: 0.0
 
 /amr/global_planner:
   ros__parameters:
-    map_topic: map
-    computed_plan_topic: computed_plan
-    plan_segment_service: plan_segment
-    plan_route_service: plan_route
+    map_topic: /amr/map_server/map
+    computed_plan_topic: /amr/global_planner/plan
+    plan_segment_service: /amr/global_planner/plan_segment
+    plan_route_service: /amr/global_planner/plan_route
     obstacle_threshold: 50
     connectivity: 8
     allow_unknown: false
@@ -28,14 +37,36 @@
 
 /amr/local_planner:
   ros__parameters:
-    command_topic: motion_command
-    status_topic: motion_status
-    cmd_vel_topic: cmd_vel
+    command_topic: /amr/motion_controller/command
+    current_pose_topic: /amr/localization/pose
+    local_plan_topic: /amr/local_planner/plan
+    publish_period_ms: 100
+    lookahead_distance: 0.8
+    goal_tolerance: 0.15
+
+/amr/motion_controller:
+  ros__parameters:
+    command_topic: /amr/motion_controller/command
+    local_plan_topic: /amr/local_planner/plan
+    current_pose_topic: /amr/localization/pose
+    status_topic: /amr/motion_controller/status
+    cmd_vel_topic: /cmd_vel
     publish_period_ms: 100
     nominal_linear_velocity: 0.3
+    max_linear_velocity: 0.3
+    min_linear_velocity: 0.05
+    max_angular_velocity: 1.5
+    heading_gain: 2.0
+    rotate_in_place_threshold: 0.6
+    goal_tolerance: 0.15
 
-/amr/bt_navigator:
+/amr/navigator:
   ros__parameters:
-    execute_route_action: execute_route
-    command_topic: motion_command
+    navigate_action_name: /amr/navigator/navigate_to_pose
+    command_topic: /amr/motion_controller/command
+    current_pose_topic: /amr/localization/pose
+    motion_status_topic: /amr/motion_controller/status
+    plan_segment_service: /amr/global_planner/plan_segment
     default_node_id: start
+    planner_wait_timeout_ms: 2000
+    feedback_period_ms: 100

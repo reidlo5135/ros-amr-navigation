@@ -14,8 +14,10 @@ include_directories(
 )
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -26,6 +28,7 @@ add_executable(${PROJECT_NAME}
 )
 
 ament_target_dependencies(${PROJECT_NAME}
+  ament_index_cpp
   geometry_msgs
   nav_msgs
   rclcpp
@@ -33,6 +36,7 @@ ament_target_dependencies(${PROJECT_NAME}
 )
 
 target_link_libraries(${PROJECT_NAME}
+  ${OpenCV_LIBS}
   yaml-cpp
 )
 

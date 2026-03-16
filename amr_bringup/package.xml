@@ -17,6 +17,7 @@
   <exec_depend>amr_localization</exec_depend>
   <exec_depend>amr_global_planner</exec_depend>
   <exec_depend>amr_local_planner</exec_depend>
+  <exec_depend>amr_motion_controller</exec_depend>
   <exec_depend>amr_bt_navigator</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
