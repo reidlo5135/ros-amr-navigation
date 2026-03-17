@@ -14,9 +14,9 @@ namespace amr_bt_navigator
 Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("navigator", options),
   navigate_action_name_("/amr/navigator/navigate_to_pose"),
-  command_topic_("/amr/motion_controller/command"),
-  current_pose_topic_("/amr/localization/pose"),
-  motion_status_topic_("/amr/motion_controller/status"),
+  command_topic_(""),
+  current_pose_topic_(""),
+  motion_status_topic_(""),
   plan_segment_service_("/amr/global_planner/plan_segment"),
   default_node_id_("start"),
   planner_wait_timeout_ms_(2000),
@@ -25,27 +25,42 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   has_current_pose_(false),
   has_motion_status_(false)
 {
-  this->declare_parameter("navigate_action_name", this->navigate_action_name_);
-  this->declare_parameter("command_topic", this->command_topic_);
-  this->declare_parameter("current_pose_topic", this->current_pose_topic_);
-  this->declare_parameter("motion_status_topic", this->motion_status_topic_);
-  this->declare_parameter("plan_segment_service", this->plan_segment_service_);
-  this->declare_parameter("default_node_id", this->default_node_id_);
-  this->declare_parameter("planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
-  this->declare_parameter("feedback_period_ms", this->feedback_period_ms_);
+  this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
+  this->declare_parameter("topics.command", this->command_topic_);
+  this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.status", this->motion_status_topic_);
+  this->declare_parameter("services.segment", this->plan_segment_service_);
+  this->declare_parameter("defaults.node_id", this->default_node_id_);
+  this->declare_parameter(
+    "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
+  this->declare_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
 }
 
 Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::State & state)
 {
   (void)state;
-  this->get_parameter("navigate_action_name", this->navigate_action_name_);
-  this->get_parameter("command_topic", this->command_topic_);
-  this->get_parameter("current_pose_topic", this->current_pose_topic_);
-  this->get_parameter("motion_status_topic", this->motion_status_topic_);
-  this->get_parameter("plan_segment_service", this->plan_segment_service_);
-  this->get_parameter("default_node_id", this->default_node_id_);
-  this->get_parameter("planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
-  this->get_parameter("feedback_period_ms", this->feedback_period_ms_);
+  this->get_parameter("actions.navigate_to_pose", this->navigate_action_name_);
+  this->get_parameter("topics.command", this->command_topic_);
+  this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.status", this->motion_status_topic_);
+  this->get_parameter("services.segment", this->plan_segment_service_);
+  this->get_parameter("defaults.node_id", this->default_node_id_);
+  this->get_parameter(
+    "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
+  this->get_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
+
+  if (
+    this->command_topic_.empty() || this->current_pose_topic_.empty() ||
+    this->motion_status_topic_.empty())
+  {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "Navigator topics must not be empty: command='%s' pose='%s' status='%s'",
+      this->command_topic_.c_str(),
+      this->current_pose_topic_.c_str(),
+      this->motion_status_topic_.c_str());
+    return CallbackReturn::FAILURE;
+  }
 
   this->motion_command_publisher_ = this->create_publisher<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS());
@@ -79,6 +94,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
       this->handle_accepted(goal_handle);
     });
 
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', planner='%s'",
+    this->navigate_action_name_.c_str(),
+    this->command_topic_.c_str(),
+    this->current_pose_topic_.c_str(),
+    this->motion_status_topic_.c_str(),
+    this->plan_segment_service_.c_str());
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -88,6 +112,7 @@ Btnavigator::CallbackReturn Btnavigator::on_activate(const rclcpp_lifecycle::Sta
   if (this->motion_command_publisher_) {
     this->motion_command_publisher_->on_activate();
   }
+  RCLCPP_INFO(this->get_logger(), "Activated navigator");
   return CallbackReturn::SUCCESS;
 }
 
@@ -97,6 +122,7 @@ Btnavigator::CallbackReturn Btnavigator::on_deactivate(const rclcpp_lifecycle::S
   if (this->motion_command_publisher_) {
     this->motion_command_publisher_->on_deactivate();
   }
+  RCLCPP_INFO(this->get_logger(), "Deactivated navigator");
   return CallbackReturn::SUCCESS;
 }
 
@@ -143,8 +169,16 @@ rclcpp_action::GoalResponse Btnavigator::handle_goal(
   }
 
   if (goal->goal_pose.header.frame_id.empty()) {
+    RCLCPP_WARN(this->get_logger(), "Rejecting goal with empty frame_id");
     return rclcpp_action::GoalResponse::REJECT;
   }
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Accepted navigate goal: frame='%s' x=%.3f y=%.3f",
+    goal->goal_pose.header.frame_id.c_str(),
+    goal->goal_pose.pose.position.x,
+    goal->goal_pose.pose.position.y);
 
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -153,6 +187,7 @@ rclcpp_action::CancelResponse Btnavigator::handle_cancel(
   const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
   (void)goal_handle;
+  RCLCPP_INFO(this->get_logger(), "Cancel requested for active navigate goal");
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -198,6 +233,14 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   request->start = current_pose;
   request->goal = goal->goal_pose;
 
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Requesting global plan: start=(%.3f, %.3f) goal=(%.3f, %.3f)",
+    request->start.pose.position.x,
+    request->start.pose.position.y,
+    request->goal.pose.position.x,
+    request->goal.pose.position.y);
+
   auto future = this->plan_segment_client_->async_send_request(request);
   if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
       std::future_status::ready)
@@ -218,13 +261,24 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     return;
   }
 
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Received global plan with %zu poses",
+    response->plan.poses.size());
+
   auto command = this->build_motion_command(*goal, response->plan);
   this->motion_command_publisher_->publish(command);
-  const auto waypoint_count = std::max<std::size_t>(1U, response->plan.poses.size());
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Published motion command %u toward goal x=%.3f y=%.3f",
+    command.command_id,
+    command.goal_pose.pose.position.x,
+    command.goal_pose.pose.position.y);
 
   while (rclcpp::ok()) {
     if (goal_handle->is_canceling()) {
       this->publish_stop_command();
+      RCLCPP_INFO(this->get_logger(), "Navigation canceled; published stop command");
       auto result = std::make_shared<NavigateToPose::Result>();
       result->success = false;
       result->message = "Route execution canceled.";
@@ -236,17 +290,19 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     const auto pose = this->get_current_pose_copy();
 
     auto feedback = std::make_shared<NavigateToPose::Feedback>();
-    feedback->route_id = goal->route_id;
-    feedback->current_node_id = this->default_node_id_;
     feedback->current_pose = pose;
     feedback->remaining_distance = status.remaining_distance;
     feedback->heading_error = status.heading_error;
-    feedback->current_waypoint_index = status.goal_reached ? waypoint_count : 0U;
-    feedback->waypoint_count = static_cast<uint32_t>(waypoint_count);
     goal_handle->publish_feedback(feedback);
 
     if (status.command_id == command.command_id && status.goal_reached) {
       this->publish_stop_command();
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Goal reached for command %u at x=%.3f y=%.3f",
+        command.command_id,
+        pose.pose.position.x,
+        pose.pose.position.y);
       auto result = std::make_shared<NavigateToPose::Result>();
       result->success = true;
       result->message = "Goal reached.";
@@ -293,7 +349,7 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   command.header.frame_id =
     goal.goal_pose.header.frame_id.empty() ? std::string("map") : goal.goal_pose.header.frame_id;
   command.command_id = this->next_command_id_++;
-  command.route_id = goal.route_id;
+  command.route_id = "navigate_to_pose";
   command.node_id = this->default_node_id_;
   command.plan = plan;
   command.goal_pose = goal.goal_pose;
@@ -313,11 +369,15 @@ void Btnavigator::publish_stop_command()
   stop_command.header.frame_id =
     current_pose.header.frame_id.empty() ? std::string("map") : current_pose.header.frame_id;
   stop_command.command_id = this->next_command_id_++;
-  stop_command.route_id = "stop";
+  stop_command.route_id = "navigate_to_pose";
   stop_command.node_id = this->default_node_id_;
   stop_command.goal_pose = current_pose;
   stop_command.align_heading_at_goal = false;
   this->motion_command_publisher_->publish(stop_command);
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Published stop command %u",
+    stop_command.command_id);
 }
 
 }  // namespace amr_bt_navigator

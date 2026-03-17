@@ -10,8 +10,8 @@ namespace amr_global_planner
 
 PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("global_planner", options),
-  map_topic_("/amr/map_server/map"),
-  computed_plan_topic_("/amr/global_planner/plan"),
+  map_topic_(""),
+  computed_plan_topic_(""),
   plan_segment_service_name_("/amr/global_planner/plan_segment"),
   plan_route_service_name_("/amr/global_planner/plan_route"),
   obstacle_threshold_(50),
@@ -21,31 +21,42 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   prevent_corner_cutting_(true),
   turn_penalty_(0.5)
 {
-  this->declare_parameter("map_topic", this->map_topic_);
-  this->declare_parameter("computed_plan_topic", this->computed_plan_topic_);
-  this->declare_parameter("plan_segment_service", this->plan_segment_service_name_);
-  this->declare_parameter("plan_route_service", this->plan_route_service_name_);
-  this->declare_parameter("obstacle_threshold", this->obstacle_threshold_);
-  this->declare_parameter("connectivity", this->connectivity_);
-  this->declare_parameter("allow_unknown", this->allow_unknown_);
-  this->declare_parameter("simplify_path", this->simplify_path_);
-  this->declare_parameter("prevent_corner_cutting", this->prevent_corner_cutting_);
-  this->declare_parameter("turn_penalty", this->turn_penalty_);
+  this->declare_parameter("topics.map", this->map_topic_);
+  this->declare_parameter("topics.plan", this->computed_plan_topic_);
+  this->declare_parameter("services.segment", this->plan_segment_service_name_);
+  this->declare_parameter("services.route", this->plan_route_service_name_);
+  this->declare_parameter("planner.obstacle_threshold", this->obstacle_threshold_);
+  this->declare_parameter("planner.connectivity", this->connectivity_);
+  this->declare_parameter("planner.allow_unknown", this->allow_unknown_);
+  this->declare_parameter("planner.simplify_path", this->simplify_path_);
+  this->declare_parameter(
+    "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
+  this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
 }
 
 PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle::State & state)
 {
   (void)state;
-  this->get_parameter("map_topic", this->map_topic_);
-  this->get_parameter("computed_plan_topic", this->computed_plan_topic_);
-  this->get_parameter("plan_segment_service", this->plan_segment_service_name_);
-  this->get_parameter("plan_route_service", this->plan_route_service_name_);
-  this->get_parameter("obstacle_threshold", this->obstacle_threshold_);
-  this->get_parameter("connectivity", this->connectivity_);
-  this->get_parameter("allow_unknown", this->allow_unknown_);
-  this->get_parameter("simplify_path", this->simplify_path_);
-  this->get_parameter("prevent_corner_cutting", this->prevent_corner_cutting_);
-  this->get_parameter("turn_penalty", this->turn_penalty_);
+  this->get_parameter("topics.map", this->map_topic_);
+  this->get_parameter("topics.plan", this->computed_plan_topic_);
+  this->get_parameter("services.segment", this->plan_segment_service_name_);
+  this->get_parameter("services.route", this->plan_route_service_name_);
+  this->get_parameter("planner.obstacle_threshold", this->obstacle_threshold_);
+  this->get_parameter("planner.connectivity", this->connectivity_);
+  this->get_parameter("planner.allow_unknown", this->allow_unknown_);
+  this->get_parameter("planner.simplify_path", this->simplify_path_);
+  this->get_parameter(
+    "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
+  this->get_parameter("planner.turn_penalty", this->turn_penalty_);
+
+  if (this->map_topic_.empty() || this->computed_plan_topic_.empty()) {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "Global planner topics must not be empty: map='%s' plan='%s'",
+      this->map_topic_.c_str(),
+      this->computed_plan_topic_.c_str());
+    return CallbackReturn::FAILURE;
+  }
 
   const auto connectivity =
     this->connectivity_ == 4 ?

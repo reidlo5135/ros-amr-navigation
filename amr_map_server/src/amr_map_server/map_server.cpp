@@ -42,7 +42,7 @@ MapServer::MapServer(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("map_server", options),
   yaml_path_(""),
   frame_id_("map"),
-  map_topic_("/amr/map_server/map"),
+  map_topic_(""),
   get_map_service_name_("/amr/map_server/get_map"),
   map_loaded_(false)
 {
@@ -59,6 +59,11 @@ MapServer::CallbackReturn MapServer::on_configure(const rclcpp_lifecycle::State 
   this->get_parameter("frames.map", this->frame_id_);
   this->get_parameter("topics.map", this->map_topic_);
   this->get_parameter("services.get", this->get_map_service_name_);
+
+  if (this->map_topic_.empty()) {
+    RCLCPP_ERROR(this->get_logger(), "Parameter 'topics.map' must not be empty");
+    return CallbackReturn::FAILURE;
+  }
 
   if (!this->load_map_from_files()) {
     return CallbackReturn::FAILURE;

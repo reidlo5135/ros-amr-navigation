@@ -33,11 +33,12 @@ private:
   void publish_local_plan();
   nav_msgs::msg::Path build_local_plan(
     const amr_msgs::msg::MotionCommand & command,
-    const geometry_msgs::msg::PoseStamped & current_pose) const;
+    const geometry_msgs::msg::PoseStamped & current_pose);
   nav_msgs::msg::Path build_source_plan(const amr_msgs::msg::MotionCommand & command) const;
   std::size_t find_closest_pose_index(
     const nav_msgs::msg::Path & plan,
-    const geometry_msgs::msg::PoseStamped & current_pose) const;
+    const geometry_msgs::msg::PoseStamped & current_pose,
+    std::size_t start_index) const;
   geometry_msgs::msg::PoseStamped interpolate_pose(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
@@ -57,6 +58,8 @@ private:
   int publish_period_ms_;
   double lookahead_distance_;
   double goal_tolerance_;
+  uint32_t last_command_id_;
+  std::size_t last_progress_index_;
   amr_msgs::msg::MotionCommand latest_command_;
   geometry_msgs::msg::PoseStamped current_pose_;
   bool has_command_;

@@ -3,63 +3,121 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-
-using namespace std::chrono_literals;
+#include <cctype>
 
 namespace amr_motion_controller
 {
 
 MotionController::MotionController(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("motion_controller", options),
-  command_topic_("/amr/motion_controller/command"),
-  local_plan_topic_("/amr/local_planner/plan"),
-  current_pose_topic_("/amr/localization/pose"),
-  status_topic_("/amr/motion_controller/status"),
-  cmd_vel_topic_("/cmd_vel"),
-  publish_period_ms_(100),
-  nominal_linear_velocity_(0.3),
-  max_linear_velocity_(0.3),
-  min_linear_velocity_(0.05),
-  max_angular_velocity_(1.5),
-  heading_gain_(2.0),
+  command_topic_(""),
+  local_plan_topic_(""),
+  current_pose_topic_(""),
+  status_topic_(""),
+  cmd_vel_topic_(""),
+  control_frequency_(10.0),
+  linear_speed_(0.07),
+  angular_gain_(1.5),
+  max_angular_speed_(0.8),
+  distance_tolerance_(0.15),
   rotate_in_place_threshold_(0.6),
-  goal_tolerance_(0.15),
+  heading_slowdown_threshold_(0.2),
+  max_linear_accel_(0.08),
+  max_angular_accel_(0.8),
+  velocity_control_mode_(VelocityControlMode::PID),
   has_command_(false),
   has_local_plan_(false),
   has_current_pose_(false)
 {
-  this->declare_parameter("command_topic", this->command_topic_);
-  this->declare_parameter("local_plan_topic", this->local_plan_topic_);
-  this->declare_parameter("current_pose_topic", this->current_pose_topic_);
-  this->declare_parameter("status_topic", this->status_topic_);
-  this->declare_parameter("cmd_vel_topic", this->cmd_vel_topic_);
-  this->declare_parameter("publish_period_ms", this->publish_period_ms_);
-  this->declare_parameter("nominal_linear_velocity", this->nominal_linear_velocity_);
-  this->declare_parameter("max_linear_velocity", this->max_linear_velocity_);
-  this->declare_parameter("min_linear_velocity", this->min_linear_velocity_);
-  this->declare_parameter("max_angular_velocity", this->max_angular_velocity_);
-  this->declare_parameter("heading_gain", this->heading_gain_);
-  this->declare_parameter("rotate_in_place_threshold", this->rotate_in_place_threshold_);
-  this->declare_parameter("goal_tolerance", this->goal_tolerance_);
+  this->declare_parameter("topics.command", this->command_topic_);
+  this->declare_parameter("topics.plan", this->local_plan_topic_);
+  this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.status", this->status_topic_);
+  this->declare_parameter("topics.velocity", this->cmd_vel_topic_);
+
+  this->declare_parameter("control.frequency", this->control_frequency_);
+  this->declare_parameter("control.linear_speed", this->linear_speed_);
+  this->declare_parameter("control.angular_gain", this->angular_gain_);
+  this->declare_parameter("control.max_angular_speed", this->max_angular_speed_);
+  this->declare_parameter("control.distance_tolerance", this->distance_tolerance_);
+  this->declare_parameter(
+    "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
+  this->declare_parameter(
+    "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
+
+  this->declare_parameter("velocity_controller.mode", std::string("pid"));
+  this->declare_parameter("velocity_controller.linear.kp", 0.35);
+  this->declare_parameter("velocity_controller.linear.ki", 0.0);
+  this->declare_parameter("velocity_controller.linear.kd", 0.04);
+  this->declare_parameter("velocity_controller.linear.integral_limit", 0.20);
+  this->declare_parameter("velocity_controller.angular.kp", 0.45);
+  this->declare_parameter("velocity_controller.angular.ki", 0.0);
+  this->declare_parameter("velocity_controller.angular.kd", 0.02);
+  this->declare_parameter("velocity_controller.angular.integral_limit", 0.30);
+  this->declare_parameter("velocity_controller.max_linear_accel", this->max_linear_accel_);
+  this->declare_parameter("velocity_controller.max_angular_accel", this->max_angular_accel_);
 }
 
 MotionController::CallbackReturn MotionController::on_configure(
   const rclcpp_lifecycle::State & state)
 {
   (void)state;
-  this->get_parameter("command_topic", this->command_topic_);
-  this->get_parameter("local_plan_topic", this->local_plan_topic_);
-  this->get_parameter("current_pose_topic", this->current_pose_topic_);
-  this->get_parameter("status_topic", this->status_topic_);
-  this->get_parameter("cmd_vel_topic", this->cmd_vel_topic_);
-  this->get_parameter("publish_period_ms", this->publish_period_ms_);
-  this->get_parameter("nominal_linear_velocity", this->nominal_linear_velocity_);
-  this->get_parameter("max_linear_velocity", this->max_linear_velocity_);
-  this->get_parameter("min_linear_velocity", this->min_linear_velocity_);
-  this->get_parameter("max_angular_velocity", this->max_angular_velocity_);
-  this->get_parameter("heading_gain", this->heading_gain_);
-  this->get_parameter("rotate_in_place_threshold", this->rotate_in_place_threshold_);
-  this->get_parameter("goal_tolerance", this->goal_tolerance_);
+  this->get_parameter("topics.command", this->command_topic_);
+  this->get_parameter("topics.plan", this->local_plan_topic_);
+  this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.status", this->status_topic_);
+  this->get_parameter("topics.velocity", this->cmd_vel_topic_);
+
+  this->get_parameter("control.frequency", this->control_frequency_);
+  this->get_parameter("control.linear_speed", this->linear_speed_);
+  this->get_parameter("control.angular_gain", this->angular_gain_);
+  this->get_parameter("control.max_angular_speed", this->max_angular_speed_);
+  this->get_parameter("control.distance_tolerance", this->distance_tolerance_);
+  this->get_parameter(
+    "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
+  this->get_parameter(
+    "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
+
+  this->velocity_control_mode_ = this->parse_velocity_control_mode(
+    this->get_parameter("velocity_controller.mode").as_string());
+  this->linear_controller_config_.kp =
+    this->get_parameter("velocity_controller.linear.kp").as_double();
+  this->linear_controller_config_.ki =
+    this->get_parameter("velocity_controller.linear.ki").as_double();
+  this->linear_controller_config_.kd =
+    this->get_parameter("velocity_controller.linear.kd").as_double();
+  this->linear_controller_config_.integral_limit =
+    this->get_parameter("velocity_controller.linear.integral_limit").as_double();
+  this->angular_controller_config_.kp =
+    this->get_parameter("velocity_controller.angular.kp").as_double();
+  this->angular_controller_config_.ki =
+    this->get_parameter("velocity_controller.angular.ki").as_double();
+  this->angular_controller_config_.kd =
+    this->get_parameter("velocity_controller.angular.kd").as_double();
+  this->angular_controller_config_.integral_limit =
+    this->get_parameter("velocity_controller.angular.integral_limit").as_double();
+  this->max_linear_accel_ =
+    this->get_parameter("velocity_controller.max_linear_accel").as_double();
+  this->max_angular_accel_ =
+    this->get_parameter("velocity_controller.max_angular_accel").as_double();
+
+  if (
+    this->command_topic_.empty() || this->local_plan_topic_.empty() ||
+    this->current_pose_topic_.empty() || this->status_topic_.empty() ||
+    this->cmd_vel_topic_.empty())
+  {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' status='%s' cmd_vel='%s'",
+      this->command_topic_.c_str(),
+      this->local_plan_topic_.c_str(),
+      this->current_pose_topic_.c_str(),
+      this->status_topic_.c_str(),
+      this->cmd_vel_topic_.c_str());
+    return CallbackReturn::FAILURE;
+  }
+
+  this->reset_velocity_controller_state();
 
   this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS(),
@@ -81,10 +139,22 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->motion_status_publisher_ = this->create_publisher<amr_msgs::msg::MotionStatus>(
     this->status_topic_, rclcpp::SystemDefaultsQoS());
 
+  const auto control_period = std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::duration<double>(1.0 / std::max(this->control_frequency_, 1.0)));
   this->timer_ = this->create_wall_timer(
-    std::chrono::milliseconds(this->publish_period_ms_),
+    control_period,
     [this]() { this->publish_control(); });
   this->timer_->cancel();
+  const auto velocity_control_mode = this->get_parameter("velocity_controller.mode").as_string();
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Configured motion controller with command='%s', plan='%s', pose='%s', cmd_vel='%s', mode='%s'",
+    this->command_topic_.c_str(),
+    this->local_plan_topic_.c_str(),
+    this->current_pose_topic_.c_str(),
+    this->cmd_vel_topic_.c_str(),
+    velocity_control_mode.c_str());
 
   return CallbackReturn::SUCCESS;
 }
@@ -96,6 +166,7 @@ MotionController::CallbackReturn MotionController::on_activate(
   this->cmd_vel_publisher_->on_activate();
   this->motion_status_publisher_->on_activate();
   this->timer_->reset();
+  RCLCPP_INFO(this->get_logger(), "Activated motion controller");
   return CallbackReturn::SUCCESS;
 }
 
@@ -106,12 +177,14 @@ MotionController::CallbackReturn MotionController::on_deactivate(
   if (this->timer_) {
     this->timer_->cancel();
   }
+  this->publish_zero_twist();
   if (this->cmd_vel_publisher_) {
     this->cmd_vel_publisher_->on_deactivate();
   }
   if (this->motion_status_publisher_) {
     this->motion_status_publisher_->on_deactivate();
   }
+  RCLCPP_INFO(this->get_logger(), "Deactivated motion controller");
   return CallbackReturn::SUCCESS;
 }
 
@@ -119,17 +192,21 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   const rclcpp_lifecycle::State & state)
 {
   (void)state;
+  this->publish_zero_twist();
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
+  this->latest_command_ = amr_msgs::msg::MotionCommand();
+  this->latest_local_plan_ = nav_msgs::msg::Path();
+  this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
   this->has_current_pose_ = false;
-  this->latest_local_plan_ = nav_msgs::msg::Path();
-  this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->reset_velocity_controller_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -137,17 +214,21 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   const rclcpp_lifecycle::State & state)
 {
   (void)state;
+  this->publish_zero_twist();
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
+  this->latest_command_ = amr_msgs::msg::MotionCommand();
+  this->latest_local_plan_ = nav_msgs::msg::Path();
+  this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
   this->has_current_pose_ = false;
-  this->latest_local_plan_ = nav_msgs::msg::Path();
-  this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->reset_velocity_controller_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -155,12 +236,25 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
 {
   this->latest_command_ = *message;
   this->has_command_ = true;
+  this->reset_velocity_controller_state();
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Received motion command %u with goal x=%.3f y=%.3f",
+    message->command_id,
+    message->goal_pose.pose.position.x,
+    message->goal_pose.pose.position.y);
 }
 
 void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr message)
 {
   this->latest_local_plan_ = *message;
   this->has_local_plan_ = true;
+  RCLCPP_INFO_THROTTLE(
+    this->get_logger(),
+    *this->get_clock(),
+    2000,
+    "Updated local plan with %zu poses",
+    message->poses.size());
 }
 
 void MotionController::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
@@ -178,10 +272,12 @@ void MotionController::publish_control()
     return;
   }
 
-  geometry_msgs::msg::Twist cmd_vel;
+  geometry_msgs::msg::Twist desired_twist;
+  geometry_msgs::msg::Twist output_twist;
   amr_msgs::msg::MotionStatus status;
   status.header.stamp = this->now();
-  status.header.frame_id = "map";
+  status.header.frame_id =
+    this->current_pose_.header.frame_id.empty() ? "map" : this->current_pose_.header.frame_id;
   status.current_pose = this->current_pose_;
 
   if (this->has_command_ && this->has_local_plan_ && this->has_current_pose_) {
@@ -193,11 +289,12 @@ void MotionController::publish_control()
       tracking_target.pose.position.y - this->current_pose_.pose.position.y,
       tracking_target.pose.position.x - this->current_pose_.pose.position.x);
     const auto heading_error = this->normalize_angle(target_heading - current_yaw);
+    const auto abs_heading_error = std::abs(heading_error);
 
     status.command_id = this->latest_command_.command_id;
     status.active = true;
     status.goal_reached =
-      goal_distance <= this->goal_tolerance_ ||
+      goal_distance <= this->distance_tolerance_ ||
       this->latest_local_plan_.poses.empty();
     status.current_pose = this->current_pose_;
     status.remaining_distance = remaining_distance;
@@ -206,24 +303,29 @@ void MotionController::publish_control()
     if (status.goal_reached) {
       this->has_command_ = false;
       this->has_local_plan_ = false;
+      this->reset_velocity_controller_state();
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Goal reached for command %u",
+        status.command_id);
     } else {
-      if (std::abs(heading_error) > this->rotate_in_place_threshold_) {
-        cmd_vel.angular.z = this->clamp(
-          this->heading_gain_ * heading_error,
-          -this->max_angular_velocity_,
-          this->max_angular_velocity_);
-      } else {
-        const auto lookahead_distance = std::max(0.001, this->pose_distance(this->current_pose_, tracking_target));
-        const auto curvature = (2.0 * std::sin(heading_error)) / lookahead_distance;
-        const auto linear_speed = this->clamp(
-          this->nominal_linear_velocity_ * std::max(0.0, std::cos(heading_error)),
-          this->min_linear_velocity_,
-          this->max_linear_velocity_);
-        cmd_vel.linear.x = linear_speed;
-        cmd_vel.angular.z = this->clamp(
-          linear_speed * curvature,
-          -this->max_angular_velocity_,
-          this->max_angular_velocity_);
+      desired_twist.angular.z = this->clamp(
+        this->angular_gain_ * heading_error,
+        -this->max_angular_speed_,
+        this->max_angular_speed_);
+
+      if (abs_heading_error <= this->rotate_in_place_threshold_) {
+        const double base_linear_speed = std::max(0.0, std::min(this->linear_speed_, goal_distance));
+        if (abs_heading_error <= this->heading_slowdown_threshold_) {
+          desired_twist.linear.x = base_linear_speed;
+        } else {
+          const double error_window = std::max(
+            this->rotate_in_place_threshold_ - this->heading_slowdown_threshold_,
+            1e-6);
+          const double scale =
+            1.0 - ((abs_heading_error - this->heading_slowdown_threshold_) / error_window);
+          desired_twist.linear.x = base_linear_speed * this->clamp(scale, 0.0, 1.0);
+        }
       }
     }
   } else {
@@ -231,8 +333,158 @@ void MotionController::publish_control()
     status.goal_reached = true;
   }
 
-  this->cmd_vel_publisher_->publish(cmd_vel);
+  this->current_twist_ = this->apply_velocity_controller(this->current_twist_, desired_twist);
+  output_twist = this->current_twist_;
+
+  this->cmd_vel_publisher_->publish(output_twist);
   this->motion_status_publisher_->publish(status);
+
+  if (status.active) {
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      1000,
+      "Control cmd=%u target(v=%.3f,w=%.3f) output(v=%.3f,w=%.3f) remaining=%.3f heading=%.3f",
+      status.command_id,
+      desired_twist.linear.x,
+      desired_twist.angular.z,
+      output_twist.linear.x,
+      output_twist.angular.z,
+      status.remaining_distance,
+      status.heading_error);
+  }
+}
+
+void MotionController::reset_velocity_controller_state()
+{
+  this->linear_controller_state_ = AxisControllerState{};
+  this->angular_controller_state_ = AxisControllerState{};
+}
+
+void MotionController::publish_zero_twist()
+{
+  this->current_twist_ = geometry_msgs::msg::Twist();
+  if (!this->cmd_vel_publisher_ || !this->cmd_vel_publisher_->is_activated()) {
+    return;
+  }
+
+  this->cmd_vel_publisher_->publish(this->current_twist_);
+}
+
+MotionController::VelocityControlMode MotionController::parse_velocity_control_mode(
+  const std::string & mode) const
+{
+  std::string normalized = mode;
+  std::transform(
+    normalized.begin(),
+    normalized.end(),
+    normalized.begin(),
+    [](unsigned char character) {
+      return static_cast<char>(std::tolower(character));
+    });
+
+  if (normalized == "p") {
+    return VelocityControlMode::P;
+  }
+  if (normalized == "pi") {
+    return VelocityControlMode::PI;
+  }
+  if (normalized == "pid") {
+    return VelocityControlMode::PID;
+  }
+
+  RCLCPP_WARN(
+    this->get_logger(),
+    "Unknown velocity_controller.mode '%s'; falling back to pid",
+    mode.c_str());
+  return VelocityControlMode::PID;
+}
+
+double MotionController::apply_axis_controller(
+  const double current,
+  const double target,
+  AxisControllerState & state,
+  const AxisControllerConfig & config,
+  const double max_step,
+  const double dt) const
+{
+  const double error = target - current;
+  double derivative = 0.0;
+
+  if (
+    this->velocity_control_mode_ == VelocityControlMode::PI ||
+    this->velocity_control_mode_ == VelocityControlMode::PID)
+  {
+    state.integral = this->clamp(
+      state.integral + (error * dt),
+      -config.integral_limit,
+      config.integral_limit);
+  } else {
+    state.integral = 0.0;
+  }
+
+  if (
+    !state.first_update &&
+    this->velocity_control_mode_ == VelocityControlMode::PID &&
+    dt > 1e-6)
+  {
+    derivative = (error - state.previous_error) / dt;
+  }
+
+  double control_delta = config.kp * error;
+  if (
+    this->velocity_control_mode_ == VelocityControlMode::PI ||
+    this->velocity_control_mode_ == VelocityControlMode::PID)
+  {
+    control_delta += config.ki * state.integral;
+  }
+  if (this->velocity_control_mode_ == VelocityControlMode::PID) {
+    control_delta += config.kd * derivative;
+  }
+
+  control_delta = this->clamp(control_delta, -max_step, max_step);
+  double next = current + control_delta;
+
+  if (target >= current) {
+    next = std::min(next, target);
+  } else {
+    next = std::max(next, target);
+  }
+
+  if (std::abs(target) <= 1e-6 && std::abs(error) <= max_step) {
+    next = 0.0;
+    state.integral = 0.0;
+  }
+
+  state.previous_error = error;
+  state.first_update = false;
+  return next;
+}
+
+geometry_msgs::msg::Twist MotionController::apply_velocity_controller(
+  const geometry_msgs::msg::Twist & current,
+  const geometry_msgs::msg::Twist & target)
+{
+  geometry_msgs::msg::Twist controlled = current;
+  const double dt = 1.0 / std::max(this->control_frequency_, 1.0);
+  const double max_linear_step = this->max_linear_accel_ * dt;
+  const double max_angular_step = this->max_angular_accel_ * dt;
+
+  controlled.linear.x = this->apply_axis_controller(
+    current.linear.x,
+    target.linear.x,
+    this->linear_controller_state_,
+    this->linear_controller_config_,
+    max_linear_step,
+    dt);
+  controlled.angular.z = this->apply_axis_controller(
+    current.angular.z,
+    target.angular.z,
+    this->angular_controller_state_,
+    this->angular_controller_config_,
+    max_angular_step,
+    dt);
+  return controlled;
 }
 
 double MotionController::estimate_remaining_distance(const nav_msgs::msg::Path & path) const

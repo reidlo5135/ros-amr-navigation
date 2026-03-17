@@ -20,6 +20,28 @@ public:
   explicit MotionController(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
+  enum class VelocityControlMode
+  {
+    P,
+    PI,
+    PID
+  };
+
+  struct AxisControllerConfig
+  {
+    double kp{0.0};
+    double ki{0.0};
+    double kd{0.0};
+    double integral_limit{0.0};
+  };
+
+  struct AxisControllerState
+  {
+    double integral{0.0};
+    double previous_error{0.0};
+    bool first_update{true};
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -33,6 +55,19 @@ private:
   void handle_local_plan(const nav_msgs::msg::Path::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void publish_control();
+  void reset_velocity_controller_state();
+  void publish_zero_twist();
+  VelocityControlMode parse_velocity_control_mode(const std::string & mode) const;
+  double apply_axis_controller(
+    double current,
+    double target,
+    AxisControllerState & state,
+    const AxisControllerConfig & config,
+    double max_step,
+    double dt) const;
+  geometry_msgs::msg::Twist apply_velocity_controller(
+    const geometry_msgs::msg::Twist & current,
+    const geometry_msgs::msg::Twist & target);
   double estimate_remaining_distance(const nav_msgs::msg::Path & path) const;
   double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
   double normalize_angle(double angle) const;
@@ -54,14 +89,21 @@ private:
   std::string current_pose_topic_;
   std::string status_topic_;
   std::string cmd_vel_topic_;
-  int publish_period_ms_;
-  double nominal_linear_velocity_;
-  double max_linear_velocity_;
-  double min_linear_velocity_;
-  double max_angular_velocity_;
-  double heading_gain_;
+  double control_frequency_;
+  double linear_speed_;
+  double angular_gain_;
+  double max_angular_speed_;
+  double distance_tolerance_;
   double rotate_in_place_threshold_;
-  double goal_tolerance_;
+  double heading_slowdown_threshold_;
+  double max_linear_accel_;
+  double max_angular_accel_;
+  VelocityControlMode velocity_control_mode_;
+  AxisControllerConfig linear_controller_config_;
+  AxisControllerConfig angular_controller_config_;
+  AxisControllerState linear_controller_state_;
+  AxisControllerState angular_controller_state_;
+  geometry_msgs::msg::Twist current_twist_;
   amr_msgs::msg::MotionCommand latest_command_;
   nav_msgs::msg::Path latest_local_plan_;
   geometry_msgs::msg::PoseStamped current_pose_;
