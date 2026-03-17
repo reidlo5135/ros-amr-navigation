@@ -18,6 +18,7 @@ Panels:
   - Class: rviz_common/Tool Properties
     Expanded:
       - /Set Initial Pose1
+      - /2D Goal Pose1
       - /Publish Point1
     Name: Tool Properties
     Splitter Ratio: 0.5886790156364441
@@ -117,6 +118,52 @@ Visualization Manager:
         Value: /amr/map/update
       Use Timestamp: false
       Value: true
+    - Alpha: 0.35
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Global Costmap
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amr/costmap/global
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amr/costmap/global_update
+      Use Timestamp: false
+      Value: true
+    - Alpha: 0.25
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Local Costmap
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amr/costmap/local
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amr/costmap/local_update
+      Use Timestamp: false
+      Value: true
     - Alpha: 1
       Axes Length: 0.4000000059604645
       Axes Radius: 0.029999999329447746
@@ -162,7 +209,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /amr/planner/plan
+        Value: /amr/planner/global
       Value: true
     - Alpha: 1
       Buffer Length: 1
@@ -190,7 +237,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /amr/local_planner/plan
+        Value: /amr/planner/local
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -290,6 +337,14 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /amr/localization/initial_pose
+    - Class: rviz_default_plugins/SetGoal
+      Name: 2D Goal Pose
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /amr/rviz/goal
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
       Topic:

@@ -4,6 +4,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import EmitEvent, RegisterEventHandler
 from launch_ros.actions import LifecycleNode
+from launch_ros.actions import Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
@@ -69,8 +70,17 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[bringup_params_file()],
     )
+    rviz_bridge = Node(
+        package="amr_rviz_plugins",
+        executable="amr_goal_bridge",
+        name="rviz_bridge",
+        namespace="amr",
+        output="screen",
+        parameters=[bringup_params_file()],
+    )
 
     add_lifecycle_node(ld, local_planner)
     add_lifecycle_node(ld, motion_controller)
     add_lifecycle_node(ld, bt_navigator)
+    ld.add_action(rviz_bridge)
     return ld

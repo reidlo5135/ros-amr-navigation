@@ -4,29 +4,316 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <queue>
+#include <utility>
+#include <vector>
 
 namespace amr_local_planner
 {
+
+namespace
+{
+
+constexpr int kUnknownCellValue = -1;
+
+struct GridCell
+{
+  int x;
+  int y;
+
+  bool operator==(const GridCell & other) const
+  {
+    return this->x == other.x && this->y == other.y;
+  }
+};
+
+struct AStarNode
+{
+  double g_cost;
+  double h_cost;
+  int parent_index;
+  bool opened;
+  bool closed;
+};
+
+struct OpenSetEntry
+{
+  int index;
+  double f_cost;
+};
+
+struct OpenSetEntryCompare
+{
+  bool operator()(const OpenSetEntry & lhs, const OpenSetEntry & rhs) const
+  {
+    return lhs.f_cost > rhs.f_cost;
+  }
+};
+
+bool is_within_bounds(const GridCell & cell, int width, int height)
+{
+  return cell.x >= 0 && cell.x < width && cell.y >= 0 && cell.y < height;
+}
+
+int to_index(const GridCell & cell, int width)
+{
+  return cell.y * width + cell.x;
+}
+
+bool is_occupied(
+  const std::vector<int8_t> & occupancy_grid,
+  int width,
+  const GridCell & cell,
+  int obstacle_threshold,
+  bool allow_unknown)
+{
+  const int cell_value = occupancy_grid[static_cast<std::size_t>(to_index(cell, width))];
+  if (cell_value == kUnknownCellValue) {
+    return !allow_unknown;
+  }
+  return cell_value >= obstacle_threshold;
+}
+
+bool is_diagonal_move_blocked(
+  const std::vector<int8_t> & occupancy_grid,
+  int width,
+  int height,
+  const GridCell & current,
+  const GridCell & next,
+  int obstacle_threshold,
+  bool allow_unknown,
+  bool prevent_corner_cutting)
+{
+  if (!prevent_corner_cutting) {
+    return false;
+  }
+
+  if (current.x == next.x || current.y == next.y) {
+    return false;
+  }
+
+  const GridCell horizontal{next.x, current.y};
+  const GridCell vertical{current.x, next.y};
+  if (!is_within_bounds(horizontal, width, height) || !is_within_bounds(vertical, width, height)) {
+    return true;
+  }
+
+  return
+    is_occupied(occupancy_grid, width, horizontal, obstacle_threshold, allow_unknown) ||
+    is_occupied(occupancy_grid, width, vertical, obstacle_threshold, allow_unknown);
+}
+
+double heuristic(const GridCell & from, const GridCell & to, int connectivity)
+{
+  const double dx = std::abs(from.x - to.x);
+  const double dy = std::abs(from.y - to.y);
+  if (connectivity == 8) {
+    const double min_delta = std::min(dx, dy);
+    const double max_delta = std::max(dx, dy);
+    return (min_delta * std::sqrt(2.0)) + (max_delta - min_delta);
+  }
+  return dx + dy;
+}
+
+double turn_penalty(
+  const GridCell & previous,
+  const GridCell & current,
+  const GridCell & next,
+  double penalty)
+{
+  const int previous_dx = current.x - previous.x;
+  const int previous_dy = current.y - previous.y;
+  const int next_dx = next.x - current.x;
+  const int next_dy = next.y - current.y;
+  if (previous_dx == next_dx && previous_dy == next_dy) {
+    return 0.0;
+  }
+  return penalty;
+}
+
+std::vector<GridCell> get_neighbors(const GridCell & cell, int connectivity)
+{
+  std::vector<GridCell> neighbors{
+    {cell.x + 1, cell.y},
+    {cell.x - 1, cell.y},
+    {cell.x, cell.y + 1},
+    {cell.x, cell.y - 1}
+  };
+
+  if (connectivity == 8) {
+    neighbors.push_back({cell.x + 1, cell.y + 1});
+    neighbors.push_back({cell.x + 1, cell.y - 1});
+    neighbors.push_back({cell.x - 1, cell.y + 1});
+    neighbors.push_back({cell.x - 1, cell.y - 1});
+  }
+
+  return neighbors;
+}
+
+bool plan_on_grid(
+  const std::vector<int8_t> & occupancy_grid,
+  int width,
+  int height,
+  const GridCell & start,
+  const GridCell & goal,
+  int obstacle_threshold,
+  bool allow_unknown,
+  int connectivity,
+  bool prevent_corner_cutting,
+  double penalty,
+  std::vector<GridCell> & path)
+{
+  path.clear();
+
+  if (
+    width <= 0 || height <= 0 ||
+    occupancy_grid.size() != static_cast<std::size_t>(width * height))
+  {
+    return false;
+  }
+  if (!is_within_bounds(start, width, height) || !is_within_bounds(goal, width, height)) {
+    return false;
+  }
+  if (
+    is_occupied(occupancy_grid, width, start, obstacle_threshold, allow_unknown) ||
+    is_occupied(occupancy_grid, width, goal, obstacle_threshold, allow_unknown))
+  {
+    return false;
+  }
+
+  std::vector<AStarNode> nodes(
+    static_cast<std::size_t>(width * height),
+    {std::numeric_limits<double>::infinity(), 0.0, -1, false, false});
+  std::priority_queue<OpenSetEntry, std::vector<OpenSetEntry>, OpenSetEntryCompare> open_set;
+
+  const int start_index = to_index(start, width);
+  const int goal_index = to_index(goal, width);
+  nodes[static_cast<std::size_t>(start_index)].g_cost = 0.0;
+  nodes[static_cast<std::size_t>(start_index)].h_cost = heuristic(start, goal, connectivity);
+  nodes[static_cast<std::size_t>(start_index)].opened = true;
+  open_set.push(
+    {
+      start_index,
+      nodes[static_cast<std::size_t>(start_index)].g_cost +
+      nodes[static_cast<std::size_t>(start_index)].h_cost
+    });
+
+  while (!open_set.empty()) {
+    const OpenSetEntry current_entry = open_set.top();
+    open_set.pop();
+
+    AStarNode & current_node = nodes[static_cast<std::size_t>(current_entry.index)];
+    if (current_node.closed) {
+      continue;
+    }
+
+    current_node.closed = true;
+    if (current_entry.index == goal_index) {
+      int path_index = goal_index;
+      while (path_index >= 0) {
+        path.push_back({path_index % width, path_index / width});
+        path_index = nodes[static_cast<std::size_t>(path_index)].parent_index;
+      }
+      std::reverse(path.begin(), path.end());
+      return true;
+    }
+
+    const GridCell current_cell{current_entry.index % width, current_entry.index / width};
+    for (const auto & neighbor : get_neighbors(current_cell, connectivity)) {
+      if (
+        !is_within_bounds(neighbor, width, height) ||
+        is_occupied(occupancy_grid, width, neighbor, obstacle_threshold, allow_unknown) ||
+        is_diagonal_move_blocked(
+          occupancy_grid,
+          width,
+          height,
+          current_cell,
+          neighbor,
+          obstacle_threshold,
+          allow_unknown,
+          prevent_corner_cutting))
+      {
+        continue;
+      }
+
+      const int neighbor_index = to_index(neighbor, width);
+      AStarNode & neighbor_node = nodes[static_cast<std::size_t>(neighbor_index)];
+      if (neighbor_node.closed) {
+        continue;
+      }
+
+      const bool diagonal = neighbor.x != current_cell.x && neighbor.y != current_cell.y;
+      double tentative_g_cost = current_node.g_cost + (diagonal ? std::sqrt(2.0) : 1.0);
+      if (current_node.parent_index >= 0) {
+        const GridCell previous{
+          current_node.parent_index % width,
+          current_node.parent_index / width};
+        tentative_g_cost += turn_penalty(previous, current_cell, neighbor, penalty);
+      }
+
+      if (!neighbor_node.opened || tentative_g_cost < neighbor_node.g_cost) {
+        neighbor_node.g_cost = tentative_g_cost;
+        neighbor_node.h_cost = heuristic(neighbor, goal, connectivity);
+        neighbor_node.parent_index = current_entry.index;
+        neighbor_node.opened = true;
+        open_set.push(
+          {
+            neighbor_index,
+            neighbor_node.g_cost + neighbor_node.h_cost
+          });
+      }
+    }
+  }
+
+  return false;
+}
+
+}  // namespace
 
 LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("local_planner", options),
   command_topic_(""),
   current_pose_topic_(""),
+  map_topic_(""),
   local_plan_topic_(""),
+  inflated_map_topic_(""),
   publish_period_ms_(100),
   lookahead_distance_(0.8),
   goal_tolerance_(0.15),
+  obstacle_threshold_(50),
+  connectivity_(8),
+  allow_unknown_(false),
+  prevent_corner_cutting_(true),
+  turn_penalty_(0.5),
+  inflation_radius_(0.20),
+  inflation_cost_(80),
+  publish_inflated_map_(true),
+  nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
   last_progress_index_(0U),
+  map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_command_(false),
-  has_current_pose_(false)
+  has_current_pose_(false),
+  has_map_(false)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.map", this->map_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
+  this->declare_parameter("topics.inflated_map", this->inflated_map_topic_);
   this->declare_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->declare_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->declare_parameter("planner.goal_tolerance", this->goal_tolerance_);
+  this->declare_parameter("planner.obstacle_threshold", this->obstacle_threshold_);
+  this->declare_parameter("planner.connectivity", this->connectivity_);
+  this->declare_parameter("planner.allow_unknown", this->allow_unknown_);
+  this->declare_parameter(
+    "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
+  this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
+  this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter("inflation.radius", this->inflation_radius_);
+  this->declare_parameter("inflation.cost", this->inflation_cost_);
+  this->declare_parameter("inflation.publish", this->publish_inflated_map_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State & state)
@@ -34,21 +321,37 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   (void)state;
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.map", this->map_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
+  this->get_parameter("topics.inflated_map", this->inflated_map_topic_);
   this->get_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->get_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->get_parameter("planner.goal_tolerance", this->goal_tolerance_);
+  this->get_parameter("planner.obstacle_threshold", this->obstacle_threshold_);
+  this->get_parameter("planner.connectivity", this->connectivity_);
+  this->get_parameter("planner.allow_unknown", this->allow_unknown_);
+  this->get_parameter(
+    "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
+  this->get_parameter("planner.turn_penalty", this->turn_penalty_);
+  this->get_parameter(
+    "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter("inflation.radius", this->inflation_radius_);
+  this->get_parameter("inflation.cost", this->inflation_cost_);
+  this->get_parameter("inflation.publish", this->publish_inflated_map_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->local_plan_topic_.empty())
+    this->map_topic_.empty() || this->local_plan_topic_.empty() ||
+    this->inflated_map_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Local planner topics must not be empty: command='%s' pose='%s' local_plan='%s'",
+      "Local planner topics must not be empty: command='%s' pose='%s' map='%s' local_plan='%s' inflated_map='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
-      this->local_plan_topic_.c_str());
+      this->map_topic_.c_str(),
+      this->local_plan_topic_.c_str(),
+      this->inflated_map_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -62,8 +365,17 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
     });
+  this->map_subscription_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+    this->map_topic_,
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
+    [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
+      this->handle_map(message);
+    });
   this->local_plan_publisher_ = this->create_publisher<nav_msgs::msg::Path>(
     this->local_plan_topic_, rclcpp::SystemDefaultsQoS());
+  this->inflated_map_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
+    this->inflated_map_topic_,
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
   this->timer_ = this->create_wall_timer(
     std::chrono::milliseconds(this->publish_period_ms_),
     [this]() { this->publish_local_plan(); });
@@ -71,12 +383,13 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured local planner with command='%s', pose='%s', plan='%s', lookahead=%.2f, tolerance=%.2f",
+    "Configured local planner with command='%s', pose='%s', map='%s', plan='%s', lookahead=%.2f, inflation=%.2f m",
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
+    this->map_topic_.c_str(),
     this->local_plan_topic_.c_str(),
     this->lookahead_distance_,
-    this->goal_tolerance_);
+    this->inflation_radius_);
 
   return CallbackReturn::SUCCESS;
 }
@@ -85,7 +398,11 @@ LocalPlanner::CallbackReturn LocalPlanner::on_activate(const rclcpp_lifecycle::S
 {
   (void)state;
   this->local_plan_publisher_->on_activate();
+  this->inflated_map_publisher_->on_activate();
   this->timer_->reset();
+  if (this->has_map_ && this->publish_inflated_map_) {
+    this->inflated_map_publisher_->publish(this->inflated_map_);
+  }
   RCLCPP_INFO(this->get_logger(), "Activated local planner");
   return CallbackReturn::SUCCESS;
 }
@@ -99,6 +416,9 @@ LocalPlanner::CallbackReturn LocalPlanner::on_deactivate(const rclcpp_lifecycle:
   if (this->local_plan_publisher_) {
     this->local_plan_publisher_->on_deactivate();
   }
+  if (this->inflated_map_publisher_) {
+    this->inflated_map_publisher_->on_deactivate();
+  }
   RCLCPP_INFO(this->get_logger(), "Deactivated local planner");
   return CallbackReturn::SUCCESS;
 }
@@ -108,14 +428,19 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   (void)state;
   this->motion_command_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->map_subscription_.reset();
   this->local_plan_publisher_.reset();
+  this->inflated_map_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+  this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->last_command_id_ = 0U;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
+  this->has_map_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -124,14 +449,19 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   (void)state;
   this->motion_command_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->map_subscription_.reset();
   this->local_plan_publisher_.reset();
+  this->inflated_map_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+  this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->last_command_id_ = 0U;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
+  this->has_map_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -155,6 +485,27 @@ void LocalPlanner::handle_current_pose(const geometry_msgs::msg::PoseStamped::Sh
   this->has_current_pose_ = true;
 }
 
+void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
+{
+  this->map_occupancy_grid_ = message;
+  this->has_map_ = true;
+  this->rebuild_inflated_map();
+
+  if (
+    this->publish_inflated_map_ && this->inflated_map_publisher_ &&
+    this->inflated_map_publisher_->is_activated())
+  {
+    this->inflated_map_publisher_->publish(this->inflated_map_);
+  }
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Received map for local planner: size=%u x %u resolution=%.3f",
+    message->info.width,
+    message->info.height,
+    message->info.resolution);
+}
+
 void LocalPlanner::publish_local_plan()
 {
   if (
@@ -164,16 +515,17 @@ void LocalPlanner::publish_local_plan()
     return;
   }
 
-  this->local_plan_publisher_->publish(
-    this->build_local_plan(this->latest_command_, this->current_pose_));
+  const auto local_plan = this->build_local_plan(this->latest_command_, this->current_pose_);
+  this->local_plan_publisher_->publish(local_plan);
 
   RCLCPP_INFO_THROTTLE(
     this->get_logger(),
     *this->get_clock(),
     2000,
-    "Publishing local plan for command %u from progress index %zu",
+    "Publishing local plan for command %u from progress index %zu with %zu poses",
     this->latest_command_.command_id,
-    this->last_progress_index_);
+    this->last_progress_index_,
+    local_plan.poses.size());
 }
 
 nav_msgs::msg::Path LocalPlanner::build_local_plan(
@@ -194,13 +546,108 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
 
   const auto & goal_pose = source_plan.poses.back();
   if (this->pose_distance(current_pose, goal_pose) <= this->goal_tolerance_) {
-    this->last_progress_index_ = source_plan.poses.empty() ? 0U : source_plan.poses.size() - 1U;
+    this->last_progress_index_ = source_plan.poses.size() - 1U;
     return local_plan;
   }
 
   const auto closest_index =
     this->find_closest_pose_index(source_plan, current_pose, this->last_progress_index_);
   this->last_progress_index_ = closest_index;
+
+  if (this->has_map_ && !this->inflated_map_.data.empty()) {
+    local_plan = this->build_inflated_local_plan(source_plan, current_pose, closest_index);
+    if (!local_plan.poses.empty()) {
+      return local_plan;
+    }
+
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Inflated local replanning failed; falling back to sliced local plan");
+  }
+
+  return this->build_sliced_local_plan(source_plan, current_pose, closest_index);
+}
+
+nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
+  const nav_msgs::msg::Path & source_plan,
+  const geometry_msgs::msg::PoseStamped & current_pose,
+  const std::size_t closest_index)
+{
+  const auto sliced_plan = this->build_sliced_local_plan(source_plan, current_pose, closest_index);
+  if (sliced_plan.poses.size() < 2U || !this->has_map_) {
+    return sliced_plan;
+  }
+
+  int start_x = 0;
+  int start_y = 0;
+  int goal_x = 0;
+  int goal_y = 0;
+  if (
+    !this->world_to_grid(current_pose.pose.position, start_x, start_y) ||
+    !this->world_to_grid(sliced_plan.poses.back().pose.position, goal_x, goal_y))
+  {
+    return sliced_plan;
+  }
+
+  const int width = static_cast<int>(this->inflated_map_.info.width);
+  const int height = static_cast<int>(this->inflated_map_.info.height);
+  if (
+    !this->find_nearest_free_cell(
+      this->inflated_map_.data, width, height, start_x, start_y,
+      this->nearest_free_search_radius_cells_) ||
+    !this->find_nearest_free_cell(
+      this->inflated_map_.data, width, height, goal_x, goal_y,
+      this->nearest_free_search_radius_cells_))
+  {
+    return sliced_plan;
+  }
+
+  std::vector<GridCell> grid_path;
+  const bool success = plan_on_grid(
+    this->inflated_map_.data,
+    width,
+    height,
+    {start_x, start_y},
+    {goal_x, goal_y},
+    this->obstacle_threshold_,
+    this->allow_unknown_,
+    this->connectivity_,
+    this->prevent_corner_cutting_,
+    this->turn_penalty_,
+    grid_path);
+  if (!success || grid_path.empty()) {
+    return sliced_plan;
+  }
+
+  nav_msgs::msg::Path local_plan;
+  local_plan.header = sliced_plan.header;
+  local_plan.header.stamp = this->now();
+  local_plan.poses.push_back(current_pose);
+  for (std::size_t index = 1; index < grid_path.size(); ++index) {
+    local_plan.poses.push_back(
+      this->grid_to_pose(grid_path[index].x, grid_path[index].y, local_plan.header.frame_id));
+  }
+
+  if (local_plan.poses.size() == 1U) {
+    local_plan.poses.push_back(sliced_plan.poses.back());
+  }
+
+  return local_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan(
+  const nav_msgs::msg::Path & source_plan,
+  const geometry_msgs::msg::PoseStamped & current_pose,
+  const std::size_t closest_index) const
+{
+  nav_msgs::msg::Path local_plan;
+  local_plan.header = source_plan.header;
+  if (local_plan.header.frame_id.empty()) {
+    local_plan.header.frame_id = current_pose.header.frame_id;
+  }
+  local_plan.header.stamp = this->now();
   local_plan.poses.push_back(current_pose);
 
   double accumulated_distance = 0.0;
@@ -268,6 +715,146 @@ std::size_t LocalPlanner::find_closest_pose_index(
   }
 
   return closest_index;
+}
+
+void LocalPlanner::rebuild_inflated_map()
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return;
+  }
+
+  this->inflated_map_ = *this->map_occupancy_grid_;
+  const int width = static_cast<int>(this->inflated_map_.info.width);
+  const int height = static_cast<int>(this->inflated_map_.info.height);
+  if (width <= 0 || height <= 0 || this->inflated_map_.data.empty()) {
+    return;
+  }
+
+  const auto original_grid = this->inflated_map_.data;
+  const int inflation_radius_cells = std::max(
+    0, static_cast<int>(std::ceil(this->inflation_radius_ / this->inflated_map_.info.resolution)));
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const int index = y * width + x;
+      if (original_grid[static_cast<std::size_t>(index)] < this->obstacle_threshold_) {
+        continue;
+      }
+
+      for (int dy = -inflation_radius_cells; dy <= inflation_radius_cells; ++dy) {
+        for (int dx = -inflation_radius_cells; dx <= inflation_radius_cells; ++dx) {
+          const int nx = x + dx;
+          const int ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+            continue;
+          }
+
+          const double distance = std::sqrt(static_cast<double>((dx * dx) + (dy * dy)));
+          if (distance > static_cast<double>(inflation_radius_cells)) {
+            continue;
+          }
+
+          const int neighbor_index = ny * width + nx;
+          const int8_t original_value = original_grid[static_cast<std::size_t>(neighbor_index)];
+          if (original_value == kUnknownCellValue) {
+            continue;
+          }
+          if (original_value >= this->obstacle_threshold_) {
+            continue;
+          }
+
+          this->inflated_map_.data[static_cast<std::size_t>(neighbor_index)] = static_cast<int8_t>(
+            std::max<int>(this->inflated_map_.data[static_cast<std::size_t>(neighbor_index)], this->inflation_cost_));
+        }
+      }
+    }
+  }
+}
+
+bool LocalPlanner::world_to_grid(
+  const geometry_msgs::msg::Point & point,
+  int & grid_x,
+  int & grid_y) const
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return false;
+  }
+
+  const auto & info = this->map_occupancy_grid_->info;
+  grid_x = static_cast<int>(std::floor((point.x - info.origin.position.x) / info.resolution));
+  grid_y = static_cast<int>(std::floor((point.y - info.origin.position.y) / info.resolution));
+
+  return
+    grid_x >= 0 && grid_x < static_cast<int>(info.width) &&
+    grid_y >= 0 && grid_y < static_cast<int>(info.height);
+}
+
+geometry_msgs::msg::PoseStamped LocalPlanner::grid_to_pose(
+  const int grid_x,
+  const int grid_y,
+  const std::string & frame_id) const
+{
+  geometry_msgs::msg::PoseStamped pose;
+  pose.header.frame_id = frame_id;
+  pose.header.stamp = this->now();
+  pose.pose.position.x =
+    this->inflated_map_.info.origin.position.x +
+    ((static_cast<double>(grid_x) + 0.5) * this->inflated_map_.info.resolution);
+  pose.pose.position.y =
+    this->inflated_map_.info.origin.position.y +
+    ((static_cast<double>(grid_y) + 0.5) * this->inflated_map_.info.resolution);
+  pose.pose.position.z = 0.0;
+  pose.pose.orientation.w = 1.0;
+  return pose;
+}
+
+bool LocalPlanner::is_occupied_cell(
+  const std::vector<int8_t> & occupancy_grid,
+  const int width,
+  const int height,
+  const int grid_x,
+  const int grid_y) const
+{
+  if (grid_x < 0 || grid_x >= width || grid_y < 0 || grid_y >= height) {
+    return true;
+  }
+
+  const int value = occupancy_grid[static_cast<std::size_t>(grid_y * width + grid_x)];
+  if (value == kUnknownCellValue) {
+    return !this->allow_unknown_;
+  }
+  return value >= this->obstacle_threshold_;
+}
+
+bool LocalPlanner::find_nearest_free_cell(
+  const std::vector<int8_t> & occupancy_grid,
+  const int width,
+  const int height,
+  int & grid_x,
+  int & grid_y,
+  const int max_radius) const
+{
+  if (!this->is_occupied_cell(occupancy_grid, width, height, grid_x, grid_y)) {
+    return true;
+  }
+
+  for (int radius = 1; radius <= max_radius; ++radius) {
+    for (int dy = -radius; dy <= radius; ++dy) {
+      for (int dx = -radius; dx <= radius; ++dx) {
+        const int candidate_x = grid_x + dx;
+        const int candidate_y = grid_y + dy;
+        if (!this->is_occupied_cell(
+            occupancy_grid, width, height, candidate_x, candidate_y))
+        {
+          grid_x = candidate_x;
+          grid_y = candidate_y;
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 geometry_msgs::msg::PoseStamped LocalPlanner::interpolate_pose(

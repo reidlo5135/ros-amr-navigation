@@ -8,10 +8,18 @@
 namespace amr_global_planner
 {
 
+namespace
+{
+
+constexpr int kUnknownCellValue = -1;
+
+}  // namespace
+
 PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("global_planner", options),
   map_topic_(""),
   computed_plan_topic_(""),
+  inflated_map_topic_(""),
   plan_segment_service_name_("/amr/global_planner/plan_segment"),
   plan_route_service_name_("/amr/global_planner/plan_route"),
   obstacle_threshold_(50),
@@ -19,10 +27,15 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   allow_unknown_(false),
   simplify_path_(true),
   prevent_corner_cutting_(true),
-  turn_penalty_(0.5)
+  turn_penalty_(0.5),
+  inflation_radius_(0.20),
+  inflation_cost_(80),
+  publish_inflated_map_(true),
+  nearest_free_search_radius_cells_(4)
 {
   this->declare_parameter("topics.map", this->map_topic_);
   this->declare_parameter("topics.plan", this->computed_plan_topic_);
+  this->declare_parameter("topics.inflated_map", this->inflated_map_topic_);
   this->declare_parameter("services.segment", this->plan_segment_service_name_);
   this->declare_parameter("services.route", this->plan_route_service_name_);
   this->declare_parameter("planner.obstacle_threshold", this->obstacle_threshold_);
@@ -32,6 +45,10 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
+  this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter("inflation.radius", this->inflation_radius_);
+  this->declare_parameter("inflation.cost", this->inflation_cost_);
+  this->declare_parameter("inflation.publish", this->publish_inflated_map_);
 }
 
 PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle::State & state)
@@ -39,6 +56,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   (void)state;
   this->get_parameter("topics.map", this->map_topic_);
   this->get_parameter("topics.plan", this->computed_plan_topic_);
+  this->get_parameter("topics.inflated_map", this->inflated_map_topic_);
   this->get_parameter("services.segment", this->plan_segment_service_name_);
   this->get_parameter("services.route", this->plan_route_service_name_);
   this->get_parameter("planner.obstacle_threshold", this->obstacle_threshold_);
@@ -48,13 +66,22 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   this->get_parameter(
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->get_parameter("planner.turn_penalty", this->turn_penalty_);
+  this->get_parameter(
+    "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter("inflation.radius", this->inflation_radius_);
+  this->get_parameter("inflation.cost", this->inflation_cost_);
+  this->get_parameter("inflation.publish", this->publish_inflated_map_);
 
-  if (this->map_topic_.empty() || this->computed_plan_topic_.empty()) {
+  if (
+    this->map_topic_.empty() || this->computed_plan_topic_.empty() ||
+    this->inflated_map_topic_.empty())
+  {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Global planner topics must not be empty: map='%s' plan='%s'",
+      "Global planner topics must not be empty: map='%s' plan='%s' inflated_map='%s'",
       this->map_topic_.c_str(),
-      this->computed_plan_topic_.c_str());
+      this->computed_plan_topic_.c_str(),
+      this->inflated_map_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -70,6 +97,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
     this->prevent_corner_cutting_);
 
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+  this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->planned_path_ = nav_msgs::msg::Path();
 
   this->map_subscription_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -80,6 +108,9 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
     });
   this->computed_plan_publisher_ = this->create_publisher<nav_msgs::msg::Path>(
     this->computed_plan_topic_, rclcpp::SystemDefaultsQoS());
+  this->inflated_map_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
+    this->inflated_map_topic_,
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
   this->plan_segment_service_ = this->create_service<amr_msgs::srv::PlanSegment>(
     this->plan_segment_service_name_,
@@ -98,8 +129,10 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured global planner with map topic '%s' and services '%s'/'%s'",
+    "Configured global planner with map topic '%s', plan '%s', inflated map '%s' and services '%s'/'%s'",
     this->map_topic_.c_str(),
+    this->computed_plan_topic_.c_str(),
+    this->inflated_map_topic_.c_str(),
     this->plan_segment_service_name_.c_str(),
     this->plan_route_service_name_.c_str());
   return CallbackReturn::SUCCESS;
@@ -111,6 +144,15 @@ PlannerServer::CallbackReturn PlannerServer::on_activate(const rclcpp_lifecycle:
   if (this->computed_plan_publisher_) {
     this->computed_plan_publisher_->on_activate();
   }
+  if (this->inflated_map_publisher_) {
+    this->inflated_map_publisher_->on_activate();
+  }
+  if (
+    this->publish_inflated_map_ && this->inflated_map_publisher_ &&
+    !this->inflated_map_.data.empty())
+  {
+    this->inflated_map_publisher_->publish(this->inflated_map_);
+  }
   RCLCPP_INFO(this->get_logger(), "Activated global planner");
   return CallbackReturn::SUCCESS;
 }
@@ -121,6 +163,9 @@ PlannerServer::CallbackReturn PlannerServer::on_deactivate(const rclcpp_lifecycl
   if (this->computed_plan_publisher_) {
     this->computed_plan_publisher_->on_deactivate();
   }
+  if (this->inflated_map_publisher_) {
+    this->inflated_map_publisher_->on_deactivate();
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -129,9 +174,11 @@ PlannerServer::CallbackReturn PlannerServer::on_cleanup(const rclcpp_lifecycle::
   (void)state;
   this->a_star_planner_.reset();
   this->map_occupancy_grid_.reset();
+  this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->planned_path_ = nav_msgs::msg::Path();
   this->map_subscription_.reset();
   this->computed_plan_publisher_.reset();
+  this->inflated_map_publisher_.reset();
   this->plan_segment_service_.reset();
   this->plan_route_service_.reset();
   return CallbackReturn::SUCCESS;
@@ -142,9 +189,11 @@ PlannerServer::CallbackReturn PlannerServer::on_shutdown(const rclcpp_lifecycle:
   (void)state;
   this->a_star_planner_.reset();
   this->map_occupancy_grid_.reset();
+  this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->planned_path_ = nav_msgs::msg::Path();
   this->map_subscription_.reset();
   this->computed_plan_publisher_.reset();
+  this->inflated_map_publisher_.reset();
   this->plan_segment_service_.reset();
   this->plan_route_service_.reset();
   return CallbackReturn::SUCCESS;
@@ -221,7 +270,7 @@ bool PlannerServer::compute_plan_between_poses(
     !this->map_occupancy_grid_ ||
     this->map_occupancy_grid_->info.width == 0 ||
     this->map_occupancy_grid_->info.height == 0 ||
-    this->map_occupancy_grid_->data.empty())
+    this->inflated_map_.data.empty())
   {
     message = "Map is not available";
     return false;
@@ -239,10 +288,24 @@ bool PlannerServer::compute_plan_between_poses(
     return false;
   }
 
+  const int width = static_cast<int>(this->inflated_map_.info.width);
+  const int height = static_cast<int>(this->inflated_map_.info.height);
+  if (
+    !this->find_nearest_free_cell(
+      this->inflated_map_.data, width, height, start_cell,
+      this->nearest_free_search_radius_cells_) ||
+    !this->find_nearest_free_cell(
+      this->inflated_map_.data, width, height, goal_cell,
+      this->nearest_free_search_radius_cells_))
+  {
+    message = "Start or goal cell is occupied in inflated global costmap";
+    return false;
+  }
+
   const auto result = this->a_star_planner_->plan(
-    this->map_occupancy_grid_->data,
-    static_cast<int>(this->map_occupancy_grid_->info.width),
-    static_cast<int>(this->map_occupancy_grid_->info.height),
+    this->inflated_map_.data,
+    width,
+    height,
     start_cell,
     goal_cell);
 
@@ -297,6 +360,105 @@ geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const planner::Grid
   return pose;
 }
 
+void PlannerServer::rebuild_inflated_map()
+{
+  if (!this->map_occupancy_grid_) {
+    return;
+  }
+
+  this->inflated_map_ = *this->map_occupancy_grid_;
+  const int width = static_cast<int>(this->inflated_map_.info.width);
+  const int height = static_cast<int>(this->inflated_map_.info.height);
+  if (width <= 0 || height <= 0 || this->inflated_map_.data.empty()) {
+    return;
+  }
+
+  const auto original_grid = this->inflated_map_.data;
+  const int inflation_radius_cells = std::max(
+    0, static_cast<int>(std::ceil(this->inflation_radius_ / this->inflated_map_.info.resolution)));
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const int index = y * width + x;
+      if (original_grid[static_cast<std::size_t>(index)] < this->obstacle_threshold_) {
+        continue;
+      }
+
+      for (int dy = -inflation_radius_cells; dy <= inflation_radius_cells; ++dy) {
+        for (int dx = -inflation_radius_cells; dx <= inflation_radius_cells; ++dx) {
+          const int nx = x + dx;
+          const int ny = y + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+            continue;
+          }
+
+          const double distance = std::sqrt(static_cast<double>((dx * dx) + (dy * dy)));
+          if (distance > static_cast<double>(inflation_radius_cells)) {
+            continue;
+          }
+
+          const int neighbor_index = ny * width + nx;
+          const int8_t original_value = original_grid[static_cast<std::size_t>(neighbor_index)];
+          if (original_value == kUnknownCellValue) {
+            continue;
+          }
+          if (original_value >= this->obstacle_threshold_) {
+            continue;
+          }
+
+          this->inflated_map_.data[static_cast<std::size_t>(neighbor_index)] =
+            static_cast<int8_t>(std::max<int>(
+            this->inflated_map_.data[static_cast<std::size_t>(neighbor_index)],
+            this->inflation_cost_));
+        }
+      }
+    }
+  }
+}
+
+bool PlannerServer::is_occupied_cell(
+  const std::vector<int8_t> & occupancy_grid,
+  const int width,
+  const int height,
+  const planner::GridCell & cell) const
+{
+  if (cell.x < 0 || cell.x >= width || cell.y < 0 || cell.y >= height) {
+    return true;
+  }
+
+  const int value = occupancy_grid[static_cast<std::size_t>((cell.y * width) + cell.x)];
+  if (value == kUnknownCellValue) {
+    return !this->allow_unknown_;
+  }
+  return value >= this->obstacle_threshold_;
+}
+
+bool PlannerServer::find_nearest_free_cell(
+  const std::vector<int8_t> & occupancy_grid,
+  const int width,
+  const int height,
+  planner::GridCell & cell,
+  const int max_radius) const
+{
+  if (!this->is_occupied_cell(occupancy_grid, width, height, cell)) {
+    return true;
+  }
+
+  for (int radius = 1; radius <= max_radius; ++radius) {
+    for (int dy = -radius; dy <= radius; ++dy) {
+      for (int dx = -radius; dx <= radius; ++dx) {
+        const planner::GridCell candidate{cell.x + dx, cell.y + dy};
+        if (!this->is_occupied_cell(occupancy_grid, width, height, candidate)) {
+          cell = candidate;
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 std::vector<planner::GridCell> PlannerServer::simplify_grid_path(
   const std::vector<planner::GridCell> & grid_path) const
 {
@@ -335,11 +497,10 @@ nav_msgs::msg::Path PlannerServer::create_path_message(
     return path;
   }
 
-  const auto simplified_grid_path = this->simplify_grid_path(grid_path);
   path.header = this->map_occupancy_grid_->header;
   path.header.stamp = this->now();
-  path.poses.reserve(simplified_grid_path.size());
-  for (const auto & cell : simplified_grid_path) {
+  path.poses.reserve(grid_path.size());
+  for (const auto & cell : grid_path) {
     path.poses.push_back(this->grid_to_world(cell));
   }
 
@@ -372,6 +533,14 @@ nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::
 void PlannerServer::map_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map)
 {
   this->map_occupancy_grid_ = map;
+  this->rebuild_inflated_map();
+
+  if (
+    this->publish_inflated_map_ && this->inflated_map_publisher_ &&
+    this->inflated_map_publisher_->is_activated())
+  {
+    this->inflated_map_publisher_->publish(this->inflated_map_);
+  }
 }
 
 }  // namespace amr_global_planner

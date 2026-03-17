@@ -50,7 +50,8 @@
   ros__parameters:
     topics:
       map: "/amr/map/data"
-      plan: "/amr/planner/plan"
+      plan: "/amr/planner/global"
+      inflated_map: "/amr/costmap/global"
     services:
       segment: "/amr/global_planner/plan_segment"
       route: "/amr/global_planner/plan_route"
@@ -61,42 +62,58 @@
       simplify_path: false
       prevent_corner_cutting: true
       turn_penalty: 0.5
+      nearest_free_search_radius_cells: 4
+    inflation:
+      radius: 0.20
+      cost: 80
+      publish: true
 
 /amr/local_planner:
   ros__parameters:
     topics:
       command: "/amr/motion/command"
       pose: "/amr/localization/pose"
-      plan: "/amr/local_planner/plan"
+      map: "/amr/map/data"
+      plan: "/amr/planner/local"
+      inflated_map: "/amr/costmap/local"
     planner:
       publish_period_ms: 100
       lookahead_distance: 0.8
       goal_tolerance: 0.15
+      obstacle_threshold: 50
+      connectivity: 8
+      allow_unknown: false
+      prevent_corner_cutting: true
+      turn_penalty: 0.5
+      nearest_free_search_radius_cells: 4
+    inflation:
+      radius: 0.20
+      cost: 80
+      publish: true
 
 /amr/motion_controller:
   ros__parameters:
     topics:
       command: "/amr/motion/command"
-      plan: "/amr/local_planner/plan"
+      plan: "/amr/planner/local"
       pose: "/amr/localization/pose"
       scan: "/scan"
       status: "/amr/motion/status"
       velocity: "/cmd_vel"
     control:
       frequency: 10.0
-      linear_speed: 0.09
+      linear_speed: 0.075
       min_linear_speed: 0.05
       angular_gain: 2.0
-      max_angular_speed: 0.7
-      distance_tolerance: 0.3
-      remaining_distance_tolerance: 0.3
+      max_angular_speed: 0.65
+      distance_tolerance: 0.1
       rotate_in_place_threshold: 0.6
       rotate_in_place_goal_distance: 0.35
       heading_slowdown_threshold: 0.2
       min_heading_motion_scale: 0.15
     obstacle_detection:
       enabled: true
-      stop_distance: 0.90
+      stop_distance: 0.3
       forward_angle_deg: 30.0
       minimum_points: 3
     velocity_controller:
@@ -111,7 +128,7 @@
         ki: 0.00
         kd: 0.02
         integral_limit: 0.30
-      max_linear_accel: 0.08
+      max_linear_accel: 0.09
       max_angular_accel: 0.8
 
 /amr/navigator:
@@ -129,3 +146,12 @@
     execution:
       planner_wait_timeout_ms: 2000
       feedback_period_ms: 100
+
+/amr/rviz_bridge:
+  ros__parameters:
+    topics:
+      goal_pose: "/amr/rviz/goal"
+    actions:
+      navigate_to_pose: "/amr/navigator/navigate_to_pose"
+    execution:
+      action_wait_timeout_ms: 1000
