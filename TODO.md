@@ -19,6 +19,33 @@
   - 불필요한 `route_id`, waypoint 관련 항목 제거 후 연동 점검
 - 실제 주행 기준 bringup 연동 점검
   - `goal -> global plan -> local plan -> cmd_vel` 흐름 재확인
+- `amr_local_planner` 고도화
+  - 현재 global plan slice 수준의 local plan에서 벗어나도록 구조 개선
+  - costmap / inflation 개념을 도입해 `global_plan -> inflated local planning` 흐름 검토
+  - 주행 방향성, clearance, lookahead target 품질 개선
+- obstacle 감지 이후 local 재계산 / 회피 주행 검토
+  - 단순 정지에서 끝나지 않고 obstacle 상황에서 local plan 재생성 가능성 검토
+  - 재계산 후 우회 또는 회피 주행의 최소 구현 방향 설계
+  - 난이도를 고려해 `정지 -> 재계산 -> 재시도`부터 단계적으로 접근
+
+# 2026-03-18
+
+- `amr_motion_controller` local plan tracking issue 해결
+  - local plan 마지막 점만 따라가며 corner cutting 하는 현상 수정
+  - 현재 위치 기준 nearest point 이후의 lookahead target 추종 방식 검토
+  - 실제 odom 궤적이 local/global costmap clearance를 유지하도록 보정
+- obstacle 감지 시 local plan 재계산 및 회피 주행 구현
+  - `obstacle_detected` 발생 시 단순 정지에서 끝나지 않도록 local replan 흐름 추가
+  - `정지 -> local recompute -> 재시도` 최소 동작 먼저 구현
+  - 필요 시 회피 실패/재시도 횟수 제한 및 fallback 동작 정의
+- Non-SLAM 상황의 임의 주행 및 동시 SLAM 매핑 검토
+  - 저장된 map 없이도 일정 시간 임의 주행 가능한 흐름 설계
+  - 주행 중 `slam_toolbox` 기반 실시간 매핑 연동 가능성 검토
+  - 저가형 로봇 청소기 수준의 "막 주행하며 맵 생성" 운용 흐름 정리
+- global localization 구현 검토
+  - 수동 `initial_pose` 없이 시작 가능한 global localization 흐름 설계
+  - map 전체 particle 분포 초기화 및 scan 기반 수렴 절차 검토
+  - 자동 초기 위치 추정 성공 조건과 실패 시 fallback 동작 정의
 
 # 로드맵
 
