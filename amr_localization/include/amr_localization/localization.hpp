@@ -46,6 +46,7 @@ private:
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_initial_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr message);
+  void publish_auto_initial_pose();
   void initialize_particles(const geometry_msgs::msg::PoseStamped & pose);
   void apply_motion_update(
     const geometry_msgs::msg::PoseStamped & previous_odom_pose,
@@ -73,8 +74,10 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_subscription_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr estimated_pose_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr estimated_odometry_publisher_;
+  rclcpp::TimerBase::SharedPtr auto_initial_pose_timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> transform_broadcaster_;
 
   std::string odom_topic_;
@@ -90,6 +93,11 @@ private:
   double initial_x_;
   double initial_y_;
   double initial_yaw_;
+  bool auto_initial_pose_enabled_;
+  double auto_initial_pose_delay_sec_;
+  double auto_initial_pose_covariance_x_;
+  double auto_initial_pose_covariance_y_;
+  double auto_initial_pose_covariance_yaw_;
   int particle_count_;
   double initial_particle_std_xy_;
   double initial_particle_std_yaw_;
@@ -116,6 +124,7 @@ private:
   bool has_previous_odom_;
   bool has_initial_pose_;
   bool particles_initialized_;
+  bool auto_initial_pose_published_;
 };
 
 }  // namespace amr_localization

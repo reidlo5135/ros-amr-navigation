@@ -26,6 +26,13 @@
       x: 0.0
       y: 0.0
       yaw: 0.0
+    auto_initial_pose:
+      enabled: true
+      delay_sec: 3.0
+      covariance:
+        x: 0.25
+        y: 0.25
+        yaw: 0.06853891945200942
     amcl:
       particle_count: 200
       initial_particle_std_xy: 0.15
@@ -72,16 +79,26 @@
       command: "/amr/motion/command"
       plan: "/amr/local_planner/plan"
       pose: "/amr/localization/pose"
+      scan: "/scan"
       status: "/amr/motion/status"
       velocity: "/cmd_vel"
     control:
       frequency: 10.0
-      linear_speed: 0.07
+      linear_speed: 0.09
+      min_linear_speed: 0.05
       angular_gain: 2.0
-      max_angular_speed: 0.8
-      distance_tolerance: 0.15
+      max_angular_speed: 0.7
+      distance_tolerance: 0.3
+      remaining_distance_tolerance: 0.3
       rotate_in_place_threshold: 0.6
+      rotate_in_place_goal_distance: 0.35
       heading_slowdown_threshold: 0.2
+      min_heading_motion_scale: 0.15
+    obstacle_detection:
+      enabled: true
+      stop_distance: 0.90
+      forward_angle_deg: 30.0
+      minimum_points: 3
     velocity_controller:
       mode: "pid"
       linear:

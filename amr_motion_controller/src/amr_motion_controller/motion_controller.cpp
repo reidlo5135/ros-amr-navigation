@@ -13,37 +13,63 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   command_topic_(""),
   local_plan_topic_(""),
   current_pose_topic_(""),
+  scan_topic_(""),
   status_topic_(""),
   cmd_vel_topic_(""),
   control_frequency_(10.0),
   linear_speed_(0.07),
+  min_linear_speed_(0.05),
   angular_gain_(1.5),
   max_angular_speed_(0.8),
   distance_tolerance_(0.15),
+  remaining_distance_tolerance_(0.3),
   rotate_in_place_threshold_(0.6),
+  rotate_in_place_goal_distance_(0.35),
   heading_slowdown_threshold_(0.2),
+  min_heading_motion_scale_(0.15),
   max_linear_accel_(0.08),
   max_angular_accel_(0.8),
+  obstacle_detection_enabled_(true),
+  obstacle_stop_distance_(3.0),
+  obstacle_forward_angle_deg_(25.0),
+  obstacle_min_points_(3),
   velocity_control_mode_(VelocityControlMode::PID),
   has_command_(false),
   has_local_plan_(false),
-  has_current_pose_(false)
+  has_current_pose_(false),
+  has_latest_scan_(false)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.status", this->status_topic_);
   this->declare_parameter("topics.velocity", this->cmd_vel_topic_);
 
   this->declare_parameter("control.frequency", this->control_frequency_);
   this->declare_parameter("control.linear_speed", this->linear_speed_);
+  this->declare_parameter("control.min_linear_speed", this->min_linear_speed_);
   this->declare_parameter("control.angular_gain", this->angular_gain_);
   this->declare_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->declare_parameter("control.distance_tolerance", this->distance_tolerance_);
   this->declare_parameter(
+    "control.remaining_distance_tolerance", this->remaining_distance_tolerance_);
+  this->declare_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->declare_parameter(
+    "control.rotate_in_place_goal_distance", this->rotate_in_place_goal_distance_);
+  this->declare_parameter(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
+  this->declare_parameter(
+    "control.min_heading_motion_scale", this->min_heading_motion_scale_);
+
+  this->declare_parameter("obstacle_detection.enabled", this->obstacle_detection_enabled_);
+  this->declare_parameter(
+    "obstacle_detection.stop_distance", this->obstacle_stop_distance_);
+  this->declare_parameter(
+    "obstacle_detection.forward_angle_deg", this->obstacle_forward_angle_deg_);
+  this->declare_parameter(
+    "obstacle_detection.minimum_points", this->obstacle_min_points_);
 
   this->declare_parameter("velocity_controller.mode", std::string("pid"));
   this->declare_parameter("velocity_controller.linear.kp", 0.35);
@@ -65,18 +91,34 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.status", this->status_topic_);
   this->get_parameter("topics.velocity", this->cmd_vel_topic_);
 
   this->get_parameter("control.frequency", this->control_frequency_);
   this->get_parameter("control.linear_speed", this->linear_speed_);
+  this->get_parameter("control.min_linear_speed", this->min_linear_speed_);
   this->get_parameter("control.angular_gain", this->angular_gain_);
   this->get_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->get_parameter("control.distance_tolerance", this->distance_tolerance_);
   this->get_parameter(
+    "control.remaining_distance_tolerance", this->remaining_distance_tolerance_);
+  this->get_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->get_parameter(
+    "control.rotate_in_place_goal_distance", this->rotate_in_place_goal_distance_);
+  this->get_parameter(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
+  this->get_parameter(
+    "control.min_heading_motion_scale", this->min_heading_motion_scale_);
+
+  this->get_parameter("obstacle_detection.enabled", this->obstacle_detection_enabled_);
+  this->get_parameter(
+    "obstacle_detection.stop_distance", this->obstacle_stop_distance_);
+  this->get_parameter(
+    "obstacle_detection.forward_angle_deg", this->obstacle_forward_angle_deg_);
+  this->get_parameter(
+    "obstacle_detection.minimum_points", this->obstacle_min_points_);
 
   this->velocity_control_mode_ = this->parse_velocity_control_mode(
     this->get_parameter("velocity_controller.mode").as_string());
@@ -103,15 +145,17 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   if (
     this->command_topic_.empty() || this->local_plan_topic_.empty() ||
-    this->current_pose_topic_.empty() || this->status_topic_.empty() ||
+    this->current_pose_topic_.empty() || this->scan_topic_.empty() ||
+    this->status_topic_.empty() ||
     this->cmd_vel_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' status='%s' cmd_vel='%s'",
+      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' scan='%s' status='%s' cmd_vel='%s'",
       this->command_topic_.c_str(),
       this->local_plan_topic_.c_str(),
       this->current_pose_topic_.c_str(),
+      this->scan_topic_.c_str(),
       this->status_topic_.c_str(),
       this->cmd_vel_topic_.c_str());
     return CallbackReturn::FAILURE;
@@ -133,6 +177,11 @@ MotionController::CallbackReturn MotionController::on_configure(
     this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
+    });
+  this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    this->scan_topic_, rclcpp::SensorDataQoS(),
+    [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
+      this->handle_scan(message);
     });
   this->cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
     this->cmd_vel_topic_, rclcpp::SystemDefaultsQoS());
@@ -196,16 +245,19 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
   this->has_current_pose_ = false;
+  this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
   return CallbackReturn::SUCCESS;
 }
@@ -218,16 +270,19 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
   this->has_current_pose_ = false;
+  this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
   return CallbackReturn::SUCCESS;
 }
@@ -236,6 +291,7 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
 {
   this->latest_command_ = *message;
   this->has_command_ = true;
+  this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
   RCLCPP_INFO(
     this->get_logger(),
@@ -263,6 +319,12 @@ void MotionController::handle_current_pose(const geometry_msgs::msg::PoseStamped
   this->has_current_pose_ = true;
 }
 
+void MotionController::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message)
+{
+  this->latest_scan_ = *message;
+  this->has_latest_scan_ = true;
+}
+
 void MotionController::publish_control()
 {
   if (
@@ -274,6 +336,7 @@ void MotionController::publish_control()
 
   geometry_msgs::msg::Twist desired_twist;
   geometry_msgs::msg::Twist output_twist;
+  double debug_remaining_distance = 0.0;
   amr_msgs::msg::MotionStatus status;
   status.header.stamp = this->now();
   status.header.frame_id =
@@ -282,8 +345,11 @@ void MotionController::publish_control()
 
   if (this->has_command_ && this->has_local_plan_ && this->has_current_pose_) {
     const auto tracking_target = this->select_tracking_target();
-    const auto remaining_distance = this->estimate_remaining_distance(this->latest_local_plan_);
-    const auto goal_distance = this->pose_distance(this->current_pose_, this->latest_command_.goal_pose);
+    const auto local_plan_remaining_distance =
+      this->estimate_remaining_distance(this->latest_local_plan_);
+    const auto goal_distance = this->pose_distance(
+      this->current_pose_, this->latest_command_.goal_pose);
+    debug_remaining_distance = std::max(local_plan_remaining_distance, goal_distance);
     const auto current_yaw = this->quaternion_yaw(this->current_pose_.pose.orientation);
     const auto target_heading = std::atan2(
       tracking_target.pose.position.y - this->current_pose_.pose.position.y,
@@ -293,44 +359,66 @@ void MotionController::publish_control()
 
     status.command_id = this->latest_command_.command_id;
     status.active = true;
+    status.obstacle_detected = this->is_obstacle_detected();
     status.goal_reached =
       goal_distance <= this->distance_tolerance_ ||
+      goal_distance <= this->remaining_distance_tolerance_ ||
       this->latest_local_plan_.poses.empty();
     status.current_pose = this->current_pose_;
-    status.remaining_distance = remaining_distance;
+    status.remaining_distance = goal_distance;
     status.heading_error = heading_error;
 
     if (status.goal_reached) {
       this->has_command_ = false;
       this->has_local_plan_ = false;
+      this->current_twist_ = geometry_msgs::msg::Twist();
       this->reset_velocity_controller_state();
       RCLCPP_INFO(
         this->get_logger(),
         "Goal reached for command %u",
         status.command_id);
+    } else if (status.obstacle_detected) {
+      desired_twist = geometry_msgs::msg::Twist();
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        1000,
+        "Obstacle detected in forward stop zone; holding cmd_vel at zero");
     } else {
       desired_twist.angular.z = this->clamp(
         this->angular_gain_ * heading_error,
         -this->max_angular_speed_,
         this->max_angular_speed_);
 
-      if (abs_heading_error <= this->rotate_in_place_threshold_) {
-        const double base_linear_speed = std::max(0.0, std::min(this->linear_speed_, goal_distance));
-        if (abs_heading_error <= this->heading_slowdown_threshold_) {
-          desired_twist.linear.x = base_linear_speed;
-        } else {
-          const double error_window = std::max(
-            this->rotate_in_place_threshold_ - this->heading_slowdown_threshold_,
+      const bool rotate_in_place_only =
+        goal_distance <= this->rotate_in_place_goal_distance_ &&
+        abs_heading_error > this->rotate_in_place_threshold_;
+      if (!rotate_in_place_only) {
+        const double base_linear_speed = std::max(
+          0.0, std::min(this->linear_speed_, goal_distance));
+        double scale = 1.0;
+        if (abs_heading_error > this->heading_slowdown_threshold_) {
+          const double scale_window = std::max(
+            3.14159265358979323846 - this->heading_slowdown_threshold_,
             1e-6);
-          const double scale =
-            1.0 - ((abs_heading_error - this->heading_slowdown_threshold_) / error_window);
-          desired_twist.linear.x = base_linear_speed * this->clamp(scale, 0.0, 1.0);
+          scale = 1.0 - (
+            (abs_heading_error - this->heading_slowdown_threshold_) /
+            scale_window);
+        }
+
+        scale = this->clamp(scale, this->min_heading_motion_scale_, 1.0);
+        desired_twist.linear.x = base_linear_speed * scale;
+        if (goal_distance > this->rotate_in_place_goal_distance_) {
+          desired_twist.linear.x = std::max(
+            std::min(this->min_linear_speed_, base_linear_speed),
+            desired_twist.linear.x);
         }
       }
     }
   } else {
     status.active = false;
     status.goal_reached = true;
+    status.obstacle_detected = false;
   }
 
   this->current_twist_ = this->apply_velocity_controller(this->current_twist_, desired_twist);
@@ -350,7 +438,7 @@ void MotionController::publish_control()
       desired_twist.angular.z,
       output_twist.linear.x,
       output_twist.angular.z,
-      status.remaining_distance,
+      debug_remaining_distance,
       status.heading_error);
   }
 }
@@ -540,6 +628,45 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target() const
     return this->latest_local_plan_.poses.back();
   }
   return this->latest_command_.goal_pose;
+}
+
+bool MotionController::is_obstacle_detected() const
+{
+  if (!this->obstacle_detection_enabled_ || !this->has_latest_scan_) {
+    return false;
+  }
+
+  const double half_angle_rad =
+    (this->obstacle_forward_angle_deg_ * 3.14159265358979323846 / 180.0) * 0.5;
+  int hit_count = 0;
+
+  for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
+    const double angle =
+      this->latest_scan_.angle_min +
+      (static_cast<double>(index) * this->latest_scan_.angle_increment);
+    if (std::abs(angle) > half_angle_rad) {
+      continue;
+    }
+
+    const double range = this->latest_scan_.ranges[index];
+    if (!std::isfinite(range)) {
+      continue;
+    }
+    if (
+      range < this->latest_scan_.range_min ||
+      range > this->latest_scan_.range_max)
+    {
+      continue;
+    }
+    if (range <= this->obstacle_stop_distance_) {
+      ++hit_count;
+      if (hit_count >= this->obstacle_min_points_) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 double MotionController::pose_distance(

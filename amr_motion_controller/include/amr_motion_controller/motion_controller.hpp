@@ -10,6 +10,7 @@
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 
 namespace amr_motion_controller
 {
@@ -54,6 +55,7 @@ private:
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
   void handle_local_plan(const nav_msgs::msg::Path::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
+  void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void publish_control();
   void reset_velocity_controller_state();
   void publish_zero_twist();
@@ -73,6 +75,7 @@ private:
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
+  bool is_obstacle_detected() const;
   double pose_distance(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal) const;
@@ -80,6 +83,7 @@ private:
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_plan_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -87,17 +91,26 @@ private:
   std::string command_topic_;
   std::string local_plan_topic_;
   std::string current_pose_topic_;
+  std::string scan_topic_;
   std::string status_topic_;
   std::string cmd_vel_topic_;
   double control_frequency_;
   double linear_speed_;
+  double min_linear_speed_;
   double angular_gain_;
   double max_angular_speed_;
   double distance_tolerance_;
+  double remaining_distance_tolerance_;
   double rotate_in_place_threshold_;
+  double rotate_in_place_goal_distance_;
   double heading_slowdown_threshold_;
+  double min_heading_motion_scale_;
   double max_linear_accel_;
   double max_angular_accel_;
+  bool obstacle_detection_enabled_;
+  double obstacle_stop_distance_;
+  double obstacle_forward_angle_deg_;
+  int obstacle_min_points_;
   VelocityControlMode velocity_control_mode_;
   AxisControllerConfig linear_controller_config_;
   AxisControllerConfig angular_controller_config_;
@@ -107,9 +120,11 @@ private:
   amr_msgs::msg::MotionCommand latest_command_;
   nav_msgs::msg::Path latest_local_plan_;
   geometry_msgs::msg::PoseStamped current_pose_;
+  sensor_msgs::msg::LaserScan latest_scan_;
   bool has_command_;
   bool has_local_plan_;
   bool has_current_pose_;
+  bool has_latest_scan_;
 };
 
 }  // namespace amr_motion_controller

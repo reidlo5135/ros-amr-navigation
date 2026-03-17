@@ -1,6 +1,7 @@
 #include "amr_localization/localization.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 
@@ -29,6 +30,11 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   initial_x_(0.0),
   initial_y_(0.0),
   initial_yaw_(0.0),
+  auto_initial_pose_enabled_(true),
+  auto_initial_pose_delay_sec_(3.0),
+  auto_initial_pose_covariance_x_(0.25),
+  auto_initial_pose_covariance_y_(0.25),
+  auto_initial_pose_covariance_yaw_(0.06853891945200942),
   particle_count_(200),
   initial_particle_std_xy_(0.15),
   initial_particle_std_yaw_(0.15),
@@ -47,7 +53,8 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   has_map_(false),
   has_previous_odom_(false),
   has_initial_pose_(false),
-  particles_initialized_(false)
+  particles_initialized_(false),
+  auto_initial_pose_published_(false)
 {
   this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
@@ -61,6 +68,14 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter("start_pose.x", this->initial_x_);
   this->declare_parameter("start_pose.y", this->initial_y_);
   this->declare_parameter("start_pose.yaw", this->initial_yaw_);
+  this->declare_parameter("auto_initial_pose.enabled", this->auto_initial_pose_enabled_);
+  this->declare_parameter("auto_initial_pose.delay_sec", this->auto_initial_pose_delay_sec_);
+  this->declare_parameter(
+    "auto_initial_pose.covariance.x", this->auto_initial_pose_covariance_x_);
+  this->declare_parameter(
+    "auto_initial_pose.covariance.y", this->auto_initial_pose_covariance_y_);
+  this->declare_parameter(
+    "auto_initial_pose.covariance.yaw", this->auto_initial_pose_covariance_yaw_);
   this->declare_parameter("amcl.particle_count", this->particle_count_);
   this->declare_parameter("amcl.initial_particle_std_xy", this->initial_particle_std_xy_);
   this->declare_parameter("amcl.initial_particle_std_yaw", this->initial_particle_std_yaw_);
@@ -90,6 +105,14 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("start_pose.x", this->initial_x_);
   this->get_parameter("start_pose.y", this->initial_y_);
   this->get_parameter("start_pose.yaw", this->initial_yaw_);
+  this->get_parameter("auto_initial_pose.enabled", this->auto_initial_pose_enabled_);
+  this->get_parameter("auto_initial_pose.delay_sec", this->auto_initial_pose_delay_sec_);
+  this->get_parameter(
+    "auto_initial_pose.covariance.x", this->auto_initial_pose_covariance_x_);
+  this->get_parameter(
+    "auto_initial_pose.covariance.y", this->auto_initial_pose_covariance_y_);
+  this->get_parameter(
+    "auto_initial_pose.covariance.yaw", this->auto_initial_pose_covariance_yaw_);
   this->get_parameter("amcl.particle_count", this->particle_count_);
   this->get_parameter("amcl.initial_particle_std_xy", this->initial_particle_std_xy_);
   this->get_parameter("amcl.initial_particle_std_yaw", this->initial_particle_std_yaw_);
@@ -152,6 +175,9 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     [this](const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr message) {
       this->handle_initial_pose(message);
     });
+  this->initial_pose_publisher_ =
+    this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    this->initial_pose_topic_, rclcpp::SystemDefaultsQoS());
   this->estimated_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
     this->estimated_pose_topic_, rclcpp::SystemDefaultsQoS());
   this->estimated_odometry_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
@@ -182,6 +208,13 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
     this->update_estimated_pose_from_particles(this->now());
     this->publish_outputs(this->now());
   }
+
+  if (this->auto_initial_pose_enabled_ && !this->auto_initial_pose_published_) {
+    this->auto_initial_pose_timer_ = this->create_wall_timer(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::duration<double>(std::max(0.0, this->auto_initial_pose_delay_sec_))),
+      [this]() { this->publish_auto_initial_pose(); });
+  }
   RCLCPP_INFO(this->get_logger(), "Activated localization");
   return CallbackReturn::SUCCESS;
 }
@@ -195,6 +228,9 @@ Localization::CallbackReturn Localization::on_deactivate(const rclcpp_lifecycle:
   if (this->estimated_odometry_publisher_) {
     this->estimated_odometry_publisher_->on_deactivate();
   }
+  if (this->auto_initial_pose_timer_) {
+    this->auto_initial_pose_timer_->cancel();
+  }
   RCLCPP_INFO(this->get_logger(), "Deactivated localization");
   return CallbackReturn::SUCCESS;
 }
@@ -206,8 +242,10 @@ Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::St
   this->scan_subscription_.reset();
   this->map_subscription_.reset();
   this->initial_pose_subscription_.reset();
+  this->initial_pose_publisher_.reset();
   this->estimated_pose_publisher_.reset();
   this->estimated_odometry_publisher_.reset();
+  this->auto_initial_pose_timer_.reset();
   this->transform_broadcaster_.reset();
   this->reset_state();
   return CallbackReturn::SUCCESS;
@@ -220,8 +258,10 @@ Localization::CallbackReturn Localization::on_shutdown(const rclcpp_lifecycle::S
   this->scan_subscription_.reset();
   this->map_subscription_.reset();
   this->initial_pose_subscription_.reset();
+  this->initial_pose_publisher_.reset();
   this->estimated_pose_publisher_.reset();
   this->estimated_odometry_publisher_.reset();
+  this->auto_initial_pose_timer_.reset();
   this->transform_broadcaster_.reset();
   this->reset_state();
   return CallbackReturn::SUCCESS;
@@ -315,6 +355,43 @@ void Localization::handle_initial_pose(
     this->initial_map_pose_.pose.position.x,
     this->initial_map_pose_.pose.position.y,
     this->quaternion_yaw(this->initial_map_pose_.pose.orientation));
+}
+
+void Localization::publish_auto_initial_pose()
+{
+  if (this->auto_initial_pose_timer_) {
+    this->auto_initial_pose_timer_->cancel();
+    this->auto_initial_pose_timer_.reset();
+  }
+  if (!this->initial_pose_publisher_) {
+    return;
+  }
+
+  geometry_msgs::msg::PoseWithCovarianceStamped initial_pose;
+  initial_pose.header.stamp = this->now();
+  initial_pose.header.frame_id = this->map_frame_;
+  initial_pose.pose.pose.position.x = this->initial_x_;
+  initial_pose.pose.pose.position.y = this->initial_y_;
+  initial_pose.pose.pose.position.z = 0.0;
+  initial_pose.pose.pose.orientation.x = 0.0;
+  initial_pose.pose.pose.orientation.y = 0.0;
+  initial_pose.pose.pose.orientation.z = std::sin(this->initial_yaw_ * 0.5);
+  initial_pose.pose.pose.orientation.w = std::cos(this->initial_yaw_ * 0.5);
+  initial_pose.pose.covariance.fill(0.0);
+  initial_pose.pose.covariance[0] = this->auto_initial_pose_covariance_x_;
+  initial_pose.pose.covariance[7] = this->auto_initial_pose_covariance_y_;
+  initial_pose.pose.covariance[35] = this->auto_initial_pose_covariance_yaw_;
+
+  this->initial_pose_publisher_->publish(initial_pose);
+  this->auto_initial_pose_published_ = true;
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Published auto initial pose: frame='%s' x=%.3f y=%.3f yaw=%.3f",
+    initial_pose.header.frame_id.c_str(),
+    initial_pose.pose.pose.position.x,
+    initial_pose.pose.pose.position.y,
+    this->initial_yaw_);
 }
 
 void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & pose)
@@ -708,6 +785,7 @@ void Localization::reset_state()
   this->has_previous_odom_ = false;
   this->has_initial_pose_ = false;
   this->particles_initialized_ = false;
+  this->auto_initial_pose_published_ = false;
 }
 
 }  // namespace amr_localization
