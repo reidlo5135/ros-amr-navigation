@@ -2,12 +2,69 @@
   ros__parameters:
     files:
       yaml: "/home/reidlo/ws/data/maps/map_office_260310.yaml"
+    mode:
+      mapping: false
     frames:
       map: "map"
+      odom: "odom"
     topics:
       map: "/amr/map/data"
+      temporary_map: "/amr/map/temporary"
     services:
       get: "/amr/map_server/get_map"
+      freeze: "/amr/map_server/freeze_temporary_map"
+      evaluate: "/amr/map_server/evaluate_temporary_map"
+      save: "/amr/map_server/save_temporary_map"
+    mapping:
+      topics:
+        pose: "/odom"
+        imu: "/imu"
+        scan: "/scan"
+      publish_period_ms: 500
+      resolution: 0.05
+      width: 400
+      height: 400
+      origin:
+        x: -10.0
+        y: -10.0
+        yaw: 0.0
+      range:
+        min: 0.05
+        max: 8.0
+      publish_identity_tf: true
+      save:
+        directory: "/home/reidlo/ws/data/maps"
+        basename: "amr_temporary_map"
+      scan_matching:
+        enabled: true
+        linear_window: 0.15
+        linear_step: 0.05
+        angular_window_deg: 12.0
+        angular_step_deg: 3.0
+        max_beams: 32
+        min_valid_beams: 8
+        occupied_search_radius_cells: 1
+        minimum_occupied_cells: 50
+        occupied_match_score: 3.0
+        free_space_penalty: 1.0
+      occupancy:
+        hit_score: 20
+        free_score: 3
+        decay_score: 1
+        occupied_score_threshold: 20
+        free_score_threshold: -5
+        score_min: -20
+        score_max: 100
+      quality:
+        min_known_ratio: 0.35
+        min_free_ratio: 0.10
+        min_occupied_ratio: 0.01
+        inflation_radius_cells: 4
+        min_inflated_free_ratio: 0.05
+        require_corrected_pose: true
+      auto_save:
+        enabled: false
+        required_consecutive_passes: 3
 
 /amr/localization:
   ros__parameters:

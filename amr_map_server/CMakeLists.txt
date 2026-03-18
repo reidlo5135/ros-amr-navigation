@@ -20,6 +20,9 @@ find_package(nav_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 add_executable(${PROJECT_NAME}
@@ -33,6 +36,9 @@ ament_target_dependencies(${PROJECT_NAME}
   nav_msgs
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
+  std_srvs
+  tf2_ros
 )
 
 target_link_libraries(${PROJECT_NAME}

@@ -1,51 +1,29 @@
-# 2026-03-16
-
-- 완료: `amr_bringup/params/amr.yaml`의 토픽 이름 정리
-  - 예: `motion_controller/command` -> `motion/command`
-- 완료: `.hpp` / `.cpp`에 남아 있는 토픽 주소 하드코딩 요소를 `amr_bringup/params/amr.yaml` 기준으로 파라미터화
-- 완료: `amr_bringup/rviz/amr.rviz` 구현
-- 진행: localization 오류 수정
-  - `/odom` 연결 문제 수정
-  - dead reckoning 기반 구조에서 `AMCL-lite` 방향으로 1차 전환
-  - 추가 안정화 및 튜닝 필요
-- 보류: `localization/verb`, `local_planner/verb`처럼 혼용되어 있는 토픽 주소 체계 통합
-
-# 2026-03-17
-
-- `amr_localization` AMCL-lite 안정화 및 파라미터 튜닝
-- `amr_local_planner` local plan 생성 안정화
-  - 턴 구간, 경로 추종 중 local plan 비정상 생성 확인 및 보정
-- `NavigateToPose` 액션/feedback 단순화 반영 확인
-  - 불필요한 `route_id`, waypoint 관련 항목 제거 후 연동 점검
-- 실제 주행 기준 bringup 연동 점검
-  - `goal -> global plan -> local plan -> cmd_vel` 흐름 재확인
-- `amr_local_planner` 고도화
-  - 현재 global plan slice 수준의 local plan에서 벗어나도록 구조 개선
-  - costmap / inflation 개념을 도입해 `global_plan -> inflated local planning` 흐름 검토
-  - 주행 방향성, clearance, lookahead target 품질 개선
-- obstacle 감지 이후 local 재계산 / 회피 주행 검토
-  - 단순 정지에서 끝나지 않고 obstacle 상황에서 local plan 재생성 가능성 검토
-  - 재계산 후 우회 또는 회피 주행의 최소 구현 방향 설계
-  - 난이도를 고려해 `정지 -> 재계산 -> 재시도`부터 단계적으로 접근
-
 # 2026-03-18
 
 - `amr_motion_controller` local plan tracking issue 해결
   - local plan 마지막 점만 따라가며 corner cutting 하는 현상 수정
-  - 현재 위치 기준 nearest point 이후의 lookahead target 추종 방식 검토
+  - 현재 위치 기준 nearest point 이후의 lookahead target 추종 방식 적용
   - 실제 odom 궤적이 local/global costmap clearance를 유지하도록 보정
 - obstacle 감지 시 local plan 재계산 및 회피 주행 구현
   - `obstacle_detected` 발생 시 단순 정지에서 끝나지 않도록 local replan 흐름 추가
   - `정지 -> local recompute -> 재시도` 최소 동작 먼저 구현
   - 필요 시 회피 실패/재시도 횟수 제한 및 fallback 동작 정의
-- Non-SLAM 상황의 임의 주행 및 동시 SLAM 매핑 검토
-  - 저장된 map 없이도 일정 시간 임의 주행 가능한 흐름 설계
-  - 주행 중 `slam_toolbox` 기반 실시간 매핑 연동 가능성 검토
-  - 저가형 로봇 청소기 수준의 "막 주행하며 맵 생성" 운용 흐름 정리
+- custom mapping workflow 확장
+  - `mapping mode -> static navigation mode` 전환 절차 설계
+  - bootstrap mapping용 local scan matching 파라미터 튜닝
+  - mapping-mode corrected `map -> odom` TF 안정화 및 시각 정합성 검증
+  - map quality 기준값 튜닝 및 실제 환경별 threshold 표준화
+  - auto-save 이후 자동 `navigation mode` 전환 절차 정리
+  - 저장된 official map을 바로 navigation launch에 재사용하는 절차 정리
+  - temporary map 기반 localization correction은 mapping 초기 구간 이후에만 붙는 구조 검토
+- 최초 환경 자동 탐색 전략 정리
+  - teleop 없이도 미지 환경을 훑으며 map을 쌓는 탐색 주행 전략 검토
+  - 벽 따라가기, 회전-전진, 장애물 회피 기반 탐색 방식 비교
+  - coverage보다 "충돌 없이 공간을 훑으며 map 생성"을 우선 목표로 정의
 - global localization 구현 검토
   - 수동 `initial_pose` 없이 시작 가능한 global localization 흐름 설계
   - map 전체 particle 분포 초기화 및 scan 기반 수렴 절차 검토
-  - 자동 초기 위치 추정 성공 조건과 실패 시 fallback 동작 정의
+  - kidnapped 상황 대응용 relocalization 조건과 fallback 동작 정의
 
 # 로드맵
 
@@ -101,13 +79,11 @@
 
 ## 4단계. 맵 운용 현실화
 
-- mapping / localization 전략 결정
-  - 자체 SLAM 구현은 범위상 제외
-  - 맵 생성은 `slam_toolbox` 사용 검토
-  - 운영 모드에서는 저장된 map + 자체 localization 사용
-  - 필요 시 localization도 완전 자체 구현 고집보다 안정성 우선으로 판단
+- custom mapping / localization 전략 구체화
+  - 자체 mapping mode와 static navigation mode의 역할 분리
+  - map save/load/freeze 절차 정리
+  - mapping 완료 후 자동 전환 기준 정의
 - map 관리 기능
-  - 맵 저장/로드 절차 정리
   - 진입 금지 구역, 가상벽, 운영 금지 구역 표현 방식 정의
   - occupancy map 기반의 기본 운용 절차 문서화
 - map 업데이트 정책
@@ -140,9 +116,9 @@
 ## 구현 원칙
 
 - 가능하면 직접 구현 유지
-  - localization, planner, controller, cleaning coverage는 자체 구현 우선
+  - localization, planner, controller, mapping, relocalization은 자체 구현 우선
 - 예외적으로 사용 가능한 외부 패키지
-  - `slam_toolbox`: 맵 생성 단계 대체
+  - 없음
 - 되도록 피할 것
   - Nav2 전체 의존
   - 과한 behavior tree/plugin 체계 도입
