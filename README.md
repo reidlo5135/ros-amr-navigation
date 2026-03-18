@@ -12,6 +12,8 @@ Goal-driven ROS 2 AMR navigation stack for occupancy-grid maps, pose estimation,
   - shared actions, services, and messages
 - `amr_map_server`
   - owns the official navigation map and the temporary mapping map
+- `amr_lifecycle_manager`
+  - sequences lifecycle bringup and coordinates managed initial pose publication
 - `amr_localization`
   - estimates the robot pose from `/odom`, `/scan`, and the static map
 - `amr_global_planner`
@@ -24,6 +26,73 @@ Goal-driven ROS 2 AMR navigation stack for occupancy-grid maps, pose estimation,
   - accepts `NavigateToPose`, requests a global plan, and dispatches motion commands
 - `amr_rviz_plugins`
   - bridges RViz `2D Goal Pose` input to the AMR action server
+
+## System Stack Architecture
+
+```mermaid
+flowchart LR
+    User[User / Operator]
+    RViz[amr_rviz_plugins]
+    Bringup[amr_bringup]
+    LCM[amr_lifecycle_manager]
+    Map[amr_map_server]
+    Loc[amr_localization]
+    Global[amr_global_planner]
+    Local[amr_local_planner]
+    Motion[amr_motion_controller]
+    Nav[amr_bt_navigator]
+    Msgs[amr_msgs]
+    Base[Robot Base / Sensors]
+
+    User --> RViz
+    User --> Bringup
+    Bringup --> LCM
+    LCM --> Map
+    LCM --> Loc
+    LCM --> Global
+    LCM --> Local
+    LCM --> Motion
+    LCM --> Nav
+
+    Msgs --> Nav
+    Msgs --> Global
+    Msgs --> Local
+    Msgs --> Motion
+
+    Base --> Map
+    Base --> Loc
+    Base --> Motion
+
+    Map --> Global
+    Map --> Local
+    Map --> Loc
+    Loc --> Global
+    Loc --> Local
+    Loc --> Motion
+    Global --> Nav
+    Nav --> Local
+    Local --> Motion
+    Motion --> Base
+    RViz --> Nav
+```
+
+English:
+- `amr_bringup` and `amr_lifecycle_manager` bring up the managed nodes in a predictable order.
+- `amr_map_server` owns the official map and optional temporary mapping flow.
+- `amr_localization` provides the robot pose used by planning and control.
+- `amr_global_planner` computes goal-scale A* paths on the global costmap.
+- `amr_local_planner` builds the local costmap and short-horizon replans.
+- `amr_motion_controller` converts the local plan into `/cmd_vel`.
+- `amr_bt_navigator` orchestrates goal execution and planner/controller interaction.
+
+한국어:
+- `amr_bringup`과 `amr_lifecycle_manager`가 관리 노드들을 정해진 순서로 기동합니다.
+- `amr_map_server`는 공식 맵과 optional temporary mapping 흐름을 관리합니다.
+- `amr_localization`은 planning과 control이 사용하는 현재 pose를 제공합니다.
+- `amr_global_planner`는 global costmap 위에서 goal 규모의 A* 경로를 계산합니다.
+- `amr_local_planner`는 local costmap과 단거리 회피 경로를 생성합니다.
+- `amr_motion_controller`는 local plan을 `/cmd_vel`로 변환합니다.
+- `amr_bt_navigator`는 goal 수행과 planner/controller 연계를 총괄합니다.
 
 ## Execution Flow
 
