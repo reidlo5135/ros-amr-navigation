@@ -4,6 +4,18 @@ Changelog
 2026-03-18
 ----------
 
+- Restored lifecycle-manager-driven bringup after a local reset:
+
+  - ``localization.launch.py`` now delegates lifecycle sequencing to ``amr_lifecycle_manager``
+  - ``navigation.launch.py`` now delegates navigation-node activation to ``amr_lifecycle_manager``
+  - manager-driven initial pose publication is used again instead of localization-side timing
+
+- Restored the last dynamic-obstacle navigation split after a local reset:
+
+  - ``amr_local_planner`` again subscribes to ``/scan`` and performs dynamic-obstacle-triggered local replanning
+  - fixed obstacle stop handling in ``amr_motion_controller`` remains separate from dynamic replanning parameters
+  - dynamic obstacle triggers now filter against the static inflated map so known walls are less likely to trigger dynamic replans
+
 - Added dual-mode operation to ``amr_map_server``:
 
   - static map publishing from YAML, as before

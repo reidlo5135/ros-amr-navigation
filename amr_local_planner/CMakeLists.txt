@@ -20,6 +20,7 @@ find_package(lifecycle_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_executable(${PROJECT_NAME}
   src/${PROJECT_NAME}/local_planner.cpp
@@ -33,6 +34,7 @@ ament_target_dependencies(${PROJECT_NAME}
   nav_msgs
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
 )
 
 install(TARGETS

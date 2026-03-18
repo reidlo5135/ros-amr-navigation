@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <cctype>
+#include <limits>
 
 namespace amr_motion_controller
 {
@@ -19,6 +20,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   control_frequency_(10.0),
   linear_speed_(0.07),
   min_linear_speed_(0.05),
+  tracking_lookahead_distance_(0.25),
   angular_gain_(1.5),
   max_angular_speed_(0.8),
   distance_tolerance_(0.15),
@@ -29,8 +31,10 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   max_linear_accel_(0.08),
   max_angular_accel_(0.8),
   obstacle_detection_enabled_(true),
+  obstacle_allow_rotate_in_place_(true),
   obstacle_stop_distance_(3.0),
   obstacle_forward_angle_deg_(25.0),
+  obstacle_rotate_heading_threshold_(0.20),
   obstacle_min_points_(3),
   velocity_control_mode_(VelocityControlMode::PID),
   has_command_(false),
@@ -48,6 +52,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   this->declare_parameter("control.frequency", this->control_frequency_);
   this->declare_parameter("control.linear_speed", this->linear_speed_);
   this->declare_parameter("control.min_linear_speed", this->min_linear_speed_);
+  this->declare_parameter("control.tracking_lookahead_distance", this->tracking_lookahead_distance_);
   this->declare_parameter("control.angular_gain", this->angular_gain_);
   this->declare_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->declare_parameter("control.distance_tolerance", this->distance_tolerance_);
@@ -62,9 +67,13 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
 
   this->declare_parameter("obstacle_detection.enabled", this->obstacle_detection_enabled_);
   this->declare_parameter(
+    "obstacle_detection.allow_rotate_in_place", this->obstacle_allow_rotate_in_place_);
+  this->declare_parameter(
     "obstacle_detection.stop_distance", this->obstacle_stop_distance_);
   this->declare_parameter(
     "obstacle_detection.forward_angle_deg", this->obstacle_forward_angle_deg_);
+  this->declare_parameter(
+    "obstacle_detection.rotate_heading_threshold", this->obstacle_rotate_heading_threshold_);
   this->declare_parameter(
     "obstacle_detection.minimum_points", this->obstacle_min_points_);
 
@@ -95,6 +104,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("control.frequency", this->control_frequency_);
   this->get_parameter("control.linear_speed", this->linear_speed_);
   this->get_parameter("control.min_linear_speed", this->min_linear_speed_);
+  this->get_parameter("control.tracking_lookahead_distance", this->tracking_lookahead_distance_);
   this->get_parameter("control.angular_gain", this->angular_gain_);
   this->get_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->get_parameter("control.distance_tolerance", this->distance_tolerance_);
@@ -109,9 +119,13 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   this->get_parameter("obstacle_detection.enabled", this->obstacle_detection_enabled_);
   this->get_parameter(
+    "obstacle_detection.allow_rotate_in_place", this->obstacle_allow_rotate_in_place_);
+  this->get_parameter(
     "obstacle_detection.stop_distance", this->obstacle_stop_distance_);
   this->get_parameter(
     "obstacle_detection.forward_angle_deg", this->obstacle_forward_angle_deg_);
+  this->get_parameter(
+    "obstacle_detection.rotate_heading_threshold", this->obstacle_rotate_heading_threshold_);
   this->get_parameter(
     "obstacle_detection.minimum_points", this->obstacle_min_points_);
 
@@ -373,11 +387,20 @@ void MotionController::publish_control()
         status.command_id);
     } else if (status.obstacle_detected) {
       desired_twist = geometry_msgs::msg::Twist();
+      if (
+        this->obstacle_allow_rotate_in_place_ &&
+        abs_heading_error > this->obstacle_rotate_heading_threshold_)
+      {
+        desired_twist.angular.z = this->clamp(
+          this->angular_gain_ * heading_error,
+          -this->max_angular_speed_,
+          this->max_angular_speed_);
+      }
       RCLCPP_INFO_THROTTLE(
         this->get_logger(),
         *this->get_clock(),
         1000,
-        "Obstacle detected in forward stop zone; holding cmd_vel at zero");
+        "Obstacle detected in forward stop zone; holding linear velocity and applying recovery heading when needed");
     } else {
       desired_twist.angular.z = this->clamp(
         this->angular_gain_ * heading_error,
@@ -618,10 +641,31 @@ double MotionController::clamp(
 
 geometry_msgs::msg::PoseStamped MotionController::select_tracking_target() const
 {
-  if (!this->latest_local_plan_.poses.empty()) {
-    return this->latest_local_plan_.poses.back();
+  if (this->latest_local_plan_.poses.empty()) {
+    return this->latest_command_.goal_pose;
   }
-  return this->latest_command_.goal_pose;
+
+  std::size_t nearest_index = 0U;
+  double nearest_distance = std::numeric_limits<double>::max();
+  for (std::size_t index = 0; index < this->latest_local_plan_.poses.size(); ++index) {
+    const double distance = this->pose_distance(this->current_pose_, this->latest_local_plan_.poses[index]);
+    if (distance < nearest_distance) {
+      nearest_distance = distance;
+      nearest_index = index;
+    }
+  }
+
+  double accumulated_distance = 0.0;
+  for (std::size_t index = nearest_index + 1U; index < this->latest_local_plan_.poses.size(); ++index) {
+    const auto & previous = this->latest_local_plan_.poses[index - 1U];
+    const auto & current = this->latest_local_plan_.poses[index];
+    accumulated_distance += this->pose_distance(previous, current);
+    if (accumulated_distance >= this->tracking_lookahead_distance_) {
+      return current;
+    }
+  }
+
+  return this->latest_local_plan_.poses.back();
 }
 
 bool MotionController::is_obstacle_detected() const

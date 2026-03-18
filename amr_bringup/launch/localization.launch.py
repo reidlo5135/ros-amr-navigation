@@ -3,52 +3,14 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.actions import EmitEvent, RegisterEventHandler
-from launch.conditions import UnlessCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
-from lifecycle_msgs.msg import Transition
+from launch_ros.actions import LifecycleNode, Node
 
 
 def bringup_params_file() -> str:
     package_share_directory = get_package_share_directory("amr_bringup")
     return os.path.join(package_share_directory, "params", "amr.yaml")
-
-
-def add_lifecycle_node(
-    ld: LaunchDescription,
-    node: LifecycleNode,
-    condition=None,
-) -> None:
-    ld.add_action(node)
-    ld.add_action(
-        EmitEvent(
-            event=ChangeState(
-                lifecycle_node_matcher=lambda action: action == node,
-                transition_id=Transition.TRANSITION_CONFIGURE,
-            ),
-            condition=condition,
-        )
-    )
-    ld.add_action(
-        RegisterEventHandler(
-            OnStateTransition(
-                target_lifecycle_node=node,
-                goal_state="inactive",
-                entities=[
-                    EmitEvent(
-                        event=ChangeState(
-                            lifecycle_node_matcher=lambda action: action == node,
-                            transition_id=Transition.TRANSITION_ACTIVATE,
-                        )
-                    )
-                ],
-            ),
-            condition=condition,
-        ),
-    )
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -90,7 +52,45 @@ def generate_launch_description() -> LaunchDescription:
         condition=UnlessCondition(mapping_mode),
     )
 
-    add_lifecycle_node(ld, map_server)
-    add_lifecycle_node(ld, localization, UnlessCondition(mapping_mode))
-    add_lifecycle_node(ld, global_planner, UnlessCondition(mapping_mode))
+    localization_manager = Node(
+        package="amr_lifecycle_manager",
+        executable="amr_lifecycle_manager",
+        name="localization_manager",
+        namespace="amr",
+        output="screen",
+        parameters=[
+            bringup_params_file(),
+            {
+                "managed_nodes": [
+                    "/amr/map_server",
+                    "/amr/localization",
+                    "/amr/global_planner",
+                ]
+            },
+        ],
+        condition=UnlessCondition(mapping_mode),
+    )
+    mapping_manager = Node(
+        package="amr_lifecycle_manager",
+        executable="amr_lifecycle_manager",
+        name="localization_manager",
+        namespace="amr",
+        output="screen",
+        parameters=[
+            bringup_params_file(),
+            {
+                "managed_nodes": [
+                    "/amr/map_server",
+                ],
+                "initial_pose.enabled": False,
+            },
+        ],
+        condition=IfCondition(mapping_mode),
+    )
+
+    ld.add_action(map_server)
+    ld.add_action(localization)
+    ld.add_action(global_planner)
+    ld.add_action(localization_manager)
+    ld.add_action(mapping_manager)
     return ld

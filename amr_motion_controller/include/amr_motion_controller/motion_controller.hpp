@@ -97,6 +97,7 @@ private:
   double control_frequency_;
   double linear_speed_;
   double min_linear_speed_;
+  double tracking_lookahead_distance_;
   double angular_gain_;
   double max_angular_speed_;
   double distance_tolerance_;
@@ -107,8 +108,10 @@ private:
   double max_linear_accel_;
   double max_angular_accel_;
   bool obstacle_detection_enabled_;
+  bool obstacle_allow_rotate_in_place_;
   double obstacle_stop_distance_;
   double obstacle_forward_angle_deg_;
+  double obstacle_rotate_heading_threshold_;
   int obstacle_min_points_;
   VelocityControlMode velocity_control_mode_;
   AxisControllerConfig linear_controller_config_;

@@ -84,7 +84,7 @@
       y: 0.0
       yaw: 0.0
     auto_initial_pose:
-      enabled: true
+      enabled: false
       delay_sec: 3.0
       covariance:
         x: 0.25
@@ -102,6 +102,42 @@
       max_beams: 24
       max_beam_range: 6.0
       occupied_threshold: 50
+
+/amr/localization_manager:
+  ros__parameters:
+    autostart: true
+    service_timeout_ms: 5000
+    state_poll_interval_ms: 200
+    initial_pose:
+      enabled: true
+      topic: "/amr/localization/initial_pose"
+      frame_id: "map"
+      delay_sec: 0.5
+      x: 0.0
+      y: 0.0
+      yaw: 0.0
+      covariance:
+        x: 0.25
+        y: 0.25
+        yaw: 0.06853891945200942
+
+/amr/navigation_manager:
+  ros__parameters:
+    autostart: true
+    service_timeout_ms: 5000
+    state_poll_interval_ms: 200
+    initial_pose:
+      enabled: false
+      topic: "/amr/localization/initial_pose"
+      frame_id: "map"
+      delay_sec: 0.5
+      x: 0.0
+      y: 0.0
+      yaw: 0.0
+      covariance:
+        x: 0.25
+        y: 0.25
+        yaw: 0.06853891945200942
 
 /amr/global_planner:
   ros__parameters:
@@ -131,6 +167,7 @@
       command: "/amr/motion/command"
       pose: "/amr/localization/pose"
       map: "/amr/map/data"
+      scan: "/scan"
       plan: "/amr/planner/local"
       inflated_map: "/amr/costmap/local"
     planner:
@@ -147,6 +184,18 @@
       radius: 0.20
       cost: 80
       publish: true
+    dynamic_obstacle:
+      enabled: true
+      max_distance: 0.80
+      forward_angle_deg: 100.0
+      minimum_points: 3
+      inflation_radius: 0.25
+      replan_lookahead_distance: 1.4
+      static_clearance_cells: 2
+    footprint:
+      length: 0.34
+      width: 0.26
+      clearance: 0.10
 
 /amr/motion_controller:
   ros__parameters:
@@ -161,6 +210,7 @@
       frequency: 10.0
       linear_speed: 0.075
       min_linear_speed: 0.05
+      tracking_lookahead_distance: 0.25
       angular_gain: 2.0
       max_angular_speed: 0.65
       distance_tolerance: 0.1
@@ -170,8 +220,10 @@
       min_heading_motion_scale: 0.15
     obstacle_detection:
       enabled: true
+      allow_rotate_in_place: true
       stop_distance: 0.3
       forward_angle_deg: 30.0
+      rotate_heading_threshold: 0.20
       minimum_points: 3
     velocity_controller:
       mode: "pid"
