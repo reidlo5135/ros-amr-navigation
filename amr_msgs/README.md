@@ -20,6 +20,8 @@
   - command metadata plus the dispatched global path and goal pose
 - [MotionStatus.msg](./msg/MotionStatus.msg)
   - controller execution state, goal status, obstacle state, and live pose metrics
+- [ObstacleReport.msg](./msg/ObstacleReport.msg)
+  - obstacle detection summary with distance, bearing, severity, and dynamic/static context
 
 ## Services
 
@@ -37,4 +39,6 @@ flowchart LR
     E[MotionCommand] --> F[amr_local_planner]
     E --> G[amr_motion_controller]
     H[MotionStatus] --> B
+    I[ObstacleReport] --> B
+    I --> J[amr_costmap_server]
 ```

@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>amr_local_planner</name>
+  <name>amr_obstacle_detection</name>
   <version>0.1.0</version>
-  <description>Lifecycle local planner and velocity command generator for AMRs.</description>
+  <description>Obstacle detection and reporting node for the ROS AMR navigation stack.</description>
   <maintainer email="reidlo4215@gmail.com">reidlo</maintainer>
   <license>TODO: License declaration</license>
 
@@ -11,10 +11,10 @@
 
   <depend>amr_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>lifecycle_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>sensor_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

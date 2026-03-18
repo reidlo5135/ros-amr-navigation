@@ -30,12 +30,12 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   min_heading_motion_scale_(0.15),
   max_linear_accel_(0.08),
   max_angular_accel_(0.8),
-  obstacle_detection_enabled_(true),
-  obstacle_allow_rotate_in_place_(true),
-  obstacle_stop_distance_(3.0),
-  obstacle_forward_angle_deg_(25.0),
-  obstacle_rotate_heading_threshold_(0.20),
-  obstacle_min_points_(3),
+  safety_gate_enabled_(true),
+  safety_gate_allow_rotate_in_place_(true),
+  safety_gate_stop_distance_(3.0),
+  safety_gate_forward_angle_deg_(25.0),
+  safety_gate_rotate_heading_threshold_(0.20),
+  safety_gate_min_points_(3),
   velocity_control_mode_(VelocityControlMode::PID),
   has_command_(false),
   has_local_plan_(false),
@@ -65,17 +65,17 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "control.min_heading_motion_scale", this->min_heading_motion_scale_);
 
-  this->declare_parameter("obstacle_detection.enabled", this->obstacle_detection_enabled_);
+  this->declare_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->declare_parameter(
-    "obstacle_detection.allow_rotate_in_place", this->obstacle_allow_rotate_in_place_);
+    "safety_gate.allow_rotate_in_place", this->safety_gate_allow_rotate_in_place_);
   this->declare_parameter(
-    "obstacle_detection.stop_distance", this->obstacle_stop_distance_);
+    "safety_gate.stop_distance", this->safety_gate_stop_distance_);
   this->declare_parameter(
-    "obstacle_detection.forward_angle_deg", this->obstacle_forward_angle_deg_);
+    "safety_gate.forward_angle_deg", this->safety_gate_forward_angle_deg_);
   this->declare_parameter(
-    "obstacle_detection.rotate_heading_threshold", this->obstacle_rotate_heading_threshold_);
+    "safety_gate.rotate_heading_threshold", this->safety_gate_rotate_heading_threshold_);
   this->declare_parameter(
-    "obstacle_detection.minimum_points", this->obstacle_min_points_);
+    "safety_gate.minimum_points", this->safety_gate_min_points_);
 
   this->declare_parameter("velocity_controller.mode", std::string("pid"));
   this->declare_parameter("velocity_controller.linear.kp", 0.35);
@@ -117,17 +117,17 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter(
     "control.min_heading_motion_scale", this->min_heading_motion_scale_);
 
-  this->get_parameter("obstacle_detection.enabled", this->obstacle_detection_enabled_);
+  this->get_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->get_parameter(
-    "obstacle_detection.allow_rotate_in_place", this->obstacle_allow_rotate_in_place_);
+    "safety_gate.allow_rotate_in_place", this->safety_gate_allow_rotate_in_place_);
   this->get_parameter(
-    "obstacle_detection.stop_distance", this->obstacle_stop_distance_);
+    "safety_gate.stop_distance", this->safety_gate_stop_distance_);
   this->get_parameter(
-    "obstacle_detection.forward_angle_deg", this->obstacle_forward_angle_deg_);
+    "safety_gate.forward_angle_deg", this->safety_gate_forward_angle_deg_);
   this->get_parameter(
-    "obstacle_detection.rotate_heading_threshold", this->obstacle_rotate_heading_threshold_);
+    "safety_gate.rotate_heading_threshold", this->safety_gate_rotate_heading_threshold_);
   this->get_parameter(
-    "obstacle_detection.minimum_points", this->obstacle_min_points_);
+    "safety_gate.minimum_points", this->safety_gate_min_points_);
 
   this->velocity_control_mode_ = this->parse_velocity_control_mode(
     this->get_parameter("velocity_controller.mode").as_string());
@@ -368,7 +368,7 @@ void MotionController::publish_control()
 
     status.command_id = this->latest_command_.command_id;
     status.active = true;
-    status.obstacle_detected = this->is_obstacle_detected();
+    status.obstacle_detected = this->is_safety_gate_triggered();
     status.goal_reached =
       goal_distance <= this->distance_tolerance_ ||
       this->latest_local_plan_.poses.empty();
@@ -388,8 +388,8 @@ void MotionController::publish_control()
     } else if (status.obstacle_detected) {
       desired_twist = geometry_msgs::msg::Twist();
       if (
-        this->obstacle_allow_rotate_in_place_ &&
-        abs_heading_error > this->obstacle_rotate_heading_threshold_)
+        this->safety_gate_allow_rotate_in_place_ &&
+        abs_heading_error > this->safety_gate_rotate_heading_threshold_)
       {
         desired_twist.angular.z = this->clamp(
           this->angular_gain_ * heading_error,
@@ -668,14 +668,14 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target() const
   return this->latest_local_plan_.poses.back();
 }
 
-bool MotionController::is_obstacle_detected() const
+bool MotionController::is_safety_gate_triggered() const
 {
-  if (!this->obstacle_detection_enabled_ || !this->has_latest_scan_) {
+  if (!this->safety_gate_enabled_ || !this->has_latest_scan_) {
     return false;
   }
 
   const double half_angle_rad =
-    (this->obstacle_forward_angle_deg_ * 3.14159265358979323846 / 180.0) * 0.5;
+    (this->safety_gate_forward_angle_deg_ * 3.14159265358979323846 / 180.0) * 0.5;
   int hit_count = 0;
 
   for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
@@ -696,9 +696,9 @@ bool MotionController::is_obstacle_detected() const
     {
       continue;
     }
-    if (range <= this->obstacle_stop_distance_) {
+    if (range <= this->safety_gate_stop_distance_) {
       ++hit_count;
-      if (hit_count >= this->obstacle_min_points_) {
+      if (hit_count >= this->safety_gate_min_points_) {
         return true;
       }
     }

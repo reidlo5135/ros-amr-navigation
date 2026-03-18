@@ -121,6 +121,40 @@
         y: 0.25
         yaw: 0.06853891945200942
 
+/amr/obstacle_detection:
+  ros__parameters:
+    topics:
+      scan: "/scan"
+      pose: "/amr/localization/pose"
+      map: "/amr/map/data"
+      report: "/amr/obstacle/report"
+    detection:
+      max_distance: 1.2
+      forward_angle_deg: 100.0
+      minimum_points: 3
+      static_clearance_cells: 2
+      blocking_distance: 0.8
+      critical_distance: 0.25
+      high_distance: 0.5
+      medium_distance: 0.8
+      obstacle_threshold: 50
+
+/amr/costmap_server:
+  ros__parameters:
+    topics:
+      map: "/amr/map/data"
+      obstacle_report: "/amr/obstacle/report"
+      global: "/amr/costmap/global"
+      local: "/amr/costmap/local"
+    inflation:
+      obstacle_threshold: 50
+      global:
+        radius: 0.20
+        cost: 80
+      local:
+        radius: 0.30
+        cost: 100
+
 /amr/navigation_manager:
   ros__parameters:
     autostart: true
@@ -142,9 +176,8 @@
 /amr/global_planner:
   ros__parameters:
     topics:
-      map: "/amr/map/data"
+      costmap: "/amr/costmap/global"
       plan: "/amr/planner/global"
-      inflated_map: "/amr/costmap/global"
     services:
       segment: "/amr/global_planner/plan_segment"
       route: "/amr/global_planner/plan_route"
@@ -156,20 +189,15 @@
       prevent_corner_cutting: true
       turn_penalty: 0.5
       nearest_free_search_radius_cells: 4
-    inflation:
-      radius: 0.20
-      cost: 80
-      publish: true
 
 /amr/local_planner:
   ros__parameters:
     topics:
       command: "/amr/motion/command"
       pose: "/amr/localization/pose"
-      map: "/amr/map/data"
-      scan: "/scan"
+      costmap: "/amr/costmap/local"
+      obstacle_report: "/amr/obstacle/report"
       plan: "/amr/planner/local"
-      inflated_map: "/amr/costmap/local"
     planner:
       publish_period_ms: 100
       lookahead_distance: 0.8
@@ -180,22 +208,9 @@
       prevent_corner_cutting: true
       turn_penalty: 0.5
       nearest_free_search_radius_cells: 4
-    inflation:
-      radius: 0.20
-      cost: 80
-      publish: true
     dynamic_obstacle:
       enabled: true
-      max_distance: 0.80
-      forward_angle_deg: 100.0
-      minimum_points: 3
-      inflation_radius: 0.25
       replan_lookahead_distance: 1.4
-      static_clearance_cells: 2
-    footprint:
-      length: 0.34
-      width: 0.26
-      clearance: 0.10
 
 /amr/motion_controller:
   ros__parameters:
@@ -218,7 +233,7 @@
       rotate_in_place_goal_distance: 0.35
       heading_slowdown_threshold: 0.2
       min_heading_motion_scale: 0.15
-    obstacle_detection:
+    safety_gate:
       enabled: true
       allow_rotate_in_place: true
       stop_distance: 0.3
@@ -246,6 +261,7 @@
       pose: "/amr/localization/pose"
       command: "/amr/motion/command"
       status: "/amr/motion/status"
+      obstacle_report: "/amr/obstacle/report"
     services:
       segment: "/amr/global_planner/plan_segment"
     actions:

@@ -43,7 +43,6 @@ private:
     const geometry_msgs::msg::PoseStamped & goal,
     nav_msgs::msg::Path & path,
     std::string & message) const;
-  void rebuild_inflated_map();
   bool world_to_grid(
     const geometry_msgs::msg::PoseStamped & pose,
     planner::GridCell & cell) const;
@@ -64,20 +63,17 @@ private:
   nav_msgs::msg::Path create_path_message(
     const std::vector<planner::GridCell> & grid_path) const;
   nav_msgs::msg::Path merge_paths(const std::vector<nav_msgs::msg::Path> & paths) const;
-  void map_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map);
+  void costmap_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map);
 
   rclcpp::Service<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_service_;
   rclcpp::Service<amr_msgs::srv::PlanRoute>::SharedPtr plan_route_service_;
-  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr computed_plan_publisher_;
-  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr inflated_map_publisher_;
-  nav_msgs::msg::OccupancyGrid::SharedPtr map_occupancy_grid_;
-  nav_msgs::msg::OccupancyGrid inflated_map_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr global_costmap_;
   nav_msgs::msg::Path planned_path_;
   planner::AStarPlanner::UniquePtr a_star_planner_;
-  std::string map_topic_;
+  std::string costmap_topic_;
   std::string computed_plan_topic_;
-  std::string inflated_map_topic_;
   std::string plan_segment_service_name_;
   std::string plan_route_service_name_;
   int obstacle_threshold_;
@@ -86,9 +82,6 @@ private:
   bool simplify_path_;
   bool prevent_corner_cutting_;
   double turn_penalty_;
-  double inflation_radius_;
-  int inflation_cost_;
-  bool publish_inflated_map_;
   int nearest_free_search_radius_cells_;
 };
 

@@ -16,10 +16,14 @@ Goal-driven ROS 2 AMR navigation stack for occupancy-grid maps, pose estimation,
   - sequences lifecycle bringup and coordinates managed initial pose publication
 - `amr_localization`
   - estimates the robot pose from `/odom`, `/scan`, and the static map
+- `amr_obstacle_detection`
+  - detects forward obstacles from `/scan` and publishes obstacle reports
+- `amr_costmap_server`
+  - owns the global and local costmaps used by the planners
 - `amr_global_planner`
-  - computes inflated-grid A* plans for goal requests
+  - computes A* plans on the global costmap
 - `amr_local_planner`
-  - builds a local inflated costmap and replans a short-horizon path
+  - replans a short-horizon path on the local costmap
 - `amr_motion_controller`
   - tracks the local plan and publishes `/cmd_vel`
 - `amr_bt_navigator`
@@ -37,6 +41,8 @@ flowchart LR
     LCM[amr_lifecycle_manager]
     Map[amr_map_server]
     Loc[amr_localization]
+    Detect[amr_obstacle_detection]
+    Costmap[amr_costmap_server]
     Global[amr_global_planner]
     Local[amr_local_planner]
     Motion[amr_motion_controller]
@@ -49,6 +55,8 @@ flowchart LR
     Bringup --> LCM
     LCM --> Map
     LCM --> Loc
+    LCM --> Detect
+    LCM --> Costmap
     LCM --> Global
     LCM --> Local
     LCM --> Motion
@@ -61,13 +69,19 @@ flowchart LR
 
     Base --> Map
     Base --> Loc
+    Base --> Detect
     Base --> Motion
 
-    Map --> Global
-    Map --> Local
+    Map --> Detect
+    Map --> Costmap
     Map --> Loc
+    Detect --> Costmap
+    Detect --> Nav
+    Costmap --> Global
+    Costmap --> Local
     Loc --> Global
     Loc --> Local
+    Loc --> Detect
     Loc --> Motion
     Global --> Nav
     Nav --> Local
@@ -80,8 +94,10 @@ English:
 - `amr_bringup` and `amr_lifecycle_manager` bring up the managed nodes in a predictable order.
 - `amr_map_server` owns the official map and optional temporary mapping flow.
 - `amr_localization` provides the robot pose used by planning and control.
+- `amr_obstacle_detection` converts raw scan data into obstacle reports with distance, bearing, and severity.
+- `amr_costmap_server` is the single owner of the global and local costmaps.
 - `amr_global_planner` computes goal-scale A* paths on the global costmap.
-- `amr_local_planner` builds the local costmap and short-horizon replans.
+- `amr_local_planner` performs short-horizon replanning on the local costmap.
 - `amr_motion_controller` converts the local plan into `/cmd_vel`.
 - `amr_bt_navigator` orchestrates goal execution and planner/controller interaction.
 
@@ -89,10 +105,45 @@ English:
 - `amr_bringup`과 `amr_lifecycle_manager`가 관리 노드들을 정해진 순서로 기동합니다.
 - `amr_map_server`는 공식 맵과 optional temporary mapping 흐름을 관리합니다.
 - `amr_localization`은 planning과 control이 사용하는 현재 pose를 제공합니다.
+- `amr_obstacle_detection`은 raw scan을 거리, 각도, 위험도를 가진 obstacle report로 변환합니다.
+- `amr_costmap_server`는 global/local costmap의 단일 소유자입니다.
 - `amr_global_planner`는 global costmap 위에서 goal 규모의 A* 경로를 계산합니다.
-- `amr_local_planner`는 local costmap과 단거리 회피 경로를 생성합니다.
+- `amr_local_planner`는 local costmap 위에서 단거리 회피 경로를 생성합니다.
 - `amr_motion_controller`는 local plan을 `/cmd_vel`로 변환합니다.
 - `amr_bt_navigator`는 goal 수행과 planner/controller 연계를 총괄합니다.
+
+## Package R&R
+
+### Refactor Target (0.3.1)
+
+| Package | Primary Responsibility | Explicitly Not Responsible For |
+| --- | --- | --- |
+| `amr_map_server` | Official map, temporary map, map freeze/save, map services | Costmap generation, obstacle judging, behavior sequencing |
+| `amr_localization` | Pose estimation, `map -> odom` TF, localization outputs | Mapping policy, path generation, obstacle-response decisions |
+| `amr_obstacle_detection` | `/scan`-based obstacle detection, distance/bearing calculation, risk scoring, dynamic obstacle reports | Path generation, recovery policy, `/cmd_vel` control |
+| `amr_costmap_server` | Global costmap, local costmap, inflation, dynamic obstacle layer fusion | Goal handling, behavior decisions, velocity control |
+| `amr_global_planner` | Global plan / replan on the global costmap | Sensor interpretation, local escape behavior, `/cmd_vel` |
+| `amr_local_planner` | Local plan / replan on the local costmap, short-horizon path feasibility | Obstacle detection ownership, behavior sequencing, final motor command output |
+| `amr_bt_navigator` | Goal execution flow, obstacle-response decisions, local/global replan command sequencing, recovery ordering | Costmap generation, low-level tracking, direct sensor fusion |
+| `amr_motion_controller` | Pure local path tracking and final `cmd_vel` output, last-stage safety gate | Obstacle policy, replan decisions, map-based behavior logic |
+| `amr_lifecycle_manager` | Lifecycle sequencing and managed initial pose publication | Planning, control, runtime obstacle decisions |
+| `amr_rviz_plugins` | RViz goal bridging to the action server | Planning, control, localization, obstacle reasoning |
+| `amr_bringup` | Launch composition, shared runtime wiring, parameter entry points | Runtime decision making inside the stack |
+| `amr_msgs` | Shared interfaces between runtime packages | Runtime behavior or algorithms |
+
+English:
+- `amr_obstacle_detection` should detect and describe obstacles, not decide the navigation behavior.
+- `amr_costmap_server` should be the single owner of global and local costmaps.
+- `amr_global_planner` and `amr_local_planner` should only plan or replan on costmaps.
+- `amr_bt_navigator` should decide what to do next: continue, wait, local replan, global replan, recovery, or abort.
+- `amr_motion_controller` should focus on path tracking and keep only the final safety gate near the robot.
+
+한국어:
+- `amr_obstacle_detection`은 장애물을 검출하고 설명만 해야 하며, 행동 결정까지 가져가면 안 됩니다.
+- `amr_costmap_server`는 global/local costmap의 단일 소유자가 되어야 합니다.
+- `amr_global_planner`, `amr_local_planner`는 costmap 위에서 plan/replan만 수행해야 합니다.
+- `amr_bt_navigator`는 계속 진행, 대기, local replan, global replan, recovery, abort 중 무엇을 할지 결정해야 합니다.
+- `amr_motion_controller`는 path tracking에 집중하고, 로봇 근접 구간의 최종 safety gate만 남기는 것이 맞습니다.
 
 ## Execution Flow
 
@@ -149,6 +200,8 @@ sequenceDiagram
     participant RViz as RViz / CLI
     participant Bridge as amr_rviz_plugins
     participant Nav as amr_bt_navigator
+    participant Detect as amr_obstacle_detection
+    participant Costmap as amr_costmap_server
     participant Global as amr_global_planner
     participant Local as amr_local_planner
     participant Motion as amr_motion_controller
@@ -157,6 +210,9 @@ sequenceDiagram
     User->>RViz: Send goal
     RViz->>Bridge: PoseStamped
     Bridge->>Nav: NavigateToPose
+    Base->>Detect: /scan
+    Detect->>Costmap: ObstacleReport
+    Detect->>Nav: ObstacleReport
     Nav->>Global: PlanSegment(start, goal)
     Global-->>Nav: Global path
     Nav->>Local: MotionCommand(global path, goal)

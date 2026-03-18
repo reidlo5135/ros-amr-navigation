@@ -1,5 +1,15 @@
 # 2026-03-18
 
+- dynamic obstacle escaping 고도화
+  - 현재 local replan이 escape보다 기존 global plan 복귀를 너무 빨리 시도해 어색한 주행이 발생함
+  - 목표 동작은 `dynamic obstacle 감지 -> dynamic inflation 반영 -> global A* detour replan -> local plan은 obstacle release 전까지 escaping 수행 -> detour 경유 후 goal 복귀` 흐름으로 재정의
+  - `amr_bt_navigator`가 dynamic obstacle 상황에서 global detour replan을 트리거하고, `amr_local_planner`는 release 조건 전까지 escape-centric local plan을 유지하도록 역할 정리
+  - dynamic obstacle이 해제되기 전에는 기존 global corridor로 즉시 재복귀하지 않도록 조건과 hysteresis 추가 검토
+- `0.3.1` R&R refactoring continuation
+  - `amr_bt_navigator`가 obstacle report를 바탕으로 wait / local replan / global replan / recovery를 실제로 판단하도록 확장
+  - `amr_motion_controller`를 path tracking + 최종 근접 safety gate만 남기는 방향으로 추가 축소
+  - `amr_global_planner`, `amr_local_planner`에서 남아 있는 legacy self-costmap 가정 완전 제거
+  - `amr_costmap_server`를 기준으로 fixed/dynamic obstacle layer 정책 정교화
 - `amr_motion_controller` local plan tracking issue 해결
   - local plan 마지막 점만 따라가며 corner cutting 하는 현상 수정
   - 현재 위치 기준 nearest point 이후의 lookahead target 추종 방식 적용

@@ -6,6 +6,7 @@
 
 - subscribes: `/amr/localization/pose`
 - subscribes: `/amr/motion/status`
+- subscribes: `/amr/obstacle/report`
 - publishes: `/amr/motion/command`
 - calls: `/amr/global_planner/plan_segment`
 - serves action: `/amr/navigator/navigate_to_pose`
@@ -14,6 +15,7 @@
 
 - receives a `NavigateToPose` goal
 - reads the latest estimated pose
+- receives obstacle reports that will feed future behavior-level recovery and replanning decisions
 - requests a global segment plan from the current pose to the goal
 - publishes a `MotionCommand` containing the global path and goal pose
 - monitors `MotionStatus` until goal reached, cancel, or failure

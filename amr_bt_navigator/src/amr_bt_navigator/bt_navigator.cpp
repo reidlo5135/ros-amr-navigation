@@ -17,18 +17,21 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   command_topic_(""),
   current_pose_topic_(""),
   motion_status_topic_(""),
+  obstacle_report_topic_(""),
   plan_segment_service_("/amr/global_planner/plan_segment"),
   default_node_id_("start"),
   planner_wait_timeout_ms_(2000),
   feedback_period_ms_(100),
   next_command_id_(1U),
   has_current_pose_(false),
-  has_motion_status_(false)
+  has_motion_status_(false),
+  has_obstacle_report_(false)
 {
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
+  this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
   this->declare_parameter(
@@ -43,6 +46,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.status", this->motion_status_topic_);
+  this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->get_parameter("services.segment", this->plan_segment_service_);
   this->get_parameter("defaults.node_id", this->default_node_id_);
   this->get_parameter(
@@ -51,14 +55,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->motion_status_topic_.empty())
+    this->motion_status_topic_.empty() || this->obstacle_report_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Navigator topics must not be empty: command='%s' pose='%s' status='%s'",
+      "Navigator topics must not be empty: command='%s' pose='%s' status='%s' obstacle_report='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
-      this->motion_status_topic_.c_str());
+      this->motion_status_topic_.c_str(),
+      this->obstacle_report_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -75,6 +80,11 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->motion_status_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const amr_msgs::msg::MotionStatus::SharedPtr message) {
       this->handle_motion_status(message);
+    });
+  this->obstacle_report_subscription_ = this->create_subscription<amr_msgs::msg::ObstacleReport>(
+    this->obstacle_report_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const amr_msgs::msg::ObstacleReport::SharedPtr message) {
+      this->handle_obstacle_report(message);
     });
   this->action_server_ = rclcpp_action::create_server<NavigateToPose>(
     this->get_node_base_interface(),
@@ -96,11 +106,12 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', planner='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', obstacle_report='%s', planner='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->motion_status_topic_.c_str(),
+    this->obstacle_report_topic_.c_str(),
     this->plan_segment_service_.c_str());
 
   return CallbackReturn::SUCCESS;
@@ -133,12 +144,15 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
+  this->obstacle_report_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
+  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->has_current_pose_ = false;
   this->has_motion_status_ = false;
+  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -149,12 +163,15 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
+  this->obstacle_report_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
+  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->has_current_pose_ = false;
   this->has_motion_status_ = false;
+  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -326,6 +343,13 @@ void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::Shared
   std::scoped_lock lock(this->navigator_mutex_);
   this->latest_motion_status_ = *message;
   this->has_motion_status_ = true;
+}
+
+void Btnavigator::handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message)
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  this->latest_obstacle_report_ = *message;
+  this->has_obstacle_report_ = true;
 }
 
 geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy() const

@@ -75,7 +75,7 @@ private:
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
-  bool is_obstacle_detected() const;
+  bool is_safety_gate_triggered() const;
   double pose_distance(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal) const;
@@ -107,12 +107,12 @@ private:
   double min_heading_motion_scale_;
   double max_linear_accel_;
   double max_angular_accel_;
-  bool obstacle_detection_enabled_;
-  bool obstacle_allow_rotate_in_place_;
-  double obstacle_stop_distance_;
-  double obstacle_forward_angle_deg_;
-  double obstacle_rotate_heading_threshold_;
-  int obstacle_min_points_;
+  bool safety_gate_enabled_;
+  bool safety_gate_allow_rotate_in_place_;
+  double safety_gate_stop_distance_;
+  double safety_gate_forward_angle_deg_;
+  double safety_gate_rotate_heading_threshold_;
+  int safety_gate_min_points_;
   VelocityControlMode velocity_control_mode_;
   AxisControllerConfig linear_controller_config_;
   AxisControllerConfig angular_controller_config_;

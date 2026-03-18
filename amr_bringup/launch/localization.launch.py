@@ -51,6 +51,24 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[bringup_params_file()],
         condition=UnlessCondition(mapping_mode),
     )
+    obstacle_detection = LifecycleNode(
+        package="amr_obstacle_detection",
+        executable="amr_obstacle_detection",
+        name="obstacle_detection",
+        namespace="amr",
+        output="screen",
+        parameters=[bringup_params_file()],
+        condition=UnlessCondition(mapping_mode),
+    )
+    costmap_server = LifecycleNode(
+        package="amr_costmap_server",
+        executable="amr_costmap_server",
+        name="costmap_server",
+        namespace="amr",
+        output="screen",
+        parameters=[bringup_params_file()],
+        condition=UnlessCondition(mapping_mode),
+    )
 
     localization_manager = Node(
         package="amr_lifecycle_manager",
@@ -64,6 +82,8 @@ def generate_launch_description() -> LaunchDescription:
                 "managed_nodes": [
                     "/amr/map_server",
                     "/amr/localization",
+                    "/amr/obstacle_detection",
+                    "/amr/costmap_server",
                     "/amr/global_planner",
                 ]
             },
@@ -90,6 +110,8 @@ def generate_launch_description() -> LaunchDescription:
 
     ld.add_action(map_server)
     ld.add_action(localization)
+    ld.add_action(obstacle_detection)
+    ld.add_action(costmap_server)
     ld.add_action(global_planner)
     ld.add_action(localization_manager)
     ld.add_action(mapping_manager)

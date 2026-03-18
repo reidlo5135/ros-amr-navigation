@@ -1,20 +1,19 @@
 # amr_global_planner
 
-`amr_global_planner` provides occupancy-grid A* planning on an inflated global costmap.
+`amr_global_planner` provides occupancy-grid A* planning on the global costmap owned by `amr_costmap_server`.
 
 ## Interfaces
 
-- subscribes: `/amr/map/data`
+- subscribes: `/amr/costmap/global`
 - serves: `/amr/global_planner/plan_segment`
 - serves: `/amr/global_planner/plan_route`
 - publishes: `/amr/planner/global`
-- publishes: `/amr/costmap/global`
 
 ## Planning Model
 
 - search space: 2D occupancy grid cells
 - planner: A*
-- planning grid: inflated occupancy map
+- planning grid: global costmap
 - connectivity: 4 or 8
 - heuristic:
   - Manhattan for 4-connectivity
@@ -22,21 +21,18 @@
 - extra cost:
   - optional `turn_penalty` when direction changes
 
-## Costmap Behavior
+## Costmap Consumption
 
-- inflates occupied cells from the static map before planning
+- consumes the global costmap published by `amr_costmap_server`
 - can keep unknown space blocked or traversable based on `planner.allow_unknown`
-- relocates start or goal to the nearest free cell when the request lands inside inflated space
-- publishes the inflated map for RViz debugging
+- relocates start or goal to the nearest free cell when the request lands inside blocked costmap space
 
 ## Global Planning Pipeline
 
 ```mermaid
 flowchart LR
-    A[/amr/map/data/] --> B[build global inflated map]
-    B --> C[A* search]
-    C --> D[/amr/planner/global/]
-    B --> E[/amr/costmap/global/]
+    A[/amr/costmap/global/] --> B[A* search]
+    B --> C[/amr/planner/global/]
 ```
 
 ## Post-processing

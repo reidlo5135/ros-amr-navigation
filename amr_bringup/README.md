@@ -7,12 +7,16 @@
 - [localization.launch.py](./launch/localization.launch.py)
   - `amr_map_server`
   - `amr_localization`
+  - `amr_obstacle_detection`
+  - `amr_costmap_server`
   - `amr_global_planner`
+  - `amr_lifecycle_manager`
 - [navigation.launch.py](./launch/navigation.launch.py)
   - `amr_local_planner`
   - `amr_motion_controller`
   - `amr_bt_navigator`
   - `amr_rviz_plugins`
+  - `amr_lifecycle_manager`
 
 This package launches nodes directly. It does not include per-package launch files.
 
@@ -46,15 +50,19 @@ The current mapping-mode flow is now:
 flowchart LR
     A[localization.launch.py] --> B[amr_map_server]
     A --> C[amr_localization]
-    A --> D[amr_global_planner]
-    E[navigation.launch.py] --> F[amr_local_planner]
-    E --> G[amr_motion_controller]
-    E --> H[amr_bt_navigator]
-    E --> I[amr_rviz_plugins]
+    A --> D[amr_obstacle_detection]
+    A --> E[amr_costmap_server]
+    A --> F[amr_global_planner]
+    A --> G[amr_lifecycle_manager]
+    H[navigation.launch.py] --> I[amr_local_planner]
+    H --> J[amr_motion_controller]
+    H --> K[amr_bt_navigator]
+    H --> L[amr_rviz_plugins]
+    H --> M[amr_lifecycle_manager]
 ```
 
 ## Notes
 
 - all runtime node parameters are centralized in one file
-- `amr_localization` can publish an automatic initial pose from the configured origin station
+- `amr_lifecycle_manager` is responsible for managed initial pose publication after lifecycle bringup
 - RViz goal forwarding is enabled by the `amr_rviz_plugins` bridge node

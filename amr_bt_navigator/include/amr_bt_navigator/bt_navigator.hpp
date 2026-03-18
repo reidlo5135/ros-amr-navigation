@@ -7,6 +7,7 @@
 
 #include "amr_msgs/action/navigate_to_pose.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
+#include "amr_msgs/msg/obstacle_report.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -44,6 +45,7 @@ private:
   void execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message);
+  void handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message);
   geometry_msgs::msg::PoseStamped get_current_pose_copy() const;
   amr_msgs::msg::MotionStatus get_motion_status_copy() const;
   amr_msgs::msg::MotionCommand build_motion_command(
@@ -55,11 +57,13 @@ private:
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
+  rclcpp::Subscription<amr_msgs::msg::ObstacleReport>::SharedPtr obstacle_report_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_publisher_;
   std::string navigate_action_name_;
   std::string command_topic_;
   std::string current_pose_topic_;
   std::string motion_status_topic_;
+  std::string obstacle_report_topic_;
   std::string plan_segment_service_;
   std::string default_node_id_;
   int planner_wait_timeout_ms_;
@@ -67,8 +71,10 @@ private:
   uint32_t next_command_id_;
   geometry_msgs::msg::PoseStamped current_pose_;
   amr_msgs::msg::MotionStatus latest_motion_status_;
+  amr_msgs::msg::ObstacleReport latest_obstacle_report_;
   bool has_current_pose_;
   bool has_motion_status_;
+  bool has_obstacle_report_;
   mutable std::mutex navigator_mutex_;
 };
 

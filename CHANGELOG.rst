@@ -4,6 +4,15 @@ Changelog
 2026-03-18
 ----------
 
+- Started the ``0.3.1`` responsibility refactor:
+
+  - added ``amr_obstacle_detection`` for scan-based obstacle reporting
+  - added ``amr_costmap_server`` as the new single owner of global and local costmaps
+  - added ``ObstacleReport.msg`` to ``amr_msgs``
+  - updated ``amr_global_planner`` to consume the global costmap instead of inflating the raw map internally
+  - updated ``amr_local_planner`` to consume the local costmap and obstacle reports instead of interpreting raw scans directly
+  - updated ``amr_bt_navigator`` to subscribe to obstacle reports as the first step toward navigator-owned obstacle-response decisions
+
 - Restored lifecycle-manager-driven bringup after a local reset:
 
   - ``localization.launch.py`` now delegates lifecycle sequencing to ``amr_lifecycle_manager``
@@ -15,6 +24,7 @@ Changelog
   - ``amr_local_planner`` again subscribes to ``/scan`` and performs dynamic-obstacle-triggered local replanning
   - fixed obstacle stop handling in ``amr_motion_controller`` remains separate from dynamic replanning parameters
   - dynamic obstacle triggers now filter against the static inflated map so known walls are less likely to trigger dynamic replans
+- Added a root README responsibility table to clarify package ownership boundaries across mapping, localization, planning, control, lifecycle, and orchestration.
 
 - Added dual-mode operation to ``amr_map_server``:
 

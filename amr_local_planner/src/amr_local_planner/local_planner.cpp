@@ -275,9 +275,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   command_topic_(""),
   current_pose_topic_(""),
   map_topic_(""),
-  scan_topic_(""),
+  obstacle_report_topic_(""),
   local_plan_topic_(""),
-  inflated_map_topic_(""),
   publish_period_ms_(100),
   lookahead_distance_(0.8),
   goal_tolerance_(0.15),
@@ -286,19 +285,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   allow_unknown_(false),
   prevent_corner_cutting_(true),
   turn_penalty_(0.5),
-  inflation_radius_(0.20),
-  inflation_cost_(80),
-  publish_inflated_map_(true),
   dynamic_obstacle_enabled_(true),
-  dynamic_obstacle_max_distance_(1.0),
-  dynamic_obstacle_forward_angle_deg_(120.0),
-  dynamic_obstacle_inflation_radius_(0.20),
-  dynamic_obstacle_min_points_(3),
   dynamic_obstacle_replan_lookahead_distance_(1.4),
-  dynamic_obstacle_static_clearance_cells_(2),
-  footprint_length_(0.34),
-  footprint_width_(0.26),
-  footprint_clearance_(0.10),
   nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
   last_progress_index_(0U),
@@ -306,14 +294,13 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   has_command_(false),
   has_current_pose_(false),
   has_map_(false),
-  has_latest_scan_(false)
+  has_obstacle_report_(false)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
-  this->declare_parameter("topics.map", this->map_topic_);
-  this->declare_parameter("topics.scan", this->scan_topic_);
+  this->declare_parameter("topics.costmap", this->map_topic_);
+  this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
-  this->declare_parameter("topics.inflated_map", this->inflated_map_topic_);
   this->declare_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->declare_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->declare_parameter("planner.goal_tolerance", this->goal_tolerance_);
@@ -324,24 +311,9 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
-  this->declare_parameter("inflation.radius", this->inflation_radius_);
-  this->declare_parameter("inflation.cost", this->inflation_cost_);
-  this->declare_parameter("inflation.publish", this->publish_inflated_map_);
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
-  this->declare_parameter("dynamic_obstacle.max_distance", this->dynamic_obstacle_max_distance_);
-  this->declare_parameter(
-    "dynamic_obstacle.forward_angle_deg", this->dynamic_obstacle_forward_angle_deg_);
-  this->declare_parameter(
-    "dynamic_obstacle.inflation_radius", this->dynamic_obstacle_inflation_radius_);
-  this->declare_parameter(
-    "dynamic_obstacle.minimum_points", this->dynamic_obstacle_min_points_);
   this->declare_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
-  this->declare_parameter(
-    "dynamic_obstacle.static_clearance_cells", this->dynamic_obstacle_static_clearance_cells_);
-  this->declare_parameter("footprint.length", this->footprint_length_);
-  this->declare_parameter("footprint.width", this->footprint_width_);
-  this->declare_parameter("footprint.clearance", this->footprint_clearance_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State & state)
@@ -349,10 +321,9 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   (void)state;
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
-  this->get_parameter("topics.map", this->map_topic_);
-  this->get_parameter("topics.scan", this->scan_topic_);
+  this->get_parameter("topics.costmap", this->map_topic_);
+  this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
-  this->get_parameter("topics.inflated_map", this->inflated_map_topic_);
   this->get_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->get_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->get_parameter("planner.goal_tolerance", this->goal_tolerance_);
@@ -364,40 +335,23 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("planner.turn_penalty", this->turn_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
-  this->get_parameter("inflation.radius", this->inflation_radius_);
-  this->get_parameter("inflation.cost", this->inflation_cost_);
-  this->get_parameter("inflation.publish", this->publish_inflated_map_);
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
-  this->get_parameter("dynamic_obstacle.max_distance", this->dynamic_obstacle_max_distance_);
-  this->get_parameter(
-    "dynamic_obstacle.forward_angle_deg", this->dynamic_obstacle_forward_angle_deg_);
-  this->get_parameter(
-    "dynamic_obstacle.inflation_radius", this->dynamic_obstacle_inflation_radius_);
-  this->get_parameter(
-    "dynamic_obstacle.minimum_points", this->dynamic_obstacle_min_points_);
   this->get_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
-  this->get_parameter(
-    "dynamic_obstacle.static_clearance_cells", this->dynamic_obstacle_static_clearance_cells_);
-  this->get_parameter("footprint.length", this->footprint_length_);
-  this->get_parameter("footprint.width", this->footprint_width_);
-  this->get_parameter("footprint.clearance", this->footprint_clearance_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->map_topic_.empty() || this->scan_topic_.empty() ||
-    this->local_plan_topic_.empty() ||
-    this->inflated_map_topic_.empty())
+    this->map_topic_.empty() || this->obstacle_report_topic_.empty() ||
+    this->local_plan_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Local planner topics must not be empty: command='%s' pose='%s' map='%s' scan='%s' local_plan='%s' inflated_map='%s'",
+      "Local planner topics must not be empty: command='%s' pose='%s' costmap='%s' obstacle_report='%s' local_plan='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
       this->map_topic_.c_str(),
-      this->scan_topic_.c_str(),
-      this->local_plan_topic_.c_str(),
-      this->inflated_map_topic_.c_str());
+      this->obstacle_report_topic_.c_str(),
+      this->local_plan_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -417,16 +371,13 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       this->handle_map(message);
     });
-  this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-    this->scan_topic_, rclcpp::SensorDataQoS(),
-    [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
-      this->handle_scan(message);
+  this->obstacle_report_subscription_ = this->create_subscription<amr_msgs::msg::ObstacleReport>(
+    this->obstacle_report_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const amr_msgs::msg::ObstacleReport::SharedPtr message) {
+      this->handle_obstacle_report(message);
     });
   this->local_plan_publisher_ = this->create_publisher<nav_msgs::msg::Path>(
     this->local_plan_topic_, rclcpp::SystemDefaultsQoS());
-  this->inflated_map_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
-    this->inflated_map_topic_,
-    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
   this->timer_ = this->create_wall_timer(
     std::chrono::milliseconds(this->publish_period_ms_),
     [this]() { this->publish_local_plan(); });
@@ -434,14 +385,13 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured local planner with command='%s', pose='%s', map='%s', scan='%s', plan='%s', lookahead=%.2f, inflation=%.2f m",
+    "Configured local planner with command='%s', pose='%s', costmap='%s', obstacle_report='%s', plan='%s', lookahead=%.2f",
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->map_topic_.c_str(),
-    this->scan_topic_.c_str(),
+    this->obstacle_report_topic_.c_str(),
     this->local_plan_topic_.c_str(),
-    this->lookahead_distance_,
-    this->inflation_radius_);
+    this->lookahead_distance_);
 
   return CallbackReturn::SUCCESS;
 }
@@ -450,11 +400,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_activate(const rclcpp_lifecycle::S
 {
   (void)state;
   this->local_plan_publisher_->on_activate();
-  this->inflated_map_publisher_->on_activate();
   this->timer_->reset();
-  if (this->has_map_ && this->publish_inflated_map_) {
-    this->inflated_map_publisher_->publish(this->inflated_map_);
-  }
   RCLCPP_INFO(this->get_logger(), "Activated local planner");
   return CallbackReturn::SUCCESS;
 }
@@ -468,9 +414,6 @@ LocalPlanner::CallbackReturn LocalPlanner::on_deactivate(const rclcpp_lifecycle:
   if (this->local_plan_publisher_) {
     this->local_plan_publisher_->on_deactivate();
   }
-  if (this->inflated_map_publisher_) {
-    this->inflated_map_publisher_->on_deactivate();
-  }
   RCLCPP_INFO(this->get_logger(), "Deactivated local planner");
   return CallbackReturn::SUCCESS;
 }
@@ -481,22 +424,21 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->motion_command_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
-  this->scan_subscription_.reset();
+  this->obstacle_report_subscription_.reset();
   this->local_plan_publisher_.reset();
-  this->inflated_map_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
-  this->latest_scan_ = sensor_msgs::msg::LaserScan();
+  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->last_command_id_ = 0U;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
   this->has_map_ = false;
-  this->has_latest_scan_ = false;
+  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -506,22 +448,21 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->motion_command_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
-  this->scan_subscription_.reset();
+  this->obstacle_report_subscription_.reset();
   this->local_plan_publisher_.reset();
-  this->inflated_map_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
-  this->latest_scan_ = sensor_msgs::msg::LaserScan();
+  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->last_command_id_ = 0U;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
   this->has_map_ = false;
-  this->has_latest_scan_ = false;
+  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -549,28 +490,22 @@ void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
 {
   this->map_occupancy_grid_ = message;
   this->has_map_ = true;
-  this->rebuild_inflated_map();
-  this->working_costmap_ = this->build_working_costmap();
-
-  if (
-    this->publish_inflated_map_ && this->inflated_map_publisher_ &&
-    this->inflated_map_publisher_->is_activated())
-  {
-    this->inflated_map_publisher_->publish(this->working_costmap_);
-  }
+  this->inflated_map_ = *message;
+  this->working_costmap_ = *message;
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Received map for local planner: size=%u x %u resolution=%.3f",
+    "Received local costmap for local planner: size=%u x %u resolution=%.3f",
     message->info.width,
     message->info.height,
     message->info.resolution);
 }
 
-void LocalPlanner::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message)
+void LocalPlanner::handle_obstacle_report(
+  const amr_msgs::msg::ObstacleReport::SharedPtr message)
 {
-  this->latest_scan_ = *message;
-  this->has_latest_scan_ = true;
+  this->latest_obstacle_report_ = *message;
+  this->has_obstacle_report_ = true;
 }
 
 void LocalPlanner::publish_local_plan()
@@ -584,12 +519,6 @@ void LocalPlanner::publish_local_plan()
 
   const auto local_plan = this->build_local_plan(this->latest_command_, this->current_pose_);
   this->local_plan_publisher_->publish(local_plan);
-  if (
-    this->publish_inflated_map_ && this->inflated_map_publisher_ &&
-    this->inflated_map_publisher_->is_activated())
-  {
-    this->inflated_map_publisher_->publish(this->working_costmap_);
-  }
 
   RCLCPP_INFO_THROTTLE(
     this->get_logger(),
@@ -626,7 +555,11 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
   const auto closest_index =
     this->find_closest_pose_index(source_plan, current_pose, this->last_progress_index_);
   this->last_progress_index_ = closest_index;
-  const bool obstacle_active = this->has_dynamic_obstacle_nearby();
+  const bool obstacle_active =
+    this->dynamic_obstacle_enabled_ && this->has_obstacle_report_ &&
+    this->latest_obstacle_report_.active &&
+    this->latest_obstacle_report_.is_dynamic &&
+    this->latest_obstacle_report_.blocks_path;
   const double replan_lookahead_distance = obstacle_active ?
     std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_) :
     this->lookahead_distance_;
@@ -670,12 +603,16 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
     return sliced_plan;
   }
 
-  if (!this->has_dynamic_obstacle_nearby()) {
+  if (
+    !this->dynamic_obstacle_enabled_ || !this->has_obstacle_report_ ||
+    !this->latest_obstacle_report_.active || !this->latest_obstacle_report_.is_dynamic ||
+    !this->latest_obstacle_report_.blocks_path)
+  {
     this->working_costmap_ = this->inflated_map_;
     return sliced_plan;
   }
 
-  this->working_costmap_ = this->build_working_costmap();
+  this->working_costmap_ = this->inflated_map_;
   const auto & working_map = this->working_costmap_;
 
   int start_x = 0;
@@ -828,262 +765,6 @@ std::size_t LocalPlanner::find_closest_pose_index(
   return closest_index;
 }
 
-void LocalPlanner::rebuild_inflated_map()
-{
-  if (!this->has_map_ || !this->map_occupancy_grid_) {
-    return;
-  }
-
-  this->inflated_map_ = *this->map_occupancy_grid_;
-  const int width = static_cast<int>(this->inflated_map_.info.width);
-  const int height = static_cast<int>(this->inflated_map_.info.height);
-  if (width <= 0 || height <= 0 || this->inflated_map_.data.empty()) {
-    return;
-  }
-
-  const auto original_grid = this->inflated_map_.data;
-  const int inflation_radius_cells = std::max(
-    0, static_cast<int>(std::ceil(this->inflation_radius_ / this->inflated_map_.info.resolution)));
-
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      const int index = y * width + x;
-      if (original_grid[static_cast<std::size_t>(index)] < this->obstacle_threshold_) {
-        continue;
-      }
-
-      for (int dy = -inflation_radius_cells; dy <= inflation_radius_cells; ++dy) {
-        for (int dx = -inflation_radius_cells; dx <= inflation_radius_cells; ++dx) {
-          const int nx = x + dx;
-          const int ny = y + dy;
-          if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-            continue;
-          }
-
-          const double distance = std::sqrt(static_cast<double>((dx * dx) + (dy * dy)));
-          if (distance > static_cast<double>(inflation_radius_cells)) {
-            continue;
-          }
-
-          const int neighbor_index = ny * width + nx;
-          const int8_t original_value = original_grid[static_cast<std::size_t>(neighbor_index)];
-          if (original_value == kUnknownCellValue) {
-            continue;
-          }
-          if (original_value >= this->obstacle_threshold_) {
-            continue;
-          }
-
-          this->inflated_map_.data[static_cast<std::size_t>(neighbor_index)] = static_cast<int8_t>(
-            std::max<int>(this->inflated_map_.data[static_cast<std::size_t>(neighbor_index)], this->inflation_cost_));
-        }
-      }
-    }
-  }
-}
-
-nav_msgs::msg::OccupancyGrid LocalPlanner::build_working_costmap() const
-{
-  nav_msgs::msg::OccupancyGrid working_map = this->inflated_map_;
-  if (!this->dynamic_obstacle_enabled_) {
-    return working_map;
-  }
-
-  this->overlay_dynamic_obstacles(working_map);
-  return working_map;
-}
-
-void LocalPlanner::overlay_dynamic_obstacles(nav_msgs::msg::OccupancyGrid & map) const
-{
-  if (!this->has_latest_scan_ || !this->has_current_pose_ || map.data.empty()) {
-    return;
-  }
-
-  const int width = static_cast<int>(map.info.width);
-  const int height = static_cast<int>(map.info.height);
-  if (width <= 0 || height <= 0) {
-    return;
-  }
-
-  const double current_yaw = std::atan2(
-    2.0 * (
-      this->current_pose_.pose.orientation.w * this->current_pose_.pose.orientation.z +
-      this->current_pose_.pose.orientation.x * this->current_pose_.pose.orientation.y),
-    1.0 - 2.0 * (
-      this->current_pose_.pose.orientation.y * this->current_pose_.pose.orientation.y +
-      this->current_pose_.pose.orientation.z * this->current_pose_.pose.orientation.z));
-  const double half_angle_rad =
-    (this->dynamic_obstacle_forward_angle_deg_ * 3.14159265358979323846 / 180.0) * 0.5;
-  const double footprint_radius = 0.5 * std::sqrt(
-    (this->footprint_length_ * this->footprint_length_) +
-    (this->footprint_width_ * this->footprint_width_));
-  const double effective_radius = std::max(
-    this->dynamic_obstacle_inflation_radius_,
-    footprint_radius + this->footprint_clearance_);
-  const double inflation_radius_cells = std::ceil(
-    effective_radius / std::max(0.01, static_cast<double>(map.info.resolution)));
-  const int inflation_radius = std::max(0, static_cast<int>(inflation_radius_cells));
-
-  for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
-    const double range = static_cast<double>(this->latest_scan_.ranges[index]);
-    if (!std::isfinite(range)) {
-      continue;
-    }
-    if (
-      range < std::max(static_cast<double>(this->latest_scan_.range_min), 0.05) ||
-      range > std::min(static_cast<double>(this->latest_scan_.range_max), this->dynamic_obstacle_max_distance_))
-    {
-      continue;
-    }
-
-    const double beam_angle =
-      current_yaw + static_cast<double>(this->latest_scan_.angle_min) +
-      (static_cast<double>(index) * static_cast<double>(this->latest_scan_.angle_increment));
-    const double relative_angle =
-      static_cast<double>(this->latest_scan_.angle_min) +
-      (static_cast<double>(index) * static_cast<double>(this->latest_scan_.angle_increment));
-    if (std::abs(relative_angle) > half_angle_rad) {
-      continue;
-    }
-
-    geometry_msgs::msg::Point obstacle_point;
-    obstacle_point.x = this->current_pose_.pose.position.x + (range * std::cos(beam_angle));
-    obstacle_point.y = this->current_pose_.pose.position.y + (range * std::sin(beam_angle));
-    obstacle_point.z = 0.0;
-
-    int grid_x = 0;
-    int grid_y = 0;
-    if (!this->world_to_grid(map, obstacle_point, grid_x, grid_y)) {
-      continue;
-    }
-
-    const auto & static_reference_map =
-      this->inflated_map_.data.empty() ? *this->map_occupancy_grid_ : this->inflated_map_;
-    if (!this->is_dynamic_obstacle_cell(static_reference_map, grid_x, grid_y)) {
-      continue;
-    }
-
-    for (int dy = -inflation_radius; dy <= inflation_radius; ++dy) {
-      for (int dx = -inflation_radius; dx <= inflation_radius; ++dx) {
-        const int nx = grid_x + dx;
-        const int ny = grid_y + dy;
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-          continue;
-        }
-
-        const double cell_distance = std::sqrt(static_cast<double>((dx * dx) + (dy * dy)));
-        if (cell_distance > static_cast<double>(inflation_radius)) {
-          continue;
-        }
-
-        const std::size_t cell_index = static_cast<std::size_t>(ny * width + nx);
-        if (map.data[cell_index] == kUnknownCellValue) {
-          continue;
-        }
-
-        map.data[cell_index] = static_cast<int8_t>(
-          std::max<int>(map.data[cell_index], std::max(this->inflation_cost_, this->obstacle_threshold_)));
-      }
-    }
-  }
-}
-
-bool LocalPlanner::has_dynamic_obstacle_nearby() const
-{
-  if (
-    !this->dynamic_obstacle_enabled_ || !this->has_latest_scan_ ||
-    !this->has_current_pose_ || !this->has_map_ || !this->map_occupancy_grid_)
-  {
-    return false;
-  }
-
-  const double half_angle_rad =
-    (this->dynamic_obstacle_forward_angle_deg_ * 3.14159265358979323846 / 180.0) * 0.5;
-  const double current_yaw = std::atan2(
-    2.0 * (
-      this->current_pose_.pose.orientation.w * this->current_pose_.pose.orientation.z +
-      this->current_pose_.pose.orientation.x * this->current_pose_.pose.orientation.y),
-    1.0 - 2.0 * (
-      this->current_pose_.pose.orientation.y * this->current_pose_.pose.orientation.y +
-      this->current_pose_.pose.orientation.z * this->current_pose_.pose.orientation.z));
-  int hit_count = 0;
-
-  for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
-    const double angle =
-      static_cast<double>(this->latest_scan_.angle_min) +
-      (static_cast<double>(index) * static_cast<double>(this->latest_scan_.angle_increment));
-    if (std::abs(angle) > half_angle_rad) {
-      continue;
-    }
-
-    const double range = static_cast<double>(this->latest_scan_.ranges[index]);
-    if (!std::isfinite(range)) {
-      continue;
-    }
-    if (
-      range < std::max(static_cast<double>(this->latest_scan_.range_min), 0.05) ||
-      range > std::min(static_cast<double>(this->latest_scan_.range_max), this->dynamic_obstacle_max_distance_))
-    {
-      continue;
-    }
-
-    geometry_msgs::msg::Point obstacle_point;
-    obstacle_point.x = this->current_pose_.pose.position.x + (range * std::cos(current_yaw + angle));
-    obstacle_point.y = this->current_pose_.pose.position.y + (range * std::sin(current_yaw + angle));
-    obstacle_point.z = 0.0;
-
-    int grid_x = 0;
-    int grid_y = 0;
-    if (!this->world_to_grid(*this->map_occupancy_grid_, obstacle_point, grid_x, grid_y)) {
-      continue;
-    }
-
-    const auto & static_reference_map =
-      this->inflated_map_.data.empty() ? *this->map_occupancy_grid_ : this->inflated_map_;
-    if (!this->is_dynamic_obstacle_cell(static_reference_map, grid_x, grid_y)) {
-      continue;
-    }
-
-    ++hit_count;
-    if (hit_count >= std::max(1, this->dynamic_obstacle_min_points_)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool LocalPlanner::is_dynamic_obstacle_cell(
-  const nav_msgs::msg::OccupancyGrid & static_map,
-  int grid_x,
-  int grid_y) const
-{
-  const int width = static_cast<int>(static_map.info.width);
-  const int height = static_cast<int>(static_map.info.height);
-
-  for (int dy = -this->dynamic_obstacle_static_clearance_cells_;
-    dy <= this->dynamic_obstacle_static_clearance_cells_; ++dy)
-  {
-    for (int dx = -this->dynamic_obstacle_static_clearance_cells_;
-      dx <= this->dynamic_obstacle_static_clearance_cells_; ++dx)
-    {
-      const int nx = grid_x + dx;
-      const int ny = grid_y + dy;
-      if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-        continue;
-      }
-
-      const int value = static_cast<int>(
-        static_map.data[static_cast<std::size_t>(ny * width + nx)]);
-      if (value >= this->obstacle_threshold_) {
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-
 bool LocalPlanner::world_to_grid(
   const geometry_msgs::msg::Point & point,
   int & grid_x,
@@ -1100,22 +781,6 @@ bool LocalPlanner::world_to_grid(
   return
     grid_x >= 0 && grid_x < static_cast<int>(info.width) &&
     grid_y >= 0 && grid_y < static_cast<int>(info.height);
-}
-
-bool LocalPlanner::world_to_grid(
-  const nav_msgs::msg::OccupancyGrid & map,
-  const geometry_msgs::msg::Point & point,
-  int & grid_x,
-  int & grid_y) const
-{
-  grid_x = static_cast<int>(std::floor(
-    (point.x - map.info.origin.position.x) / map.info.resolution));
-  grid_y = static_cast<int>(std::floor(
-    (point.y - map.info.origin.position.y) / map.info.resolution));
-
-  return
-    grid_x >= 0 && grid_x < static_cast<int>(map.info.width) &&
-    grid_y >= 0 && grid_y < static_cast<int>(map.info.height);
 }
 
 geometry_msgs::msg::PoseStamped LocalPlanner::grid_to_pose(
