@@ -150,6 +150,22 @@ std::vector<GridCell> get_neighbors(const GridCell & cell, int connectivity)
   return neighbors;
 }
 
+double grid_path_length(const std::vector<GridCell> & path)
+{
+  if (path.size() < 2U) {
+    return 0.0;
+  }
+
+  double total_length = 0.0;
+  for (std::size_t index = 1; index < path.size(); ++index) {
+    const double dx = static_cast<double>(path[index].x - path[index - 1U].x);
+    const double dy = static_cast<double>(path[index].y - path[index - 1U].y);
+    total_length += std::sqrt((dx * dx) + (dy * dy));
+  }
+
+  return total_length;
+}
+
 bool plan_on_grid(
   const std::vector<int8_t> & occupancy_grid,
   int width,
@@ -287,6 +303,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   turn_penalty_(0.5),
   dynamic_obstacle_enabled_(true),
   dynamic_obstacle_replan_lookahead_distance_(1.4),
+  dynamic_obstacle_escape_forward_distance_(1.2),
+  dynamic_obstacle_escape_lateral_distance_(0.55),
   nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
   last_progress_index_(0U),
@@ -314,6 +332,10 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->declare_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
+  this->declare_parameter(
+    "dynamic_obstacle.escape_forward_distance", this->dynamic_obstacle_escape_forward_distance_);
+  this->declare_parameter(
+    "dynamic_obstacle.escape_lateral_distance", this->dynamic_obstacle_escape_lateral_distance_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State & state)
@@ -338,6 +360,10 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->get_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
+  this->get_parameter(
+    "dynamic_obstacle.escape_forward_distance", this->dynamic_obstacle_escape_forward_distance_);
+  this->get_parameter(
+    "dynamic_obstacle.escape_lateral_distance", this->dynamic_obstacle_escape_lateral_distance_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
@@ -615,44 +641,133 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   this->working_costmap_ = this->inflated_map_;
   const auto & working_map = this->working_costmap_;
 
-  int start_x = 0;
-  int start_y = 0;
-  int goal_x = 0;
-  int goal_y = 0;
-  if (
-    !this->world_to_grid(current_pose.pose.position, start_x, start_y) ||
-    !this->world_to_grid(sliced_plan.poses.back().pose.position, goal_x, goal_y))
-  {
-    return sliced_plan;
-  }
-
   const int width = static_cast<int>(working_map.info.width);
   const int height = static_cast<int>(working_map.info.height);
-  if (
-    !this->find_nearest_free_cell(
+  int start_x = 0;
+  int start_y = 0;
+  if (!this->world_to_grid(current_pose.pose.position, start_x, start_y)) {
+    return sliced_plan;
+  }
+  if (!this->find_nearest_free_cell(
       working_map.data, width, height, start_x, start_y,
-      this->nearest_free_search_radius_cells_) ||
-    !this->find_nearest_free_cell(
-      working_map.data, width, height, goal_x, goal_y,
       this->nearest_free_search_radius_cells_))
   {
     return sliced_plan;
   }
 
-  std::vector<GridCell> grid_path;
-  const bool success = plan_on_grid(
-    working_map.data,
-    width,
-    height,
-    {start_x, start_y},
-    {goal_x, goal_y},
-    this->obstacle_threshold_,
-    this->allow_unknown_,
-    this->connectivity_,
-    this->prevent_corner_cutting_,
-    this->turn_penalty_,
-    grid_path);
-  if (!success || grid_path.empty()) {
+  auto plan_segment = [&](const GridCell & segment_start,
+      const GridCell & segment_goal,
+      std::vector<GridCell> & grid_path) {
+      return plan_on_grid(
+        working_map.data,
+        width,
+        height,
+        segment_start,
+        segment_goal,
+        this->obstacle_threshold_,
+        this->allow_unknown_,
+        this->connectivity_,
+        this->prevent_corner_cutting_,
+        this->turn_penalty_,
+        grid_path);
+    };
+
+  auto build_grid_plan_to_pose = [&](const geometry_msgs::msg::PoseStamped & goal_pose,
+      std::vector<GridCell> & grid_path) {
+      int goal_x = 0;
+      int goal_y = 0;
+      if (!this->world_to_grid(goal_pose.pose.position, goal_x, goal_y)) {
+        return false;
+      }
+      if (!this->find_nearest_free_cell(
+          working_map.data, width, height, goal_x, goal_y,
+          this->nearest_free_search_radius_cells_))
+      {
+        return false;
+      }
+      return plan_segment({start_x, start_y}, {goal_x, goal_y}, grid_path);
+    };
+
+  std::vector<GridCell> best_grid_path;
+  if (
+    this->latest_obstacle_report_.active &&
+    this->latest_obstacle_report_.is_dynamic &&
+    this->latest_obstacle_report_.blocks_path)
+  {
+    const auto & rejoin_pose = sliced_plan.poses.back();
+    int rejoin_x = 0;
+    int rejoin_y = 0;
+    if (
+      this->world_to_grid(rejoin_pose.pose.position, rejoin_x, rejoin_y) &&
+      this->find_nearest_free_cell(
+        working_map.data, width, height, rejoin_x, rejoin_y,
+        this->nearest_free_search_radius_cells_))
+    {
+      const double current_yaw = std::atan2(
+        2.0 * (
+          current_pose.pose.orientation.w * current_pose.pose.orientation.z +
+          current_pose.pose.orientation.x * current_pose.pose.orientation.y),
+        1.0 - 2.0 * (
+          current_pose.pose.orientation.y * current_pose.pose.orientation.y +
+          current_pose.pose.orientation.z * current_pose.pose.orientation.z));
+      const double forward_distance = std::max(
+        this->dynamic_obstacle_escape_forward_distance_,
+        this->latest_obstacle_report_.distance + 0.35);
+      const double preferred_sign = this->latest_obstacle_report_.bearing >= 0.0 ? -1.0 : 1.0;
+      const std::vector<double> escape_signs{preferred_sign, -preferred_sign};
+      double best_score = std::numeric_limits<double>::max();
+
+      for (const double sign : escape_signs) {
+        geometry_msgs::msg::PoseStamped escape_pose;
+        escape_pose.header = current_pose.header;
+        escape_pose.pose.orientation = current_pose.pose.orientation;
+        escape_pose.pose.position.x =
+          current_pose.pose.position.x +
+          (std::cos(current_yaw) * forward_distance) -
+          (std::sin(current_yaw) * sign * this->dynamic_obstacle_escape_lateral_distance_);
+        escape_pose.pose.position.y =
+          current_pose.pose.position.y +
+          (std::sin(current_yaw) * forward_distance) +
+          (std::cos(current_yaw) * sign * this->dynamic_obstacle_escape_lateral_distance_);
+        escape_pose.pose.position.z = 0.0;
+
+        int escape_x = 0;
+        int escape_y = 0;
+        if (!this->world_to_grid(escape_pose.pose.position, escape_x, escape_y)) {
+          continue;
+        }
+        if (!this->find_nearest_free_cell(
+            working_map.data, width, height, escape_x, escape_y,
+            this->nearest_free_search_radius_cells_))
+        {
+          continue;
+        }
+
+        std::vector<GridCell> escape_path;
+        if (!plan_segment({start_x, start_y}, {escape_x, escape_y}, escape_path) || escape_path.empty()) {
+          continue;
+        }
+
+        std::vector<GridCell> rejoin_path;
+        if (!plan_segment({escape_x, escape_y}, {rejoin_x, rejoin_y}, rejoin_path) || rejoin_path.empty()) {
+          continue;
+        }
+
+        std::vector<GridCell> combined_path = escape_path;
+        combined_path.insert(combined_path.end(), rejoin_path.begin() + 1, rejoin_path.end());
+        const double score = grid_path_length(combined_path);
+        if (score < best_score) {
+          best_score = score;
+          best_grid_path = std::move(combined_path);
+        }
+      }
+    }
+  }
+
+  if (best_grid_path.empty() && !build_grid_plan_to_pose(sliced_plan.poses.back(), best_grid_path)) {
+    return sliced_plan;
+  }
+  if (best_grid_path.empty()) {
     return sliced_plan;
   }
 
@@ -660,9 +775,12 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   local_plan.header = sliced_plan.header;
   local_plan.header.stamp = this->now();
   local_plan.poses.push_back(current_pose);
-  for (std::size_t index = 1; index < grid_path.size(); ++index) {
+  for (std::size_t index = 1; index < best_grid_path.size(); ++index) {
     local_plan.poses.push_back(
-      this->grid_to_pose(grid_path[index].x, grid_path[index].y, local_plan.header.frame_id));
+      this->grid_to_pose(
+        best_grid_path[index].x,
+        best_grid_path[index].y,
+        local_plan.header.frame_id));
   }
 
   if (local_plan.poses.size() == 1U) {
@@ -832,19 +950,60 @@ bool LocalPlanner::find_nearest_free_cell(
     return true;
   }
 
+  const int original_x = grid_x;
+  const int original_y = grid_y;
   for (int radius = 1; radius <= max_radius; ++radius) {
+    bool found_candidate = false;
+    int best_x = grid_x;
+    int best_y = grid_y;
+    double best_distance_squared = std::numeric_limits<double>::max();
+    int best_axis_offset = std::numeric_limits<int>::max();
+    int best_total_offset = std::numeric_limits<int>::max();
+
     for (int dy = -radius; dy <= radius; ++dy) {
       for (int dx = -radius; dx <= radius; ++dx) {
-        const int candidate_x = grid_x + dx;
-        const int candidate_y = grid_y + dy;
-        if (!this->is_occupied_cell(
+        if (std::max(std::abs(dx), std::abs(dy)) != radius) {
+          continue;
+        }
+
+        const int candidate_x = original_x + dx;
+        const int candidate_y = original_y + dy;
+        if (this->is_occupied_cell(
             occupancy_grid, width, height, candidate_x, candidate_y))
         {
-          grid_x = candidate_x;
-          grid_y = candidate_y;
-          return true;
+          continue;
+        }
+
+        const int offset_x = candidate_x - original_x;
+        const int offset_y = candidate_y - original_y;
+        const double distance_squared =
+          static_cast<double>((offset_x * offset_x) + (offset_y * offset_y));
+        const int axis_offset = std::min(std::abs(offset_x), std::abs(offset_y));
+        const int total_offset = std::abs(offset_x) + std::abs(offset_y);
+
+        if (
+          !found_candidate ||
+          distance_squared < best_distance_squared ||
+          (distance_squared == best_distance_squared && axis_offset < best_axis_offset) ||
+          (
+            distance_squared == best_distance_squared &&
+            axis_offset == best_axis_offset &&
+            total_offset < best_total_offset))
+        {
+          found_candidate = true;
+          best_x = candidate_x;
+          best_y = candidate_y;
+          best_distance_squared = distance_squared;
+          best_axis_offset = axis_offset;
+          best_total_offset = total_offset;
         }
       }
+    }
+
+    if (found_candidate) {
+      grid_x = best_x;
+      grid_y = best_y;
+      return true;
     }
   }
 

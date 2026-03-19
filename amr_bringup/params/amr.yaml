@@ -129,14 +129,14 @@
       map: "/amr/map/data"
       report: "/amr/obstacle/report"
     detection:
-      max_distance: 1.2
+      max_distance: 1.8
       forward_angle_deg: 100.0
       minimum_points: 3
       static_clearance_cells: 2
-      blocking_distance: 0.8
+      blocking_distance: 1.2
       critical_distance: 0.25
-      high_distance: 0.5
-      medium_distance: 0.8
+      high_distance: 0.7
+      medium_distance: 1.2
       obstacle_threshold: 50
 
 /amr/costmap_server:
@@ -210,7 +210,9 @@
       nearest_free_search_radius_cells: 4
     dynamic_obstacle:
       enabled: true
-      replan_lookahead_distance: 1.4
+      replan_lookahead_distance: 2.0
+      escape_forward_distance: 1.2
+      escape_lateral_distance: 0.55
 
 /amr/motion_controller:
   ros__parameters:
