@@ -21,6 +21,7 @@
   <exec_depend>amr_rviz_plugins</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
   <exec_depend>amr_bringup</exec_depend>
+  <exec_depend>amr_viz</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

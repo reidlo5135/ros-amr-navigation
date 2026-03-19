@@ -1,6 +1,26 @@
 Changelog
 =========
 
+2026-03-19
+----------
+
+- Added combined bringup support in ``amr_bringup``:
+
+  - added ``total.launch.py`` to sequence localization before navigation
+  - delayed navigation startup so lifecycle-driven initial pose publication can complete first
+
+- Improved dynamic-obstacle handling in the navigation stack:
+
+  - increased obstacle detection distance and blocking thresholds
+  - updated ``amr_local_planner`` to attempt a more explicit lateral escape and rejoin flow
+  - reduced local-planner costmap log spam after observing launch-side Python CPU spikes
+
+- Started the first custom visualization package scaffold:
+
+  - added ``amr_viz`` with a ROS-facing bridge prototype and React/Three.js renderer
+  - added development scripts, bridge configuration, and initial runtime documentation
+  - switched the visualization client toward a host-accessible pure web flow served on ``0.0.0.0``
+
 2026-03-18
 ----------
 

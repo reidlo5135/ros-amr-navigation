@@ -1,0 +1,17 @@
+/amr/viz_bridge:
+  ros__parameters:
+    websocket:
+      host: "0.0.0.0"
+      port: 8765
+    topics:
+      robot_pose: "/amr/localization/pose"
+      global_path: "/amr/planner/global"
+      local_path: "/amr/planner/local"
+      map: "/amr/map/data"
+      global_costmap: "/amr/costmap/global"
+      local_costmap: "/amr/costmap/local"
+      motion_status: "/amr/motion/status"
+      obstacle_report: "/amr/obstacle/report"
+      initial_pose: "/amr/localization/initial_pose"
+    actions:
+      navigate_to_pose: "/amr/navigator/navigate_to_pose"

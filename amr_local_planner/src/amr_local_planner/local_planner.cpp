@@ -519,9 +519,11 @@ void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
   this->inflated_map_ = *message;
   this->working_costmap_ = *message;
 
-  RCLCPP_INFO(
+  RCLCPP_DEBUG_THROTTLE(
     this->get_logger(),
-    "Received local costmap for local planner: size=%u x %u resolution=%.3f",
+    *this->get_clock(),
+    5000,
+    "Updated local costmap for local planner: size=%u x %u resolution=%.3f",
     message->info.width,
     message->info.height,
     message->info.resolution);

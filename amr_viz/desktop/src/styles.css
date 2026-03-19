@@ -1,0 +1,252 @@
+:root {
+  color-scheme: dark;
+  --bg: #07101a;
+  --bg-elevated: #0d1720;
+  --bg-panel: #101d28;
+  --line: rgba(126, 157, 173, 0.16);
+  --line-strong: rgba(126, 157, 173, 0.28);
+  --text: #ecf2f5;
+  --muted: #8a9caa;
+  --accent: #ff9b49;
+  --cool: #53d1c8;
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #070f18 0%, #09131d 100%);
+  color: var(--text);
+  overflow: hidden;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  height: 100vh;
+  padding: 10px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.topbar-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topbar-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #0b141d;
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.button-stack {
+  display: grid;
+  gap: 8px;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ff9b49;
+  color: #08111a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #16303b;
+  color: #b8ece8;
+  border: 1px solid rgba(83, 209, 200, 0.2);
+}
+
+.panel-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 15%) minmax(720px, 70%) minmax(220px, 15%);
+  gap: 10px;
+  min-height: 0;
+}
+
+.scene-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #0a131c;
+  box-shadow: var(--shadow);
+}
+
+.scene-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #0d1822;
+}
+
+.toolbar-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.toolbar-value {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scene-viewport {
+  min-height: 0;
+}
+
+.scene-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  align-content: start;
+}
+
+.field-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compact-stack {
+  grid-template-columns: 1fr;
+}
+
+.panel-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metric-list {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metric-row strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.log-panel {
+  min-height: 0;
+}
+
+.event-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.event-item {
+  border-left: 2px solid var(--accent);
+  padding: 8px 10px;
+  background: rgba(255, 155, 73, 0.08);
+  color: #f4c8a7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1200px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+  }
+}
