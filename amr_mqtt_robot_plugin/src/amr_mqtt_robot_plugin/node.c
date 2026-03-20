@@ -268,6 +268,18 @@ static int amr_mqtt_robot_plugin_subscribe_command_topics(void)
     g_amr_mqtt_robot_plugin_config.mqtt.command_qos);
   if (mqtt_rc == MQTTCLIENT_SUCCESS) {
     g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered = true;
+    RCUTILS_LOG_INFO_NAMED(
+      "amr_mqtt_robot_plugin",
+      "Subscribed MQTT command topic '%s' (qos=%d)",
+      g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel,
+      g_amr_mqtt_robot_plugin_config.mqtt.command_qos);
+  } else {
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_robot_plugin",
+      "Failed to subscribe MQTT command topic '%s': rc=%d (%s)",
+      g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel,
+      mqtt_rc,
+      MQTTClient_strerror(mqtt_rc));
   }
   return mqtt_rc;
 }
@@ -286,8 +298,18 @@ static int amr_mqtt_robot_plugin_connect_mqtt(void)
   if (broker_uri_length < 0 ||
     (size_t)broker_uri_length >= sizeof(g_amr_mqtt_robot_plugin_mqtt.broker_uri))
   {
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_robot_plugin",
+      "MQTT broker URI is too long for host '%s' and port %d",
+      g_amr_mqtt_robot_plugin_config.broker.host,
+      g_amr_mqtt_robot_plugin_config.broker.port);
     return 1;
   }
+
+  RCUTILS_LOG_INFO_NAMED(
+    "amr_mqtt_robot_plugin",
+    "Connecting to MQTT broker at %s",
+    g_amr_mqtt_robot_plugin_mqtt.broker_uri);
 
   mqtt_rc = MQTTClient_create(
     &g_amr_mqtt_robot_plugin_mqtt.client,
@@ -296,6 +318,12 @@ static int amr_mqtt_robot_plugin_connect_mqtt(void)
     MQTTCLIENT_PERSISTENCE_NONE,
     NULL);
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_robot_plugin",
+      "Failed to create MQTT client for %s: rc=%d (%s)",
+      g_amr_mqtt_robot_plugin_mqtt.broker_uri,
+      mqtt_rc,
+      MQTTClient_strerror(mqtt_rc));
     return 1;
   }
 
@@ -311,6 +339,12 @@ static int amr_mqtt_robot_plugin_connect_mqtt(void)
 
   mqtt_rc = MQTTClient_connect(g_amr_mqtt_robot_plugin_mqtt.client, &connect_options);
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_robot_plugin",
+      "Failed to connect MQTT broker %s: rc=%d (%s)",
+      g_amr_mqtt_robot_plugin_mqtt.broker_uri,
+      mqtt_rc,
+      MQTTClient_strerror(mqtt_rc));
     MQTTClient_destroy(&g_amr_mqtt_robot_plugin_mqtt.client);
     g_amr_mqtt_robot_plugin_mqtt.client_created = false;
     return 1;
@@ -365,8 +399,20 @@ static bool amr_mqtt_robot_plugin_ensure_connected(void)
   g_amr_mqtt_robot_plugin_mqtt.last_reconnect_attempt_sec = now_sec;
   connect_options.keepAliveInterval = g_amr_mqtt_robot_plugin_config.broker.keep_alive_sec;
   connect_options.cleansession = g_amr_mqtt_robot_plugin_config.broker.clean_session ? 1 : 0;
+  if (g_amr_mqtt_robot_plugin_config.broker.username[0] != '\0') {
+    connect_options.username = g_amr_mqtt_robot_plugin_config.broker.username;
+  }
+  if (g_amr_mqtt_robot_plugin_config.broker.password[0] != '\0') {
+    connect_options.password = g_amr_mqtt_robot_plugin_config.broker.password;
+  }
   mqtt_rc = MQTTClient_connect(g_amr_mqtt_robot_plugin_mqtt.client, &connect_options);
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    RCUTILS_LOG_WARN_NAMED(
+      "amr_mqtt_robot_plugin",
+      "Failed to reconnect MQTT broker %s: rc=%d (%s)",
+      g_amr_mqtt_robot_plugin_mqtt.broker_uri,
+      mqtt_rc,
+      MQTTClient_strerror(mqtt_rc));
     return false;
   }
 
@@ -378,6 +424,10 @@ static bool amr_mqtt_robot_plugin_ensure_connected(void)
       return false;
     }
   }
+  RCUTILS_LOG_INFO_NAMED(
+    "amr_mqtt_robot_plugin",
+    "Reconnected to MQTT broker at %s",
+    g_amr_mqtt_robot_plugin_mqtt.broker_uri);
   return true;
 }
 
