@@ -310,6 +310,7 @@
           motion_status: "amr/telemetry/motion_status"
           obstacle_report: "amr/telemetry/obstacle_report"
         command:
+          robot_cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
           navigate_to_pose: "amr/command/navigate_to_pose"
           set_initial_pose: "amr/command/set_initial_pose"
         feedback:
@@ -332,6 +333,7 @@
         local_costmap: "/amr/costmap/local"
         motion_status: "/amr/motion/status"
         obstacle_report: "/amr/obstacle/report"
+        velocity: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
       services:
         plan_segment: "/amr/global_planner/plan_segment"

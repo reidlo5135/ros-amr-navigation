@@ -60,6 +60,7 @@ Telemetry sources:
 - `/amr/costmap/local`
 - `/amr/motion/status`
 - `/amr/obstacle/report`
+- `/cmd_vel`
 
 Command / request targets:
 
@@ -83,6 +84,7 @@ Telemetry:
 
 Commands / feedback / responses:
 
+- `amr/robot/turtlebot3/command/cmd_vel`
 - `amr/command/set_initial_pose`
 - `amr/command/navigate_to_pose`
 - `amr/request/plan_segment`
@@ -96,6 +98,7 @@ Commands / feedback / responses:
 ## Supported Behaviors
 
 - ROS topic -> MQTT telemetry publish
+- ROS `/cmd_vel` -> MQTT robot command publish
 - MQTT command -> ROS initial pose publish
 - MQTT command -> ROS action goal for `navigate_to_pose`
 - ROS action feedback/result -> MQTT feedback/response

@@ -18,6 +18,7 @@
 
 #include <geometry_msgs/msg/pose_with_covariance_stamped.h>
 #include <geometry_msgs/msg/pose_stamped.h>
+#include <geometry_msgs/msg/twist.h>
 #include <nav_msgs/msg/occupancy_grid.h>
 #include <nav_msgs/msg/path.h>
 #include <action_msgs/msg/goal_status_array.h>
@@ -29,7 +30,7 @@
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
 #define AMR_MQTT_BRIDGE_MAX_STRING_LENGTH 512
-#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 8
+#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 9
 
 typedef char * (* amr_mqtt_bridge_serializer_fn_t)(const void * message);
 
@@ -78,6 +79,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char telemetry_local_costmap[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_motion_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_obstacle_report[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char command_robot_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -99,6 +101,7 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_local_costmap[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_motion_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_obstacle_report[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_velocity[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -121,6 +124,7 @@ typedef struct amr_mqtt_bridge_telemetry_endpoint_s
   void * message;
   const rosidl_message_type_support_t * type_support;
   const rmw_qos_profile_t * qos_profile;
+  int mqtt_qos;
   amr_mqtt_bridge_serializer_fn_t serializer;
 } amr_mqtt_bridge_telemetry_endpoint_t;
 
@@ -145,6 +149,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   nav_msgs__msg__OccupancyGrid local_costmap_message;
   amr_msgs__msg__MotionStatus motion_status_message;
   amr_msgs__msg__ObstacleReport obstacle_report_message;
+  geometry_msgs__msg__Twist velocity_message;
 
   rcl_subscription_t robot_pose_subscription;
   rcl_subscription_t global_path_subscription;
@@ -154,6 +159,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t local_costmap_subscription;
   rcl_subscription_t motion_status_subscription;
   rcl_subscription_t obstacle_report_subscription;
+  rcl_subscription_t velocity_subscription;
   rcl_publisher_t initial_pose_publisher;
   rcl_client_t plan_segment_client;
   rcl_client_t plan_route_client;

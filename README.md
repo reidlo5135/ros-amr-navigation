@@ -83,6 +83,7 @@ Important parameter sections:
 `amr_mqtt_bridge` currently handles:
 
 - telemetry publish from ROS topics
+- `/cmd_vel` publish to the robot MQTT command topic
 - MQTT command subscribe for `set_initial_pose`
 - MQTT action bridge for `navigate_to_pose`
 - MQTT request/response bridge for `plan_segment`
