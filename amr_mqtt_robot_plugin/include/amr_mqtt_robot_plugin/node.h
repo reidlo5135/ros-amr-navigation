@@ -30,6 +30,7 @@
 #include <sensor_msgs/msg/joint_state.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <std_msgs/msg/header.h>
+#include <std_msgs/msg/string.h>
 #include <tf2_msgs/msg/tf_message.h>
 #include <amr_msgs/msg/motion_status.h>
 #include <amr_msgs/msg/obstacle_report.h>
@@ -38,7 +39,7 @@
 #define AMR_MQTT_ROBOT_PLUGIN_NODE_NAME "mqtt_robot_plugin"
 #define AMR_MQTT_ROBOT_PLUGIN_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH 512
-#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 14
+#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 15
 
 typedef char * (* amr_mqtt_robot_plugin_serializer_fn_t)(const void * message);
 
@@ -93,6 +94,7 @@ typedef struct amr_mqtt_robot_plugin_mqtt_topics_s
   char telemetry_tf[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_tf_static[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_joint_states[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char telemetry_robot_description[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char command_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
@@ -122,6 +124,7 @@ typedef struct amr_mqtt_robot_plugin_ros_interfaces_s
   char topic_tf[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_tf_static[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_joint_states[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_robot_description[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_navigate_feedback[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
@@ -169,6 +172,7 @@ typedef struct amr_mqtt_robot_plugin_ros_state_s
   tf2_msgs__msg__TFMessage tf_message;
   tf2_msgs__msg__TFMessage tf_static_message;
   sensor_msgs__msg__JointState joint_states_message;
+  std_msgs__msg__String robot_description_message;
   geometry_msgs__msg__Twist cmd_vel_message;
   action_msgs__msg__GoalStatusArray navigate_status_message;
 
@@ -186,6 +190,7 @@ typedef struct amr_mqtt_robot_plugin_ros_state_s
   rcl_subscription_t tf_subscription;
   rcl_subscription_t tf_static_subscription;
   rcl_subscription_t joint_states_subscription;
+  rcl_subscription_t robot_description_subscription;
   rcl_publisher_t cmd_vel_publisher;
   rcl_publisher_t initial_pose_publisher;
   rcl_publisher_t navigate_feedback_publisher;

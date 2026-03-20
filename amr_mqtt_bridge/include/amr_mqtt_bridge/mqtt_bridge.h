@@ -26,6 +26,7 @@
 #include <sensor_msgs/msg/joint_state.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <std_msgs/msg/header.h>
+#include <std_msgs/msg/string.h>
 #include <tf2_msgs/msg/tf_message.h>
 #include <action_msgs/msg/goal_status_array.h>
 #include <amr_msgs/action/navigate_to_pose.h>
@@ -93,6 +94,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char robot_telemetry_tf[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char robot_telemetry_tf_static[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char robot_telemetry_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_robot_description[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char status_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -122,6 +124,7 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_robot_tf[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_robot_tf_static[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_robot_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_description[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_rviz_goal[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_navigate_feedback[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -202,6 +205,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_publisher_t robot_tf_publisher;
   rcl_publisher_t robot_tf_static_publisher;
   rcl_publisher_t robot_joint_states_publisher;
+  rcl_publisher_t robot_description_publisher;
   rcl_publisher_t initial_pose_publisher;
   rcl_publisher_t navigate_feedback_publisher;
   rcl_publisher_t navigate_status_publisher;
@@ -230,6 +234,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   bool robot_tf_publisher_initialized;
   bool robot_tf_static_publisher_initialized;
   bool robot_joint_states_publisher_initialized;
+  bool robot_description_publisher_initialized;
   bool initial_pose_publisher_initialized;
   bool navigate_feedback_publisher_initialized;
   bool navigate_status_publisher_initialized;
