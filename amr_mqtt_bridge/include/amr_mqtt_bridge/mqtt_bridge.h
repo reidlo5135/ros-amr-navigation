@@ -20,7 +20,13 @@
 #include <geometry_msgs/msg/pose_stamped.h>
 #include <geometry_msgs/msg/twist.h>
 #include <nav_msgs/msg/occupancy_grid.h>
+#include <nav_msgs/msg/odometry.h>
 #include <nav_msgs/msg/path.h>
+#include <sensor_msgs/msg/imu.h>
+#include <sensor_msgs/msg/joint_state.h>
+#include <sensor_msgs/msg/laser_scan.h>
+#include <std_msgs/msg/header.h>
+#include <tf2_msgs/msg/tf_message.h>
 #include <action_msgs/msg/goal_status_array.h>
 #include <amr_msgs/action/navigate_to_pose.h>
 #include <amr_msgs/msg/motion_status.h>
@@ -80,6 +86,12 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char telemetry_motion_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_obstacle_report[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_robot_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_scan[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_odom[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_imu[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_tf[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_tf_static[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -102,6 +114,12 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_motion_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_obstacle_report[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_velocity[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_scan[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_odom[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_imu[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_tf[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_tf_static[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_robot_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -160,6 +178,12 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t motion_status_subscription;
   rcl_subscription_t obstacle_report_subscription;
   rcl_subscription_t velocity_subscription;
+  rcl_publisher_t robot_scan_publisher;
+  rcl_publisher_t robot_odom_publisher;
+  rcl_publisher_t robot_imu_publisher;
+  rcl_publisher_t robot_tf_publisher;
+  rcl_publisher_t robot_tf_static_publisher;
+  rcl_publisher_t robot_joint_states_publisher;
   rcl_publisher_t initial_pose_publisher;
   rcl_client_t plan_segment_client;
   rcl_client_t plan_route_client;
@@ -172,6 +196,12 @@ typedef struct amr_mqtt_bridge_ros_state_s
   size_t telemetry_endpoint_count;
   bool messages_initialized;
   bool subscriptions_initialized;
+  bool robot_scan_publisher_initialized;
+  bool robot_odom_publisher_initialized;
+  bool robot_imu_publisher_initialized;
+  bool robot_tf_publisher_initialized;
+  bool robot_tf_static_publisher_initialized;
+  bool robot_joint_states_publisher_initialized;
   bool initial_pose_publisher_initialized;
   bool plan_segment_client_initialized;
   bool plan_route_client_initialized;

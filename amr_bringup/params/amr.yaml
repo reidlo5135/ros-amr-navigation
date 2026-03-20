@@ -313,6 +313,14 @@
           robot_cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
           navigate_to_pose: "amr/command/navigate_to_pose"
           set_initial_pose: "amr/command/set_initial_pose"
+        robot:
+          telemetry:
+            scan: "amr/robot/turtlebot3/telemetry/scan"
+            odom: "amr/robot/turtlebot3/telemetry/odom"
+            imu: "amr/robot/turtlebot3/telemetry/imu"
+            tf: "amr/robot/turtlebot3/telemetry/tf"
+            tf_static: "amr/robot/turtlebot3/telemetry/tf_static"
+            joint_states: "amr/robot/turtlebot3/telemetry/joint_states"
         feedback:
           navigate_to_pose: "amr/feedback/navigate_to_pose"
         response:
@@ -335,6 +343,13 @@
         obstacle_report: "/amr/obstacle/report"
         velocity: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
+        robot:
+          scan: "/scan"
+          odom: "/odom"
+          imu: "/imu"
+          tf: "/tf"
+          tf_static: "/tf_static"
+          joint_states: "/joint_states"
       services:
         plan_segment: "/amr/global_planner/plan_segment"
         plan_route: "/amr/global_planner/plan_route"
@@ -361,6 +376,9 @@
           scan: "amr/robot/turtlebot3/telemetry/scan"
           odom: "amr/robot/turtlebot3/telemetry/odom"
           imu: "amr/robot/turtlebot3/telemetry/imu"
+          tf: "amr/robot/turtlebot3/telemetry/tf"
+          tf_static: "amr/robot/turtlebot3/telemetry/tf_static"
+          joint_states: "amr/robot/turtlebot3/telemetry/joint_states"
         command:
           cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
     ros:
@@ -368,4 +386,7 @@
         scan: "/scan"
         odom: "/odom"
         imu: "/imu"
+        tf: "/tf"
+        tf_static: "/tf_static"
+        joint_states: "/joint_states"
         cmd_vel: "/cmd_vel"

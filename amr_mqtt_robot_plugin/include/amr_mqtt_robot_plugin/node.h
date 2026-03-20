@@ -16,14 +16,16 @@
 #include <geometry_msgs/msg/twist.h>
 #include <nav_msgs/msg/odometry.h>
 #include <sensor_msgs/msg/imu.h>
+#include <sensor_msgs/msg/joint_state.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <std_msgs/msg/header.h>
+#include <tf2_msgs/msg/tf_message.h>
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
 #define AMR_MQTT_ROBOT_PLUGIN_NODE_NAME "mqtt_robot_plugin"
 #define AMR_MQTT_ROBOT_PLUGIN_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH 512
-#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 3
+#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 6
 
 typedef char * (* amr_mqtt_robot_plugin_serializer_fn_t)(const void * message);
 
@@ -66,6 +68,9 @@ typedef struct amr_mqtt_robot_plugin_mqtt_topics_s
   char telemetry_scan[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_odom[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_imu[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char telemetry_tf[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char telemetry_tf_static[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char telemetry_joint_states[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char command_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
 } amr_mqtt_robot_plugin_mqtt_topics_t;
 
@@ -74,6 +79,9 @@ typedef struct amr_mqtt_robot_plugin_ros_interfaces_s
   char topic_scan[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_odom[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_imu[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_tf[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_tf_static[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_joint_states[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
 } amr_mqtt_robot_plugin_ros_interfaces_t;
 
@@ -93,6 +101,8 @@ typedef struct amr_mqtt_robot_plugin_telemetry_endpoint_s
   void * message;
   const rosidl_message_type_support_t * type_support;
   const rmw_qos_profile_t * qos_profile;
+  int mqtt_qos;
+  bool retained;
   amr_mqtt_robot_plugin_serializer_fn_t serializer;
 } amr_mqtt_robot_plugin_telemetry_endpoint_t;
 
@@ -101,11 +111,17 @@ typedef struct amr_mqtt_robot_plugin_ros_state_s
   sensor_msgs__msg__LaserScan scan_message;
   nav_msgs__msg__Odometry odom_message;
   sensor_msgs__msg__Imu imu_message;
+  tf2_msgs__msg__TFMessage tf_message;
+  tf2_msgs__msg__TFMessage tf_static_message;
+  sensor_msgs__msg__JointState joint_states_message;
   geometry_msgs__msg__Twist cmd_vel_message;
 
   rcl_subscription_t scan_subscription;
   rcl_subscription_t odom_subscription;
   rcl_subscription_t imu_subscription;
+  rcl_subscription_t tf_subscription;
+  rcl_subscription_t tf_static_subscription;
+  rcl_subscription_t joint_states_subscription;
   rcl_publisher_t cmd_vel_publisher;
 
   amr_mqtt_robot_plugin_telemetry_endpoint_t telemetry_endpoints[AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS];

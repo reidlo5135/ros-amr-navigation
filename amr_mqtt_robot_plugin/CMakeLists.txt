@@ -34,6 +34,7 @@ find_package(rmw REQUIRED)
 find_package(rosidl_runtime_c REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(tf2_msgs REQUIRED)
 
 set(SOURCES
   src/${PROJECT_NAME}/node.c
@@ -51,6 +52,7 @@ set(DEPENDS
   rosidl_runtime_c
   sensor_msgs
   std_msgs
+  tf2_msgs
 )
 
 set(EXEC_NAME

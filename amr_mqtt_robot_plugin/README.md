@@ -61,6 +61,9 @@ ROS -> MQTT:
 - `/scan` -> `amr/robot/turtlebot3/telemetry/scan`
 - `/odom` -> `amr/robot/turtlebot3/telemetry/odom`
 - `/imu` -> `amr/robot/turtlebot3/telemetry/imu`
+- `/tf` -> `amr/robot/turtlebot3/telemetry/tf`
+- `/tf_static` -> `amr/robot/turtlebot3/telemetry/tf_static`
+- `/joint_states` -> `amr/robot/turtlebot3/telemetry/joint_states`
 
 MQTT -> ROS:
 
@@ -98,5 +101,8 @@ ros2 launch amr_mqtt_robot_plugin amr_mqtt_robot_plugin.launch.py
   - `scan`
   - `odom`
   - `imu`
+  - `tf`
+  - `tf_static`
+  - `joint_states`
   - `cmd_vel`
 - more robot-specific topics can be added later if needed

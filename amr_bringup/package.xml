@@ -13,6 +13,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>turtlebot3_bringup</exec_depend>
   <exec_depend>amr_map_server</exec_depend>
   <exec_depend>amr_localization</exec_depend>
   <exec_depend>amr_obstacle_detection</exec_depend>
@@ -23,6 +24,7 @@
   <exec_depend>amr_bt_navigator</exec_depend>
   <exec_depend>amr_rviz_plugins</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
+  <exec_depend>amr_mqtt_robot_plugin</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

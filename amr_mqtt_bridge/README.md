@@ -62,6 +62,15 @@ Telemetry sources:
 - `/amr/obstacle/report`
 - `/cmd_vel`
 
+Robot ingress republish targets:
+
+- `/scan`
+- `/odom`
+- `/imu`
+- `/tf`
+- `/tf_static`
+- `/joint_states`
+
 Command / request targets:
 
 - `/amr/localization/initial_pose`
@@ -99,6 +108,7 @@ Commands / feedback / responses:
 
 - ROS topic -> MQTT telemetry publish
 - ROS `/cmd_vel` -> MQTT robot command publish
+- MQTT robot telemetry -> ROS republish for robot bringup topics
 - MQTT command -> ROS initial pose publish
 - MQTT command -> ROS action goal for `navigate_to_pose`
 - ROS action feedback/result -> MQTT feedback/response
