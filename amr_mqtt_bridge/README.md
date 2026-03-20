@@ -1,65 +1,56 @@
 # amr_mqtt_bridge
 
-`amr_mqtt_bridge` is the new transport boundary package for the AMR stack.
+`amr_mqtt_bridge` is the navigation-side ROS <-> MQTT transport boundary for
+the AMR stack.
 
-The package layout follows the same `rclc`-first C template style used in
-`ros-teleop-twist`: `src/main.c` as the entry point, package-local sources under
-`src/amr_mqtt_bridge/`, and exported headers under
-`include/amr_mqtt_bridge/`.
+It keeps ROS topics, services, and actions inside the navigation runtime and
+exports only modeled AMR data over MQTT.
 
-Its job is to keep DDS traffic inside the ROS 2 runtime and expose only the
-selected, modeled AMR data over MQTT for web clients, dashboards, or other
-external integrations.
+## Runtime Role
 
-## Goals
+- ROS runtime side
+  - `rclc`
+- MQTT side
+  - Eclipse Paho C client via `libpaho-mqtt-dev`
+- typical deployment
+  - `amr_navigation`
+  - `amr_mqtt_bridge`
+  - `mosquitto`
+  - same VBox Ubuntu server
 
-- replace the Python WebSocket bridge path with a lower-overhead native runtime
-- keep ROS 2 discovery and topic fan-out inside the AMR runtime boundary
-- publish only the AMR data we actually need instead of mirroring raw ROS traffic
-- provide a reusable MQTT bridge package that is not tightly coupled to `amr_viz`
-
-## Runtime Direction
-
-- ROS side: `rclc`
-- MQTT side: Eclipse Paho C client (`paho.mqtt.c`)
-- broker transport:
-  - MQTT TCP for the bridge, typically `1883`
-  - MQTT over WebSocket for browsers, typically `9001`
-
-## External Libraries
-
-Required system packages:
+## Requirements
 
 ```bash
 sudo apt install -y libpaho-mqtt-dev
+sudo apt install -y mosquitto mosquitto-clients
 ```
 
-Expected ROS runtime:
+Expected ROS environment:
 
 - ROS 2 Humble
 - `rclc`
 
-Recommended broker package on the Ubuntu server:
+## Parameters
 
-```bash
-sudo apt install -y mosquitto mosquitto-clients
-```
+Shared runtime mapping lives in:
 
-## Initial Parameter Contract
+- [`amr_bringup/params/amr.yaml`](/home/reidlo/ws/src/ros-amr-navigation/amr_bringup/params/amr.yaml)
 
-The shared runtime parameters live in:
-
-- `amr_bringup/params/amr.yaml`
-
-Current parameter sections relevant to this package:
+Relevant section:
 
 - `/amr/mqtt_bridge`
-  - broker connection
-  - MQTT root namespace
-  - ROS source topics/services/actions
-  - MQTT topic mapping for telemetry and commands
 
-## Planned ROS Inputs
+Tunable groups:
+
+- broker host, port, client id, keepalive, auth
+- MQTT telemetry/command/request/response topic names
+- ROS source topic names
+- ROS service names
+- ROS action names
+
+## Current ROS Inputs
+
+Telemetry sources:
 
 - `/amr/localization/pose`
 - `/amr/planner/global`
@@ -70,16 +61,16 @@ Current parameter sections relevant to this package:
 - `/amr/motion/status`
 - `/amr/obstacle/report`
 
-## Planned ROS Command Interfaces
+Command / request targets:
 
 - `/amr/localization/initial_pose`
 - `/amr/navigator/navigate_to_pose`
 - `/amr/global_planner/plan_segment`
 - `/amr/global_planner/plan_route`
 
-## Planned MQTT Interface Shape
+## Current MQTT Interface
 
-Telemetry topics:
+Telemetry:
 
 - `amr/telemetry/robot_pose`
 - `amr/telemetry/global_path`
@@ -90,21 +81,30 @@ Telemetry topics:
 - `amr/telemetry/motion_status`
 - `amr/telemetry/obstacle_report`
 
-Command topics:
+Commands / feedback / responses:
 
-- `amr/command/navigate_to_pose`
 - `amr/command/set_initial_pose`
-- `amr/feedback/navigate_to_pose`
-- `amr/response/navigate_to_pose`
-- `amr/response/set_initial_pose`
+- `amr/command/navigate_to_pose`
 - `amr/request/plan_segment`
 - `amr/request/plan_route`
+- `amr/response/set_initial_pose`
+- `amr/response/navigate_to_pose`
+- `amr/feedback/navigate_to_pose`
 - `amr/response/plan_segment`
 - `amr/response/plan_route`
 
-## Current Command Payload Shape
+## Supported Behaviors
 
-`set_initial_pose`:
+- ROS topic -> MQTT telemetry publish
+- MQTT command -> ROS initial pose publish
+- MQTT command -> ROS action goal for `navigate_to_pose`
+- ROS action feedback/result -> MQTT feedback/response
+- MQTT request -> ROS service call for `plan_segment`
+- MQTT request -> ROS service call for `plan_route`
+
+## Payload Examples
+
+`set_initial_pose`
 
 ```json
 {
@@ -119,7 +119,7 @@ Command topics:
 }
 ```
 
-`navigate_to_pose`:
+`navigate_to_pose`
 
 ```json
 {
@@ -132,7 +132,7 @@ Command topics:
 }
 ```
 
-`plan_segment`:
+`plan_segment`
 
 ```json
 {
@@ -150,7 +150,7 @@ Command topics:
 }
 ```
 
-`plan_route`:
+`plan_route`
 
 ```json
 {
@@ -170,14 +170,14 @@ Command topics:
 }
 ```
 
-## Status
+## Launch
 
-This package is currently in bootstrap stage:
+```bash
+ros2 launch amr_mqtt_bridge amr_mqtt_bridge.launch.py
+```
 
-- package skeleton created
-- native bridge executable scaffold created
-- launch path created
-- AMR parameter schema reserved in `amr.yaml`
+## Notes
 
-The next step is implementing the actual ROS subscriptions, MQTT publish path,
-and MQTT command-to-ROS bridge behavior.
+- this package is the navigation-side MQTT boundary
+- robot bringup transport belongs in `amr_mqtt_robot_plugin`
+- MQTT topic names and ROS interface names should be tuned through `amr.yaml`

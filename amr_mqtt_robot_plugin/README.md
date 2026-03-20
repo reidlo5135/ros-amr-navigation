@@ -1,53 +1,102 @@
 # amr_mqtt_robot_plugin
 
-`amr_mqtt_robot_plugin` is the robot-side transport adapter for platform bringup
-topics such as `scan`, `odom`, `imu`, and `cmd_vel`.
+`amr_mqtt_robot_plugin` is the robot-side ROS <-> MQTT transport plugin for
+platform bringup topics.
 
-The intended topology is:
+Its job is to keep TurtleBot3 or other robot-local DDS traffic on the robot and
+send only selected telemetry and commands across the machine boundary.
 
-- TurtleBot3 / robot:
-  - local ROS bringup
+## Runtime Role
+
+Recommended placement:
+
+- TurtleBot3 / robot
+  - base bringup
+  - local sensors
   - `amr_mqtt_robot_plugin`
-- VBox / navigation runtime:
-  - `amr_mqtt_bridge`
-  - `amr_navigation`
+- VBox Ubuntu server
   - `mosquitto`
+  - `amr_navigation`
+  - `amr_mqtt_bridge`
 
-This separation keeps DDS local to each machine and moves cross-boundary
-traffic to MQTT.
+This is intended to reduce bridged-adapter DDS load and `ksoftirqd` pressure
+between the robot, host, and VBox guest.
 
-## Why This Package Exists
+## Requirements
 
-- reduce VBox bridged-adapter DDS traffic and `ksoftirqd` load
-- keep TurtleBot3 bringup extensible without exposing DDS directly to VBox
-- separate central navigation bridge concerns from robot platform I/O concerns
+```bash
+sudo apt install -y libpaho-mqtt-dev
+```
 
-## Planned Responsibilities
+Expected ROS environment:
 
-- ROS to MQTT
-  - `/scan`
-  - `/odom`
-  - `/imu`
-- MQTT to ROS
-  - `/cmd_vel`
+- ROS 2 Humble
+- `rclc`
 
-Optional extensions later:
+## Parameters
 
-- `/battery_state`
-- `/joint_states`
-- robot status heartbeat
-- robot-side safety or estop topics
+Shared runtime mapping lives in:
 
-## Shared Parameters
+- [`amr_bringup/params/amr.yaml`](/home/reidlo/ws/src/ros-amr-navigation/amr_bringup/params/amr.yaml)
 
-Runtime mapping is reserved in:
-
-- `amr_bringup/params/amr.yaml`
-
-Current parameter section:
+Relevant section:
 
 - `/amr/mqtt_robot_plugin`
 
-## Status
+Tunable groups:
 
-This package now owns the robot-side MQTT client and topic relay path.
+- broker host, port, client id, keepalive, auth
+- MQTT telemetry and command topic names
+- robot ROS topic names
+
+Default intent:
+
+- broker host points to the Host PC address forwarded into the VBox broker
+- example default: `192.168.61.35:1883`
+
+## Current Interfaces
+
+ROS -> MQTT:
+
+- `/scan` -> `amr/robot/turtlebot3/telemetry/scan`
+- `/odom` -> `amr/robot/turtlebot3/telemetry/odom`
+- `/imu` -> `amr/robot/turtlebot3/telemetry/imu`
+
+MQTT -> ROS:
+
+- `amr/robot/turtlebot3/command/cmd_vel` -> `/cmd_vel`
+
+## Current Payload Shape
+
+`cmd_vel` command payload:
+
+```json
+{
+  "x": 0.15,
+  "z": 0.35
+}
+```
+
+Meaning:
+
+- `x`
+  - linear velocity for `Twist.linear.x`
+- `z`
+  - angular velocity for `Twist.angular.z`
+
+## Launch
+
+```bash
+ros2 launch amr_mqtt_robot_plugin amr_mqtt_robot_plugin.launch.py
+```
+
+## Notes
+
+- this package is robot-side only
+- navigation-side command/action/service bridging belongs in `amr_mqtt_bridge`
+- the current implementation focuses on minimal TurtleBot3 bringup transport:
+  - `scan`
+  - `odom`
+  - `imu`
+  - `cmd_vel`
+- more robot-specific topics can be added later if needed
