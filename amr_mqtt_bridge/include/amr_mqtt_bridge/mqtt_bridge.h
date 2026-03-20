@@ -86,6 +86,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char telemetry_motion_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_obstacle_report[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_robot_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_telemetry_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char robot_telemetry_scan[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char robot_telemetry_odom[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char robot_telemetry_imu[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -179,6 +180,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t motion_status_subscription;
   rcl_subscription_t obstacle_report_subscription;
   rcl_subscription_t velocity_subscription;
+  rcl_publisher_t robot_map_publisher;
   rcl_publisher_t robot_scan_publisher;
   rcl_publisher_t robot_odom_publisher;
   rcl_publisher_t robot_imu_publisher;
@@ -197,6 +199,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   size_t telemetry_endpoint_count;
   bool messages_initialized;
   bool subscriptions_initialized;
+  bool robot_map_publisher_initialized;
   bool robot_scan_publisher_initialized;
   bool robot_odom_publisher_initialized;
   bool robot_imu_publisher_initialized;

@@ -154,6 +154,7 @@ static void amr_mqtt_bridge_set_default_config(void)
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status), "amr/telemetry/motion_status");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report), "amr/telemetry/obstacle_report");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel), "amr/robot/turtlebot3/command/cmd_vel");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map), "amr/robot/turtlebot3/telemetry/map");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan), "amr/robot/turtlebot3/telemetry/scan");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom), "amr/robot/turtlebot3/telemetry/odom");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu), "amr/robot/turtlebot3/telemetry/imu");
@@ -322,6 +323,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.motion_status", g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.obstacle_report", g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.robot_cmd_vel", g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.map", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.scan", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.odom", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.imu", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu));
@@ -404,6 +406,14 @@ static int amr_mqtt_bridge_subscribe_command_topics(void)
     g_amr_mqtt_bridge_mqtt.client,
     g_amr_mqtt_bridge_config.mqtt.request_plan_route,
     g_amr_mqtt_bridge_config.mqtt.service_qos);
+  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    return mqtt_rc;
+  }
+
+  mqtt_rc = MQTTClient_subscribe(
+    g_amr_mqtt_bridge_mqtt.client,
+    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
     return mqtt_rc;
   }
@@ -2727,6 +2737,26 @@ static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload
     request_id);
 }
 
+static void amr_mqtt_bridge_handle_robot_map_telemetry(
+  const void * payload,
+  size_t payload_length)
+{
+  nav_msgs__msg__OccupancyGrid map;
+  memset(&map, 0, sizeof(map));
+  if (!nav_msgs__msg__OccupancyGrid__init(&map) ||
+    !amr_mqtt_bridge_deserialize_message_raw(
+      payload,
+      payload_length,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
+      &map))
+  {
+    nav_msgs__msg__OccupancyGrid__fini(&map);
+    return;
+  }
+  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_map_publisher, &map, NULL);
+  nav_msgs__msg__OccupancyGrid__fini(&map);
+}
+
 static void amr_mqtt_bridge_handle_robot_scan_telemetry(
   const void * payload,
   size_t payload_length)
@@ -2869,6 +2899,8 @@ static void amr_mqtt_bridge_handle_mqtt_message(
     memcpy(payload_text, payload, payload_length);
     amr_mqtt_bridge_handle_plan_route_request(payload_text);
     free(payload_text);
+  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map) == 0) {
+    amr_mqtt_bridge_handle_robot_map_telemetry(payload, payload_length);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan) == 0) {
     amr_mqtt_bridge_handle_robot_scan_telemetry(payload, payload_length);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom) == 0) {
@@ -3570,12 +3602,25 @@ static int amr_mqtt_bridge_init_robot_publishers(void)
   rcl_publisher_options_t tf_static_options = rcl_publisher_get_default_options();
   tf_static_options.qos = k_transient_local_qos;
 
+  g_amr_mqtt_bridge_ros_state.robot_map_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_scan_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_odom_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_imu_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_tf_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher = rcl_get_zero_initialized_publisher();
+
+  rc = rcl_publisher_init(
+    &g_amr_mqtt_bridge_ros_state.robot_map_publisher,
+    &g_amr_mqtt_bridge_runtime.node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
+    g_amr_mqtt_bridge_config.ros.topic_map,
+    &tf_static_options);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.robot_map_publisher_initialized = true;
 
   rc = rclc_publisher_init_default(
     &g_amr_mqtt_bridge_ros_state.robot_scan_publisher,
@@ -3649,6 +3694,12 @@ static int amr_mqtt_bridge_init_robot_publishers(void)
 
 static void amr_mqtt_bridge_fini_robot_publishers(void)
 {
+  if (g_amr_mqtt_bridge_ros_state.robot_map_publisher_initialized) {
+    amr_mqtt_bridge_log_rcl_fini_error(
+      "robot map publisher",
+      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_map_publisher, &g_amr_mqtt_bridge_runtime.node));
+    g_amr_mqtt_bridge_ros_state.robot_map_publisher_initialized = false;
+  }
   if (g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher_initialized) {
     amr_mqtt_bridge_log_rcl_fini_error(
       "robot joint_states publisher",

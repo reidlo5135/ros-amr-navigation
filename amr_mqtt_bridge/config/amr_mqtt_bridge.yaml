@@ -30,6 +30,7 @@
           set_initial_pose: "amr/command/set_initial_pose"
         robot:
           telemetry:
+            map: "amr/robot/turtlebot3/telemetry/map"
             scan: "amr/robot/turtlebot3/telemetry/scan"
             odom: "amr/robot/turtlebot3/telemetry/odom"
             imu: "amr/robot/turtlebot3/telemetry/imu"
@@ -59,6 +60,7 @@
         velocity: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
         robot:
+          map: "/amr/map/data"
           scan: "/scan"
           odom: "/odom"
           imu: "/imu"

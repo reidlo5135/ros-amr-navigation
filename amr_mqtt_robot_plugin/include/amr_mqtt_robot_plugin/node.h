@@ -14,6 +14,7 @@
 #include <rmw/qos_profiles.h>
 
 #include <geometry_msgs/msg/twist.h>
+#include <nav_msgs/msg/occupancy_grid.h>
 #include <nav_msgs/msg/odometry.h>
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/joint_state.h>
@@ -25,7 +26,7 @@
 #define AMR_MQTT_ROBOT_PLUGIN_NODE_NAME "mqtt_robot_plugin"
 #define AMR_MQTT_ROBOT_PLUGIN_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH 512
-#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 6
+#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 7
 
 typedef char * (* amr_mqtt_robot_plugin_serializer_fn_t)(const void * message);
 
@@ -65,6 +66,7 @@ typedef struct amr_mqtt_robot_plugin_mqtt_topics_s
   char root[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   int telemetry_qos;
   int command_qos;
+  char telemetry_map[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_scan[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_odom[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char telemetry_imu[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
@@ -76,6 +78,7 @@ typedef struct amr_mqtt_robot_plugin_mqtt_topics_s
 
 typedef struct amr_mqtt_robot_plugin_ros_interfaces_s
 {
+  char topic_map[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_scan[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_odom[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char topic_imu[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
@@ -109,6 +112,7 @@ typedef struct amr_mqtt_robot_plugin_telemetry_endpoint_s
 
 typedef struct amr_mqtt_robot_plugin_ros_state_s
 {
+  nav_msgs__msg__OccupancyGrid map_message;
   sensor_msgs__msg__LaserScan scan_message;
   nav_msgs__msg__Odometry odom_message;
   sensor_msgs__msg__Imu imu_message;
@@ -117,6 +121,7 @@ typedef struct amr_mqtt_robot_plugin_ros_state_s
   sensor_msgs__msg__JointState joint_states_message;
   geometry_msgs__msg__Twist cmd_vel_message;
 
+  rcl_subscription_t map_subscription;
   rcl_subscription_t scan_subscription;
   rcl_subscription_t odom_subscription;
   rcl_subscription_t imu_subscription;

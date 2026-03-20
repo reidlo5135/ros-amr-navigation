@@ -21,6 +21,8 @@
 
 #include <geometry_msgs/msg/detail/twist__functions.h>
 #include <geometry_msgs/msg/detail/twist__type_support.h>
+#include <nav_msgs/msg/detail/occupancy_grid__functions.h>
+#include <nav_msgs/msg/detail/occupancy_grid__type_support.h>
 #include <nav_msgs/msg/detail/odometry__functions.h>
 #include <nav_msgs/msg/detail/odometry__type_support.h>
 #include <sensor_msgs/msg/detail/imu__functions.h>
@@ -131,6 +133,10 @@ static void amr_mqtt_robot_plugin_set_default_config(void)
   g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos = 0;
   g_amr_mqtt_robot_plugin_config.mqtt.command_qos = 1;
   amr_mqtt_robot_plugin_copy_string(
+    g_amr_mqtt_robot_plugin_config.mqtt.telemetry_map,
+    sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_map),
+    "amr/robot/turtlebot3/telemetry/map");
+  amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan),
     "amr/robot/turtlebot3/telemetry/scan");
@@ -159,6 +165,10 @@ static void amr_mqtt_robot_plugin_set_default_config(void)
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel),
     "amr/robot/turtlebot3/command/cmd_vel");
 
+  amr_mqtt_robot_plugin_copy_string(
+    g_amr_mqtt_robot_plugin_config.ros.topic_map,
+    sizeof(g_amr_mqtt_robot_plugin_config.ros.topic_map),
+    "/amr/map/data");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.ros.topic_scan,
     sizeof(g_amr_mqtt_robot_plugin_config.ros.topic_scan),
@@ -298,6 +308,7 @@ static void amr_mqtt_robot_plugin_load_parameter_overrides(void)
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.root", g_amr_mqtt_robot_plugin_config.mqtt.root, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.root));
     amr_mqtt_robot_plugin_read_integer_param(node_params, "mqtt.qos.telemetry", &g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos);
     amr_mqtt_robot_plugin_read_integer_param(node_params, "mqtt.qos.command", &g_amr_mqtt_robot_plugin_config.mqtt.command_qos);
+    amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.telemetry.map", g_amr_mqtt_robot_plugin_config.mqtt.telemetry_map, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_map));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.telemetry.scan", g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.telemetry.odom", g_amr_mqtt_robot_plugin_config.mqtt.telemetry_odom, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_odom));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.telemetry.imu", g_amr_mqtt_robot_plugin_config.mqtt.telemetry_imu, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_imu));
@@ -306,6 +317,7 @@ static void amr_mqtt_robot_plugin_load_parameter_overrides(void)
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.telemetry.joint_states", g_amr_mqtt_robot_plugin_config.mqtt.telemetry_joint_states, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_joint_states));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.command.cmd_vel", g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel));
 
+    amr_mqtt_robot_plugin_read_string_param(node_params, "ros.topics.map", g_amr_mqtt_robot_plugin_config.ros.topic_map, sizeof(g_amr_mqtt_robot_plugin_config.ros.topic_map));
     amr_mqtt_robot_plugin_read_string_param(node_params, "ros.topics.scan", g_amr_mqtt_robot_plugin_config.ros.topic_scan, sizeof(g_amr_mqtt_robot_plugin_config.ros.topic_scan));
     amr_mqtt_robot_plugin_read_string_param(node_params, "ros.topics.odom", g_amr_mqtt_robot_plugin_config.ros.topic_odom, sizeof(g_amr_mqtt_robot_plugin_config.ros.topic_odom));
     amr_mqtt_robot_plugin_read_string_param(node_params, "ros.topics.imu", g_amr_mqtt_robot_plugin_config.ros.topic_imu, sizeof(g_amr_mqtt_robot_plugin_config.ros.topic_imu));
@@ -1106,7 +1118,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
   rcl_ret_t rc;
 
   memset(&g_amr_mqtt_robot_plugin_ros_state, 0, sizeof(g_amr_mqtt_robot_plugin_ros_state));
-  if (!sensor_msgs__msg__LaserScan__init(&g_amr_mqtt_robot_plugin_ros_state.scan_message) ||
+  if (!nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_robot_plugin_ros_state.map_message) ||
+    !sensor_msgs__msg__LaserScan__init(&g_amr_mqtt_robot_plugin_ros_state.scan_message) ||
     !nav_msgs__msg__Odometry__init(&g_amr_mqtt_robot_plugin_ros_state.odom_message) ||
     !sensor_msgs__msg__Imu__init(&g_amr_mqtt_robot_plugin_ros_state.imu_message) ||
     !tf2_msgs__msg__TFMessage__init(&g_amr_mqtt_robot_plugin_ros_state.tf_message) ||
@@ -1118,6 +1131,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
   }
   g_amr_mqtt_robot_plugin_ros_state.messages_initialized = true;
 
+  g_amr_mqtt_robot_plugin_ros_state.map_subscription = rcl_get_zero_initialized_subscription();
   g_amr_mqtt_robot_plugin_ros_state.scan_subscription = rcl_get_zero_initialized_subscription();
   g_amr_mqtt_robot_plugin_ros_state.odom_subscription = rcl_get_zero_initialized_subscription();
   g_amr_mqtt_robot_plugin_ros_state.imu_subscription = rcl_get_zero_initialized_subscription();
@@ -1128,6 +1142,19 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
 
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[0],
+    "map",
+    g_amr_mqtt_robot_plugin_config.ros.topic_map,
+    g_amr_mqtt_robot_plugin_config.mqtt.telemetry_map,
+    &g_amr_mqtt_robot_plugin_ros_state.map_subscription,
+    &g_amr_mqtt_robot_plugin_ros_state.map_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
+    &k_transient_local_qos,
+    g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
+    true,
+    true,
+    NULL);
+  amr_mqtt_robot_plugin_configure_endpoint(
+    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[1],
     "scan",
     g_amr_mqtt_robot_plugin_config.ros.topic_scan,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan,
@@ -1140,7 +1167,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     true,
     NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
-    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[1],
+    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[2],
     "odom",
     g_amr_mqtt_robot_plugin_config.ros.topic_odom,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_odom,
@@ -1153,7 +1180,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     true,
     NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
-    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[2],
+    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[3],
     "imu",
     g_amr_mqtt_robot_plugin_config.ros.topic_imu,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_imu,
@@ -1166,7 +1193,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     true,
     NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
-    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[3],
+    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[4],
     "tf",
     g_amr_mqtt_robot_plugin_config.ros.topic_tf,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_tf,
@@ -1179,7 +1206,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     true,
     NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
-    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[4],
+    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[5],
     "tf_static",
     g_amr_mqtt_robot_plugin_config.ros.topic_tf_static,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_tf_static,
@@ -1192,7 +1219,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     true,
     NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
-    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[5],
+    &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[6],
     "joint_states",
     g_amr_mqtt_robot_plugin_config.ros.topic_joint_states,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_joint_states,
@@ -1251,6 +1278,7 @@ static void amr_mqtt_robot_plugin_fini_ros_interfaces(void)
   }
 
   if (g_amr_mqtt_robot_plugin_ros_state.messages_initialized) {
+    nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_robot_plugin_ros_state.map_message);
     sensor_msgs__msg__LaserScan__fini(&g_amr_mqtt_robot_plugin_ros_state.scan_message);
     nav_msgs__msg__Odometry__fini(&g_amr_mqtt_robot_plugin_ros_state.odom_message);
     sensor_msgs__msg__Imu__fini(&g_amr_mqtt_robot_plugin_ros_state.imu_message);
