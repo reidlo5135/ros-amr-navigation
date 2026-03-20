@@ -1,17 +1,24 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>amr_robot_mqtt_bridge</name>
+  <name>amr_mqtt_robot_plugin</name>
   <version>0.5.0</version>
-  <description>Robot-side ROS to MQTT bridge for platform bringup topics.</description>
+  <description>Robot-side MQTT transport plugin for platform bringup topics.</description>
   <maintainer email="reidlo4215@gmail.com">reidlo</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>rcl</depend>
   <depend>rclc</depend>
+  <depend>rcl_yaml_param_parser</depend>
   <depend>rcutils</depend>
+  <depend>rmw</depend>
+  <depend>rosidl_runtime_c</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
 
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>

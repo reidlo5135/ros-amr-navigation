@@ -1,0 +1,127 @@
+#ifndef AMR_MQTT_ROBOT_PLUGIN__NODE_H_
+#define AMR_MQTT_ROBOT_PLUGIN__NODE_H_
+
+#include <stdbool.h>
+#include <stddef.h>
+
+#include <MQTTClient.h>
+
+#include <rcl/rcl.h>
+#include <rcl/subscription.h>
+#include <rcl/publisher.h>
+#include <rclc/executor.h>
+#include <rclc/rclc.h>
+#include <rmw/qos_profiles.h>
+
+#include <geometry_msgs/msg/twist.h>
+#include <nav_msgs/msg/odometry.h>
+#include <sensor_msgs/msg/imu.h>
+#include <sensor_msgs/msg/laser_scan.h>
+#include <std_msgs/msg/header.h>
+#include <rosidl_runtime_c/message_type_support_struct.h>
+
+#define AMR_MQTT_ROBOT_PLUGIN_NODE_NAME "mqtt_robot_plugin"
+#define AMR_MQTT_ROBOT_PLUGIN_NODE_NAMESPACE "/amr"
+#define AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH 512
+#define AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS 3
+
+typedef char * (* amr_mqtt_robot_plugin_serializer_fn_t)(const void * message);
+
+typedef struct amr_mqtt_robot_plugin_runtime_s
+{
+  rcl_allocator_t allocator;
+  rclc_support_t support;
+  rcl_node_t node;
+  rclc_executor_t executor;
+  int return_code;
+  bool is_initialized;
+} amr_mqtt_robot_plugin_runtime_t;
+
+typedef struct amr_mqtt_robot_plugin_mqtt_state_s
+{
+  MQTTClient client;
+  char broker_uri[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  bool client_created;
+  bool connected;
+  bool command_subscriptions_registered;
+  long last_reconnect_attempt_sec;
+} amr_mqtt_robot_plugin_mqtt_state_t;
+
+typedef struct amr_mqtt_robot_plugin_broker_config_s
+{
+  char host[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  int port;
+  char client_id[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  int keep_alive_sec;
+  bool clean_session;
+  char username[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char password[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+} amr_mqtt_robot_plugin_broker_config_t;
+
+typedef struct amr_mqtt_robot_plugin_mqtt_topics_s
+{
+  char root[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  int telemetry_qos;
+  int command_qos;
+  char telemetry_scan[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char telemetry_odom[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char telemetry_imu[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char command_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+} amr_mqtt_robot_plugin_mqtt_topics_t;
+
+typedef struct amr_mqtt_robot_plugin_ros_interfaces_s
+{
+  char topic_scan[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_odom[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_imu[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char topic_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+} amr_mqtt_robot_plugin_ros_interfaces_t;
+
+typedef struct amr_mqtt_robot_plugin_config_s
+{
+  amr_mqtt_robot_plugin_broker_config_t broker;
+  amr_mqtt_robot_plugin_mqtt_topics_t mqtt;
+  amr_mqtt_robot_plugin_ros_interfaces_t ros;
+} amr_mqtt_robot_plugin_config_t;
+
+typedef struct amr_mqtt_robot_plugin_telemetry_endpoint_s
+{
+  const char * label;
+  const char * ros_topic;
+  const char * mqtt_topic;
+  rcl_subscription_t * subscription;
+  void * message;
+  const rosidl_message_type_support_t * type_support;
+  const rmw_qos_profile_t * qos_profile;
+  amr_mqtt_robot_plugin_serializer_fn_t serializer;
+} amr_mqtt_robot_plugin_telemetry_endpoint_t;
+
+typedef struct amr_mqtt_robot_plugin_ros_state_s
+{
+  sensor_msgs__msg__LaserScan scan_message;
+  nav_msgs__msg__Odometry odom_message;
+  sensor_msgs__msg__Imu imu_message;
+  geometry_msgs__msg__Twist cmd_vel_message;
+
+  rcl_subscription_t scan_subscription;
+  rcl_subscription_t odom_subscription;
+  rcl_subscription_t imu_subscription;
+  rcl_publisher_t cmd_vel_publisher;
+
+  amr_mqtt_robot_plugin_telemetry_endpoint_t telemetry_endpoints[AMR_MQTT_ROBOT_PLUGIN_MAX_TELEMETRY_ENDPOINTS];
+  size_t telemetry_endpoint_count;
+  bool messages_initialized;
+  bool subscriptions_initialized;
+  bool cmd_vel_publisher_initialized;
+} amr_mqtt_robot_plugin_ros_state_t;
+
+extern amr_mqtt_robot_plugin_runtime_t g_amr_mqtt_robot_plugin_runtime;
+extern amr_mqtt_robot_plugin_mqtt_state_t g_amr_mqtt_robot_plugin_mqtt;
+extern amr_mqtt_robot_plugin_config_t g_amr_mqtt_robot_plugin_config;
+extern amr_mqtt_robot_plugin_ros_state_t g_amr_mqtt_robot_plugin_ros_state;
+
+rcl_ret_t amr_mqtt_robot_plugin_initialize(int argc, const char *argv[]);
+void amr_mqtt_robot_plugin_run(void);
+rcl_ret_t amr_mqtt_robot_plugin_terminate(void);
+
+#endif

@@ -23,7 +23,7 @@
   <exec_depend>amr_bringup</exec_depend>
   <exec_depend>amr_viz</exec_depend>
   <exec_depend>amr_mqtt_bridge</exec_depend>
-  <exec_depend>amr_robot_mqtt_bridge</exec_depend>
+  <exec_depend>amr_mqtt_robot_plugin</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

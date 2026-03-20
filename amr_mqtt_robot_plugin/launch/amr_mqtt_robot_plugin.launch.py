@@ -14,9 +14,9 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             Node(
-                package="amr_robot_mqtt_bridge",
-                executable="amr_robot_mqtt_bridge",
-                name="robot_mqtt_bridge",
+                package="amr_mqtt_robot_plugin",
+                executable="amr_mqtt_robot_plugin",
+                name="mqtt_robot_plugin",
                 namespace="amr",
                 output="screen",
                 parameters=[bringup_params_file()],

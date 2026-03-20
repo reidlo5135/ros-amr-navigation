@@ -1,13 +1,13 @@
-# amr_robot_mqtt_bridge
+# amr_mqtt_robot_plugin
 
-`amr_robot_mqtt_bridge` is the robot-side transport adapter for platform bringup
+`amr_mqtt_robot_plugin` is the robot-side transport adapter for platform bringup
 topics such as `scan`, `odom`, `imu`, and `cmd_vel`.
 
 The intended topology is:
 
 - TurtleBot3 / robot:
   - local ROS bringup
-  - `amr_robot_mqtt_bridge`
+  - `amr_mqtt_robot_plugin`
 - VBox / navigation runtime:
   - `amr_mqtt_bridge`
   - `amr_navigation`
@@ -46,15 +46,8 @@ Runtime mapping is reserved in:
 
 Current parameter section:
 
-- `/amr/robot_mqtt_bridge`
+- `/amr/mqtt_robot_plugin`
 
 ## Status
 
-This package is in bootstrap stage:
-
-- package skeleton created
-- `rclc` node scaffold added
-- launch file created
-- shared parameter section reserved in `amr.yaml`
-
-Next step is implementing the actual TurtleBot3 ROS topic <-> MQTT bindings.
+This package now owns the robot-side MQTT client and topic relay path.

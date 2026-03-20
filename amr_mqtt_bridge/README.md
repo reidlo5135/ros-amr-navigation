@@ -94,10 +94,81 @@ Command topics:
 
 - `amr/command/navigate_to_pose`
 - `amr/command/set_initial_pose`
+- `amr/feedback/navigate_to_pose`
+- `amr/response/navigate_to_pose`
+- `amr/response/set_initial_pose`
 - `amr/request/plan_segment`
 - `amr/request/plan_route`
 - `amr/response/plan_segment`
 - `amr/response/plan_route`
+
+## Current Command Payload Shape
+
+`set_initial_pose`:
+
+```json
+{
+  "request_id": "req-001",
+  "frame_id": "map",
+  "x": 0.0,
+  "y": 0.0,
+  "yaw": 0.0,
+  "covariance_x": 0.25,
+  "covariance_y": 0.25,
+  "covariance_yaw": 0.06853891945200942
+}
+```
+
+`navigate_to_pose`:
+
+```json
+{
+  "request_id": "req-002",
+  "goal_pose": {
+    "header": { "frame_id": "map" },
+    "position": { "x": 1.0, "y": 2.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+  }
+}
+```
+
+`plan_segment`:
+
+```json
+{
+  "request_id": "req-003",
+  "start": {
+    "header": { "frame_id": "map" },
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+  },
+  "goal": {
+    "header": { "frame_id": "map" },
+    "position": { "x": 1.0, "y": 2.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+  }
+}
+```
+
+`plan_route`:
+
+```json
+{
+  "request_id": "req-004",
+  "start": {
+    "header": { "frame_id": "map" },
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+  },
+  "waypoints": [
+    {
+      "header": { "frame_id": "map" },
+      "position": { "x": 1.0, "y": 1.0, "z": 0.0 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+    }
+  ]
+}
+```
 
 ## Status
 

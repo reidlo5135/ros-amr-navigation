@@ -10,14 +10,19 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(amr_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rcl REQUIRED)
+find_package(rcl_action REQUIRED)
 find_package(rclc REQUIRED)
 find_package(rcl_yaml_param_parser REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rmw REQUIRED)
+find_package(rosidl_runtime_c REQUIRED)
+find_package(unique_identifier_msgs REQUIRED)
 
 find_path(PAHO_MQTT_INCLUDE_DIR MQTTClient.h)
 find_library(PAHO_MQTT3C_LIBRARY NAMES paho-mqtt3c)
@@ -40,13 +45,18 @@ set(SOURCES
 
 set(DEPENDS
   amr_msgs
+  action_msgs
+  builtin_interfaces
   geometry_msgs
   nav_msgs
   rcl
+  rcl_action
   rclc
   rcl_yaml_param_parser
   rcutils
   rmw
+  rosidl_runtime_c
+  unique_identifier_msgs
 )
 
 set(EXEC_NAME

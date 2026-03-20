@@ -312,12 +312,16 @@
         command:
           navigate_to_pose: "amr/command/navigate_to_pose"
           set_initial_pose: "amr/command/set_initial_pose"
+        feedback:
+          navigate_to_pose: "amr/feedback/navigate_to_pose"
+        response:
+          set_initial_pose: "amr/response/set_initial_pose"
+          navigate_to_pose: "amr/response/navigate_to_pose"
+          plan_segment: "amr/response/plan_segment"
+          plan_route: "amr/response/plan_route"
         request:
           plan_segment: "amr/request/plan_segment"
           plan_route: "amr/request/plan_route"
-        response:
-          plan_segment: "amr/response/plan_segment"
-          plan_route: "amr/response/plan_route"
     ros:
       topics:
         robot_pose: "/amr/localization/pose"
@@ -335,12 +339,12 @@
       actions:
         navigate_to_pose: "/amr/navigator/navigate_to_pose"
 
-/amr/robot_mqtt_bridge:
+/amr/mqtt_robot_plugin:
   ros__parameters:
     broker:
       host: "192.168.61.35"
       port: 1883
-      client_id: "amr_robot_mqtt_bridge"
+      client_id: "amr_mqtt_robot_plugin"
       keep_alive_sec: 20
       clean_session: true
       username: ""
