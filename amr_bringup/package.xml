@@ -24,7 +24,6 @@
   <exec_depend>amr_bt_navigator</exec_depend>
   <exec_depend>amr_rviz_plugins</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
-  <exec_depend>amr_mqtt_bridge</exec_depend>
   <exec_depend>amr_mqtt_robot_plugin</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
