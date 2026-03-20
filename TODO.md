@@ -21,6 +21,26 @@
   - launch / logging / serialization overhead 최소화
   - 실사용 기준으로 RViz 대비 가벼운 운영 viz 목표 재설정
 
+# 2026-03-23
+
+- `amr_viz` React + MQTT 완전 전환
+  - 현재 과도기적 viz/bridge 흔적 정리
+  - browser 기반 운영 화면을 MQTT client 전제로 재구성
+  - `goal`, `status`, `feedback`, `map`, `path`, `costmap` 확인 흐름 재정리
+- `amr_mqtt_bridge`, `amr_mqtt_robot_plugin` 소스 구조 개편
+  - `rcl` 관련 로직과 `MQTT` 관련 로직을 별도 `.h/.c` 파일로 분리
+  - 예시: `node.h`, `node.c`, `mqtt.h`, `mqtt.c`
+  - 직렬화/역직렬화, topic routing, ROS interface init/fini 책임도 파일 단위로 분리
+- local escaping replan 명확화
+  - 현재는 dynamic obstacle을 미리 보고 replan은 하지만 좌/우 oscillation이 심함
+  - escape 진입 조건, 유지 조건, 종료 조건을 명확히 나눌 필요 있음
+  - obstacle release 전 기존 corridor 복귀를 제한하는 hysteresis와 확실한 판단 기준 추가
+- `amr_bt_navigator` 현업 표준 BT 적용
+  - 현재의 형식적 BT 사용에서 벗어나 실제 의사결정 트리로 재구성
+  - 동적 장애물 판단과 recovery 선택은 반드시 `amr_bt_navigator`가 담당
+  - 각 feature package는 판단이 아닌 수행 역할만 하도록 책임 분리
+  - 3번 local escaping replan 정책과 직접 연계
+
 # 2026-03-18
 
 - dynamic obstacle escaping 고도화

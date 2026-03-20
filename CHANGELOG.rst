@@ -1,6 +1,43 @@
 Changelog
 =========
 
+2026-03-20
+----------
+
+- Reworked the AMR remote-operations transport around MQTT:
+
+  - added ``amr_mqtt_bridge`` as the VBox-side MQTT <-> ROS mirror and command bridge
+  - added ``amr_mqtt_robot_plugin`` as the TurtleBot3-side ROS <-> MQTT transport/plugin
+  - moved away from the earlier Python WebSocket bridge approach after observing high CPU usage
+  - added raw ROS message mirroring for high-value robot telemetry instead of JSON remodeling
+
+- Expanded MQTT mirroring across the AMR stack:
+
+  - mirrored robot-side ``scan``, ``odom``, ``imu``, ``tf``, ``tf_static``, ``joint_states``, and ``robot_description``
+  - mirrored navigation-side ``map``, ``robot_pose``, ``global_path``, ``local_path``, ``global_costmap``, ``local_costmap``, ``motion_status``, and ``obstacle_report``
+  - restored VBox-side republishing so RViz can consume mirrored robot and navigation topics
+  - fixed QoS durability for mirrored ``map``, ``costmap``, and ``robot_description`` topics to match late-subscriber RViz behavior
+
+- Added MQTT command and request handling across the split TB3/VBox deployment:
+
+  - VBox ``amr_mqtt_bridge`` now emits MQTT commands from local ROS inputs such as RViz goal and initial pose
+  - TurtleBot3 ``amr_mqtt_robot_plugin`` now consumes MQTT commands and dispatches them into local ROS topics, services, and actions
+  - ``/cmd_vel`` forwarding was restored over MQTT for robot actuation
+  - service/action request handling now returns MQTT ACK responses while feedback/status are mirrored in ROS-compatible form
+
+- Reorganized launch and deployment roles for the split runtime:
+
+  - converted ``turtlebot3.launch.py`` into the TurtleBot3 bringup entry point sequencing ``robot.launch.py``, localization, navigation, and the robot MQTT plugin
+  - removed the earlier ``total.launch.py`` path in favor of the TurtleBot3-specific bringup flow
+  - separated TurtleBot3 transport and VBox bridge responsibilities after clarifying that TB3 publishes to the broker and VBox reconstructs the mirror
+  - removed the ``amr_bringup`` dependency cycle by separating MQTT package defaults and launch parameter ownership
+
+- Updated workspace documentation for the MQTT-first architecture:
+
+  - refreshed the root README and package READMEs to reflect the new TB3/VBox/MQTT deployment model
+  - documented runtime requirements and package roles for ``amr_mqtt_bridge``, ``amr_mqtt_robot_plugin``, and ``amr_viz``
+  - recorded the next-step refactor and viz migration direction in ``TODO.md``
+
 2026-03-19
 ----------
 
