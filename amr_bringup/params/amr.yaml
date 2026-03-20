@@ -1,7 +1,7 @@
 /amr/map_server:
   ros__parameters:
     files:
-      yaml: "/home/reidlo/ws/data/maps/map_office_260310.yaml"
+      yaml: "/home/burger1/ws/data/maps/map_office_260310.yaml"
     mode:
       mapping: false
     frames:
@@ -33,7 +33,7 @@
         max: 8.0
       publish_identity_tf: true
       save:
-        directory: "/home/reidlo/ws/data/maps"
+        directory: "/home/burger1/ws/data/maps"
         basename: "amr_temporary_map"
       scan_matching:
         enabled: true
