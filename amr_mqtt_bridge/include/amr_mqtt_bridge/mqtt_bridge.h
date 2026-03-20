@@ -36,7 +36,7 @@
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
 #define AMR_MQTT_BRIDGE_MAX_STRING_LENGTH 512
-#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 9
+#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 11
 
 typedef char * (* amr_mqtt_bridge_serializer_fn_t)(const void * message);
 
@@ -122,6 +122,7 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_robot_tf[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_robot_tf_static[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_robot_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_rviz_goal[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_navigate_feedback[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_navigate_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -173,6 +174,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   amr_msgs__msg__MotionStatus motion_status_message;
   amr_msgs__msg__ObstacleReport obstacle_report_message;
   geometry_msgs__msg__Twist velocity_message;
+  geometry_msgs__msg__PoseWithCovarianceStamped initial_pose_message;
+  geometry_msgs__msg__PoseStamped rviz_goal_message;
 
   rcl_subscription_t robot_pose_subscription;
   rcl_subscription_t global_path_subscription;
@@ -183,6 +186,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t motion_status_subscription;
   rcl_subscription_t obstacle_report_subscription;
   rcl_subscription_t velocity_subscription;
+  rcl_subscription_t initial_pose_subscription;
+  rcl_subscription_t rviz_goal_subscription;
   rcl_publisher_t robot_pose_publisher;
   rcl_publisher_t global_path_publisher;
   rcl_publisher_t local_path_publisher;

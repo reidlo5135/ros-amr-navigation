@@ -286,7 +286,7 @@
 /amr/mqtt_bridge:
   ros__parameters:
     broker:
-      host: "127.0.0.1"
+      host: "192.168.61.35"
       port: 1883
       client_id: "amr_mqtt_bridge"
       keep_alive_sec: 20
@@ -354,6 +354,7 @@
           tf: "/tf"
           tf_static: "/tf_static"
           joint_states: "/joint_states"
+        rviz_goal: "/amr/rviz/goal"
         navigate_feedback: "/amr/navigator/navigate_to_pose/feedback"
         navigate_status: "/amr/navigator/navigate_to_pose/status"
 
