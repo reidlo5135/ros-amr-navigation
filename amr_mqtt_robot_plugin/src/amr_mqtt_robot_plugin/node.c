@@ -11,6 +11,8 @@
 #include <rcl/arguments.h>
 #include <rcl/error_handling.h>
 #include <rcl/publisher.h>
+#include <rmw/rmw.h>
+#include <rmw/serialized_message.h>
 #include <rcutils/error_handling.h>
 #include <rcutils/logging.h>
 #include <rcutils/logging_macros.h>
@@ -889,13 +891,145 @@ static bool amr_mqtt_robot_plugin_publish_payload(
   return true;
 }
 
+static bool amr_mqtt_robot_plugin_publish_binary_payload(
+  const char * mqtt_topic,
+  const void * payload,
+  size_t payload_length,
+  int qos,
+  bool retained)
+{
+  MQTTClient_message message = MQTTClient_message_initializer;
+  MQTTClient_deliveryToken token = 0;
+  int mqtt_rc = 0;
+
+  if (!amr_mqtt_robot_plugin_ensure_connected()) {
+    return false;
+  }
+
+  message.payload = (void *)payload;
+  message.payloadlen = (int)payload_length;
+  message.qos = qos;
+  message.retained = retained ? 1 : 0;
+
+  mqtt_rc = MQTTClient_publishMessage(
+    g_amr_mqtt_robot_plugin_mqtt.client,
+    mqtt_topic,
+    &message,
+    &token);
+  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
+      g_amr_mqtt_robot_plugin_mqtt.connected = false;
+    }
+    return false;
+  }
+
+  if (qos > 0) {
+    (void)MQTTClient_waitForCompletion(g_amr_mqtt_robot_plugin_mqtt.client, token, 1000L);
+  }
+  return true;
+}
+
+static bool amr_mqtt_robot_plugin_serialize_message_raw(
+  const void * ros_message,
+  const rosidl_message_type_support_t * type_support,
+  rmw_serialized_message_t * serialized_message)
+{
+  size_t capacity = 1024U;
+  rmw_ret_t rmw_rc = RMW_RET_ERROR;
+
+  if (serialized_message == NULL) {
+    return false;
+  }
+
+  *serialized_message = rmw_get_zero_initialized_serialized_message();
+  if (rmw_serialized_message_init(
+      serialized_message,
+      capacity,
+      &g_amr_mqtt_robot_plugin_runtime.allocator) != RMW_RET_OK)
+  {
+    return false;
+  }
+
+  while (capacity <= (1024U * 1024U)) {
+    rmw_rc = rmw_serialize(ros_message, type_support, serialized_message);
+    if (rmw_rc == RMW_RET_OK) {
+      return true;
+    }
+
+    capacity *= 2U;
+    if (capacity > (1024U * 1024U)) {
+      break;
+    }
+    if (rmw_serialized_message_resize(serialized_message, capacity) != RMW_RET_OK) {
+      break;
+    }
+  }
+
+  (void)rmw_serialized_message_fini(serialized_message);
+  *serialized_message = rmw_get_zero_initialized_serialized_message();
+  return false;
+}
+
+static bool amr_mqtt_robot_plugin_deserialize_twist_raw(
+  const void * payload,
+  size_t payload_length,
+  geometry_msgs__msg__Twist * twist)
+{
+  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+  rmw_ret_t rmw_rc = RMW_RET_ERROR;
+
+  if (payload == NULL || payload_length == 0U || twist == NULL) {
+    return false;
+  }
+
+  if (rmw_serialized_message_init(
+      &serialized_message,
+      payload_length,
+      &g_amr_mqtt_robot_plugin_runtime.allocator) != RMW_RET_OK)
+  {
+    return false;
+  }
+
+  memcpy(serialized_message.buffer, payload, payload_length);
+  serialized_message.buffer_length = payload_length;
+  rmw_rc = rmw_deserialize(
+    &serialized_message,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+    twist);
+  (void)rmw_serialized_message_fini(&serialized_message);
+  return rmw_rc == RMW_RET_OK;
+}
+
 static void amr_mqtt_robot_plugin_telemetry_callback(const void * message, void * context)
 {
   const amr_mqtt_robot_plugin_telemetry_endpoint_t * endpoint =
     (const amr_mqtt_robot_plugin_telemetry_endpoint_t *)context;
   char * payload = NULL;
+  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
 
-  if (message == NULL || endpoint == NULL || endpoint->serializer == NULL) {
+  if (message == NULL || endpoint == NULL) {
+    return;
+  }
+
+  if (endpoint->raw_passthrough) {
+    if (!amr_mqtt_robot_plugin_serialize_message_raw(
+        message,
+        endpoint->type_support,
+        &serialized_message))
+    {
+      return;
+    }
+    (void)amr_mqtt_robot_plugin_publish_binary_payload(
+      endpoint->mqtt_topic,
+      serialized_message.buffer,
+      serialized_message.buffer_length,
+      endpoint->mqtt_qos,
+      endpoint->retained);
+    (void)rmw_serialized_message_fini(&serialized_message);
+    return;
+  }
+
+  if (endpoint->serializer == NULL) {
     return;
   }
 
@@ -922,6 +1056,7 @@ static void amr_mqtt_robot_plugin_configure_endpoint(
   const rmw_qos_profile_t * qos_profile,
   int mqtt_qos,
   bool retained,
+  bool raw_passthrough,
   amr_mqtt_robot_plugin_serializer_fn_t serializer)
 {
   endpoint->label = label;
@@ -933,6 +1068,7 @@ static void amr_mqtt_robot_plugin_configure_endpoint(
   endpoint->qos_profile = qos_profile;
   endpoint->mqtt_qos = mqtt_qos;
   endpoint->retained = retained;
+  endpoint->raw_passthrough = raw_passthrough;
   endpoint->serializer = serializer;
 }
 
@@ -1001,7 +1137,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     &k_sensor_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
-    amr_mqtt_robot_plugin_serialize_scan);
+    true,
+    NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[1],
     "odom",
@@ -1013,7 +1150,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     &k_sensor_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
-    amr_mqtt_robot_plugin_serialize_odom);
+    true,
+    NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[2],
     "imu",
@@ -1025,7 +1163,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     &k_sensor_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
-    amr_mqtt_robot_plugin_serialize_imu);
+    true,
+    NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[3],
     "tf",
@@ -1037,7 +1176,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     &k_default_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
-    amr_mqtt_robot_plugin_serialize_tf_message);
+    true,
+    NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[4],
     "tf_static",
@@ -1049,7 +1189,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     &k_transient_local_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.command_qos,
     true,
-    amr_mqtt_robot_plugin_serialize_tf_message);
+    true,
+    NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[5],
     "joint_states",
@@ -1061,7 +1202,8 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     &k_default_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
-    amr_mqtt_robot_plugin_serialize_joint_states);
+    true,
+    NULL);
 
   for (size_t index = 0; index < g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoint_count; ++index) {
     if (amr_mqtt_robot_plugin_add_subscription(&g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[index]) != 0) {
@@ -1150,24 +1292,19 @@ static bool amr_mqtt_robot_plugin_extract_json_double(
   return parse_end != cursor;
 }
 
-static void amr_mqtt_robot_plugin_handle_cmd_vel_message(const char * payload)
+static void amr_mqtt_robot_plugin_handle_cmd_vel_message(
+  const void * payload,
+  size_t payload_length)
 {
-  double linear_x = 0.0;
-  double angular_z = 0.0;
   rcl_ret_t rc;
 
-  if (!amr_mqtt_robot_plugin_extract_json_double(payload, "x", &linear_x) ||
-    !amr_mqtt_robot_plugin_extract_json_double(payload, "z", &angular_z))
+  if (!amr_mqtt_robot_plugin_deserialize_twist_raw(
+      payload,
+      payload_length,
+      &g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message))
   {
     return;
   }
-
-  g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message.linear.x = linear_x;
-  g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message.linear.y = 0.0;
-  g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message.linear.z = 0.0;
-  g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message.angular.x = 0.0;
-  g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message.angular.y = 0.0;
-  g_amr_mqtt_robot_plugin_ros_state.cmd_vel_message.angular.z = angular_z;
 
   rc = rcl_publish(
     &g_amr_mqtt_robot_plugin_ros_state.cmd_vel_publisher,
@@ -1208,13 +1345,9 @@ static void amr_mqtt_robot_plugin_poll_mqtt(void)
     }
 
     if (strcmp(topic_name, g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel) == 0) {
-      char * payload = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
-      if (payload != NULL) {
-        memcpy(payload, message->payload, (size_t)message->payloadlen);
-        payload[message->payloadlen] = '\0';
-        amr_mqtt_robot_plugin_handle_cmd_vel_message(payload);
-        free(payload);
-      }
+      amr_mqtt_robot_plugin_handle_cmd_vel_message(
+        message->payload,
+        (size_t)message->payloadlen);
     }
 
     MQTTClient_freeMessage(&message);

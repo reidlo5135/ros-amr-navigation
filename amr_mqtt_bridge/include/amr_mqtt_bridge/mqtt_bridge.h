@@ -143,6 +143,7 @@ typedef struct amr_mqtt_bridge_telemetry_endpoint_s
   const rosidl_message_type_support_t * type_support;
   const rmw_qos_profile_t * qos_profile;
   int mqtt_qos;
+  bool raw_passthrough;
   amr_mqtt_bridge_serializer_fn_t serializer;
 } amr_mqtt_bridge_telemetry_endpoint_t;
 

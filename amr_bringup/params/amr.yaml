@@ -297,8 +297,8 @@
       root: "amr"
       qos:
         telemetry: 0
-        command: 1
-        service: 1
+        command: 0
+        service: 0
       topics:
         telemetry:
           robot_pose: "amr/telemetry/robot_pose"
@@ -370,7 +370,7 @@
       root: "amr/robot/turtlebot3"
       qos:
         telemetry: 0
-        command: 1
+        command: 0
       topics:
         telemetry:
           scan: "amr/robot/turtlebot3/telemetry/scan"

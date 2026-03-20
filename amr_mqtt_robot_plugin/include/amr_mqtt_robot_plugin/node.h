@@ -103,6 +103,7 @@ typedef struct amr_mqtt_robot_plugin_telemetry_endpoint_s
   const rmw_qos_profile_t * qos_profile;
   int mqtt_qos;
   bool retained;
+  bool raw_passthrough;
   amr_mqtt_robot_plugin_serializer_fn_t serializer;
 } amr_mqtt_robot_plugin_telemetry_endpoint_t;
 

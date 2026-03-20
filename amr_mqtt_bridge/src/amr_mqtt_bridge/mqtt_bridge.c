@@ -15,6 +15,8 @@
 #include <rcl/wait.h>
 #include <rcl_action/action_client.h>
 #include <rcl_action/wait.h>
+#include <rmw/rmw.h>
+#include <rmw/serialized_message.h>
 #include <rcutils/error_handling.h>
 #include <rcutils/logging.h>
 #include <rcutils/logging_macros.h>
@@ -2218,6 +2220,122 @@ static bool amr_mqtt_bridge_publish_payload(
   return true;
 }
 
+static bool amr_mqtt_bridge_publish_binary_payload(
+  const char * mqtt_topic,
+  const void * payload,
+  size_t payload_length,
+  int qos)
+{
+  if (!amr_mqtt_bridge_ensure_connected()) {
+    RCUTILS_LOG_WARN_NAMED(
+      "amr_mqtt_bridge",
+      "Skipping publish for '%s' because MQTT is disconnected",
+      mqtt_topic);
+    return false;
+  }
+
+  MQTTClient_message message = MQTTClient_message_initializer;
+  MQTTClient_deliveryToken token = 0;
+  message.payload = (void *)payload;
+  message.payloadlen = (int)payload_length;
+  message.qos = qos;
+  message.retained = 0;
+
+  int mqtt_rc = MQTTClient_publishMessage(
+    g_amr_mqtt_bridge_mqtt.client,
+    mqtt_topic,
+    &message,
+    &token);
+  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
+      g_amr_mqtt_bridge_mqtt.connected = false;
+    }
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_bridge",
+      "Failed to publish MQTT message on '%s': rc=%d (%s), payload_bytes=%zu",
+      mqtt_topic,
+      mqtt_rc,
+      MQTTClient_strerror(mqtt_rc),
+      payload_length);
+    return false;
+  }
+
+  if (qos > 0) {
+    (void)MQTTClient_waitForCompletion(g_amr_mqtt_bridge_mqtt.client, token, 1000L);
+  }
+
+  return true;
+}
+
+static bool amr_mqtt_bridge_serialize_message_raw(
+  const void * ros_message,
+  const rosidl_message_type_support_t * type_support,
+  rmw_serialized_message_t * serialized_message)
+{
+  size_t capacity = 1024U;
+  rmw_ret_t rmw_rc = RMW_RET_ERROR;
+
+  if (serialized_message == NULL) {
+    return false;
+  }
+
+  *serialized_message = rmw_get_zero_initialized_serialized_message();
+  if (rmw_serialized_message_init(
+      serialized_message,
+      capacity,
+      &g_amr_mqtt_bridge_runtime.allocator) != RMW_RET_OK)
+  {
+    return false;
+  }
+
+  while (capacity <= (1024U * 1024U)) {
+    rmw_rc = rmw_serialize(ros_message, type_support, serialized_message);
+    if (rmw_rc == RMW_RET_OK) {
+      return true;
+    }
+
+    capacity *= 2U;
+    if (capacity > (1024U * 1024U)) {
+      break;
+    }
+    if (rmw_serialized_message_resize(serialized_message, capacity) != RMW_RET_OK) {
+      break;
+    }
+  }
+
+  (void)rmw_serialized_message_fini(serialized_message);
+  *serialized_message = rmw_get_zero_initialized_serialized_message();
+  return false;
+}
+
+static bool amr_mqtt_bridge_deserialize_message_raw(
+  const void * payload,
+  size_t payload_length,
+  const rosidl_message_type_support_t * type_support,
+  void * ros_message)
+{
+  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+  rmw_ret_t rmw_rc = RMW_RET_ERROR;
+
+  if (payload == NULL || payload_length == 0U || ros_message == NULL) {
+    return false;
+  }
+
+  if (rmw_serialized_message_init(
+      &serialized_message,
+      payload_length,
+      &g_amr_mqtt_bridge_runtime.allocator) != RMW_RET_OK)
+  {
+    return false;
+  }
+
+  memcpy(serialized_message.buffer, payload, payload_length);
+  serialized_message.buffer_length = payload_length;
+  rmw_rc = rmw_deserialize(&serialized_message, type_support, ros_message);
+  (void)rmw_serialized_message_fini(&serialized_message);
+  return rmw_rc == RMW_RET_OK;
+}
+
 static void amr_mqtt_bridge_publish_simple_response(
   const char * mqtt_topic,
   const char * request_id,
@@ -2609,44 +2727,81 @@ static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload
     request_id);
 }
 
-static void amr_mqtt_bridge_handle_robot_scan_telemetry(const char * payload)
+static void amr_mqtt_bridge_handle_robot_scan_telemetry(
+  const void * payload,
+  size_t payload_length)
 {
   sensor_msgs__msg__LaserScan scan;
   memset(&scan, 0, sizeof(scan));
-  if (!amr_mqtt_bridge_parse_laser_scan_payload(payload, &scan)) {
+  if (!sensor_msgs__msg__LaserScan__init(&scan) ||
+    !amr_mqtt_bridge_deserialize_message_raw(
+      payload,
+      payload_length,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan),
+      &scan))
+  {
+    sensor_msgs__msg__LaserScan__fini(&scan);
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_scan_publisher, &scan, NULL);
   sensor_msgs__msg__LaserScan__fini(&scan);
 }
 
-static void amr_mqtt_bridge_handle_robot_odom_telemetry(const char * payload)
+static void amr_mqtt_bridge_handle_robot_odom_telemetry(
+  const void * payload,
+  size_t payload_length)
 {
   nav_msgs__msg__Odometry odom;
   memset(&odom, 0, sizeof(odom));
-  if (!amr_mqtt_bridge_parse_odometry_payload(payload, &odom)) {
+  if (!nav_msgs__msg__Odometry__init(&odom) ||
+    !amr_mqtt_bridge_deserialize_message_raw(
+      payload,
+      payload_length,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+      &odom))
+  {
+    nav_msgs__msg__Odometry__fini(&odom);
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_odom_publisher, &odom, NULL);
   nav_msgs__msg__Odometry__fini(&odom);
 }
 
-static void amr_mqtt_bridge_handle_robot_imu_telemetry(const char * payload)
+static void amr_mqtt_bridge_handle_robot_imu_telemetry(
+  const void * payload,
+  size_t payload_length)
 {
   sensor_msgs__msg__Imu imu;
   memset(&imu, 0, sizeof(imu));
-  if (!amr_mqtt_bridge_parse_imu_payload(payload, &imu)) {
+  if (!sensor_msgs__msg__Imu__init(&imu) ||
+    !amr_mqtt_bridge_deserialize_message_raw(
+      payload,
+      payload_length,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+      &imu))
+  {
+    sensor_msgs__msg__Imu__fini(&imu);
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_imu_publisher, &imu, NULL);
   sensor_msgs__msg__Imu__fini(&imu);
 }
 
-static void amr_mqtt_bridge_handle_robot_tf_telemetry(const char * payload, bool is_static)
+static void amr_mqtt_bridge_handle_robot_tf_telemetry(
+  const void * payload,
+  size_t payload_length,
+  bool is_static)
 {
   tf2_msgs__msg__TFMessage tf_message;
   memset(&tf_message, 0, sizeof(tf_message));
-  if (!amr_mqtt_bridge_parse_tf_message_payload(payload, &tf_message)) {
+  if (!tf2_msgs__msg__TFMessage__init(&tf_message) ||
+    !amr_mqtt_bridge_deserialize_message_raw(
+      payload,
+      payload_length,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage),
+      &tf_message))
+  {
+    tf2_msgs__msg__TFMessage__fini(&tf_message);
     return;
   }
   (void)rcl_publish(
@@ -2657,39 +2812,75 @@ static void amr_mqtt_bridge_handle_robot_tf_telemetry(const char * payload, bool
   tf2_msgs__msg__TFMessage__fini(&tf_message);
 }
 
-static void amr_mqtt_bridge_handle_robot_joint_states_telemetry(const char * payload)
+static void amr_mqtt_bridge_handle_robot_joint_states_telemetry(
+  const void * payload,
+  size_t payload_length)
 {
   sensor_msgs__msg__JointState joint_state;
   memset(&joint_state, 0, sizeof(joint_state));
-  if (!amr_mqtt_bridge_parse_joint_state_payload(payload, &joint_state)) {
+  if (!sensor_msgs__msg__JointState__init(&joint_state) ||
+    !amr_mqtt_bridge_deserialize_message_raw(
+      payload,
+      payload_length,
+      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
+      &joint_state))
+  {
+    sensor_msgs__msg__JointState__fini(&joint_state);
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher, &joint_state, NULL);
   sensor_msgs__msg__JointState__fini(&joint_state);
 }
 
-static void amr_mqtt_bridge_handle_mqtt_message(const char * topic, const char * payload)
+static void amr_mqtt_bridge_handle_mqtt_message(
+  const char * topic,
+  const void * payload,
+  size_t payload_length)
 {
   if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose) == 0) {
-    amr_mqtt_bridge_handle_set_initial_pose_command(payload);
+    char * payload_text = (char *)calloc(payload_length + 1U, sizeof(char));
+    if (payload_text == NULL) {
+      return;
+    }
+    memcpy(payload_text, payload, payload_length);
+    amr_mqtt_bridge_handle_set_initial_pose_command(payload_text);
+    free(payload_text);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose) == 0) {
-    amr_mqtt_bridge_handle_navigate_to_pose_command(payload);
+    char * payload_text = (char *)calloc(payload_length + 1U, sizeof(char));
+    if (payload_text == NULL) {
+      return;
+    }
+    memcpy(payload_text, payload, payload_length);
+    amr_mqtt_bridge_handle_navigate_to_pose_command(payload_text);
+    free(payload_text);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.request_plan_segment) == 0) {
-    amr_mqtt_bridge_handle_plan_segment_request(payload);
+    char * payload_text = (char *)calloc(payload_length + 1U, sizeof(char));
+    if (payload_text == NULL) {
+      return;
+    }
+    memcpy(payload_text, payload, payload_length);
+    amr_mqtt_bridge_handle_plan_segment_request(payload_text);
+    free(payload_text);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.request_plan_route) == 0) {
-    amr_mqtt_bridge_handle_plan_route_request(payload);
+    char * payload_text = (char *)calloc(payload_length + 1U, sizeof(char));
+    if (payload_text == NULL) {
+      return;
+    }
+    memcpy(payload_text, payload, payload_length);
+    amr_mqtt_bridge_handle_plan_route_request(payload_text);
+    free(payload_text);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan) == 0) {
-    amr_mqtt_bridge_handle_robot_scan_telemetry(payload);
+    amr_mqtt_bridge_handle_robot_scan_telemetry(payload, payload_length);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom) == 0) {
-    amr_mqtt_bridge_handle_robot_odom_telemetry(payload);
+    amr_mqtt_bridge_handle_robot_odom_telemetry(payload, payload_length);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu) == 0) {
-    amr_mqtt_bridge_handle_robot_imu_telemetry(payload);
+    amr_mqtt_bridge_handle_robot_imu_telemetry(payload, payload_length);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf) == 0) {
-    amr_mqtt_bridge_handle_robot_tf_telemetry(payload, false);
+    amr_mqtt_bridge_handle_robot_tf_telemetry(payload, payload_length, false);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static) == 0) {
-    amr_mqtt_bridge_handle_robot_tf_telemetry(payload, true);
+    amr_mqtt_bridge_handle_robot_tf_telemetry(payload, payload_length, true);
   } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states) == 0) {
-    amr_mqtt_bridge_handle_robot_joint_states_telemetry(payload);
+    amr_mqtt_bridge_handle_robot_joint_states_telemetry(payload, payload_length);
   }
 }
 
@@ -2722,15 +2913,10 @@ static void amr_mqtt_bridge_poll_mqtt(void)
       break;
     }
 
-    {
-      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
-      if (payload_text != NULL) {
-        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
-        payload_text[message->payloadlen] = '\0';
-        amr_mqtt_bridge_handle_mqtt_message(topic_name, payload_text);
-        free(payload_text);
-      }
-    }
+    amr_mqtt_bridge_handle_mqtt_message(
+      topic_name,
+      message->payload,
+      (size_t)message->payloadlen);
 
     MQTTClient_freeMessage(&message);
     MQTTClient_free(topic_name);
@@ -3071,7 +3257,35 @@ static void amr_mqtt_bridge_telemetry_callback(const void * message, void * cont
 {
   const amr_mqtt_bridge_telemetry_endpoint_t * endpoint =
     (const amr_mqtt_bridge_telemetry_endpoint_t *)context;
-  if (message == NULL || endpoint == NULL || endpoint->serializer == NULL) {
+  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+
+  if (message == NULL || endpoint == NULL) {
+    return;
+  }
+
+  if (endpoint->raw_passthrough) {
+    if (!amr_mqtt_bridge_serialize_message_raw(
+        message,
+        endpoint->type_support,
+        &serialized_message))
+    {
+      RCUTILS_LOG_ERROR_NAMED(
+        "amr_mqtt_bridge",
+        "Failed to serialize raw '%s' telemetry payload",
+        endpoint->label);
+      return;
+    }
+
+    (void)amr_mqtt_bridge_publish_binary_payload(
+      endpoint->mqtt_topic,
+      serialized_message.buffer,
+      serialized_message.buffer_length,
+      endpoint->mqtt_qos);
+    (void)rmw_serialized_message_fini(&serialized_message);
+    return;
+  }
+
+  if (endpoint->serializer == NULL) {
     return;
   }
 
@@ -3142,6 +3356,7 @@ static void amr_mqtt_bridge_configure_endpoint(
   const rosidl_message_type_support_t * type_support,
   const rmw_qos_profile_t * qos_profile,
   int mqtt_qos,
+  bool raw_passthrough,
   amr_mqtt_bridge_serializer_fn_t serializer)
 {
   endpoint->label = label;
@@ -3152,6 +3367,7 @@ static void amr_mqtt_bridge_configure_endpoint(
   endpoint->type_support = type_support;
   endpoint->qos_profile = qos_profile;
   endpoint->mqtt_qos = mqtt_qos;
+  endpoint->raw_passthrough = raw_passthrough;
   endpoint->serializer = serializer;
 }
 
@@ -3218,6 +3434,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, geometry_msgs, msg, PoseStamped)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_pose_stamped);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[1],
@@ -3229,6 +3446,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, Path)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_path);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[2],
@@ -3240,6 +3458,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, Path)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_path);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[3],
@@ -3251,6 +3470,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
     &k_transient_local_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_occupancy_grid);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[4],
@@ -3262,6 +3482,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_occupancy_grid);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[5],
@@ -3273,6 +3494,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_occupancy_grid);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[6],
@@ -3284,6 +3506,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, amr_msgs, msg, MotionStatus)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_motion_status);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[7],
@@ -3295,6 +3518,7 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, amr_msgs, msg, ObstacleReport)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
     amr_mqtt_bridge_serialize_obstacle_report);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[8],
@@ -3306,7 +3530,8 @@ static int amr_mqtt_bridge_init_subscriptions(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, geometry_msgs, msg, Twist)(),
     &k_default_qos,
     g_amr_mqtt_bridge_config.mqtt.command_qos,
-    amr_mqtt_bridge_serialize_twist_command);
+    true,
+    NULL);
 
   for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index) {
     if (amr_mqtt_bridge_add_subscription(&g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index]) != 0) {
