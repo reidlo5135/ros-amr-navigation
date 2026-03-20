@@ -32,6 +32,7 @@
 #include <amr_msgs/srv/detail/plan_segment__functions.h>
 #include <geometry_msgs/msg/detail/pose_stamped__functions.h>
 #include <geometry_msgs/msg/detail/pose_stamped__type_support.h>
+#include <geometry_msgs/msg/detail/transform_stamped__functions.h>
 #include <geometry_msgs/msg/detail/twist__functions.h>
 #include <geometry_msgs/msg/detail/twist__type_support.h>
 #include <geometry_msgs/msg/detail/pose_with_covariance_stamped__functions.h>
@@ -3342,7 +3343,7 @@ static int amr_mqtt_bridge_init_robot_publishers(void)
 {
   rcl_ret_t rc = RCL_RET_OK;
   rcl_publisher_options_t tf_static_options = rcl_publisher_get_default_options();
-  tf_static_options.qos = rmw_qos_profile_transient_local;
+  tf_static_options.qos = k_transient_local_qos;
 
   g_amr_mqtt_bridge_ros_state.robot_scan_publisher = rcl_get_zero_initialized_publisher();
   g_amr_mqtt_bridge_ros_state.robot_odom_publisher = rcl_get_zero_initialized_publisher();

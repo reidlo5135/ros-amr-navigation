@@ -7,6 +7,11 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
 def generate_launch_description() -> LaunchDescription:
+    bringup_params = os.path.join(
+        get_package_share_directory("amr_bringup"),
+        "params",
+        "amr.yaml",
+    )
     turtlebot3_robot_launch = os.path.join(
         get_package_share_directory("turtlebot3_bringup"),
         "launch",
@@ -25,6 +30,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(mqtt_robot_plugin_launch),
+                launch_arguments={"params_file": bringup_params}.items(),
             ),
         ]
     )
