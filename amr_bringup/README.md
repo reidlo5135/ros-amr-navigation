@@ -1,6 +1,7 @@
 # amr_bringup
 
-`amr_bringup` owns stack startup, shared runtime parameters, RViz configuration, and helper scripts.
+`amr_bringup` owns launch files, shared runtime parameters, RViz configuration,
+and helper scripts for the AMR stack.
 
 ## Launch Files
 
@@ -17,8 +18,19 @@
   - `amr_bt_navigator`
   - `amr_rviz_plugins`
   - `amr_lifecycle_manager`
+- [turtlebot3.launch.py](./launch/turtlebot3.launch.py)
+  - `turtlebot3_bringup/robot.launch.py`
+  - delayed localization bringup
+  - delayed `amr_mqtt_robot_plugin`
+  - delayed navigation bringup
 
-This package launches nodes directly. It does not include per-package launch files.
+## Deployment Intent
+
+- `turtlebot3.launch.py` is the robot-side total bringup entry point
+- `amr_mqtt_bridge` is launched separately on VBox/server side
+- shared parameter ownership stays in [`amr.yaml`](./params/amr.yaml)
+
+## Mapping Mode
 
 `localization.launch.py` also supports a lightweight mapping startup path:
 
@@ -26,15 +38,13 @@ This package launches nodes directly. It does not include per-package launch fil
 ros2 launch amr_bringup localization.launch.py mapping_mode:=true
 ```
 
-In mapping mode, `amr_map_server` runs in live mapping mode while `amr_localization` and `amr_global_planner` stay disabled.
-The current mapping-mode flow is now:
+In mapping mode:
 
 - `amr_map_server` builds `/amr/map/temporary`
-- `amr_map_server` uses `/odom` for translation and `/imu` for heading in bootstrap dead reckoning
-- `amr_map_server` refines the predicted pose with lightweight local scan matching against the temporary map
-- `amr_map_server` publishes a corrected `map -> odom` TF from the latest mapping pose so RViz can visualize the temporary map, robot, and scan together
-- `amr_map_server` can evaluate temporary-map quality and save a promoted official map as `pgm + yaml`
-- `amr_map_server` can also auto-save once the quality check passes for the configured number of consecutive cycles
+- bootstrap mapping uses `/odom` translation and `/imu` heading
+- lightweight local scan matching refines the predicted pose
+- a corrected `map -> odom` transform is published for visualization
+- temporary maps can be evaluated, promoted, and saved as `pgm + yaml`
 
 ## Runtime Assets
 
@@ -44,25 +54,19 @@ The current mapping-mode flow is now:
   - [send_goal.sh](./script/send_goal.sh)
   - [initialpose.sh](./script/initialpose.sh)
 
-## Startup Layout
+## Bringup Layout
 
 ```mermaid
 flowchart LR
-    A[localization.launch.py] --> B[amr_map_server]
-    A --> C[amr_localization]
-    A --> D[amr_obstacle_detection]
-    A --> E[amr_costmap_server]
-    A --> F[amr_global_planner]
-    A --> G[amr_lifecycle_manager]
-    H[navigation.launch.py] --> I[amr_local_planner]
-    H --> J[amr_motion_controller]
-    H --> K[amr_bt_navigator]
-    H --> L[amr_rviz_plugins]
-    H --> M[amr_lifecycle_manager]
+    TB3["turtlebot3.launch.py"] --> Robot["turtlebot3_bringup/robot.launch.py"]
+    TB3 --> Loc["localization.launch.py"]
+    TB3 --> Plugin["amr_mqtt_robot_plugin"]
+    TB3 --> Nav["navigation.launch.py"]
 ```
 
 ## Notes
 
-- all runtime node parameters are centralized in one file
-- `amr_lifecycle_manager` is responsible for managed initial pose publication after lifecycle bringup
-- RViz goal forwarding is enabled by the `amr_rviz_plugins` bridge node
+- all major runtime wiring is centralized in one file
+- `amr_lifecycle_manager` handles managed startup ordering
+- RViz command topics such as `/amr/rviz/goal` and `/amr/localization/initial_pose`
+  are bridged into MQTT by VBox-side `amr_mqtt_bridge`

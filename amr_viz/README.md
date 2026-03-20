@@ -1,40 +1,36 @@
 # amr_viz
 
-`amr_viz` is the current visualization workspace for this project.
+`amr_viz` is the visualization workspace for this project.
 
-At the moment it contains:
+Right now it is a transitional package. The long-term direction is a React UI
+that consumes MQTT-backed data, while transport ownership stays outside this
+package.
 
-- a React web client under `desktop/`
-- the older Python WebSocket bridge path used during transition
-- helper scripts for running the web client and the legacy bridge together
-
-## Current Position In The Stack
+## Current Position
 
 Today:
 
-- `amr_viz` can still be used as a web visualization package
-- it can run against the existing WebSocket bridge path
+- `amr_viz` contains the React web client workspace under `desktop/`
+- legacy WebSocket bridge code still exists from the earlier prototype phase
+- helper scripts remain useful for UI iteration
 
-Project direction:
+Direction:
 
-- transport responsibilities move to MQTT packages
+- transport belongs in:
   - `amr_mqtt_bridge`
   - `amr_mqtt_robot_plugin`
-- `amr_viz` remains focused on the UI side
-
-So this package should be read as a transitional visualization package, not the
-long-term transport layer.
+- `amr_viz` should converge toward UI-only responsibility
 
 ## Layout
 
 - `desktop/`
-  - React + TypeScript web app
+  - React + TypeScript web app workspace
 - `amr_viz/bridge.py`
-  - existing Python WebSocket bridge
+  - legacy Python WebSocket bridge from the pre-MQTT phase
 - `launch/amr_viz.launch.py`
   - launch entry for the legacy bridge
 - `scripts/`
-  - helper scripts for dev runs
+  - helper scripts for frontend and legacy runs
 
 ## Requirements
 
@@ -64,22 +60,11 @@ Install frontend dependencies:
 ./amr_viz/scripts/install_desktop_deps.sh
 ```
 
-Start only the web app:
+Start the web app:
 
 ```bash
 ./amr_viz/scripts/run_web_dev.sh
 ```
-
-Start bridge plus web app together:
-
-```bash
-./amr_viz/scripts/run_viz_dev.sh
-```
-
-Host access:
-
-- web app is served on `0.0.0.0`
-- default dev port is `5173`
 
 Typical host-PC access:
 
@@ -87,25 +72,8 @@ Typical host-PC access:
 http://<ubuntu-server-ip>:5173
 ```
 
-## Legacy Bridge Notes
+## Notes
 
-The current bridge scripts are still useful for quick visualization tests, but
-they are not the preferred long-term transport architecture.
-
-Preferred long-term direction:
-
-- navigation and robot data move through MQTT
-- web UI consumes modeled data from the MQTT transport layer
-
-## Scripts
-
-- `install_desktop_deps.sh`
-  - installs frontend dependencies
-- `run_web_dev.sh`
-  - starts the web dev server
-- `run_bridge.sh`
-  - starts the legacy WebSocket bridge
-- `run_viz_dev.sh`
-  - starts the legacy bridge and the web app together
-- `kill_all.sh`
-  - if present in your local branch, use it to stop leftover viz processes
+- current bridge scripts are legacy/prototype paths
+- the target architecture is React + MQTT, not Python WebSocket bridging
+- this package should stay focused on visualization rather than transport
