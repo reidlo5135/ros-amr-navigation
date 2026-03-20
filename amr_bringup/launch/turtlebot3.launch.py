@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.conditions import UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 
 
 def bringup_launch_file(filename: str) -> str:
@@ -75,7 +75,9 @@ def generate_launch_description() -> LaunchDescription:
                 ],
             ),
             TimerAction(
-                period=[robot_bringup_delay_sec, " + ", navigation_start_delay_sec],
+                period=PythonExpression(
+                    [robot_bringup_delay_sec, " + ", navigation_start_delay_sec]
+                ),
                 actions=[navigation_launch],
                 condition=UnlessCondition(mapping_mode),
             ),

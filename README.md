@@ -5,11 +5,11 @@ planning, local replanning, motion control, and MQTT-based external transport.
 
 ## Current Direction
 
-- navigation runtime stays inside ROS 2
+- navigation runtime is moving onto the robot-side ROS graph
 - cross-machine transport moves to MQTT
-- robot-side bringup can be bridged through `amr_mqtt_robot_plugin`
-- navigation-side telemetry, commands, services, and actions are bridged through
-  `amr_mqtt_bridge`
+- `amr_mqtt_robot_plugin` mirrors robot-side ROS topics into MQTT
+- `amr_mqtt_bridge` reconstructs mirrored ROS topics on the VBox side and
+  forwards selected commands back through MQTT
 - `amr_viz` is currently a transitional web visualization package and is being
   separated from transport concerns
 
@@ -53,13 +53,14 @@ planning, local replanning, motion control, and MQTT-based external transport.
 Recommended deployment:
 
 - TurtleBot3 / robot
-  - local ROS bringup
+  - `turtlebot3_bringup`
+  - `localization.launch.py`
+  - `navigation.launch.py`
   - `amr_mqtt_robot_plugin`
 - VBox Ubuntu server
-  - `amr_navigation`
   - `amr_mqtt_bridge`
   - `mosquitto`
-  - `amr_viz` web app
+  - `rviz2` or `amr_viz`
 - Host PC
   - browser only
 
@@ -82,19 +83,19 @@ Important parameter sections:
 
 `amr_mqtt_bridge` currently handles:
 
-- telemetry publish from ROS topics
-- `/cmd_vel` publish to the robot MQTT command topic
-- MQTT command subscribe for `set_initial_pose`
-- MQTT action bridge for `navigate_to_pose`
-- MQTT request/response bridge for `plan_segment`
-- MQTT request/response bridge for `plan_route`
+- MQTT -> ROS republish for mirrored robot and navigation topics on VBox
+- ROS `/cmd_vel` -> MQTT publish for robot-side execution
+- legacy MQTT feature endpoints for initial pose / plan / navigate are still
+  present while command ownership is being moved toward the robot side
 
 `amr_mqtt_robot_plugin` currently handles:
 
 - ROS -> MQTT
-  - `/scan`
-  - `/odom`
-  - `/imu`
+  - robot telemetry: `/scan`, `/odom`, `/imu`, `/tf`, `/tf_static`,
+    `/joint_states`
+  - navigation telemetry: `/amr/localization/pose`, `/amr/planner/global`,
+    `/amr/planner/local`, `/amr/costmap/global`, `/amr/costmap/local`,
+    `/amr/motion/status`, `/amr/obstacle/report`
 - MQTT -> ROS
   - `/cmd_vel`
 
@@ -134,7 +135,7 @@ colcon build --packages-up-to amr_navigation
 Navigation bringup:
 
 ```bash
-ros2 launch amr_bringup total.launch.py
+ros2 launch amr_bringup turtlebot3.launch.py
 ```
 
 Navigation-side MQTT bridge:
@@ -153,7 +154,7 @@ ros2 launch amr_mqtt_robot_plugin amr_mqtt_robot_plugin.launch.py
 
 - `amr_mqtt_robot_plugin` is intended for robot-side deployment such as
   TurtleBot3 bringup.
-- `amr_mqtt_bridge` is intended for the navigation runtime boundary.
+- `amr_mqtt_bridge` is intended for the VBox/server-side MQTT receive boundary.
 - if broker placement is on the VBox guest, the common setup is:
   - broker listen on `0.0.0.0`
   - VBox NAT port forwarding for `1883`

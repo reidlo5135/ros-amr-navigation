@@ -324,6 +324,8 @@
             joint_states: "amr/robot/turtlebot3/telemetry/joint_states"
         feedback:
           navigate_to_pose: "amr/feedback/navigate_to_pose"
+        status:
+          navigate_to_pose: "amr/status/navigate_to_pose"
         response:
           set_initial_pose: "amr/response/set_initial_pose"
           navigate_to_pose: "amr/response/navigate_to_pose"
@@ -352,11 +354,8 @@
           tf: "/tf"
           tf_static: "/tf_static"
           joint_states: "/joint_states"
-      services:
-        plan_segment: "/amr/global_planner/plan_segment"
-        plan_route: "/amr/global_planner/plan_route"
-      actions:
-        navigate_to_pose: "/amr/navigator/navigate_to_pose"
+        navigate_feedback: "/amr/navigator/navigate_to_pose/feedback"
+        navigate_status: "/amr/navigator/navigate_to_pose/status"
 
 /amr/mqtt_robot_plugin:
   ros__parameters:
@@ -373,9 +372,17 @@
       qos:
         telemetry: 0
         command: 0
+        service: 0
       topics:
         telemetry:
           map: "amr/robot/turtlebot3/telemetry/map"
+          robot_pose: "amr/telemetry/robot_pose"
+          global_path: "amr/telemetry/global_path"
+          local_path: "amr/telemetry/local_path"
+          global_costmap: "amr/telemetry/global_costmap"
+          local_costmap: "amr/telemetry/local_costmap"
+          motion_status: "amr/telemetry/motion_status"
+          obstacle_report: "amr/telemetry/obstacle_report"
           scan: "amr/robot/turtlebot3/telemetry/scan"
           odom: "amr/robot/turtlebot3/telemetry/odom"
           imu: "amr/robot/turtlebot3/telemetry/imu"
@@ -384,9 +391,30 @@
           joint_states: "amr/robot/turtlebot3/telemetry/joint_states"
         command:
           cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
+          set_initial_pose: "amr/command/set_initial_pose"
+          navigate_to_pose: "amr/command/navigate_to_pose"
+        feedback:
+          navigate_to_pose: "amr/feedback/navigate_to_pose"
+        status:
+          navigate_to_pose: "amr/status/navigate_to_pose"
+        response:
+          set_initial_pose: "amr/response/set_initial_pose"
+          navigate_to_pose: "amr/response/navigate_to_pose"
+          plan_segment: "amr/response/plan_segment"
+          plan_route: "amr/response/plan_route"
+        request:
+          plan_segment: "amr/request/plan_segment"
+          plan_route: "amr/request/plan_route"
     ros:
       topics:
         map: "/amr/map/data"
+        robot_pose: "/amr/localization/pose"
+        global_path: "/amr/planner/global"
+        local_path: "/amr/planner/local"
+        global_costmap: "/amr/costmap/global"
+        local_costmap: "/amr/costmap/local"
+        motion_status: "/amr/motion/status"
+        obstacle_report: "/amr/obstacle/report"
         scan: "/scan"
         odom: "/odom"
         imu: "/imu"
@@ -394,3 +422,11 @@
         tf_static: "/tf_static"
         joint_states: "/joint_states"
         cmd_vel: "/cmd_vel"
+        initial_pose: "/amr/localization/initial_pose"
+        navigate_feedback: "/amr/navigator/navigate_to_pose/feedback"
+        navigate_status: "/amr/navigator/navigate_to_pose/status"
+      services:
+        plan_segment: "/amr/global_planner/plan_segment"
+        plan_route: "/amr/global_planner/plan_route"
+      actions:
+        navigate_to_pose: "/amr/navigator/navigate_to_pose"

@@ -1,22 +1,23 @@
 # amr_mqtt_bridge
 
-`amr_mqtt_bridge` is the navigation-side ROS <-> MQTT transport boundary for
-the AMR stack.
+`amr_mqtt_bridge` is the VBox/server-side ROS <-> MQTT boundary for the AMR
+stack.
 
-It keeps ROS topics, services, and actions inside the navigation runtime and
-exports only modeled AMR data over MQTT.
+Its current role is:
+
+- receive mirrored MQTT topics from the robot
+- reconstruct those topics into the local VBox ROS graph
+- forward selected local ROS commands such as `/cmd_vel` back into MQTT
+- receive robot-side navigation feedback/status mirrors
 
 ## Runtime Role
 
-- ROS runtime side
-  - `rclc`
-- MQTT side
-  - Eclipse Paho C client via `libpaho-mqtt-dev`
-- typical deployment
-  - `amr_navigation`
-  - `amr_mqtt_bridge`
+Recommended placement:
+
+- VBox Ubuntu server
   - `mosquitto`
-  - same VBox Ubuntu server
+  - `amr_mqtt_bridge`
+  - `rviz2` or `amr_viz`
 
 ## Requirements
 
@@ -40,148 +41,39 @@ Relevant section:
 
 - `/amr/mqtt_bridge`
 
-Tunable groups:
+## Current MQTT -> ROS Mirror
 
-- broker host, port, client id, keepalive, auth
-- MQTT telemetry/command/request/response topic names
-- ROS source topic names
-- ROS service names
-- ROS action names
+Navigation telemetry mirrored into VBox ROS:
 
-## Current ROS Inputs
+- `amr/telemetry/robot_pose` -> `/amr/localization/pose`
+- `amr/telemetry/global_path` -> `/amr/planner/global`
+- `amr/telemetry/local_path` -> `/amr/planner/local`
+- `amr/robot/turtlebot3/telemetry/map` -> `/amr/map/data`
+- `amr/telemetry/global_costmap` -> `/amr/costmap/global`
+- `amr/telemetry/local_costmap` -> `/amr/costmap/local`
+- `amr/telemetry/motion_status` -> `/amr/motion/status`
+- `amr/telemetry/obstacle_report` -> `/amr/obstacle/report`
 
-Telemetry sources:
+Robot telemetry mirrored into VBox ROS:
 
-- `/amr/localization/pose`
-- `/amr/planner/global`
-- `/amr/planner/local`
-- `/amr/map/data`
-- `/amr/costmap/global`
-- `/amr/costmap/local`
-- `/amr/motion/status`
-- `/amr/obstacle/report`
-- `/cmd_vel`
+- `amr/robot/turtlebot3/telemetry/scan` -> `/scan`
+- `amr/robot/turtlebot3/telemetry/odom` -> `/odom`
+- `amr/robot/turtlebot3/telemetry/imu` -> `/imu`
+- `amr/robot/turtlebot3/telemetry/tf` -> `/tf`
+- `amr/robot/turtlebot3/telemetry/tf_static` -> `/tf_static`
+- `amr/robot/turtlebot3/telemetry/joint_states` -> `/joint_states`
+- `amr/feedback/navigate_to_pose` -> `/amr/navigator/navigate_to_pose/feedback`
+- `amr/status/navigate_to_pose` -> `/amr/navigator/navigate_to_pose/status`
 
-Robot ingress republish targets:
+## Current ROS -> MQTT Forwarding
 
-- `/scan`
-- `/odom`
-- `/imu`
-- `/tf`
-- `/tf_static`
-- `/joint_states`
+- `/cmd_vel` -> `amr/robot/turtlebot3/command/cmd_vel`
 
-Command / request targets:
+## Feature Ownership
 
-- `/amr/localization/initial_pose`
-- `/amr/navigator/navigate_to_pose`
-- `/amr/global_planner/plan_segment`
-- `/amr/global_planner/plan_route`
-
-## Current MQTT Interface
-
-Telemetry:
-
-- `amr/telemetry/robot_pose`
-- `amr/telemetry/global_path`
-- `amr/telemetry/local_path`
-- `amr/telemetry/map`
-- `amr/telemetry/global_costmap`
-- `amr/telemetry/local_costmap`
-- `amr/telemetry/motion_status`
-- `amr/telemetry/obstacle_report`
-
-Commands / feedback / responses:
-
-- `amr/robot/turtlebot3/command/cmd_vel`
-- `amr/command/set_initial_pose`
-- `amr/command/navigate_to_pose`
-- `amr/request/plan_segment`
-- `amr/request/plan_route`
-- `amr/response/set_initial_pose`
-- `amr/response/navigate_to_pose`
-- `amr/feedback/navigate_to_pose`
-- `amr/response/plan_segment`
-- `amr/response/plan_route`
-
-## Supported Behaviors
-
-- ROS topic -> MQTT telemetry publish
-- ROS `/cmd_vel` -> MQTT robot command publish
-- MQTT robot telemetry -> ROS republish for robot bringup topics
-- MQTT command -> ROS initial pose publish
-- MQTT command -> ROS action goal for `navigate_to_pose`
-- ROS action feedback/result -> MQTT feedback/response
-- MQTT request -> ROS service call for `plan_segment`
-- MQTT request -> ROS service call for `plan_route`
-
-## Payload Examples
-
-`set_initial_pose`
-
-```json
-{
-  "request_id": "req-001",
-  "frame_id": "map",
-  "x": 0.0,
-  "y": 0.0,
-  "yaw": 0.0,
-  "covariance_x": 0.25,
-  "covariance_y": 0.25,
-  "covariance_yaw": 0.06853891945200942
-}
-```
-
-`navigate_to_pose`
-
-```json
-{
-  "request_id": "req-002",
-  "goal_pose": {
-    "header": { "frame_id": "map" },
-    "position": { "x": 1.0, "y": 2.0, "z": 0.0 },
-    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-  }
-}
-```
-
-`plan_segment`
-
-```json
-{
-  "request_id": "req-003",
-  "start": {
-    "header": { "frame_id": "map" },
-    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
-    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-  },
-  "goal": {
-    "header": { "frame_id": "map" },
-    "position": { "x": 1.0, "y": 2.0, "z": 0.0 },
-    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-  }
-}
-```
-
-`plan_route`
-
-```json
-{
-  "request_id": "req-004",
-  "start": {
-    "header": { "frame_id": "map" },
-    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
-    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-  },
-  "waypoints": [
-    {
-      "header": { "frame_id": "map" },
-      "position": { "x": 1.0, "y": 1.0, "z": 0.0 },
-      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-    }
-  ]
-}
-```
+- robot-side command/service/action ownership belongs in `amr_mqtt_robot_plugin`
+- VBox-side `amr_mqtt_bridge` mirrors telemetry, feedback, and status into the local ROS graph
+- ACK responses for service/action remain MQTT-side responses
 
 ## Launch
 
@@ -191,6 +83,6 @@ ros2 launch amr_mqtt_bridge amr_mqtt_bridge.launch.py
 
 ## Notes
 
-- this package is the navigation-side MQTT boundary
-- robot bringup transport belongs in `amr_mqtt_robot_plugin`
-- MQTT topic names and ROS interface names should be tuned through `amr.yaml`
+- this package is intended to run on VBox / server side
+- robot-side topic mirroring belongs in `amr_mqtt_robot_plugin`
+- topic names and ROS interface names should be tuned through `amr.yaml`

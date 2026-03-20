@@ -95,6 +95,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char robot_telemetry_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char status_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char feedback_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -122,6 +123,8 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_robot_tf_static[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_robot_joint_states[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_navigate_feedback[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_navigate_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char action_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -180,6 +183,13 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t motion_status_subscription;
   rcl_subscription_t obstacle_report_subscription;
   rcl_subscription_t velocity_subscription;
+  rcl_publisher_t robot_pose_publisher;
+  rcl_publisher_t global_path_publisher;
+  rcl_publisher_t local_path_publisher;
+  rcl_publisher_t global_costmap_publisher;
+  rcl_publisher_t local_costmap_publisher;
+  rcl_publisher_t motion_status_publisher;
+  rcl_publisher_t obstacle_report_publisher;
   rcl_publisher_t robot_map_publisher;
   rcl_publisher_t robot_scan_publisher;
   rcl_publisher_t robot_odom_publisher;
@@ -188,6 +198,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_publisher_t robot_tf_static_publisher;
   rcl_publisher_t robot_joint_states_publisher;
   rcl_publisher_t initial_pose_publisher;
+  rcl_publisher_t navigate_feedback_publisher;
+  rcl_publisher_t navigate_status_publisher;
   rcl_client_t plan_segment_client;
   rcl_client_t plan_route_client;
   rcl_action_client_t navigate_to_pose_client;
@@ -199,6 +211,13 @@ typedef struct amr_mqtt_bridge_ros_state_s
   size_t telemetry_endpoint_count;
   bool messages_initialized;
   bool subscriptions_initialized;
+  bool robot_pose_publisher_initialized;
+  bool global_path_publisher_initialized;
+  bool local_path_publisher_initialized;
+  bool global_costmap_publisher_initialized;
+  bool local_costmap_publisher_initialized;
+  bool motion_status_publisher_initialized;
+  bool obstacle_report_publisher_initialized;
   bool robot_map_publisher_initialized;
   bool robot_scan_publisher_initialized;
   bool robot_odom_publisher_initialized;
@@ -207,6 +226,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   bool robot_tf_static_publisher_initialized;
   bool robot_joint_states_publisher_initialized;
   bool initial_pose_publisher_initialized;
+  bool navigate_feedback_publisher_initialized;
+  bool navigate_status_publisher_initialized;
   bool plan_segment_client_initialized;
   bool plan_route_client_initialized;
   bool navigate_to_pose_client_initialized;

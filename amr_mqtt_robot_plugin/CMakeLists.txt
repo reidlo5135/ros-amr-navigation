@@ -24,9 +24,12 @@ include_directories(
 )
 
 find_package(ament_cmake REQUIRED)
+find_package(action_msgs REQUIRED)
+find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rcl REQUIRED)
+find_package(rcl_action REQUIRED)
 find_package(rclc REQUIRED)
 find_package(rcl_yaml_param_parser REQUIRED)
 find_package(rcutils REQUIRED)
@@ -42,9 +45,12 @@ set(SOURCES
 )
 
 set(DEPENDS
+  action_msgs
+  amr_msgs
   geometry_msgs
   nav_msgs
   rcl
+  rcl_action
   rclc
   rcl_yaml_param_parser
   rcutils

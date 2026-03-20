@@ -9,9 +9,12 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>action_msgs</depend>
+  <depend>amr_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>rcl</depend>
+  <depend>rcl_action</depend>
   <depend>rclc</depend>
   <depend>rcl_yaml_param_parser</depend>
   <depend>rcutils</depend>
