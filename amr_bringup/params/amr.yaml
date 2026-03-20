@@ -282,3 +282,84 @@
       navigate_to_pose: "/amr/navigator/navigate_to_pose"
     execution:
       action_wait_timeout_ms: 1000
+
+/amr/mqtt_bridge:
+  ros__parameters:
+    broker:
+      host: "127.0.0.1"
+      port: 1883
+      client_id: "amr_mqtt_bridge"
+      keep_alive_sec: 20
+      clean_session: true
+      username: ""
+      password: ""
+    mqtt:
+      root: "amr"
+      qos:
+        telemetry: 0
+        command: 1
+        service: 1
+      topics:
+        telemetry:
+          robot_pose: "amr/telemetry/robot_pose"
+          global_path: "amr/telemetry/global_path"
+          local_path: "amr/telemetry/local_path"
+          map: "amr/telemetry/map"
+          global_costmap: "amr/telemetry/global_costmap"
+          local_costmap: "amr/telemetry/local_costmap"
+          motion_status: "amr/telemetry/motion_status"
+          obstacle_report: "amr/telemetry/obstacle_report"
+        command:
+          navigate_to_pose: "amr/command/navigate_to_pose"
+          set_initial_pose: "amr/command/set_initial_pose"
+        request:
+          plan_segment: "amr/request/plan_segment"
+          plan_route: "amr/request/plan_route"
+        response:
+          plan_segment: "amr/response/plan_segment"
+          plan_route: "amr/response/plan_route"
+    ros:
+      topics:
+        robot_pose: "/amr/localization/pose"
+        global_path: "/amr/planner/global"
+        local_path: "/amr/planner/local"
+        map: "/amr/map/data"
+        global_costmap: "/amr/costmap/global"
+        local_costmap: "/amr/costmap/local"
+        motion_status: "/amr/motion/status"
+        obstacle_report: "/amr/obstacle/report"
+        initial_pose: "/amr/localization/initial_pose"
+      services:
+        plan_segment: "/amr/global_planner/plan_segment"
+        plan_route: "/amr/global_planner/plan_route"
+      actions:
+        navigate_to_pose: "/amr/navigator/navigate_to_pose"
+
+/amr/robot_mqtt_bridge:
+  ros__parameters:
+    broker:
+      host: "192.168.61.35"
+      port: 1883
+      client_id: "amr_robot_mqtt_bridge"
+      keep_alive_sec: 20
+      clean_session: true
+      username: ""
+      password: ""
+    mqtt:
+      root: "amr/robot/turtlebot3"
+      qos:
+        telemetry: 0
+        command: 1
+      topics:
+        telemetry:
+          scan: "amr/robot/turtlebot3/telemetry/scan"
+          odom: "amr/robot/turtlebot3/telemetry/odom"
+          imu: "amr/robot/turtlebot3/telemetry/imu"
+        command:
+          cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
+    ros:
+      topics:
+        scan: "/scan"
+        odom: "/odom"
+        imu: "/imu"
+        cmd_vel: "/cmd_vel"
