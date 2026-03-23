@@ -2,36 +2,64 @@ import { startTransition, useEffect, useRef, useState } from "react";
 
 import { SceneViewport } from "./components/SceneViewport";
 import { mockState } from "./lib/mock-state";
-import type { BridgeCommand, BridgeEnvelope, BridgeState } from "./lib/protocol";
-import { VizSocketClient } from "./lib/socket";
+import type { BridgeState } from "./lib/protocol";
+import { VizMqttClient, type VizMqttMessage } from "./lib/mqtt";
 
 function createCommandId() {
   return `${Date.now()}-${Math.round(Math.random() * 10000)}`;
 }
 
-function defaultBridgeUrl() {
-  const configuredUrl = import.meta.env.VITE_AMR_VIZ_BRIDGE_URL as string | undefined;
+function defaultMqttUrl() {
+  const configuredUrl = import.meta.env.VITE_AMR_VIZ_MQTT_URL as string | undefined;
   if (configuredUrl) {
     return configuredUrl;
   }
 
   if (typeof window !== "undefined") {
-    const pageProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const pageHost = window.location.hostname || "127.0.0.1";
-    return `${pageProtocol}//${pageHost}:8765`;
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.hostname || "127.0.0.1";
+    return `${protocol}//${host}:9001/mqtt`;
   }
 
-  return "ws://127.0.0.1:8765";
+  return "ws://127.0.0.1:9001/mqtt";
+}
+
+function createInitialState() {
+  const useMockState = (import.meta.env.VITE_AMR_VIZ_USE_MOCK as string | undefined) === "1";
+  return useMockState ? mockState : {};
+}
+
+const telemetryTopicMap: Record<string, keyof BridgeState> = {
+  "amr/viz/telemetry/robot_pose": "robot_pose",
+  "amr/viz/telemetry/global_path": "global_path",
+  "amr/viz/telemetry/local_path": "local_path",
+  "amr/viz/telemetry/map": "map",
+  "amr/viz/telemetry/global_costmap": "global_costmap",
+  "amr/viz/telemetry/local_costmap": "local_costmap",
+  "amr/viz/telemetry/motion_status": "motion_status",
+  "amr/viz/telemetry/obstacle_report": "obstacle_report",
+};
+
+const topicSubscriptions = [
+  "amr/viz/telemetry/#",
+  "amr/response/#",
+  "amr/feedback/#",
+  "amr/status/#",
+];
+
+function isObjectPayload(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export default function App() {
-  const clientRef = useRef(new VizSocketClient());
-  const [bridgeUrl, setBridgeUrl] = useState(defaultBridgeUrl);
-  const [bridgeState, setBridgeState] = useState<BridgeState>(mockState);
+  const clientRef = useRef(new VizMqttClient());
+  const binaryTopicsRef = useRef(new Set<string>());
+  const [mqttUrl, setMqttUrl] = useState(defaultMqttUrl);
+  const [bridgeState, setBridgeState] = useState<BridgeState>(createInitialState);
   const [connectionLabel, setConnectionLabel] = useState("Disconnected");
   const [events, setEvents] = useState<string[]>([
-    "AMR Viz scaffold ready",
-    "Connect the bridge to replace the mock scene",
+    "AMR Viz MQTT client ready",
+    "Connect to the broker WebSocket endpoint",
   ]);
   const [goalX, setGoalX] = useState("2.5");
   const [goalY, setGoalY] = useState("0.0");
@@ -42,20 +70,20 @@ export default function App() {
     const unsubscribeStatus = client.onStatusChange((status, detail) => {
       startTransition(() => {
         if (status === "connecting") {
-          setConnectionLabel(`Connecting: ${detail ?? bridgeUrl}`);
-          setEvents((current) => [`Connecting: ${detail ?? bridgeUrl}`, ...current].slice(0, 8));
+          setConnectionLabel(`Connecting: ${detail ?? mqttUrl}`);
+          setEvents((current) => [`Connecting: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
         }
 
         if (status === "connected") {
-          setConnectionLabel(`Socket connected: ${detail ?? bridgeUrl}`);
-          setEvents((current) => [`Socket connected: ${detail ?? bridgeUrl}`, ...current].slice(0, 8));
+          setConnectionLabel(`MQTT connected: ${detail ?? mqttUrl}`);
+          setEvents((current) => [`MQTT connected: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
         }
 
         if (status === "error") {
-          setConnectionLabel(`Connection error: ${detail ?? bridgeUrl}`);
-          setEvents((current) => [`Bridge connection error: ${detail ?? bridgeUrl}`, ...current].slice(0, 8));
+          setConnectionLabel(`MQTT error: ${detail ?? mqttUrl}`);
+          setEvents((current) => [`MQTT error: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
         }
 
@@ -63,41 +91,48 @@ export default function App() {
       });
     });
 
-    const unsubscribeMessage = client.onMessage((message: BridgeEnvelope) => {
+    const unsubscribeMessage = client.onMessage((message: VizMqttMessage) => {
       startTransition(() => {
-        if (message.type === "hello") {
-          setConnectionLabel(`Bridge ready: ${message.payload.server}`);
-          setEvents((current) => [
-            `Bridge protocol v${message.payload.protocol_version} ready`,
-            ...current,
-          ].slice(0, 8));
-          return;
-        }
-
-        if (message.type === "snapshot") {
-          setBridgeState((current) => ({ ...current, ...message.payload }));
-          setEvents((current) => ["Snapshot received", ...current].slice(0, 8));
-          return;
-        }
-
-        if (message.type === "topic_update") {
+        const mappedChannel = telemetryTopicMap[message.topic];
+        if (mappedChannel && isObjectPayload(message.json)) {
           setBridgeState((current) => ({
             ...current,
-            [message.channel]: message.payload,
+            [mappedChannel]: message.json as BridgeState[keyof BridgeState],
           }));
           return;
         }
 
-        if (message.type === "command_result" || message.type === "command_feedback") {
-          setEvents((current) => [
-            `${message.channel}: ${message.payload.message}`,
-            ...current,
-          ].slice(0, 8));
+        if (mappedChannel && !message.text) {
+          if (!binaryTopicsRef.current.has(message.topic)) {
+            binaryTopicsRef.current.add(message.topic);
+            setEvents((current) => [
+              `Binary telemetry on ${message.topic}; waiting for modeled viz topics`,
+              ...current,
+            ].slice(0, 10));
+          }
           return;
         }
 
-        if (message.type === "error") {
-          setEvents((current) => [`Bridge error: ${message.payload.message}`, ...current].slice(0, 8));
+        if (message.topic.startsWith("amr/response/") && isObjectPayload(message.json)) {
+          const success = message.json.success === true ? "OK" : "FAIL";
+          const detail = typeof message.json.message === "string" ? message.json.message : "ack";
+          setEvents((current) => [`${message.topic}: ${success} ${detail}`, ...current].slice(0, 10));
+          return;
+        }
+
+        if ((message.topic.startsWith("amr/feedback/") || message.topic.startsWith("amr/status/")) && !message.text) {
+          if (!binaryTopicsRef.current.has(message.topic)) {
+            binaryTopicsRef.current.add(message.topic);
+            setEvents((current) => [
+              `Binary action stream on ${message.topic}`,
+              ...current,
+            ].slice(0, 10));
+          }
+          return;
+        }
+
+        if (message.text) {
+          setEvents((current) => [`${message.topic}: ${message.text}`, ...current].slice(0, 10));
         }
       });
     });
@@ -106,11 +141,10 @@ export default function App() {
       unsubscribeStatus();
       unsubscribeMessage();
     };
-  }, [bridgeUrl]);
+  }, [mqttUrl]);
 
   const connect = () => {
-    const client = clientRef.current;
-    client.connect(bridgeUrl);
+    clientRef.current.connect(mqttUrl, topicSubscriptions);
   };
 
   const disconnect = () => {
@@ -118,10 +152,10 @@ export default function App() {
     setConnectionLabel("Disconnected");
   };
 
-  const sendCommand = (command: BridgeCommand) => {
-    const sent = clientRef.current.send(command);
+  const publishJson = (topic: string, payload: Record<string, unknown>) => {
+    const sent = clientRef.current.publishJson(topic, payload, { qos: 0, retain: false });
     if (!sent) {
-      setEvents((current) => ["Bridge is not connected", ...current].slice(0, 8));
+      setEvents((current) => ["MQTT client is not connected", ...current].slice(0, 10));
     }
   };
 
@@ -149,13 +183,10 @@ export default function App() {
       <section className="workspace">
         <aside className="sidebar sidebar-left">
           <section className="panel-card">
-            <div className="panel-section-title">Bridge</div>
+            <div className="panel-section-title">MQTT</div>
             <label className="field-label">
-              <span>WebSocket</span>
-              <input
-                value={bridgeUrl}
-                onChange={(event) => setBridgeUrl(event.target.value)}
-              />
+              <span>Broker WS</span>
+              <input value={mqttUrl} onChange={(event) => setMqttUrl(event.target.value)} />
             </label>
             <div className="button-stack compact-stack">
               <button onClick={connect}>Connect</button>
@@ -184,15 +215,22 @@ export default function App() {
             <div className="button-stack">
               <button
                 onClick={() =>
-                  sendCommand({
-                    type: "command",
-                    id: createCommandId(),
-                    command: "navigate_to_pose",
-                    payload: {
-                      x: Number(goalX),
-                      y: Number(goalY),
-                      yaw: Number(goalYaw),
-                      frame_id: "map",
+                  publishJson("amr/command/navigate_to_pose", {
+                    request_id: createCommandId(),
+                    goal_pose: {
+                      header: {
+                        stamp: { sec: 0, nanosec: 0 },
+                        frame_id: "map",
+                      },
+                      pose: {
+                        position: { x: Number(goalX), y: Number(goalY), z: 0.0 },
+                        orientation: {
+                          x: 0.0,
+                          y: 0.0,
+                          z: Math.sin(Number(goalYaw) * 0.5),
+                          w: Math.cos(Number(goalYaw) * 0.5),
+                        },
+                      },
                     },
                   })
                 }
@@ -202,19 +240,15 @@ export default function App() {
               <button
                 className="secondary"
                 onClick={() =>
-                  sendCommand({
-                    type: "command",
-                    id: createCommandId(),
-                    command: "set_initial_pose",
-                    payload: {
-                      x: Number(goalX),
-                      y: Number(goalY),
-                      yaw: Number(goalYaw),
-                      frame_id: "map",
-                      covariance_x: 0.25,
-                      covariance_y: 0.25,
-                      covariance_yaw: 0.06853891945200942,
-                    },
+                  publishJson("amr/command/set_initial_pose", {
+                    request_id: createCommandId(),
+                    frame_id: "map",
+                    x: Number(goalX),
+                    y: Number(goalY),
+                    yaw: Number(goalYaw),
+                    covariance_x: 0.25,
+                    covariance_y: 0.25,
+                    covariance_yaw: 0.06853891945200942,
                   })
                 }
               >
@@ -274,12 +308,8 @@ export default function App() {
                     ? bridgeState.obstacle_report.is_dynamic
                       ? "Dynamic"
                       : "Static"
-                    : "None"}
+                    : "Clear"}
                 </strong>
-              </div>
-              <div className="metric-row">
-                <span>Blocks</span>
-                <strong>{bridgeState.obstacle_report?.blocks_path ? "Yes" : "No"}</strong>
               </div>
               <div className="metric-row">
                 <span>Distance</span>
@@ -288,19 +318,17 @@ export default function App() {
                 </strong>
               </div>
               <div className="metric-row">
-                <span>Bearing</span>
-                <strong>
-                  {bridgeState.obstacle_report?.bearing?.toFixed(2) ?? "--"} rad
-                </strong>
+                <span>Blocks Path</span>
+                <strong>{bridgeState.obstacle_report?.blocks_path ? "Yes" : "No"}</strong>
               </div>
             </div>
           </section>
 
-          <section className="panel-card log-panel">
+          <section className="panel-card">
             <div className="panel-section-title">Events</div>
-            <div className="event-list">
-              {events.map((event, index) => (
-                <div className="event-item" key={`${event}-${index}`}>
+            <div className="event-log">
+              {events.map((event) => (
+                <div key={event} className="event-item">
                   {event}
                 </div>
               ))}

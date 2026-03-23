@@ -25,10 +25,10 @@ map / localization / planner / controller / navigator"]
         Bridge["amr_mqtt_bridge"]
         RViz["rviz2"]
         Viz["amr_viz
-transitional web UI"]
+standalone React UI"]
         Bridge <--> Broker
         RViz --> Bridge
-        Viz --> Bridge
+        Viz --> Broker
     end
 
     subgraph Host["Host PC"]
@@ -44,7 +44,7 @@ transitional web UI"]
 - robot-side ROS keeps the high-rate navigation loop local
 - MQTT is the only cross-machine transport between robot and VBox
 - VBox reconstructs a mirrored ROS graph for RViz, monitoring, and command emit
-- `amr_viz` is being refocused toward React + MQTT instead of owning transport
+- `amr_viz` is now a standalone React + MQTT web app
 
 This split exists to reduce DDS traffic across the VM boundary and avoid the
 `ksoftirqd` and bridged-adapter load seen with direct cross-machine ROS usage.
@@ -82,7 +82,7 @@ This split exists to reduce DDS traffic across the VM boundary and avoid the
 - `amr_mqtt_bridge`
   - VBox-side MQTT <-> ROS mirror and command emitter
 - `amr_viz`
-  - transitional visualization workspace moving toward React + MQTT
+  - standalone React + MQTT visualization app
 
 ## Runtime Roles
 
@@ -94,9 +94,9 @@ This split exists to reduce DDS traffic across the VM boundary and avoid the
 - VBox Ubuntu server
   - `mosquitto`
   - `amr_mqtt_bridge`
-  - `rviz2` or `amr_viz`
+  - `rviz2`
 - Host PC
-  - browser only when using web visualization
+  - browser running `amr_viz`
 
 ## MQTT Split
 
@@ -113,6 +113,12 @@ This split exists to reduce DDS traffic across the VM boundary and avoid the
 - ROS -> MQTT command emission from VBox-side inputs such as RViz goal,
   initial pose, and `/cmd_vel`
 - mirrored feedback/status republish into the VBox ROS graph
+
+`amr_viz` handles:
+
+- browser-side MQTT over WebSocket connection
+- visualization using modeled MQTT topics on `amr/viz/telemetry/*`
+- operator command publish for goal and initial pose
 
 ## Shared Parameters
 
@@ -158,6 +164,14 @@ Typical workspace build:
 
 ```bash
 colcon build --packages-up-to amr_navigation
+```
+
+Frontend setup:
+
+```bash
+cd amr_viz
+npm install
+npm run dev
 ```
 
 ## Notes

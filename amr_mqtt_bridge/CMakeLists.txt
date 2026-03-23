@@ -42,7 +42,8 @@ include_directories(
 )
 
 set(SOURCES
-  src/amr_mqtt_bridge/mqtt_bridge.c
+  src/amr_mqtt_bridge/node.c
+  src/amr_mqtt_bridge/mqtt.c
   src/main.c
 )
 

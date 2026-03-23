@@ -23,10 +23,12 @@
 - `amr_bringup`
 - `amr_mqtt_bridge`
 - `amr_mqtt_robot_plugin`
-- `amr_viz`
 
 ## Build
 
 ```bash
 colcon build --packages-up-to amr_navigation
 ```
+
+`amr_viz` is now a standalone React project and is not part of the ROS
+metapackage.

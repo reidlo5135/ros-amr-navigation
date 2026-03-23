@@ -41,6 +41,7 @@ find_package(tf2_msgs REQUIRED)
 
 set(SOURCES
   src/${PROJECT_NAME}/node.c
+  src/${PROJECT_NAME}/mqtt.c
   src/main.c
 )
 

@@ -5,7 +5,8 @@ stack.
 
 Its job is to receive MQTT traffic produced by the robot, reconstruct a local
 VBox ROS graph for RViz and operator tools, and emit selected MQTT commands
-from VBox-side ROS topics.
+from VBox-side ROS topics. It also publishes modeled JSON telemetry for the
+web client on `amr/viz/telemetry/*`.
 
 ## Placement
 
@@ -64,6 +65,19 @@ Mirrored action monitoring:
 - `amr/feedback/navigate_to_pose` -> `/amr/navigator/navigate_to_pose/feedback`
 - `amr/status/navigate_to_pose` -> `/amr/navigator/navigate_to_pose/status`
 
+## MQTT -> MQTT Modeled Viz Topics
+
+For `amr_viz`, this package also emits browser-friendly JSON topics:
+
+- `amr/viz/telemetry/robot_pose`
+- `amr/viz/telemetry/global_path`
+- `amr/viz/telemetry/local_path`
+- `amr/viz/telemetry/map`
+- `amr/viz/telemetry/global_costmap`
+- `amr/viz/telemetry/local_costmap`
+- `amr/viz/telemetry/motion_status`
+- `amr/viz/telemetry/obstacle_report`
+
 ## ROS -> MQTT Emission
 
 VBox-side ROS inputs forwarded back into MQTT:
@@ -97,3 +111,8 @@ ros2 launch amr_mqtt_bridge amr_mqtt_bridge.launch.py
 - this package is VBox/server-side only
 - robot-side mirroring belongs in `amr_mqtt_robot_plugin`
 - topic names and ROS interface names should be tuned through `amr.yaml`
+- source layout is split by responsibility:
+  - `src/amr_mqtt_bridge/node.c`
+  - `src/amr_mqtt_bridge/mqtt.c`
+  - `include/amr_mqtt_bridge/node.h`
+  - `include/amr_mqtt_bridge/mqtt.h`

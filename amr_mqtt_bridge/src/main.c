@@ -1,4 +1,4 @@
-#include "amr_mqtt_bridge/mqtt_bridge.h"
+#include "amr_mqtt_bridge/node.h"
 
 int main(int argc, const char * const * argv)
 {

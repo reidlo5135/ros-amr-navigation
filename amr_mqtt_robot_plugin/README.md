@@ -94,3 +94,8 @@ ros2 launch amr_mqtt_robot_plugin amr_mqtt_robot_plugin.launch.py params_file:=/
 - this package is robot-side only
 - VBox-side reconstruction belongs in `amr_mqtt_bridge`
 - topic names and ROS interface names should be tuned through `amr.yaml`
+- source layout is split by responsibility:
+  - `src/amr_mqtt_robot_plugin/node.c`
+  - `src/amr_mqtt_robot_plugin/mqtt.c`
+  - `include/amr_mqtt_robot_plugin/node.h`
+  - `include/amr_mqtt_robot_plugin/mqtt.h`

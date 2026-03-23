@@ -1,4 +1,5 @@
-#include "amr_mqtt_bridge/mqtt_bridge.h"
+#include "amr_mqtt_bridge/node.h"
+#include "amr_mqtt_bridge/mqtt.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -80,14 +81,19 @@ typedef struct amr_mqtt_bridge_string_builder_s
 static void amr_mqtt_bridge_fini_messages(void);
 static void amr_mqtt_bridge_fini_subscriptions(void);
 static void amr_mqtt_bridge_log_rcl_fini_error(const char * label, rcl_ret_t rc);
-static bool amr_mqtt_bridge_ensure_connected(void);
-static int amr_mqtt_bridge_subscribe_command_topics(void);
-static void amr_mqtt_bridge_disconnect_mqtt(void);
 static void amr_mqtt_bridge_poll_mqtt(void);
 static int amr_mqtt_bridge_init_robot_publishers(void);
 static void amr_mqtt_bridge_fini_robot_publishers(void);
 
 static const char * k_node_name = "/amr/mqtt_bridge";
+static const char * k_viz_telemetry_robot_pose_topic = "amr/viz/telemetry/robot_pose";
+static const char * k_viz_telemetry_global_path_topic = "amr/viz/telemetry/global_path";
+static const char * k_viz_telemetry_local_path_topic = "amr/viz/telemetry/local_path";
+static const char * k_viz_telemetry_map_topic = "amr/viz/telemetry/map";
+static const char * k_viz_telemetry_global_costmap_topic = "amr/viz/telemetry/global_costmap";
+static const char * k_viz_telemetry_local_costmap_topic = "amr/viz/telemetry/local_costmap";
+static const char * k_viz_telemetry_motion_status_topic = "amr/viz/telemetry/motion_status";
+static const char * k_viz_telemetry_obstacle_report_topic = "amr/viz/telemetry/obstacle_report";
 static const rmw_qos_profile_t k_default_qos = {
   RMW_QOS_POLICY_HISTORY_KEEP_LAST,
   10,
@@ -379,150 +385,6 @@ static void amr_mqtt_bridge_log_config(void)
     g_amr_mqtt_bridge_config.broker.client_id);
 }
 
-static int amr_mqtt_bridge_subscribe_command_topics(void)
-{
-  int mqtt_rc = 0;
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_global_path,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_local_path,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf,
-    g_amr_mqtt_bridge_config.mqtt.command_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static,
-    g_amr_mqtt_bridge_config.mqtt.command_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  mqtt_rc = MQTTClient_subscribe(
-    g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_config.mqtt.robot_telemetry_robot_description,
-    g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    return mqtt_rc;
-  }
-
-  g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = true;
-  return MQTTCLIENT_SUCCESS;
-}
-
 static void amr_mqtt_bridge_log_rcl_fini_error(const char * label, rcl_ret_t rc)
 {
   if (rc == RCL_RET_OK) {
@@ -536,162 +398,6 @@ static void amr_mqtt_bridge_log_rcl_fini_error(const char * label, rcl_ret_t rc)
     rcl_get_error_string().str);
   rcl_reset_error();
   g_amr_mqtt_bridge_runtime.return_code = 1;
-}
-
-static int amr_mqtt_bridge_connect_mqtt(void)
-{
-  int mqtt_rc = 0;
-  int broker_uri_length = 0;
-  MQTTClient_connectOptions connect_options = MQTTClient_connectOptions_initializer;
-
-  broker_uri_length = snprintf(
-    g_amr_mqtt_bridge_mqtt.broker_uri,
-    sizeof(g_amr_mqtt_bridge_mqtt.broker_uri),
-    "tcp://%s:%d",
-    g_amr_mqtt_bridge_config.broker.host,
-    g_amr_mqtt_bridge_config.broker.port);
-  if (broker_uri_length < 0 ||
-    (size_t)broker_uri_length >= sizeof(g_amr_mqtt_bridge_mqtt.broker_uri))
-  {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Broker URI is too long for configured host '%s'",
-      g_amr_mqtt_bridge_config.broker.host);
-    return 1;
-  }
-
-  mqtt_rc = MQTTClient_create(
-    &g_amr_mqtt_bridge_mqtt.client,
-    g_amr_mqtt_bridge_mqtt.broker_uri,
-    g_amr_mqtt_bridge_config.broker.client_id,
-    MQTTCLIENT_PERSISTENCE_NONE,
-    NULL);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to create MQTT client for %s: rc=%d",
-      g_amr_mqtt_bridge_mqtt.broker_uri,
-      mqtt_rc);
-    return 1;
-  }
-
-  g_amr_mqtt_bridge_mqtt.client_created = true;
-  connect_options.keepAliveInterval = g_amr_mqtt_bridge_config.broker.keep_alive_sec;
-  connect_options.cleansession = g_amr_mqtt_bridge_config.broker.clean_session ? 1 : 0;
-  if (g_amr_mqtt_bridge_config.broker.username[0] != '\0') {
-    connect_options.username = g_amr_mqtt_bridge_config.broker.username;
-  }
-  if (g_amr_mqtt_bridge_config.broker.password[0] != '\0') {
-    connect_options.password = g_amr_mqtt_bridge_config.broker.password;
-  }
-
-  mqtt_rc = MQTTClient_connect(g_amr_mqtt_bridge_mqtt.client, &connect_options);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to connect to MQTT broker %s: rc=%d (%s)",
-      g_amr_mqtt_bridge_mqtt.broker_uri,
-      mqtt_rc,
-      MQTTClient_strerror(mqtt_rc));
-    MQTTClient_destroy(&g_amr_mqtt_bridge_mqtt.client);
-    g_amr_mqtt_bridge_mqtt.client_created = false;
-    return 1;
-  }
-
-  g_amr_mqtt_bridge_mqtt.connected = true;
-  g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
-  g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec = 0;
-  mqtt_rc = amr_mqtt_bridge_subscribe_command_topics();
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to subscribe MQTT command topics: rc=%d (%s)",
-      mqtt_rc,
-      MQTTClient_strerror(mqtt_rc));
-    amr_mqtt_bridge_disconnect_mqtt();
-    return 1;
-  }
-  RCUTILS_LOG_INFO_NAMED(
-    "amr_mqtt_bridge",
-    "Connected to MQTT broker at %s",
-    g_amr_mqtt_bridge_mqtt.broker_uri);
-  return 0;
-}
-
-static void amr_mqtt_bridge_disconnect_mqtt(void)
-{
-  if (g_amr_mqtt_bridge_mqtt.connected) {
-    (void)MQTTClient_disconnect(g_amr_mqtt_bridge_mqtt.client, 1000);
-    g_amr_mqtt_bridge_mqtt.connected = false;
-  }
-  g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
-
-  if (g_amr_mqtt_bridge_mqtt.client_created) {
-    MQTTClient_destroy(&g_amr_mqtt_bridge_mqtt.client);
-    g_amr_mqtt_bridge_mqtt.client_created = false;
-  }
-}
-
-static bool amr_mqtt_bridge_ensure_connected(void)
-{
-  long now_sec = (long)time(NULL);
-  int mqtt_rc = 0;
-  MQTTClient_connectOptions connect_options = MQTTClient_connectOptions_initializer;
-
-  if (!g_amr_mqtt_bridge_mqtt.client_created) {
-    return false;
-  }
-
-  if (MQTTClient_isConnected(g_amr_mqtt_bridge_mqtt.client)) {
-    g_amr_mqtt_bridge_mqtt.connected = true;
-    return true;
-  }
-
-  g_amr_mqtt_bridge_mqtt.connected = false;
-  if (now_sec == g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec) {
-    return false;
-  }
-
-  g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec = now_sec;
-  connect_options.keepAliveInterval = g_amr_mqtt_bridge_config.broker.keep_alive_sec;
-  connect_options.cleansession = g_amr_mqtt_bridge_config.broker.clean_session ? 1 : 0;
-  if (g_amr_mqtt_bridge_config.broker.username[0] != '\0') {
-    connect_options.username = g_amr_mqtt_bridge_config.broker.username;
-  }
-  if (g_amr_mqtt_bridge_config.broker.password[0] != '\0') {
-    connect_options.password = g_amr_mqtt_bridge_config.broker.password;
-  }
-
-  mqtt_rc = MQTTClient_connect(g_amr_mqtt_bridge_mqtt.client, &connect_options);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    RCUTILS_LOG_WARN_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to reconnect MQTT client to %s: rc=%d (%s)",
-      g_amr_mqtt_bridge_mqtt.broker_uri,
-      mqtt_rc,
-      MQTTClient_strerror(mqtt_rc));
-    return false;
-  }
-
-  g_amr_mqtt_bridge_mqtt.connected = true;
-  if (!g_amr_mqtt_bridge_mqtt.command_subscriptions_registered) {
-    mqtt_rc = amr_mqtt_bridge_subscribe_command_topics();
-    if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-      RCUTILS_LOG_WARN_NAMED(
-        "amr_mqtt_bridge",
-        "Failed to resubscribe MQTT command topics on reconnect: rc=%d (%s)",
-        mqtt_rc,
-        MQTTClient_strerror(mqtt_rc));
-      g_amr_mqtt_bridge_mqtt.connected = false;
-      (void)MQTTClient_disconnect(g_amr_mqtt_bridge_mqtt.client, 1000);
-      return false;
-    }
-  }
-  RCUTILS_LOG_INFO_NAMED(
-    "amr_mqtt_bridge",
-    "Reconnected to MQTT broker at %s",
-    g_amr_mqtt_bridge_mqtt.broker_uri);
-  return true;
 }
 
 static bool amr_mqtt_bridge_builder_init(
@@ -1062,6 +768,46 @@ static char * amr_mqtt_bridge_serialize_obstacle_report(const void * message)
   }
 
   return amr_mqtt_bridge_builder_take(&builder);
+}
+
+static void amr_mqtt_bridge_publish_viz_telemetry(
+  const char * mqtt_topic,
+  amr_mqtt_bridge_serializer_fn_t serializer,
+  const void * message,
+  bool retained)
+{
+  char * payload = NULL;
+
+  if (mqtt_topic == NULL || serializer == NULL || message == NULL) {
+    return;
+  }
+
+  payload = serializer(message);
+  if (payload == NULL) {
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_bridge",
+      "Failed to serialize modeled viz telemetry for '%s'",
+      mqtt_topic);
+    return;
+  }
+
+  int mqtt_rc = MQTTClient_publish(
+    g_amr_mqtt_bridge_mqtt.client,
+    mqtt_topic,
+    (int)strlen(payload),
+    payload,
+    0,
+    retained ? 1 : 0,
+    NULL);
+  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+      "amr_mqtt_bridge",
+      "Failed to publish modeled viz telemetry on '%s': rc=%d (%s)",
+      mqtt_topic,
+      mqtt_rc,
+      MQTTClient_strerror(mqtt_rc));
+  }
+  free(payload);
 }
 
 static char * amr_mqtt_bridge_serialize_twist_command(const void * message)
@@ -2292,101 +2038,6 @@ static bool amr_mqtt_bridge_wait_for_service_response(
   return false;
 }
 
-static bool amr_mqtt_bridge_publish_payload(
-  const char * mqtt_topic,
-  const char * payload,
-  int qos)
-{
-  size_t payload_length = strlen(payload);
-
-  if (!amr_mqtt_bridge_ensure_connected()) {
-    RCUTILS_LOG_WARN_NAMED(
-      "amr_mqtt_bridge",
-      "Skipping publish for '%s' because MQTT is disconnected",
-      mqtt_topic);
-    return false;
-  }
-
-  MQTTClient_message message = MQTTClient_message_initializer;
-  MQTTClient_deliveryToken token = 0;
-  message.payload = (void *)payload;
-  message.payloadlen = (int)payload_length;
-  message.qos = qos;
-  message.retained = 0;
-
-  int mqtt_rc = MQTTClient_publishMessage(
-    g_amr_mqtt_bridge_mqtt.client,
-    mqtt_topic,
-    &message,
-    &token);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
-      g_amr_mqtt_bridge_mqtt.connected = false;
-    }
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to publish MQTT message on '%s': rc=%d (%s), payload_bytes=%zu",
-      mqtt_topic,
-      mqtt_rc,
-      MQTTClient_strerror(mqtt_rc),
-      payload_length);
-    return false;
-  }
-
-  if (qos > 0) {
-    (void)MQTTClient_waitForCompletion(g_amr_mqtt_bridge_mqtt.client, token, 1000L);
-  }
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_publish_binary_payload(
-  const char * mqtt_topic,
-  const void * payload,
-  size_t payload_length,
-  int qos)
-{
-  if (!amr_mqtt_bridge_ensure_connected()) {
-    RCUTILS_LOG_WARN_NAMED(
-      "amr_mqtt_bridge",
-      "Skipping publish for '%s' because MQTT is disconnected",
-      mqtt_topic);
-    return false;
-  }
-
-  MQTTClient_message message = MQTTClient_message_initializer;
-  MQTTClient_deliveryToken token = 0;
-  message.payload = (void *)payload;
-  message.payloadlen = (int)payload_length;
-  message.qos = qos;
-  message.retained = 0;
-
-  int mqtt_rc = MQTTClient_publishMessage(
-    g_amr_mqtt_bridge_mqtt.client,
-    mqtt_topic,
-    &message,
-    &token);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
-      g_amr_mqtt_bridge_mqtt.connected = false;
-    }
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to publish MQTT message on '%s': rc=%d (%s), payload_bytes=%zu",
-      mqtt_topic,
-      mqtt_rc,
-      MQTTClient_strerror(mqtt_rc),
-      payload_length);
-    return false;
-  }
-
-  if (qos > 0) {
-    (void)MQTTClient_waitForCompletion(g_amr_mqtt_bridge_mqtt.client, token, 1000L);
-  }
-
-  return true;
-}
-
 static bool amr_mqtt_bridge_serialize_message_raw(
   const void * ros_message,
   const rosidl_message_type_support_t * type_support,
@@ -2864,6 +2515,11 @@ static void amr_mqtt_bridge_handle_robot_map_telemetry(
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_map_publisher, &map, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    k_viz_telemetry_map_topic,
+    amr_mqtt_bridge_serialize_occupancy_grid,
+    &map,
+    true);
   nav_msgs__msg__OccupancyGrid__fini(&map);
 }
 
@@ -2884,6 +2540,11 @@ static void amr_mqtt_bridge_handle_robot_pose_telemetry(
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_pose_publisher, &robot_pose, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    k_viz_telemetry_robot_pose_topic,
+    amr_mqtt_bridge_serialize_pose_stamped,
+    &robot_pose,
+    false);
   geometry_msgs__msg__PoseStamped__fini(&robot_pose);
 }
 
@@ -2909,6 +2570,11 @@ static void amr_mqtt_bridge_handle_path_telemetry(
     return;
   }
   (void)rcl_publish(publisher, &path, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    is_global ? k_viz_telemetry_global_path_topic : k_viz_telemetry_local_path_topic,
+    amr_mqtt_bridge_serialize_path,
+    &path,
+    false);
   nav_msgs__msg__Path__fini(&path);
 }
 
@@ -2934,6 +2600,11 @@ static void amr_mqtt_bridge_handle_costmap_telemetry(
     return;
   }
   (void)rcl_publish(publisher, &costmap, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    is_global ? k_viz_telemetry_global_costmap_topic : k_viz_telemetry_local_costmap_topic,
+    amr_mqtt_bridge_serialize_occupancy_grid,
+    &costmap,
+    true);
   nav_msgs__msg__OccupancyGrid__fini(&costmap);
 }
 
@@ -2954,6 +2625,11 @@ static void amr_mqtt_bridge_handle_motion_status_telemetry(
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.motion_status_publisher, &motion_status, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    k_viz_telemetry_motion_status_topic,
+    amr_mqtt_bridge_serialize_motion_status,
+    &motion_status,
+    false);
   amr_msgs__msg__MotionStatus__fini(&motion_status);
 }
 
@@ -2974,6 +2650,11 @@ static void amr_mqtt_bridge_handle_obstacle_report_telemetry(
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.obstacle_report_publisher, &obstacle_report, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    k_viz_telemetry_obstacle_report_topic,
+    amr_mqtt_bridge_serialize_obstacle_report,
+    &obstacle_report,
+    false);
   amr_msgs__msg__ObstacleReport__fini(&obstacle_report);
 }
 
