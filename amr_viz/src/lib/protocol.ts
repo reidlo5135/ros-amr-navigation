@@ -72,6 +72,33 @@ export type ObstacleReportMessage = {
   source: string;
 };
 
+export type LaserScanMessage = {
+  header: Header;
+  angle_min: number;
+  angle_max: number;
+  angle_increment: number;
+  range_min: number;
+  range_max: number;
+  ranges: number[];
+};
+
+export type TransformMessage = {
+  header: Header;
+  child_frame_id: string;
+  translation: Vector3;
+  rotation: {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+    yaw: number;
+  };
+};
+
+export type TfMessage = {
+  transforms: TransformMessage[];
+};
+
 export type BridgeState = {
   robot_pose?: Pose;
   global_path?: PathMessage;
@@ -81,6 +108,9 @@ export type BridgeState = {
   local_costmap?: OccupancyGridMessage;
   motion_status?: MotionStatusMessage;
   obstacle_report?: ObstacleReportMessage;
+  scan?: LaserScanMessage;
+  tf?: TfMessage;
+  tf_static?: TfMessage;
 };
 
 export type BridgeEnvelope =

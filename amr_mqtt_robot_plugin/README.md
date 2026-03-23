@@ -67,6 +67,15 @@ Robot telemetry:
 - `amr/request/plan_segment` -> local `plan_segment` service client
 - `amr/request/plan_route` -> local `plan_route` service client
 
+`amr/command/navigate_to_pose` may also be used for cancel requests:
+
+```json
+{
+  "request_id": "12345",
+  "cancel": true
+}
+```
+
 ## MQTT Responses
 
 - `amr/response/*` topics return ACK-style MQTT responses only

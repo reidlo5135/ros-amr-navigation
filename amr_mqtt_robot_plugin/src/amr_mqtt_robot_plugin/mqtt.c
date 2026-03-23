@@ -14,7 +14,8 @@ static int amr_mqtt_robot_plugin_subscribe_command_topics(void)
   const char * command_topics[] = {
     g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel,
     g_amr_mqtt_robot_plugin_config.mqtt.command_set_initial_pose,
-    g_amr_mqtt_robot_plugin_config.mqtt.command_navigate_to_pose
+    g_amr_mqtt_robot_plugin_config.mqtt.command_navigate_to_pose,
+    g_amr_mqtt_robot_plugin_config.mqtt.command_cancel_navigate_to_pose
   };
   const char * request_topics[] = {
     g_amr_mqtt_robot_plugin_config.mqtt.request_plan_segment,
@@ -56,7 +57,7 @@ static int amr_mqtt_robot_plugin_subscribe_command_topics(void)
   g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered = true;
   RCUTILS_LOG_INFO_NAMED(
     "amr_mqtt_robot_plugin",
-    "Subscribed MQTT command/request topics for cmd_vel, initial pose, navigation, and planner services");
+    "Subscribed MQTT command/request topics for cmd_vel, initial pose, navigation, cancel, and planner services");
   return MQTTCLIENT_SUCCESS;
 }
 

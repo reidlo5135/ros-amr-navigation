@@ -301,17 +301,18 @@
         service: 0
       topics:
         telemetry:
-          robot_pose: "amr/telemetry/robot_pose"
-          global_path: "amr/telemetry/global_path"
-          local_path: "amr/telemetry/local_path"
+          robot_pose: "amr/robot/turtlebot3/telemetry/robot_pose"
+          global_path: "amr/robot/turtlebot3/telemetry/global_path"
+          local_path: "amr/robot/turtlebot3/telemetry/local_path"
           map: "amr/telemetry/map"
-          global_costmap: "amr/telemetry/global_costmap"
-          local_costmap: "amr/telemetry/local_costmap"
-          motion_status: "amr/telemetry/motion_status"
-          obstacle_report: "amr/telemetry/obstacle_report"
+          global_costmap: "amr/robot/turtlebot3/telemetry/global_costmap"
+          local_costmap: "amr/robot/turtlebot3/telemetry/local_costmap"
+          motion_status: "amr/robot/turtlebot3/telemetry/motion_status"
+          obstacle_report: "amr/robot/turtlebot3/telemetry/obstacle_report"
         command:
           robot_cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
           navigate_to_pose: "amr/command/navigate_to_pose"
+          cancel_navigate_to_pose: "amr/command/cancel_navigate_to_pose"
           set_initial_pose: "amr/command/set_initial_pose"
         robot:
           telemetry:
@@ -379,13 +380,13 @@
       topics:
         telemetry:
           map: "amr/robot/turtlebot3/telemetry/map"
-          robot_pose: "amr/telemetry/robot_pose"
-          global_path: "amr/telemetry/global_path"
-          local_path: "amr/telemetry/local_path"
-          global_costmap: "amr/telemetry/global_costmap"
-          local_costmap: "amr/telemetry/local_costmap"
-          motion_status: "amr/telemetry/motion_status"
-          obstacle_report: "amr/telemetry/obstacle_report"
+          robot_pose: "amr/robot/turtlebot3/telemetry/robot_pose"
+          global_path: "amr/robot/turtlebot3/telemetry/global_path"
+          local_path: "amr/robot/turtlebot3/telemetry/local_path"
+          global_costmap: "amr/robot/turtlebot3/telemetry/global_costmap"
+          local_costmap: "amr/robot/turtlebot3/telemetry/local_costmap"
+          motion_status: "amr/robot/turtlebot3/telemetry/motion_status"
+          obstacle_report: "amr/robot/turtlebot3/telemetry/obstacle_report"
           scan: "amr/robot/turtlebot3/telemetry/scan"
           odom: "amr/robot/turtlebot3/telemetry/odom"
           imu: "amr/robot/turtlebot3/telemetry/imu"
@@ -397,6 +398,7 @@
           cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
           set_initial_pose: "amr/command/set_initial_pose"
           navigate_to_pose: "amr/command/navigate_to_pose"
+          cancel_navigate_to_pose: "amr/command/cancel_navigate_to_pose"
         feedback:
           navigate_to_pose: "amr/feedback/navigate_to_pose"
         status:

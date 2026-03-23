@@ -107,6 +107,12 @@ button.secondary {
   border: 1px solid rgba(83, 209, 200, 0.2);
 }
 
+button.danger {
+  background: #5a171a;
+  color: #ffd8d5;
+  border: 1px solid rgba(255, 96, 96, 0.24);
+}
+
 .panel-card {
   display: grid;
   gap: 12px;
@@ -221,6 +227,7 @@ button.secondary {
   min-height: 0;
 }
 
+.event-log,
 .event-list {
   display: grid;
   gap: 8px;

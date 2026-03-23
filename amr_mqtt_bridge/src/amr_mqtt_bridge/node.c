@@ -86,14 +86,17 @@ static int amr_mqtt_bridge_init_robot_publishers(void);
 static void amr_mqtt_bridge_fini_robot_publishers(void);
 
 static const char * k_node_name = "/amr/mqtt_bridge";
-static const char * k_viz_telemetry_robot_pose_topic = "amr/viz/telemetry/robot_pose";
-static const char * k_viz_telemetry_global_path_topic = "amr/viz/telemetry/global_path";
-static const char * k_viz_telemetry_local_path_topic = "amr/viz/telemetry/local_path";
-static const char * k_viz_telemetry_map_topic = "amr/viz/telemetry/map";
-static const char * k_viz_telemetry_global_costmap_topic = "amr/viz/telemetry/global_costmap";
-static const char * k_viz_telemetry_local_costmap_topic = "amr/viz/telemetry/local_costmap";
-static const char * k_viz_telemetry_motion_status_topic = "amr/viz/telemetry/motion_status";
-static const char * k_viz_telemetry_obstacle_report_topic = "amr/viz/telemetry/obstacle_report";
+static const char * k_viz_telemetry_robot_pose_topic = "amr/telemetry/robot_pose";
+static const char * k_viz_telemetry_global_path_topic = "amr/telemetry/global_path";
+static const char * k_viz_telemetry_local_path_topic = "amr/telemetry/local_path";
+static const char * k_viz_telemetry_map_topic = "amr/telemetry/map";
+static const char * k_viz_telemetry_global_costmap_topic = "amr/telemetry/global_costmap";
+static const char * k_viz_telemetry_local_costmap_topic = "amr/telemetry/local_costmap";
+static const char * k_viz_telemetry_motion_status_topic = "amr/telemetry/motion_status";
+static const char * k_viz_telemetry_obstacle_report_topic = "amr/telemetry/obstacle_report";
+static const char * k_viz_telemetry_scan_topic = "amr/telemetry/scan";
+static const char * k_viz_telemetry_tf_topic = "amr/telemetry/tf";
+static const char * k_viz_telemetry_tf_static_topic = "amr/telemetry/tf_static";
 static const rmw_qos_profile_t k_default_qos = {
   RMW_QOS_POLICY_HISTORY_KEEP_LAST,
   10,
@@ -150,14 +153,14 @@ static void amr_mqtt_bridge_set_default_config(void)
   g_amr_mqtt_bridge_config.mqtt.telemetry_qos = 0;
   g_amr_mqtt_bridge_config.mqtt.command_qos = 0;
   g_amr_mqtt_bridge_config.mqtt.service_qos = 0;
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose), "amr/telemetry/robot_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path), "amr/telemetry/global_path");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path), "amr/telemetry/local_path");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose), "amr/robot/turtlebot3/telemetry/robot_pose");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path), "amr/robot/turtlebot3/telemetry/global_path");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path), "amr/robot/turtlebot3/telemetry/local_path");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_map), "amr/telemetry/map");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap), "amr/telemetry/global_costmap");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap), "amr/telemetry/local_costmap");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status), "amr/telemetry/motion_status");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report), "amr/telemetry/obstacle_report");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap), "amr/robot/turtlebot3/telemetry/global_costmap");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap), "amr/robot/turtlebot3/telemetry/local_costmap");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status), "amr/robot/turtlebot3/telemetry/motion_status");
+  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report), "amr/robot/turtlebot3/telemetry/obstacle_report");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel), "amr/robot/turtlebot3/command/cmd_vel");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map), "amr/robot/turtlebot3/telemetry/map");
   amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan), "amr/robot/turtlebot3/telemetry/scan");
@@ -770,6 +773,112 @@ static char * amr_mqtt_bridge_serialize_obstacle_report(const void * message)
   return amr_mqtt_bridge_builder_take(&builder);
 }
 
+static bool amr_mqtt_bridge_builder_append_double_array(
+  amr_mqtt_bridge_string_builder_t * builder,
+  const rosidl_runtime_c__double__Sequence * values)
+{
+  if (!amr_mqtt_bridge_builder_append(builder, "[")) {
+    return false;
+  }
+
+  for (size_t index = 0; index < values->size; ++index) {
+    if (index > 0U && !amr_mqtt_bridge_builder_append(builder, ",")) {
+      return false;
+    }
+    if (!amr_mqtt_bridge_builder_appendf(builder, "%.6f", values->data[index])) {
+      return false;
+    }
+  }
+
+  return amr_mqtt_bridge_builder_append(builder, "]");
+}
+
+static bool amr_mqtt_bridge_append_transform_stamped(
+  amr_mqtt_bridge_string_builder_t * builder,
+  const geometry_msgs__msg__TransformStamped * transform)
+{
+  const double yaw = amr_mqtt_bridge_quaternion_to_yaw(
+    transform->transform.rotation.x,
+    transform->transform.rotation.y,
+    transform->transform.rotation.z,
+    transform->transform.rotation.w);
+
+  return amr_mqtt_bridge_builder_append(builder, "{") &&
+    amr_mqtt_bridge_append_header(builder, &transform->header) &&
+    amr_mqtt_bridge_builder_append(builder, ",\"child_frame_id\":") &&
+    amr_mqtt_bridge_builder_append_json_string(builder, transform->child_frame_id.data) &&
+    amr_mqtt_bridge_builder_appendf(
+      builder,
+      ",\"translation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
+      "\"rotation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f,\"yaw\":%.6f}}",
+      transform->transform.translation.x,
+      transform->transform.translation.y,
+      transform->transform.translation.z,
+      transform->transform.rotation.x,
+      transform->transform.rotation.y,
+      transform->transform.rotation.z,
+      transform->transform.rotation.w,
+      yaw);
+}
+
+static char * amr_mqtt_bridge_serialize_scan(const void * message)
+{
+  const sensor_msgs__msg__LaserScan * scan = (const sensor_msgs__msg__LaserScan *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 2048U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{") ||
+    !amr_mqtt_bridge_append_header(&builder, &scan->header) ||
+    !amr_mqtt_bridge_builder_appendf(
+      &builder,
+      ",\"angle_min\":%.6f,\"angle_max\":%.6f,\"angle_increment\":%.6f,"
+      "\"range_min\":%.6f,\"range_max\":%.6f,\"ranges\":",
+      scan->angle_min,
+      scan->angle_max,
+      scan->angle_increment,
+      scan->range_min,
+      scan->range_max) ||
+    !amr_mqtt_bridge_builder_append_double_array(&builder, &scan->ranges) ||
+    !amr_mqtt_bridge_builder_append(&builder, "}"))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
+static char * amr_mqtt_bridge_serialize_tf_message(const void * message)
+{
+  const tf2_msgs__msg__TFMessage * tf_message = (const tf2_msgs__msg__TFMessage *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 1024U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{\"transforms\":["))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  for (size_t index = 0; index < tf_message->transforms.size; ++index) {
+    if (index > 0U && !amr_mqtt_bridge_builder_append(&builder, ",")) {
+      amr_mqtt_bridge_builder_fini(&builder);
+      return NULL;
+    }
+    if (!amr_mqtt_bridge_append_transform_stamped(&builder, &tf_message->transforms.data[index])) {
+      amr_mqtt_bridge_builder_fini(&builder);
+      return NULL;
+    }
+  }
+
+  if (!amr_mqtt_bridge_builder_append(&builder, "]}")) {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
 static void amr_mqtt_bridge_publish_viz_telemetry(
   const char * mqtt_topic,
   amr_mqtt_bridge_serializer_fn_t serializer,
@@ -797,7 +906,7 @@ static void amr_mqtt_bridge_publish_viz_telemetry(
     (int)strlen(payload),
     payload,
     0,
-    retained ? 1 : 0,
+    0,
     NULL);
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
     RCUTILS_LOG_ERROR_NAMED(
@@ -2519,7 +2628,7 @@ static void amr_mqtt_bridge_handle_robot_map_telemetry(
     k_viz_telemetry_map_topic,
     amr_mqtt_bridge_serialize_occupancy_grid,
     &map,
-    true);
+    false);
   nav_msgs__msg__OccupancyGrid__fini(&map);
 }
 
@@ -2604,7 +2713,7 @@ static void amr_mqtt_bridge_handle_costmap_telemetry(
     is_global ? k_viz_telemetry_global_costmap_topic : k_viz_telemetry_local_costmap_topic,
     amr_mqtt_bridge_serialize_occupancy_grid,
     &costmap,
-    true);
+    false);
   nav_msgs__msg__OccupancyGrid__fini(&costmap);
 }
 
@@ -2715,6 +2824,11 @@ static void amr_mqtt_bridge_handle_robot_scan_telemetry(
     return;
   }
   (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_scan_publisher, &scan, NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    k_viz_telemetry_scan_topic,
+    amr_mqtt_bridge_serialize_scan,
+    &scan,
+    false);
   sensor_msgs__msg__LaserScan__fini(&scan);
 }
 
@@ -2780,6 +2894,11 @@ static void amr_mqtt_bridge_handle_robot_tf_telemetry(
     &g_amr_mqtt_bridge_ros_state.robot_tf_publisher,
     &tf_message,
     NULL);
+  amr_mqtt_bridge_publish_viz_telemetry(
+    is_static ? k_viz_telemetry_tf_static_topic : k_viz_telemetry_tf_topic,
+    amr_mqtt_bridge_serialize_tf_message,
+    &tf_message,
+    false);
   tf2_msgs__msg__TFMessage__fini(&tf_message);
 }
 

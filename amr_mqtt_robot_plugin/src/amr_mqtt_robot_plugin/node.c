@@ -27,6 +27,7 @@
 #include <rosidl_runtime_c/string_functions.h>
 
 #include <action_msgs/msg/detail/goal_status_array__functions.h>
+#include <action_msgs/srv/detail/cancel_goal__functions.h>
 #include <amr_msgs/action/detail/navigate_to_pose__functions.h>
 #include <amr_msgs/action/detail/navigate_to_pose__type_support.h>
 #include <amr_msgs/srv/detail/plan_route__functions.h>
@@ -164,31 +165,31 @@ static void amr_mqtt_robot_plugin_set_default_config(void)
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_robot_pose,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_robot_pose),
-    "amr/telemetry/robot_pose");
+    "amr/robot/turtlebot3/telemetry/robot_pose");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_global_path,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_global_path),
-    "amr/telemetry/global_path");
+    "amr/robot/turtlebot3/telemetry/global_path");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_local_path,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_local_path),
-    "amr/telemetry/local_path");
+    "amr/robot/turtlebot3/telemetry/local_path");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_global_costmap,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_global_costmap),
-    "amr/telemetry/global_costmap");
+    "amr/robot/turtlebot3/telemetry/global_costmap");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_local_costmap,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_local_costmap),
-    "amr/telemetry/local_costmap");
+    "amr/robot/turtlebot3/telemetry/local_costmap");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_motion_status,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_motion_status),
-    "amr/telemetry/motion_status");
+    "amr/robot/turtlebot3/telemetry/motion_status");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_obstacle_report,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_obstacle_report),
-    "amr/telemetry/obstacle_report");
+    "amr/robot/turtlebot3/telemetry/obstacle_report");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.telemetry_scan),
@@ -229,6 +230,10 @@ static void amr_mqtt_robot_plugin_set_default_config(void)
     g_amr_mqtt_robot_plugin_config.mqtt.command_navigate_to_pose,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_navigate_to_pose),
     "amr/command/navigate_to_pose");
+  amr_mqtt_robot_plugin_copy_string(
+    g_amr_mqtt_robot_plugin_config.mqtt.command_cancel_navigate_to_pose,
+    sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_cancel_navigate_to_pose),
+    "amr/command/cancel_navigate_to_pose");
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.feedback_navigate_to_pose,
     sizeof(g_amr_mqtt_robot_plugin_config.mqtt.feedback_navigate_to_pose),
@@ -480,6 +485,7 @@ static void amr_mqtt_robot_plugin_load_parameter_overrides(void)
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.command.cmd_vel", g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_cmd_vel));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.command.set_initial_pose", g_amr_mqtt_robot_plugin_config.mqtt.command_set_initial_pose, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_set_initial_pose));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.command.navigate_to_pose", g_amr_mqtt_robot_plugin_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_navigate_to_pose));
+    amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.command.cancel_navigate_to_pose", g_amr_mqtt_robot_plugin_config.mqtt.command_cancel_navigate_to_pose, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.command_cancel_navigate_to_pose));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.feedback.navigate_to_pose", g_amr_mqtt_robot_plugin_config.mqtt.feedback_navigate_to_pose, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.feedback_navigate_to_pose));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.status.navigate_to_pose", g_amr_mqtt_robot_plugin_config.mqtt.status_navigate_to_pose, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.status_navigate_to_pose));
     amr_mqtt_robot_plugin_read_string_param(node_params, "mqtt.topics.response.set_initial_pose", g_amr_mqtt_robot_plugin_config.mqtt.response_set_initial_pose, sizeof(g_amr_mqtt_robot_plugin_config.mqtt.response_set_initial_pose));
@@ -1263,7 +1269,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, tf2_msgs, msg, TFMessage)(),
     &k_transient_local_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.command_qos,
-    true,
+    false,
     true,
     NULL);
   amr_mqtt_robot_plugin_configure_endpoint(
@@ -1289,7 +1295,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, std_msgs, msg, String)(),
     &k_transient_local_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
-    true,
+    false,
     true,
     NULL);
 
@@ -1648,6 +1654,30 @@ static bool amr_mqtt_robot_plugin_extract_json_double_in_range(
 
   *output = strtod(value, &parse_end);
   return parse_end != value;
+}
+
+static bool amr_mqtt_robot_plugin_extract_json_bool_in_range(
+  const char * begin,
+  const char * end,
+  const char * key,
+  bool * output)
+{
+  const char * value = amr_mqtt_robot_plugin_find_value_for_key(begin, end, key);
+
+  if (value == NULL || output == NULL) {
+    return false;
+  }
+
+  if ((size_t)(end - value) >= 4U && strncmp(value, "true", 4U) == 0) {
+    *output = true;
+    return true;
+  }
+  if ((size_t)(end - value) >= 5U && strncmp(value, "false", 5U) == 0) {
+    *output = false;
+    return true;
+  }
+
+  return false;
 }
 
 static bool amr_mqtt_robot_plugin_extract_json_object_in_range(
@@ -2171,12 +2201,72 @@ static void amr_mqtt_robot_plugin_handle_navigate_to_pose_command(const char * p
   const char * goal_begin = NULL;
   const char * goal_end = NULL;
   char request_id[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH] = {0};
+  bool cancel_requested = false;
   bool is_available = false;
   int64_t sequence_number = 0;
   rcl_ret_t rc;
 
   memset(&request, 0, sizeof(request));
   if (!amr_msgs__action__NavigateToPose_SendGoal_Request__init(&request)) {
+    return;
+  }
+
+  (void)amr_mqtt_robot_plugin_extract_json_string_in_range(
+    payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id));
+  if (amr_mqtt_robot_plugin_extract_json_bool_in_range(
+      payload, payload + strlen(payload), "cancel", &cancel_requested) && cancel_requested)
+  {
+    action_msgs__srv__CancelGoal_Request cancel_request;
+
+    if (!g_amr_mqtt_robot_plugin_ros_state.navigate_state.active) {
+      amr_mqtt_robot_plugin_publish_simple_response(
+        g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+        request_id,
+        false,
+        "no active navigate_to_pose goal");
+      amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
+      return;
+    }
+
+    memset(&cancel_request, 0, sizeof(cancel_request));
+    if (!action_msgs__srv__CancelGoal_Request__init(&cancel_request)) {
+      amr_mqtt_robot_plugin_publish_simple_response(
+        g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+        request_id,
+        false,
+        "failed to initialize cancel request");
+      amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
+      return;
+    }
+
+    memcpy(
+      cancel_request.goal_info.goal_id.uuid,
+      g_amr_mqtt_robot_plugin_ros_state.navigate_state.goal_uuid,
+      sizeof(g_amr_mqtt_robot_plugin_ros_state.navigate_state.goal_uuid));
+    cancel_request.goal_info.stamp.sec = 0;
+    cancel_request.goal_info.stamp.nanosec = 0U;
+
+    rc = rcl_action_send_cancel_request(
+      &g_amr_mqtt_robot_plugin_ros_state.navigate_to_pose_client,
+      &cancel_request,
+      &sequence_number);
+    action_msgs__srv__CancelGoal_Request__fini(&cancel_request);
+    amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
+    if (rc != RCL_RET_OK) {
+      rcl_reset_error();
+      amr_mqtt_robot_plugin_publish_simple_response(
+        g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+        request_id,
+        false,
+        "failed to dispatch goal cancel");
+      return;
+    }
+
+    amr_mqtt_robot_plugin_publish_simple_response(
+      g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+      request_id,
+      true,
+      "goal cancel dispatched");
     return;
   }
 
@@ -2245,6 +2335,64 @@ static void amr_mqtt_robot_plugin_handle_navigate_to_pose_command(const char * p
     g_amr_mqtt_robot_plugin_ros_state.navigate_state.request_id,
     sizeof(g_amr_mqtt_robot_plugin_ros_state.navigate_state.request_id),
     request_id);
+}
+
+static void amr_mqtt_robot_plugin_handle_navigate_cancel_command(const char * payload)
+{
+  action_msgs__srv__CancelGoal_Request cancel_request;
+  char request_id[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH] = {0};
+  int64_t sequence_number = 0;
+  rcl_ret_t rc;
+
+  (void)amr_mqtt_robot_plugin_extract_json_string_in_range(
+    payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id));
+
+  if (!g_amr_mqtt_robot_plugin_ros_state.navigate_state.active) {
+    amr_mqtt_robot_plugin_publish_simple_response(
+      g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+      request_id,
+      false,
+      "no active navigate_to_pose goal");
+    return;
+  }
+
+  memset(&cancel_request, 0, sizeof(cancel_request));
+  if (!action_msgs__srv__CancelGoal_Request__init(&cancel_request)) {
+    amr_mqtt_robot_plugin_publish_simple_response(
+      g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+      request_id,
+      false,
+      "failed to initialize cancel request");
+    return;
+  }
+
+  memcpy(
+    cancel_request.goal_info.goal_id.uuid,
+    g_amr_mqtt_robot_plugin_ros_state.navigate_state.goal_uuid,
+    sizeof(g_amr_mqtt_robot_plugin_ros_state.navigate_state.goal_uuid));
+  cancel_request.goal_info.stamp.sec = 0;
+  cancel_request.goal_info.stamp.nanosec = 0U;
+
+  rc = rcl_action_send_cancel_request(
+    &g_amr_mqtt_robot_plugin_ros_state.navigate_to_pose_client,
+    &cancel_request,
+    &sequence_number);
+  action_msgs__srv__CancelGoal_Request__fini(&cancel_request);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    amr_mqtt_robot_plugin_publish_simple_response(
+      g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+      request_id,
+      false,
+      "failed to dispatch goal cancel");
+    return;
+  }
+
+  amr_mqtt_robot_plugin_publish_simple_response(
+    g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
+    request_id,
+    true,
+    "goal cancel dispatched");
 }
 
 static void amr_mqtt_robot_plugin_poll_navigate_action(void)
@@ -2463,6 +2611,13 @@ static void amr_mqtt_robot_plugin_poll_mqtt(void)
       if (payload_text != NULL) {
         memcpy(payload_text, message->payload, (size_t)message->payloadlen);
         amr_mqtt_robot_plugin_handle_navigate_to_pose_command(payload_text);
+        free(payload_text);
+      }
+    } else if (strcmp(topic_name, g_amr_mqtt_robot_plugin_config.mqtt.command_cancel_navigate_to_pose) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_robot_plugin_handle_navigate_cancel_command(payload_text);
         free(payload_text);
       }
     } else if (strcmp(topic_name, g_amr_mqtt_robot_plugin_config.mqtt.request_plan_segment) == 0) {

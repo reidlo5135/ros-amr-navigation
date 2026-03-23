@@ -98,6 +98,7 @@ typedef struct amr_mqtt_robot_plugin_mqtt_topics_s
   char command_cmd_vel[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
+  char command_cancel_navigate_to_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char feedback_navigate_to_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char status_navigate_to_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH];

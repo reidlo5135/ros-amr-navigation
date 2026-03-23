@@ -51,6 +51,9 @@ The client currently consumes modeled visualization topics such as:
 - `amr/viz/telemetry/local_costmap`
 - `amr/viz/telemetry/motion_status`
 - `amr/viz/telemetry/obstacle_report`
+- `amr/viz/telemetry/scan`
+- `amr/viz/telemetry/tf`
+- `amr/viz/telemetry/tf_static`
 
 These topics are emitted by VBox-side `amr_mqtt_bridge`.
 
@@ -58,6 +61,15 @@ and emits commands directly to MQTT:
 
 - `amr/command/navigate_to_pose`
 - `amr/command/set_initial_pose`
+
+`amr/command/navigate_to_pose` also accepts cancel payloads:
+
+```json
+{
+  "request_id": "12345",
+  "cancel": true
+}
+```
 
 ## Web Dev Run
 

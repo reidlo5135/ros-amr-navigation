@@ -1,7 +1,6 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 
 import { SceneViewport } from "./components/SceneViewport";
-import { mockState } from "./lib/mock-state";
 import type { BridgeState } from "./lib/protocol";
 import { VizMqttClient, type VizMqttMessage } from "./lib/mqtt";
 
@@ -25,23 +24,25 @@ function defaultMqttUrl() {
 }
 
 function createInitialState() {
-  const useMockState = (import.meta.env.VITE_AMR_VIZ_USE_MOCK as string | undefined) === "1";
-  return useMockState ? mockState : {};
+  return {};
 }
 
 const telemetryTopicMap: Record<string, keyof BridgeState> = {
-  "amr/viz/telemetry/robot_pose": "robot_pose",
-  "amr/viz/telemetry/global_path": "global_path",
-  "amr/viz/telemetry/local_path": "local_path",
-  "amr/viz/telemetry/map": "map",
-  "amr/viz/telemetry/global_costmap": "global_costmap",
-  "amr/viz/telemetry/local_costmap": "local_costmap",
-  "amr/viz/telemetry/motion_status": "motion_status",
-  "amr/viz/telemetry/obstacle_report": "obstacle_report",
+  "amr/telemetry/robot_pose": "robot_pose",
+  "amr/telemetry/global_path": "global_path",
+  "amr/telemetry/local_path": "local_path",
+  "amr/telemetry/map": "map",
+  "amr/telemetry/global_costmap": "global_costmap",
+  "amr/telemetry/local_costmap": "local_costmap",
+  "amr/telemetry/motion_status": "motion_status",
+  "amr/telemetry/obstacle_report": "obstacle_report",
+  "amr/telemetry/scan": "scan",
+  "amr/telemetry/tf": "tf",
+  "amr/telemetry/tf_static": "tf_static",
 };
 
 const topicSubscriptions = [
-  "amr/viz/telemetry/#",
+  "amr/telemetry/#",
   "amr/response/#",
   "amr/feedback/#",
   "amr/status/#",
@@ -238,6 +239,16 @@ export default function App() {
                 Send Goal
               </button>
               <button
+                className="danger"
+                onClick={() =>
+                  publishJson("amr/command/cancel_navigate_to_pose", {
+                    request_id: createCommandId(),
+                  })
+                }
+              >
+                Cancel Goal
+              </button>
+              <button
                 className="secondary"
                 onClick={() =>
                   publishJson("amr/command/set_initial_pose", {
@@ -262,10 +273,19 @@ export default function App() {
           <div className="scene-toolbar">
             <span className="toolbar-label">3D View</span>
             <span className="toolbar-value">
+              Map {bridgeState.map ? `${bridgeState.map.info.width}x${bridgeState.map.info.height}` : "--"}
+            </span>
+            <span className="toolbar-value">
               Global {bridgeState.global_path?.poses.length ?? 0} pts
             </span>
             <span className="toolbar-value">
               Local {bridgeState.local_path?.poses.length ?? 0} pts
+            </span>
+            <span className="toolbar-value">
+              Scan {bridgeState.scan?.ranges.length ?? 0} rays
+            </span>
+            <span className="toolbar-value">
+              TF {(bridgeState.tf?.transforms.length ?? 0) + (bridgeState.tf_static?.transforms.length ?? 0)} frames
             </span>
           </div>
           <SceneViewport state={bridgeState} />

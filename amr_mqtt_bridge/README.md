@@ -77,6 +77,9 @@ For `amr_viz`, this package also emits browser-friendly JSON topics:
 - `amr/viz/telemetry/local_costmap`
 - `amr/viz/telemetry/motion_status`
 - `amr/viz/telemetry/obstacle_report`
+- `amr/viz/telemetry/scan`
+- `amr/viz/telemetry/tf`
+- `amr/viz/telemetry/tf_static`
 
 ## ROS -> MQTT Emission
 
