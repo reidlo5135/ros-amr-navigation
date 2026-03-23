@@ -1,26 +1,3 @@
-# 2026-03-20
-
-- `amr_viz`를 순수 React Web 프로젝트로 전환
-  - Electron 관련 shell / 실행 경로 제거
-  - host PC 브라우저 접속 기준 운영 viz 구조로 정리
-  - visualization UI와 ROS bridge 책임 완전 분리
-- `amr_mqtt_bridge` 신규 ROS 2 패키지 추가
-  - `amr_viz` 내부 bridge 구현을 별도 패키지로 분리
-  - viz 전용이 아닌 범용 ROS <-> MQTT bridge 역할로 설계
-  - 향후 다른 UI / 운영 툴 / 외부 시스템에서도 재사용 가능하도록 패키지 경계 정의
-- `amr_navigation` 인터페이스를 MQTT 기준으로 재모델링
-  - 기존 ROS topic / service / action을 그대로 노출하지 말고 필요한 데이터만 선별
-  - visualization / control / telemetry 용 메시지 스키마 별도 정의
-  - publish / subscribe 채널 구조, topic naming, QoS 대응 전략 설계
-- React Web client를 MQTT 기반 통신 구조로 전환
-  - WebSocket direct bridge 대신 MQTT client 사용
-  - low-latency 상태 갱신, command 송신, initial pose / goal / status 흐름 재정리
-  - host browser 렌더링 + VM/Ubuntu Server bridge/hosting 역할 분리 유지
-- 성능 고도화 최우선
-  - Python bridge 고CPU 문제 제거
-  - launch / logging / serialization overhead 최소화
-  - 실사용 기준으로 RViz 대비 가벼운 운영 viz 목표 재설정
-
 # 2026-03-23
 
 - `amr_viz` React + MQTT 완전 전환
@@ -40,6 +17,30 @@
   - 동적 장애물 판단과 recovery 선택은 반드시 `amr_bt_navigator`가 담당
   - 각 feature package는 판단이 아닌 수행 역할만 하도록 책임 분리
   - 3번 local escaping replan 정책과 직접 연계
+
+# 2026-03-20
+
+- `amr_viz`를 순수 React Web 프로젝트로 전환
+  - Electron 관련 shell / 실행 경로 제거
+  - host PC 브라우저 접속 기준 운영 viz 구조로 정리
+  - visualization UI와 ROS bridge 책임 완전 분리
+- `amr_mqtt_bridge` 신규 ROS 2 패키지 추가
+  - `amr_viz` 내부 bridge 구현을 별도 패키지로 분리
+  - viz 전용이 아닌 범용 ROS <-> MQTT bridge 역할로 설계
+  - 향후 다른 UI / 운영 툴 / 외부 시스템에서도 재사용 가능하도록 패키지 경계 정의
+- `amr_navigation` 인터페이스를 MQTT 기준으로 재모델링
+  - 기존 ROS topic / service / action을 그대로 노출하지 말고 필요한 데이터만 선별
+  - visualization / control / telemetry 용 메시지 스키마 별도 정의
+  - publish / subscribe 채널 구조, topic naming, QoS 대응 전략 설계
+- React Web client를 MQTT 기반 통신 구조로 전환
+
+  - WebSocket direct bridge 대신 MQTT client 사용
+  - low-latency 상태 갱신, command 송신, initial pose / goal / status 흐름 재정리
+  - host browser 렌더링 + VM/Ubuntu Server bridge/hosting 역할 분리 유지
+- 성능 고도화 최우선
+  - Python bridge 고CPU 문제 제거
+  - launch / logging / serialization overhead 최소화
+  - 실사용 기준으로 RViz 대비 가벼운 운영 viz 목표 재설정
 
 # 2026-03-18
 
