@@ -289,8 +289,8 @@
       host: "192.168.61.35"
       port: 1883
       client_id: "amr_mqtt_bridge"
-      keep_alive_sec: 20
-      clean_session: true
+      keep_alive_sec: 300
+      clean_session: false
       username: ""
       password: ""
     mqtt:
@@ -367,8 +367,8 @@
       host: "192.168.61.35"
       port: 1883
       client_id: "amr_mqtt_robot_plugin"
-      keep_alive_sec: 20
-      clean_session: true
+      keep_alive_sec: 300
+      clean_session: false
       username: ""
       password: ""
     mqtt:

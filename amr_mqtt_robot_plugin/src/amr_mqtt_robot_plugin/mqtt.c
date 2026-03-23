@@ -169,6 +169,9 @@ bool amr_mqtt_robot_plugin_ensure_connected(void)
     return true;
   }
 
+  g_amr_mqtt_robot_plugin_mqtt.connected = false;
+  g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered = false;
+
   if (now_sec == g_amr_mqtt_robot_plugin_mqtt.last_reconnect_attempt_sec) {
     return false;
   }
@@ -194,12 +197,11 @@ bool amr_mqtt_robot_plugin_ensure_connected(void)
   }
 
   g_amr_mqtt_robot_plugin_mqtt.connected = true;
-  if (!g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered) {
-    mqtt_rc = amr_mqtt_robot_plugin_subscribe_command_topics();
-    if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-      g_amr_mqtt_robot_plugin_mqtt.connected = false;
-      return false;
-    }
+  mqtt_rc = amr_mqtt_robot_plugin_subscribe_command_topics();
+  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    g_amr_mqtt_robot_plugin_mqtt.connected = false;
+    g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered = false;
+    return false;
   }
   RCUTILS_LOG_INFO_NAMED(
     "amr_mqtt_robot_plugin",
@@ -235,6 +237,7 @@ bool amr_mqtt_robot_plugin_publish_payload(
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
     if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
       g_amr_mqtt_robot_plugin_mqtt.connected = false;
+      g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered = false;
     }
     return false;
   }
@@ -273,6 +276,7 @@ bool amr_mqtt_robot_plugin_publish_binary_payload(
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
     if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
       g_amr_mqtt_robot_plugin_mqtt.connected = false;
+      g_amr_mqtt_robot_plugin_mqtt.command_subscriptions_registered = false;
     }
     return false;
   }

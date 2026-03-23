@@ -30,10 +30,10 @@ export class VizMqttClient {
 
     const options: IClientOptions = {
       connectTimeout: 10000,
-      reconnectPeriod: 3000,
+      reconnectPeriod: 1000,
       reconnectOnConnackError: true,
-      keepalive: 60,
-      clean: true,
+      keepalive: 300,
+      clean: false,
       resubscribe: true,
     };
 

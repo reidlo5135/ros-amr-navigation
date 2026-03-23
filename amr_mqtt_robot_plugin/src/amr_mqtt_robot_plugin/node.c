@@ -158,8 +158,8 @@ static void amr_mqtt_robot_plugin_set_default_config(void)
     g_amr_mqtt_robot_plugin_config.broker.client_id,
     sizeof(g_amr_mqtt_robot_plugin_config.broker.client_id),
     "amr_mqtt_robot_plugin");
-  g_amr_mqtt_robot_plugin_config.broker.keep_alive_sec = 20;
-  g_amr_mqtt_robot_plugin_config.broker.clean_session = true;
+  g_amr_mqtt_robot_plugin_config.broker.keep_alive_sec = 300;
+  g_amr_mqtt_robot_plugin_config.broker.clean_session = false;
 
   amr_mqtt_robot_plugin_copy_string(
     g_amr_mqtt_robot_plugin_config.mqtt.root,
