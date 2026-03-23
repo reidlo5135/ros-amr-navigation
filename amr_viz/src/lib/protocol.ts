@@ -99,6 +99,10 @@ export type TfMessage = {
   transforms: TransformMessage[];
 };
 
+export type RobotDescriptionMessage = {
+  data: string;
+};
+
 export type BridgeState = {
   robot_pose?: Pose;
   global_path?: PathMessage;
@@ -111,6 +115,7 @@ export type BridgeState = {
   scan?: LaserScanMessage;
   tf?: TfMessage;
   tf_static?: TfMessage;
+  robot_description?: RobotDescriptionMessage;
 };
 
 export type BridgeEnvelope =

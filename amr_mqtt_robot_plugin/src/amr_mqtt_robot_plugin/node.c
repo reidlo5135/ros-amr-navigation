@@ -1134,6 +1134,23 @@ static char * amr_mqtt_robot_plugin_serialize_joint_states(const void * message)
   return amr_mqtt_robot_plugin_builder_take(&builder);
 }
 
+static char * amr_mqtt_robot_plugin_serialize_string_message(const void * message)
+{
+  const std_msgs__msg__String * string_message = (const std_msgs__msg__String *)message;
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 512U) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "{\"data\":") ||
+    !amr_mqtt_robot_plugin_builder_append_json_string(&builder, string_message->data.data) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "}"))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
 static bool amr_mqtt_robot_plugin_serialize_message_raw(
   const void * ros_message,
   const rosidl_message_type_support_t * type_support,
@@ -1642,9 +1659,9 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     true,
     true,
-    NULL,
+    amr_mqtt_robot_plugin_serialize_string_message,
     true,
-    false,
+    true,
     0U,
     0U);
 

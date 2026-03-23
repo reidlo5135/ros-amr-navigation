@@ -27,7 +27,10 @@ type SceneViewportProps = {
     x: number;
     y: number;
     yaw: number;
+    kind: "goal" | "initial_pose";
   } | null;
+  interactionMode: "idle" | "goal" | "initial_pose";
+  onPosePlacement?: (mode: "goal" | "initial_pose", x: number, y: number, yaw: number) => void;
 };
 
 type ResolvedFrame = {
@@ -43,6 +46,19 @@ type FrameEdge = {
   yaw: number;
 };
 
+type UrdfVisual = {
+  linkName: string;
+  xyz: THREE.Vector3;
+  rpy: THREE.Vector3;
+  geometry:
+    | { type: "box"; size: THREE.Vector3 }
+    | { type: "cylinder"; radius: number; length: number }
+    | { type: "sphere"; radius: number }
+    | { type: "mesh"; scale: THREE.Vector3 };
+  color: THREE.Color;
+  opacity: number;
+};
+
 function rotate2d(x: number, y: number, yaw: number) {
   const cosYaw = Math.cos(yaw);
   const sinYaw = Math.sin(yaw);
@@ -50,6 +66,112 @@ function rotate2d(x: number, y: number, yaw: number) {
     x: (x * cosYaw) - (y * sinYaw),
     y: (x * sinYaw) + (y * cosYaw),
   };
+}
+
+function parseTriplet(value: string | null | undefined, fallback = 0): THREE.Vector3 {
+  const tokens = (value ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((token) => Number(token));
+  return new THREE.Vector3(
+    Number.isFinite(tokens[0]) ? tokens[0] : fallback,
+    Number.isFinite(tokens[1]) ? tokens[1] : fallback,
+    Number.isFinite(tokens[2]) ? tokens[2] : fallback,
+  );
+}
+
+function parseUrdfVisuals(robotDescription?: string): UrdfVisual[] {
+  if (!robotDescription) {
+    return [];
+  }
+
+  const parser = new DOMParser();
+  const documentNode = parser.parseFromString(robotDescription, "application/xml");
+  const robot = documentNode.querySelector("robot");
+  if (!robot) {
+    return [];
+  }
+
+  const materialTable = new Map<string, { color: THREE.Color; opacity: number }>();
+  for (const materialNode of Array.from(robot.querySelectorAll(":scope > material"))) {
+    const name = materialNode.getAttribute("name");
+    const colorNode = materialNode.querySelector("color");
+    if (!name || !colorNode) {
+      continue;
+    }
+    const rgba = (colorNode.getAttribute("rgba") ?? "").trim().split(/\s+/).map(Number);
+    if (rgba.length < 3) {
+      continue;
+    }
+    materialTable.set(name, {
+      color: new THREE.Color(rgba[0] ?? 0.15, rgba[1] ?? 0.15, rgba[2] ?? 0.15),
+      opacity: Number.isFinite(rgba[3]) ? rgba[3] : 1,
+    });
+  }
+
+  const visuals: UrdfVisual[] = [];
+  for (const linkNode of Array.from(robot.querySelectorAll("link"))) {
+    const linkName = linkNode.getAttribute("name");
+    if (!linkName) {
+      continue;
+    }
+
+    for (const visualNode of Array.from(linkNode.querySelectorAll(":scope > visual"))) {
+      const originNode = visualNode.querySelector(":scope > origin");
+      const geometryNode = visualNode.querySelector(":scope > geometry");
+      if (!geometryNode) {
+        continue;
+      }
+
+      const xyz = parseTriplet(originNode?.getAttribute("xyz"), 0);
+      const rpy = parseTriplet(originNode?.getAttribute("rpy"), 0);
+      let color = new THREE.Color("#202020");
+      let opacity = 1;
+
+      const materialNode = visualNode.querySelector(":scope > material");
+      const materialColorNode = materialNode?.querySelector("color");
+      const materialName = materialNode?.getAttribute("name") ?? "";
+      if (materialColorNode) {
+        const rgba = (materialColorNode.getAttribute("rgba") ?? "").trim().split(/\s+/).map(Number);
+        color = new THREE.Color(rgba[0] ?? 0.15, rgba[1] ?? 0.15, rgba[2] ?? 0.15);
+        opacity = Number.isFinite(rgba[3]) ? rgba[3] : 1;
+      } else if (materialName && materialTable.has(materialName)) {
+        const resolved = materialTable.get(materialName)!;
+        color = resolved.color.clone();
+        opacity = resolved.opacity;
+      }
+
+      const boxNode = geometryNode.querySelector("box");
+      const cylinderNode = geometryNode.querySelector("cylinder");
+      const sphereNode = geometryNode.querySelector("sphere");
+      const meshNode = geometryNode.querySelector("mesh");
+      let geometry: UrdfVisual["geometry"] | null = null;
+
+      if (boxNode) {
+        geometry = { type: "box", size: parseTriplet(boxNode.getAttribute("size"), 0.06) };
+      } else if (cylinderNode) {
+        geometry = {
+          type: "cylinder",
+          radius: Number(cylinderNode.getAttribute("radius") ?? 0.03),
+          length: Number(cylinderNode.getAttribute("length") ?? 0.06),
+        };
+      } else if (sphereNode) {
+        geometry = {
+          type: "sphere",
+          radius: Number(sphereNode.getAttribute("radius") ?? 0.04),
+        };
+      } else if (meshNode) {
+        const scale = parseTriplet(meshNode.getAttribute("scale"), 1);
+        geometry = { type: "mesh", scale };
+      }
+
+      if (geometry) {
+        visuals.push({ linkName, xyz, rpy, geometry, color, opacity });
+      }
+    }
+  }
+
+  return visuals;
 }
 
 function disposeObject(object: THREE.Object3D | null) {
@@ -84,25 +206,25 @@ function buildPathLine(
     return null;
   }
 
-  const lineGeometry = new THREE.BufferGeometry().setFromPoints(
-    points.map((point) => new THREE.Vector3(point.x, yOffset, -point.y)),
-  );
-  const lineMaterial = new THREE.LineBasicMaterial({
+  const curvePoints = points.map((point) => new THREE.Vector3(point.x, yOffset, -point.y));
+  const curve = new THREE.CatmullRomCurve3(curvePoints, false, "catmullrom", 0.05);
+  const tubeGeometry = new THREE.TubeGeometry(curve, Math.max(points.length * 4, 32), 0.018, 8, false);
+  const tubeMaterial = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: 1,
+    opacity: 0.96,
     depthTest: false,
     depthWrite: false,
   });
-  const line = new THREE.Line(lineGeometry, lineMaterial);
-  line.renderOrder = 20;
+  const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+  tube.renderOrder = 20;
 
   const pointGeometry = new THREE.BufferGeometry().setFromPoints(
     points.map((point) => new THREE.Vector3(point.x, yOffset + 0.01, -point.y)),
   );
   const pointMaterial = new THREE.PointsMaterial({
     color,
-    size: 0.16,
+    size: 0.12,
     transparent: true,
     opacity: 1,
     sizeAttenuation: true,
@@ -113,17 +235,20 @@ function buildPathLine(
   pointCloud.renderOrder = 21;
 
   const group = new THREE.Group();
-  group.add(line, pointCloud);
+  group.add(tube, pointCloud);
   return group;
 }
 
-function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number }): THREE.Group {
+function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: "goal" | "initial_pose" }): THREE.Group {
   const group = new THREE.Group();
+  const isGoal = goalMarker.kind === "goal";
+  const baseColor = isGoal ? "#ff7a21" : "#1d9fa1";
+  const accentColor = isGoal ? "#ffd08a" : "#b9fff1";
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.14, 0.2, 36),
     new THREE.MeshBasicMaterial({
-      color: "#ff6b2b",
+      color: baseColor,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
@@ -133,19 +258,31 @@ function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number }): THR
   ring.position.y = 0.05;
   ring.renderOrder = 24;
 
-  const heading = new THREE.Mesh(
-    new THREE.ConeGeometry(0.06, 0.18, 3),
+  const core = new THREE.Mesh(
+    new THREE.CircleGeometry(0.06, 28),
     new THREE.MeshBasicMaterial({
-      color: "#ff6b2b",
+      color: accentColor,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  core.rotation.x = -Math.PI / 2;
+  core.position.y = 0.052;
+  core.renderOrder = 25;
+
+  const heading = new THREE.Mesh(
+    new THREE.ConeGeometry(isGoal ? 0.06 : 0.045, isGoal ? 0.2 : 0.16, 3),
+    new THREE.MeshBasicMaterial({
+      color: baseColor,
       depthTest: false,
       depthWrite: false,
     }),
   );
   heading.rotation.z = -Math.PI / 2;
-  heading.position.set(0.24, 0.06, 0);
+  heading.position.set(0.26, 0.06, 0);
   heading.renderOrder = 25;
 
-  group.add(ring, heading);
+  group.add(ring, core, heading);
   group.position.set(goalMarker.x, 0, -goalMarker.y);
   group.rotation.y = -goalMarker.yaw;
   return group;
@@ -479,7 +616,138 @@ function buildTfGroup(
   return group.children.length > 0 ? group : null;
 }
 
-export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewportProps) {
+function buildRobotVisualMesh(visual: UrdfVisual): THREE.Object3D {
+  let object: THREE.Object3D;
+  const material = new THREE.MeshStandardMaterial({
+    color: visual.color,
+    transparent: visual.opacity < 0.999,
+    opacity: visual.opacity,
+    metalness: 0.05,
+    roughness: 0.88,
+  });
+
+  switch (visual.geometry.type) {
+    case "box":
+      object = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.max(visual.geometry.size.x, 0.01),
+          Math.max(visual.geometry.size.z, 0.01),
+          Math.max(visual.geometry.size.y, 0.01),
+        ),
+        material,
+      );
+      break;
+    case "cylinder":
+      object = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          Math.max(visual.geometry.radius, 0.005),
+          Math.max(visual.geometry.radius, 0.005),
+          Math.max(visual.geometry.length, 0.01),
+          20,
+        ),
+        material,
+      );
+      break;
+    case "sphere":
+      object = new THREE.Mesh(
+        new THREE.SphereGeometry(Math.max(visual.geometry.radius, 0.005), 20, 20),
+        material,
+      );
+      break;
+    case "mesh":
+      object = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          Math.max(0.12 * visual.geometry.scale.x, 0.02),
+          Math.max(0.06 * visual.geometry.scale.z, 0.02),
+          Math.max(0.08 * visual.geometry.scale.y, 0.02),
+        ),
+        material,
+      );
+      break;
+  }
+
+  return object;
+}
+
+function buildRobotModelGroup(
+  robotDescription: string | undefined,
+  tf: TfMessage | undefined,
+  tfStatic: TfMessage | undefined,
+  robotPose: Pose | undefined,
+): THREE.Group {
+  const visuals = parseUrdfVisuals(robotDescription);
+  const group = new THREE.Group();
+  const lookup = buildFrameLookup(tf, tfStatic);
+  const cache = new Map<string, ResolvedFrame | null>();
+
+  if (visuals.length === 0) {
+    const fallback = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.082, 0.082, 0.04, 32),
+      new THREE.MeshStandardMaterial({
+        color: "#121212",
+        metalness: 0.08,
+        roughness: 0.92,
+      }),
+    );
+    body.rotation.z = Math.PI / 2;
+    body.position.y = 0.045;
+    const nose = new THREE.Mesh(
+      new THREE.ConeGeometry(0.04, 0.12, 3),
+      new THREE.MeshBasicMaterial({ color: "#111111" }),
+    );
+    nose.rotation.z = -Math.PI / 2;
+    nose.position.set(0.1, 0.045, 0);
+    fallback.add(body, nose);
+    group.add(fallback);
+    if (robotPose) {
+      group.position.set(robotPose.position.x, 0, -robotPose.position.y);
+      group.rotation.y = -robotPose.orientation.yaw;
+    }
+    return group;
+  }
+
+  for (const visual of visuals) {
+    const frame = resolveFrame(visual.linkName, lookup, robotPose, cache) ??
+      (robotPose
+        ? {
+            x: robotPose.position.x,
+            y: robotPose.position.y,
+            z: robotPose.position.z,
+            yaw: robotPose.orientation.yaw,
+          }
+        : null);
+    if (!frame) {
+      continue;
+    }
+
+    const rotatedOrigin = rotate2d(visual.xyz.x, visual.xyz.y, frame.yaw);
+    const mesh = buildRobotVisualMesh(visual);
+    mesh.position.set(
+      frame.x + rotatedOrigin.x,
+      frame.z + visual.xyz.z,
+      -(frame.y + rotatedOrigin.y),
+    );
+    mesh.rotation.set(
+      visual.rpy.x,
+      -(frame.yaw + visual.rpy.z),
+      visual.rpy.y,
+      "XYZ",
+    );
+    mesh.renderOrder = 18;
+    group.add(mesh);
+  }
+
+  return group;
+}
+
+export function SceneViewport({
+  state,
+  layerVisibility,
+  goalMarker,
+  interactionMode,
+  onPosePlacement,
+}: SceneViewportProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -491,6 +759,7 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
   const localPathRef = useRef<THREE.Group | null>(null);
   const obstacleRef = useRef<THREE.Group | null>(null);
   const goalMarkerRef = useRef<THREE.Group | null>(null);
+  const previewMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
@@ -498,6 +767,18 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
   const tfGroupRef = useRef<THREE.Group | null>(null);
   const lastCenteredMapSignatureRef = useRef<string>("");
   const renderRef = useRef<(() => void) | null>(null);
+  const interactionModeRef = useRef<"idle" | "goal" | "initial_pose">("idle");
+  const onPosePlacementRef = useRef<SceneViewportProps["onPosePlacement"]>(undefined);
+  const interactionStateRef = useRef<{
+    active: boolean;
+    mode: "goal" | "initial_pose";
+    start: THREE.Vector3;
+  } | null>(null);
+
+  useEffect(() => {
+    interactionModeRef.current = interactionMode;
+    onPosePlacementRef.current = onPosePlacement;
+  }, [interactionMode, onPosePlacement]);
   useEffect(() => {
     if (!viewportRef.current) {
       return;
@@ -570,53 +851,47 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
     scene.add(floor);
 
     const robot = new THREE.Group();
-    const footprint = new THREE.Mesh(
-      new THREE.CircleGeometry(0.082, 32),
-      new THREE.MeshBasicMaterial({
-        color: "#111111",
-        transparent: true,
-        opacity: 0.96,
-      }),
-    );
-    footprint.rotation.x = -Math.PI / 2;
-    footprint.position.y = 0.032;
-    const centerDot = new THREE.Mesh(
-      new THREE.CircleGeometry(0.018, 20),
-      new THREE.MeshBasicMaterial({ color: "#000000" }),
-    );
-    centerDot.rotation.x = -Math.PI / 2;
-    centerDot.position.y = 0.036;
-    const heading = new THREE.Mesh(
-      new THREE.ConeGeometry(0.032, 0.12, 3),
-      new THREE.MeshBasicMaterial({ color: "#111111" }),
-    );
-    heading.rotation.z = -Math.PI / 2;
-    heading.position.set(0.098, 0.04, 0);
-    robot.add(footprint, centerDot, heading);
     scene.add(robot);
 
     const obstacle = new THREE.Group();
     const obstacleInflation = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.28, 0.28),
+      new THREE.RingGeometry(0.12, 0.22, 24),
       new THREE.MeshBasicMaterial({
-        color: "#8b2346",
+        color: "#b21d53",
         transparent: true,
-        opacity: 0.62,
+        opacity: 0.52,
         side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
       }),
     );
     obstacleInflation.rotation.x = -Math.PI / 2;
     obstacleInflation.position.y = 0.03;
+    obstacleInflation.renderOrder = 26;
     const obstacleCore = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.1, 0.1),
+      new THREE.CircleGeometry(0.05, 24),
       new THREE.MeshBasicMaterial({
-        color: "#0f0f0f",
+        color: "#2b0310",
         transparent: false,
+        depthTest: false,
+        depthWrite: false,
       }),
     );
     obstacleCore.rotation.x = -Math.PI / 2;
     obstacleCore.position.y = 0.034;
-    obstacle.add(obstacleInflation, obstacleCore);
+    obstacleCore.renderOrder = 27;
+    const obstacleNeedle = new THREE.Mesh(
+      new THREE.ConeGeometry(0.035, 0.12, 3),
+      new THREE.MeshBasicMaterial({
+        color: "#ff7ca8",
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    obstacleNeedle.rotation.z = -Math.PI / 2;
+    obstacleNeedle.position.set(0.16, 0.05, 0);
+    obstacleNeedle.renderOrder = 28;
+    obstacle.add(obstacleInflation, obstacleCore, obstacleNeedle);
     obstacle.visible = false;
     scene.add(obstacle);
 
@@ -637,6 +912,95 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
       renderScene();
     };
 
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const intersection = new THREE.Vector3();
+    const readGroundPoint = (event: PointerEvent) => {
+      const bounds = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+      pointer.y = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
+      raycaster.setFromCamera(pointer, camera);
+      return raycaster.ray.intersectPlane(groundPlane, intersection) ? intersection.clone() : null;
+    };
+
+    const clearPreview = () => {
+      if (previewMarkerRef.current) {
+        scene.remove(previewMarkerRef.current);
+        disposeObject(previewMarkerRef.current);
+        previewMarkerRef.current = null;
+      }
+    };
+
+    const updatePreview = (mode: "goal" | "initial_pose", start: THREE.Vector3, current: THREE.Vector3) => {
+      clearPreview();
+      const dx = current.x - start.x;
+      const dy = -(current.z - start.z);
+      const yaw = Math.atan2(dy, dx || 0.0001);
+      previewMarkerRef.current = buildGoalMarker({
+        x: start.x,
+        y: -start.z,
+        yaw,
+        kind: mode === "goal" ? "goal" : "initial_pose",
+      });
+      previewMarkerRef.current.renderOrder = 29;
+      scene.add(previewMarkerRef.current);
+      renderScene();
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const currentMode = interactionModeRef.current;
+      if (currentMode === "idle") {
+        return;
+      }
+      if (event.button !== 0 && event.button !== 2) {
+        return;
+      }
+      const point = readGroundPoint(event);
+      if (!point) {
+        return;
+      }
+      interactionStateRef.current = {
+        active: true,
+        mode: currentMode,
+        start: point,
+      };
+      updatePreview(currentMode, point, point);
+      event.preventDefault();
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!interactionStateRef.current?.active) {
+        return;
+      }
+      const point = readGroundPoint(event);
+      if (!point) {
+        return;
+      }
+      updatePreview(interactionStateRef.current.mode, interactionStateRef.current.start, point);
+      event.preventDefault();
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (!interactionStateRef.current?.active) {
+        return;
+      }
+      const point = readGroundPoint(event) ?? interactionStateRef.current.start;
+      const start = interactionStateRef.current.start;
+      const mode = interactionStateRef.current.mode;
+      interactionStateRef.current = null;
+      clearPreview();
+      const dx = point.x - start.x;
+      const dy = -(point.z - start.z);
+      const yaw = Math.atan2(dy, dx || 0.0001);
+      onPosePlacementRef.current?.(mode, start.x, -start.z, yaw);
+      event.preventDefault();
+    };
+
+    renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    renderer.domElement.addEventListener("contextmenu", (event) => event.preventDefault());
     window.addEventListener("resize", handleResize);
 
     sceneRef.current = scene;
@@ -647,6 +1011,10 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
     obstacleRef.current = obstacle;
 
     return () => {
+      clearPreview();
+      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("resize", handleResize);
       renderRef.current = null;
       controls.dispose();
@@ -680,10 +1048,18 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
       gridRef.current.visible = layerVisibility.grid;
     }
     robot.visible = layerVisibility.robot;
-    if (robotPose) {
-      robot.position.set(robotPose.position.x, 0, -robotPose.position.y);
-      robot.rotation.y = -robotPose.orientation.yaw;
+    while (robot.children.length > 0) {
+      const child = robot.children[0];
+      robot.remove(child);
+      disposeObject(child);
     }
+    const robotModel = buildRobotModelGroup(
+      state.robot_description?.data,
+      state.tf,
+      state.tf_static,
+      robotPose,
+    );
+    robot.add(robotModel);
 
     disposeObject(globalPathRef.current);
     disposeObject(localPathRef.current);
@@ -786,6 +1162,7 @@ export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewp
         -obstacleReport.obstacle_point.y,
       );
       obstacle.scale.setScalar(1 + (obstacleReport.severity * 0.12));
+      obstacle.rotation.y = -obstacleReport.bearing;
     } else {
       obstacle.visible = false;
     }

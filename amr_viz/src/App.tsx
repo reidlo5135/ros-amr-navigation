@@ -39,6 +39,7 @@ const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/scan": "scan",
   "amr/robot/turtlebot3/viz/tf": "tf",
   "amr/robot/turtlebot3/viz/tf_static": "tf_static",
+  "amr/robot/turtlebot3/viz/robot_description": "robot_description",
 };
 
 const topicSubscriptions = [
@@ -68,7 +69,10 @@ type GoalMarker = {
   x: number;
   y: number;
   yaw: number;
+  kind: "goal" | "initial_pose";
 };
+
+type InteractionMode = "idle" | "goal" | "initial_pose";
 
 export default function App() {
   const clientRef = useRef(new VizMqttClient());
@@ -86,6 +90,7 @@ export default function App() {
   const [goalY, setGoalY] = useState("0.0");
   const [goalYaw, setGoalYaw] = useState("0.0");
   const [goalMarker, setGoalMarker] = useState<GoalMarker | null>(null);
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>("idle");
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
     grid: true,
     map: true,
@@ -214,6 +219,57 @@ export default function App() {
     }));
   };
 
+  const sendGoal = (x: number, y: number, yaw: number) => {
+    setGoalMarker({ x, y, yaw, kind: "goal" });
+    setGoalX(x.toFixed(2));
+    setGoalY(y.toFixed(2));
+    setGoalYaw(yaw.toFixed(2));
+    publishJson("amr/command/navigate_to_pose", {
+      request_id: createCommandId(),
+      goal_pose: {
+        header: {
+          stamp: { sec: 0, nanosec: 0 },
+          frame_id: "map",
+        },
+        pose: {
+          position: { x, y, z: 0.0 },
+          orientation: {
+            x: 0.0,
+            y: 0.0,
+            z: Math.sin(yaw * 0.5),
+            w: Math.cos(yaw * 0.5),
+          },
+        },
+      },
+    });
+  };
+
+  const setInitialPose = (x: number, y: number, yaw: number) => {
+    setGoalMarker({ x, y, yaw, kind: "initial_pose" });
+    setGoalX(x.toFixed(2));
+    setGoalY(y.toFixed(2));
+    setGoalYaw(yaw.toFixed(2));
+    publishJson("amr/command/set_initial_pose", {
+      request_id: createCommandId(),
+      frame_id: "map",
+      x,
+      y,
+      yaw,
+      covariance_x: 0.25,
+      covariance_y: 0.25,
+      covariance_yaw: 0.06853891945200942,
+    });
+  };
+
+  const handleScenePosePlacement = (mode: Exclude<InteractionMode, "idle">, x: number, y: number, yaw: number) => {
+    if (mode === "goal") {
+      sendGoal(x, y, yaw);
+    } else {
+      setInitialPose(x, y, yaw);
+    }
+    setInteractionMode("idle");
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -269,37 +325,23 @@ export default function App() {
             </div>
             <div className="button-stack">
               <button
-                onClick={() => {
-                  const x = Number(goalX);
-                  const y = Number(goalY);
-                  const yaw = Number(goalYaw);
-                  setGoalMarker({ x, y, yaw });
-                  publishJson("amr/command/navigate_to_pose", {
-                    request_id: createCommandId(),
-                    goal_pose: {
-                      header: {
-                        stamp: { sec: 0, nanosec: 0 },
-                        frame_id: "map",
-                      },
-                      pose: {
-                        position: { x, y, z: 0.0 },
-                        orientation: {
-                          x: 0.0,
-                          y: 0.0,
-                          z: Math.sin(yaw * 0.5),
-                          w: Math.cos(yaw * 0.5),
-                        },
-                      },
-                    },
-                  });
-                }}
+                onClick={() => sendGoal(Number(goalX), Number(goalY), Number(goalYaw))}
               >
                 Send Goal
+              </button>
+              <button
+                className={interactionMode === "goal" ? "secondary active-mode" : "secondary"}
+                onClick={() =>
+                  setInteractionMode((current) => (current === "goal" ? "idle" : "goal"))
+                }
+              >
+                Goal On Map
               </button>
               <button
                 className="danger"
                 onClick={() => {
                   setGoalMarker(null);
+                  setInteractionMode("idle");
                   publishJson("amr/command/cancel_navigate_to_pose", {
                     request_id: createCommandId(),
                   });
@@ -309,22 +351,26 @@ export default function App() {
               </button>
               <button
                 className="secondary"
-                onClick={() =>
-                  publishJson("amr/command/set_initial_pose", {
-                    request_id: createCommandId(),
-                    frame_id: "map",
-                    x: Number(goalX),
-                    y: Number(goalY),
-                    yaw: Number(goalYaw),
-                    covariance_x: 0.25,
-                    covariance_y: 0.25,
-                    covariance_yaw: 0.06853891945200942,
-                  })
-                }
+                onClick={() => setInitialPose(Number(goalX), Number(goalY), Number(goalYaw))}
               >
                 Set Initial Pose
               </button>
+              <button
+                className={interactionMode === "initial_pose" ? "secondary active-mode" : "secondary"}
+                onClick={() =>
+                  setInteractionMode((current) => (current === "initial_pose" ? "idle" : "initial_pose"))
+                }
+              >
+                Initial Pose On Map
+              </button>
             </div>
+            {interactionMode !== "idle" ? (
+              <div className="mode-hint">
+                {interactionMode === "goal"
+                  ? "Drag on map to set goal heading"
+                  : "Drag on map to set initial pose heading"}
+              </div>
+            ) : null}
           </section>
 
           <section className="panel-card">
@@ -380,6 +426,8 @@ export default function App() {
             state={bridgeState}
             layerVisibility={layerVisibility}
             goalMarker={goalMarker}
+            interactionMode={interactionMode}
+            onPosePlacement={handleScenePosePlacement}
           />
         </section>
 
