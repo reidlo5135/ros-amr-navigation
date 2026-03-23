@@ -351,19 +351,33 @@ function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: 
   core.position.y = 0.052;
   core.renderOrder = 25;
 
+  const shaft = new THREE.Mesh(
+    new THREE.PlaneGeometry(isGoal ? 0.22 : 0.18, 0.026),
+    new THREE.MeshBasicMaterial({
+      color: baseColor,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  shaft.rotation.x = -Math.PI / 2;
+  shaft.position.set(isGoal ? 0.22 : 0.2, 0.056, 0);
+  shaft.renderOrder = 25;
+
   const heading = new THREE.Mesh(
-    new THREE.ConeGeometry(isGoal ? 0.06 : 0.045, isGoal ? 0.2 : 0.16, 3),
+    new THREE.ConeGeometry(isGoal ? 0.05 : 0.04, isGoal ? 0.12 : 0.1, 3),
     new THREE.MeshBasicMaterial({
       color: baseColor,
       depthTest: false,
       depthWrite: false,
     }),
   );
+  heading.rotation.x = Math.PI / 2;
   heading.rotation.z = -Math.PI / 2;
-  heading.position.set(0.26, 0.06, 0);
-  heading.renderOrder = 25;
+  heading.position.set(isGoal ? 0.34 : 0.3, 0.058, 0);
+  heading.renderOrder = 26;
 
-  group.add(ring, core, heading);
+  group.add(ring, core, shaft, heading);
   group.position.set(goalMarker.x, 0, -goalMarker.y);
   group.rotation.y = -goalMarker.yaw;
   return group;
@@ -552,19 +566,18 @@ function resolveFrame(
     return identity;
   }
 
-  if (robotPose && (frameId === "base_footprint" || frameId === "base_link")) {
-    const resolved = {
-      x: robotPose.position.x,
-      y: robotPose.position.y,
-      z: robotPose.position.z,
-      yaw: robotPose.orientation.yaw,
-    };
-    cache.set(frameId, resolved);
-    return resolved;
-  }
-
   const edge = lookup.get(frameId);
   if (!edge) {
+    if (robotPose && (frameId === "base_footprint" || frameId === "base_link")) {
+      const resolved = {
+        x: robotPose.position.x,
+        y: robotPose.position.y,
+        z: robotPose.position.z,
+        yaw: robotPose.orientation.yaw,
+      };
+      cache.set(frameId, resolved);
+      return resolved;
+    }
     cache.set(frameId, null);
     return null;
   }
@@ -649,6 +662,7 @@ function buildTfGroup(
   tf: TfMessage | undefined,
   tfStatic: TfMessage | undefined,
   robotPose: Pose | undefined,
+  map: OccupancyGridMessage | undefined,
 ): THREE.Group | null {
   const lookup = buildFrameLookup(tf, tfStatic);
   const transforms = [...(tfStatic?.transforms ?? []), ...(tf?.transforms ?? [])];
@@ -659,6 +673,64 @@ function buildTfGroup(
   const group = new THREE.Group();
   const cache = new Map<string, ResolvedFrame | null>();
 
+  const buildAxes = (x: number, y: number, z: number, yaw: number, color?: string) => {
+    const frameGroup = new THREE.Group();
+    frameGroup.position.set(x, y, -z);
+    frameGroup.rotation.y = -yaw;
+
+    const hub = new THREE.Mesh(
+      new THREE.SphereGeometry(0.028, 12, 12),
+      new THREE.MeshBasicMaterial({
+        color: color ?? "#8bff8f",
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    hub.renderOrder = 16;
+    frameGroup.add(hub);
+
+    const axisRadius = 0.008;
+    const xAxis = new THREE.Mesh(
+      new THREE.CylinderGeometry(axisRadius, axisRadius, 0.24, 10),
+      new THREE.MeshBasicMaterial({
+        color: "#ff4d4d",
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    xAxis.rotation.z = -Math.PI / 2;
+    xAxis.position.x = 0.12;
+    xAxis.renderOrder = 17;
+
+    const yAxis = new THREE.Mesh(
+      new THREE.CylinderGeometry(axisRadius, axisRadius, 0.24, 10),
+      new THREE.MeshBasicMaterial({
+        color: "#2fd06a",
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    yAxis.rotation.x = Math.PI / 2;
+    yAxis.position.z = -0.12;
+    yAxis.renderOrder = 17;
+
+    const zAxis = new THREE.Mesh(
+      new THREE.CylinderGeometry(axisRadius, axisRadius, 0.18, 10),
+      new THREE.MeshBasicMaterial({
+        color: "#4f8fff",
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    zAxis.position.y = 0.09;
+    zAxis.renderOrder = 17;
+
+    frameGroup.add(xAxis, yAxis, zAxis);
+    return frameGroup;
+  };
+
+  group.add(buildAxes(0, 0.1, 0, 0, "#ffd36b"));
+
   for (const transform of transforms) {
     const child = resolveFrame(transform.child_frame_id, lookup, robotPose, cache);
     const parent = resolveFrame(transform.header.frame_id, lookup, robotPose, cache);
@@ -666,16 +738,14 @@ function buildTfGroup(
       continue;
     }
 
-    const marker = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.035, 0.18, 12),
-      new THREE.MeshStandardMaterial({
-        color: tfStatic?.transforms.includes(transform) ? "#5a8cff" : "#93ff8b",
-        emissive: tfStatic?.transforms.includes(transform) ? "#2b4b99" : "#2f8d26",
-        emissiveIntensity: 0.18,
-      }),
+    const frameGroup = buildAxes(
+      child.x,
+      0.1,
+      child.y,
+      child.yaw,
+      tfStatic?.transforms.includes(transform) ? "#7aa1ff" : "#8bff8f",
     );
-    marker.position.set(child.x, 0.12, -child.y);
-    group.add(marker);
+    group.add(frameGroup);
 
     if (parent) {
       const lineGeometry = new THREE.BufferGeometry().setFromPoints([
@@ -685,11 +755,12 @@ function buildTfGroup(
       const line = new THREE.Line(
         lineGeometry,
         new THREE.LineBasicMaterial({
-          color: tfStatic?.transforms.includes(transform) ? "#4d77d6" : "#79ff9f",
+          color: tfStatic?.transforms.includes(transform) ? "#5b7dff" : "#56ff86",
           transparent: true,
-          opacity: 0.65,
+          opacity: 0.95,
         }),
       );
+      line.renderOrder = 15;
       group.add(line);
     }
   }
@@ -703,15 +774,13 @@ function buildRobotVisualMesh(visual: UrdfVisual): THREE.Object3D {
     visual.geometry.type === "mesh"
       ? `${visual.linkName} ${visual.geometry.filename}`.toLowerCase()
       : visual.linkName.toLowerCase();
-  const material = new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshBasicMaterial({
     color: visual.color,
     transparent: visual.opacity < 0.999,
     opacity: visual.opacity,
-    metalness: 0.05,
-    roughness: 0.88,
+    depthTest: false,
+    depthWrite: false,
   });
-  material.depthTest = false;
-  material.depthWrite = false;
 
   switch (visual.geometry.type) {
     case "box":
@@ -808,10 +877,8 @@ function buildRobotModelGroup(
     const fallback = new THREE.Group();
     const body = new THREE.Mesh(
       new THREE.CylinderGeometry(0.082, 0.082, 0.028, 36),
-      new THREE.MeshStandardMaterial({
+      new THREE.MeshBasicMaterial({
         color: "#101010",
-        metalness: 0.06,
-        roughness: 0.9,
         depthTest: false,
         depthWrite: false,
       }),
@@ -834,10 +901,8 @@ function buildRobotModelGroup(
 
     const lidar = new THREE.Mesh(
       new THREE.CylinderGeometry(0.028, 0.028, 0.03, 24),
-      new THREE.MeshStandardMaterial({
+      new THREE.MeshBasicMaterial({
         color: "#151515",
-        metalness: 0.05,
-        roughness: 0.88,
         depthTest: false,
         depthWrite: false,
       }),
@@ -1300,6 +1365,7 @@ export function SceneViewport({
       state.tf,
       state.tf_static,
       state.robot_pose,
+      state.map,
     );
     if (tfGroupRef.current) {
       tfGroupRef.current.visible = layerVisibility.tf;

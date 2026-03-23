@@ -19,70 +19,42 @@ type PublishOptions = {
   retain?: boolean;
 };
 
+function createClientId() {
+  return `amr-viz-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function buildCandidateUrls(url: string) {
+  const candidates = [url];
+
+  if (url.endsWith("/mqtt")) {
+    candidates.push(url.slice(0, -5));
+  } else if (/^wss?:\/\/[^/]+$/i.test(url)) {
+    candidates.push(`${url}/mqtt`);
+  }
+
+  return Array.from(new Set(candidates.filter((candidate) => candidate.length > 0)));
+}
+
 export class VizMqttClient {
   private client?: MqttClient;
   private listeners = new Set<MessageListener>();
   private statusListeners = new Set<StatusListener>();
+  private connectAttempt = 0;
+  private fallbackTimer?: ReturnType<typeof setTimeout>;
 
   connect(url: string, subscriptions: string[]) {
     this.disconnect();
-    this.emitStatus("connecting", url);
-
-    const options: IClientOptions = {
-      connectTimeout: 10000,
-      reconnectPeriod: 1000,
-      reconnectOnConnackError: true,
-      keepalive: 300,
-      clean: false,
-      resubscribe: true,
-    };
-
-    this.client = mqtt.connect(url, options);
-    this.client.on("connect", () => {
-      this.emitStatus("connected", url);
-      if (subscriptions.length > 0) {
-        this.client?.subscribe(subscriptions, { qos: 0 });
-      }
-    });
-    this.client.on("reconnect", () => {
-      this.emitStatus("connecting", `${url} [reconnecting]`);
-    });
-    this.client.on("message", (topic, payload) => {
-      const bytes = new Uint8Array(payload);
-      let text: string | undefined;
-      let json: unknown;
-
-      try {
-        text = new TextDecoder().decode(bytes);
-        json = JSON.parse(text);
-      } catch {
-        text = undefined;
-      }
-
-      const message: VizMqttMessage = {
-        topic,
-        payload: bytes,
-        text,
-        json,
-      };
-
-      for (const listener of this.listeners) {
-        listener(message);
-      }
-    });
-    this.client.on("close", () => {
-      if (this.client?.reconnecting) {
-        this.emitStatus("connecting", `${url} [reconnecting]`);
-        return;
-      }
-      this.emitStatus("disconnected", url);
-    });
-    this.client.on("error", (error) => {
-      this.emitStatus("error", `${url} [${error.message}]`);
-    });
+    const candidates = buildCandidateUrls(url);
+    const attemptId = ++this.connectAttempt;
+    this.tryConnect(candidates, 0, subscriptions, attemptId);
   }
 
   disconnect() {
+    this.connectAttempt += 1;
+    if (this.fallbackTimer) {
+      clearTimeout(this.fallbackTimer);
+      this.fallbackTimer = undefined;
+    }
     if (this.client) {
       this.client.end(true);
       this.client = undefined;
@@ -119,5 +91,117 @@ export class VizMqttClient {
     for (const listener of this.statusListeners) {
       listener(status, detail);
     }
+  }
+
+  private tryConnect(
+    candidates: string[],
+    index: number,
+    subscriptions: string[],
+    attemptId: number,
+  ) {
+    if (attemptId !== this.connectAttempt) {
+      return;
+    }
+
+    const url = candidates[index];
+    if (!url) {
+      this.emitStatus("error", "No valid MQTT WebSocket endpoint");
+      return;
+    }
+
+    this.emitStatus("connecting", index === 0 ? url : `${url} [fallback]`);
+
+    const options: IClientOptions = {
+      clientId: createClientId(),
+      protocolVersion: 4,
+      connectTimeout: 4000,
+      reconnectPeriod: index === 0 ? 1000 : 0,
+      reconnectOnConnackError: true,
+      keepalive: 300,
+      clean: true,
+      resubscribe: true,
+    };
+
+    const client = mqtt.connect(url, options);
+    this.client = client;
+    let connected = false;
+
+    if (this.fallbackTimer) {
+      clearTimeout(this.fallbackTimer);
+      this.fallbackTimer = undefined;
+    }
+
+    if (index + 1 < candidates.length) {
+      this.fallbackTimer = setTimeout(() => {
+        if (attemptId !== this.connectAttempt || connected || this.client !== client) {
+          return;
+        }
+        client.end(true);
+        this.tryConnect(candidates, index + 1, subscriptions, attemptId);
+      }, 4500);
+    }
+
+    client.on("connect", () => {
+      if (attemptId !== this.connectAttempt || this.client !== client) {
+        return;
+      }
+      connected = true;
+      if (this.fallbackTimer) {
+        clearTimeout(this.fallbackTimer);
+        this.fallbackTimer = undefined;
+      }
+      this.emitStatus("connected", url);
+      if (subscriptions.length > 0) {
+        client.subscribe(subscriptions, { qos: 0 });
+      }
+    });
+    client.on("reconnect", () => {
+      if (attemptId !== this.connectAttempt || this.client !== client) {
+        return;
+      }
+      this.emitStatus("connecting", `${url} [reconnecting]`);
+    });
+    client.on("message", (topic, payload) => {
+      if (attemptId !== this.connectAttempt || this.client !== client) {
+        return;
+      }
+      const bytes = new Uint8Array(payload);
+      let text: string | undefined;
+      let json: unknown;
+
+      try {
+        text = new TextDecoder().decode(bytes);
+        json = JSON.parse(text);
+      } catch {
+        text = undefined;
+      }
+
+      const message: VizMqttMessage = {
+        topic,
+        payload: bytes,
+        text,
+        json,
+      };
+
+      for (const listener of this.listeners) {
+        listener(message);
+      }
+    });
+    client.on("close", () => {
+      if (attemptId !== this.connectAttempt || this.client !== client) {
+        return;
+      }
+      if (client.reconnecting) {
+        this.emitStatus("connecting", `${url} [reconnecting]`);
+        return;
+      }
+      this.emitStatus("disconnected", url);
+    });
+    client.on("error", (error) => {
+      if (attemptId !== this.connectAttempt || this.client !== client) {
+        return;
+      }
+      this.emitStatus("error", `${url} [${error.message}]`);
+    });
   }
 }
