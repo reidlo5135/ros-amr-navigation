@@ -1,5 +1,6 @@
-import { useDeferredValue, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type {
   BridgeState,
@@ -11,6 +12,22 @@ import type {
 
 type SceneViewportProps = {
   state: BridgeState;
+  layerVisibility: {
+    grid: boolean;
+    map: boolean;
+    globalCostmap: boolean;
+    localCostmap: boolean;
+    robot: boolean;
+    paths: boolean;
+    scan: boolean;
+    tf: boolean;
+    obstacle: boolean;
+  };
+  goalMarker?: {
+    x: number;
+    y: number;
+    yaw: number;
+  } | null;
 };
 
 type ResolvedFrame = {
@@ -62,16 +79,76 @@ function buildPathLine(
   points: Array<{ x: number; y: number }>,
   color: string,
   yOffset: number,
-): THREE.Line | null {
+): THREE.Group | null {
   if (points.length < 2) {
     return null;
   }
 
-  const geometry = new THREE.BufferGeometry().setFromPoints(
-    points.map((point) => new THREE.Vector3(point.x, yOffset, point.y)),
+  const lineGeometry = new THREE.BufferGeometry().setFromPoints(
+    points.map((point) => new THREE.Vector3(point.x, yOffset, -point.y)),
   );
-  const material = new THREE.LineBasicMaterial({ color });
-  return new THREE.Line(geometry, material);
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 1,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const line = new THREE.Line(lineGeometry, lineMaterial);
+  line.renderOrder = 20;
+
+  const pointGeometry = new THREE.BufferGeometry().setFromPoints(
+    points.map((point) => new THREE.Vector3(point.x, yOffset + 0.01, -point.y)),
+  );
+  const pointMaterial = new THREE.PointsMaterial({
+    color,
+    size: 0.16,
+    transparent: true,
+    opacity: 1,
+    sizeAttenuation: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const pointCloud = new THREE.Points(pointGeometry, pointMaterial);
+  pointCloud.renderOrder = 21;
+
+  const group = new THREE.Group();
+  group.add(line, pointCloud);
+  return group;
+}
+
+function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number }): THREE.Group {
+  const group = new THREE.Group();
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.14, 0.2, 36),
+    new THREE.MeshBasicMaterial({
+      color: "#ff6b2b",
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05;
+  ring.renderOrder = 24;
+
+  const heading = new THREE.Mesh(
+    new THREE.ConeGeometry(0.06, 0.18, 3),
+    new THREE.MeshBasicMaterial({
+      color: "#ff6b2b",
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  heading.rotation.z = -Math.PI / 2;
+  heading.position.set(0.24, 0.06, 0);
+  heading.renderOrder = 25;
+
+  group.add(ring, heading);
+  group.position.set(goalMarker.x, 0, -goalMarker.y);
+  group.rotation.y = -goalMarker.yaw;
+  return group;
 }
 
 function createScanSpriteTexture(): THREE.CanvasTexture {
@@ -86,10 +163,10 @@ function createScanSpriteTexture(): THREE.CanvasTexture {
   }
 
   context.clearRect(0, 0, canvas.width, canvas.height);
-  const gradient = context.createRadialGradient(16, 16, 2, 16, 16, 14);
-  gradient.addColorStop(0, "rgba(88,255,120,1)");
-  gradient.addColorStop(0.55, "rgba(88,255,120,0.92)");
-  gradient.addColorStop(1, "rgba(88,255,120,0)");
+  const gradient = context.createRadialGradient(16, 16, 1, 16, 16, 14);
+  gradient.addColorStop(0, "rgba(12,120,30,1)");
+  gradient.addColorStop(0.5, "rgba(22,180,54,0.95)");
+  gradient.addColorStop(1, "rgba(22,180,54,0)");
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(16, 16, 14, 0, Math.PI * 2);
@@ -103,13 +180,24 @@ function createScanSpriteTexture(): THREE.CanvasTexture {
 function buildOccupancyTexture(
   grid: OccupancyGridMessage,
   palette: "map" | "global_costmap" | "local_costmap",
-): THREE.DataTexture {
+): THREE.Texture {
   const { width, height } = grid.info;
-  const rgba = new Uint8Array(width * height * 4);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    const texture = new THREE.Texture();
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  const imageData = context.createImageData(width, height);
+  const rgba = imageData.data;
 
   for (let row = 0; row < height; row += 1) {
     for (let col = 0; col < width; col += 1) {
-      const sourceIndex = row * width + col;
+      const sourceIndex = ((height - 1 - row) * width) + col;
       const targetIndex = ((row * width) + col) * 4;
       const value = grid.data[sourceIndex] ?? -1;
       let red = 0;
@@ -119,29 +207,33 @@ function buildOccupancyTexture(
 
       if (palette === "map") {
         if (value < 0) {
-          red = 206;
-          green = 206;
-          blue = 206;
+          red = 176;
+          green = 176;
+          blue = 176;
+          alpha = 255;
+        } else if (value >= 50) {
+          red = 0;
+          green = 0;
+          blue = 0;
           alpha = 255;
         } else {
-          const shade = Math.max(18, Math.min(255, 255 - Math.round((value / 100) * 245)));
-          red = shade;
-          green = shade;
-          blue = shade;
+          red = 255;
+          green = 255;
+          blue = 255;
           alpha = 255;
         }
       } else {
         if (value > 0) {
           const normalized = Math.max(0, Math.min(1, value / 100));
-          alpha = Math.max(18, Math.round((palette === "global_costmap" ? 88 : 132) * normalized));
+          alpha = Math.max(28, Math.round((palette === "global_costmap" ? 104 : 146) * normalized));
           if (palette === "global_costmap") {
-            red = Math.round(222 + (24 * normalized));
-            green = Math.round(192 + (18 * normalized));
-            blue = Math.round(232 + (12 * normalized));
+            red = Math.round(226 + (18 * normalized));
+            green = Math.round(170 + (10 * normalized));
+            blue = Math.round(216 + (18 * normalized));
           } else {
-            red = Math.round(56 + (36 * normalized));
-            green = Math.round(58 + (22 * normalized));
-            blue = Math.round(202 + (42 * normalized));
+            red = Math.round(164 + (26 * normalized));
+            green = Math.round(44 + (10 * normalized));
+            blue = Math.round(92 + (18 * normalized));
           }
         }
       }
@@ -153,12 +245,15 @@ function buildOccupancyTexture(
     }
   }
 
-  const texture = new THREE.DataTexture(rgba, width, height, THREE.RGBAFormat);
+  context.putImageData(imageData, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
   texture.generateMipmaps = false;
-  texture.flipY = false;
+  texture.flipY = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
@@ -176,7 +271,9 @@ function buildOccupancyMesh(
     transparent: !isMap,
     depthWrite: isMap,
     side: THREE.DoubleSide,
+    toneMapped: false,
   });
+  material.depthTest = false;
   const mesh = new THREE.Mesh(geometry, material);
   const originYaw = grid.info.origin.orientation.yaw;
   const rotatedOffset = rotate2d(widthMeters / 2, heightMeters / 2, originYaw);
@@ -184,15 +281,15 @@ function buildOccupancyMesh(
     new THREE.Vector3(0, 1, 0),
     -originYaw,
   );
-  const planeQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+  const planeQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
   mesh.quaternion.multiplyQuaternions(yawQuaternion, planeQuaternion);
   mesh.position.set(
     grid.info.origin.position.x + rotatedOffset.x,
     yOffset,
-    grid.info.origin.position.y + rotatedOffset.y,
+    -(grid.info.origin.position.y + rotatedOffset.y),
   );
-  mesh.renderOrder = palette === "map" ? 0 : palette === "global_costmap" ? 1 : 2;
+  mesh.renderOrder = palette === "map" ? 1 : palette === "global_costmap" ? 2 : 3;
   return mesh;
 }
 
@@ -304,7 +401,7 @@ function buildScanPoints(
     const localX = Math.cos(angle) * range;
     const localY = Math.sin(angle) * range;
     const rotated = rotate2d(localX, localY, pose.yaw);
-    points.push(pose.x + rotated.x, 0.08, pose.y + rotated.y);
+    points.push(pose.x + rotated.x, 0.08, -(pose.y + rotated.y));
   }
 
   if (points.length === 0) {
@@ -314,16 +411,16 @@ function buildScanPoints(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
   const material = new THREE.PointsMaterial({
-    color: "#5cff75",
-    size: 0.11,
+    color: "#12762d",
+    size: 0.18,
     map: createScanSpriteTexture(),
     transparent: true,
-    opacity: 0.9,
+    opacity: 1,
     sizeAttenuation: true,
     depthTest: false,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    alphaTest: 0.08,
+    blending: THREE.NormalBlending,
+    alphaTest: 0.04,
   });
   const cloud = new THREE.Points(geometry, material);
   cloud.renderOrder = 12;
@@ -359,13 +456,13 @@ function buildTfGroup(
         emissiveIntensity: 0.18,
       }),
     );
-    marker.position.set(child.x, 0.12, child.y);
+    marker.position.set(child.x, 0.12, -child.y);
     group.add(marker);
 
     if (parent) {
       const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(parent.x, 0.06, parent.y),
-        new THREE.Vector3(child.x, 0.06, child.y),
+        new THREE.Vector3(parent.x, 0.06, -parent.y),
+        new THREE.Vector3(child.x, 0.06, -child.y),
       ]);
       const line = new THREE.Line(
         lineGeometry,
@@ -382,23 +479,25 @@ function buildTfGroup(
   return group.children.length > 0 ? group : null;
 }
 
-export function SceneViewport({ state }: SceneViewportProps) {
+export function SceneViewport({ state, layerVisibility, goalMarker }: SceneViewportProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const robotRef = useRef<THREE.Group | null>(null);
-  const globalPathRef = useRef<THREE.Line | null>(null);
-  const localPathRef = useRef<THREE.Line | null>(null);
-  const obstacleRef = useRef<THREE.Mesh | null>(null);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
+  const globalPathRef = useRef<THREE.Group | null>(null);
+  const localPathRef = useRef<THREE.Group | null>(null);
+  const obstacleRef = useRef<THREE.Group | null>(null);
+  const goalMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const scanRef = useRef<THREE.Points | null>(null);
   const tfGroupRef = useRef<THREE.Group | null>(null);
+  const lastCenteredMapSignatureRef = useRef<string>("");
   const renderRef = useRef<(() => void) | null>(null);
-  const deferredState = useDeferredValue(state);
-
   useEffect(() => {
     if (!viewportRef.current) {
       return;
@@ -424,8 +523,24 @@ export function SceneViewport({ state }: SceneViewportProps) {
       200,
     );
     camera.zoom = 0.4;
+    camera.up.set(0, 0, -1);
     camera.position.set(0, 28, 0.001);
     camera.lookAt(0, 0, 0);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.screenSpacePanning = true;
+    controls.enablePan = true;
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+    controls.minDistance = 2;
+    controls.maxDistance = 80;
+    controls.target.set(0, 0, 0);
+    controls.addEventListener("change", () => {
+      renderer.render(scene, camera);
+    });
+    controls.update();
 
     const ambientLight = new THREE.AmbientLight("#ffffff", 1.18);
     const keyLight = new THREE.DirectionalLight("#d8e6ff", 0.84);
@@ -439,75 +554,74 @@ export function SceneViewport({ state }: SceneViewportProps) {
     grid.material.transparent = true;
     grid.material.opacity = 0.45;
     scene.add(grid);
+    gridRef.current = grid;
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(64, 64),
       new THREE.MeshStandardMaterial({
         color: "#343434",
-        transparent: true,
-        opacity: 1,
         metalness: 0.02,
         roughness: 1,
       }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.015;
+    floor.renderOrder = -10;
     scene.add(floor);
 
     const robot = new THREE.Group();
     const footprint = new THREE.Mesh(
       new THREE.CircleGeometry(0.082, 32),
       new THREE.MeshBasicMaterial({
-        color: "#d4d7da",
+        color: "#111111",
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.96,
       }),
     );
     footprint.rotation.x = -Math.PI / 2;
     footprint.position.y = 0.032;
     const centerDot = new THREE.Mesh(
       new THREE.CircleGeometry(0.018, 20),
-      new THREE.MeshBasicMaterial({ color: "#3b3f45" }),
+      new THREE.MeshBasicMaterial({ color: "#000000" }),
     );
     centerDot.rotation.x = -Math.PI / 2;
     centerDot.position.y = 0.036;
     const heading = new THREE.Mesh(
       new THREE.ConeGeometry(0.032, 0.12, 3),
-      new THREE.MeshBasicMaterial({ color: "#ff8b37" }),
+      new THREE.MeshBasicMaterial({ color: "#111111" }),
     );
-    heading.rotation.x = Math.PI / 2;
     heading.rotation.z = -Math.PI / 2;
     heading.position.set(0.098, 0.04, 0);
     robot.add(footprint, centerDot, heading);
     scene.add(robot);
 
     const obstacle = new THREE.Group();
-    const obstacleRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.11, 0.155, 28),
+    const obstacleInflation = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.28),
       new THREE.MeshBasicMaterial({
-        color: "#ff4a43",
+        color: "#8b2346",
         transparent: true,
-        opacity: 0.88,
+        opacity: 0.62,
         side: THREE.DoubleSide,
       }),
     );
-    obstacleRing.rotation.x = -Math.PI / 2;
-    obstacleRing.position.y = 0.03;
+    obstacleInflation.rotation.x = -Math.PI / 2;
+    obstacleInflation.position.y = 0.03;
     const obstacleCore = new THREE.Mesh(
-      new THREE.CircleGeometry(0.05, 24),
+      new THREE.PlaneGeometry(0.1, 0.1),
       new THREE.MeshBasicMaterial({
-        color: "#ff4a43",
-        transparent: true,
-        opacity: 0.2,
+        color: "#0f0f0f",
+        transparent: false,
       }),
     );
     obstacleCore.rotation.x = -Math.PI / 2;
-    obstacleCore.position.y = 0.028;
-    obstacle.add(obstacleRing, obstacleCore);
+    obstacleCore.position.y = 0.034;
+    obstacle.add(obstacleInflation, obstacleCore);
     obstacle.visible = false;
     scene.add(obstacle);
 
     const renderScene = () => {
+      controls.update();
       renderer.render(scene, camera);
     };
     renderRef.current = renderScene;
@@ -523,27 +637,20 @@ export function SceneViewport({ state }: SceneViewportProps) {
       renderScene();
     };
 
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const zoomDelta = event.deltaY > 0 ? -0.14 : 0.14;
-      camera.zoom = Math.max(0.35, Math.min(3.2, camera.zoom + zoomDelta));
-      camera.updateProjectionMatrix();
-      renderScene();
-    };
-
     window.addEventListener("resize", handleResize);
-    renderer.domElement.addEventListener("wheel", handleWheel, { passive: false });
 
     sceneRef.current = scene;
     rendererRef.current = renderer;
     cameraRef.current = camera;
+    controlsRef.current = controls;
     robotRef.current = robot;
     obstacleRef.current = obstacle;
 
     return () => {
       window.removeEventListener("resize", handleResize);
-      renderer.domElement.removeEventListener("wheel", handleWheel);
       renderRef.current = null;
+      controls.dispose();
+      controlsRef.current = null;
       disposeObject(globalPathRef.current);
       disposeObject(localPathRef.current);
       disposeObject(mapMeshRef.current);
@@ -552,6 +659,7 @@ export function SceneViewport({ state }: SceneViewportProps) {
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
       disposeObject(obstacle);
+      disposeObject(goalMarkerRef.current);
       disposeObject(robot);
       renderer.dispose();
       scene.clear();
@@ -567,9 +675,13 @@ export function SceneViewport({ state }: SceneViewportProps) {
       return;
     }
 
-    const robotPose = deferredState.robot_pose;
+    const robotPose = state.robot_pose;
+    if (gridRef.current) {
+      gridRef.current.visible = layerVisibility.grid;
+    }
+    robot.visible = layerVisibility.robot;
     if (robotPose) {
-      robot.position.set(robotPose.position.x, 0, robotPose.position.y);
+      robot.position.set(robotPose.position.x, 0, -robotPose.position.y);
       robot.rotation.y = -robotPose.orientation.yaw;
     }
 
@@ -583,12 +695,17 @@ export function SceneViewport({ state }: SceneViewportProps) {
       scene.remove(localPathRef.current);
       localPathRef.current = null;
     }
+    if (goalMarkerRef.current) {
+      scene.remove(goalMarkerRef.current);
+      disposeObject(goalMarkerRef.current);
+      goalMarkerRef.current = null;
+    }
 
-    const globalPath = deferredState.global_path?.poses.map((pose) => ({
+    const globalPath = state.global_path?.poses.map((pose) => ({
       x: pose.position.x,
       y: pose.position.y,
     })) ?? [];
-    const localPath = deferredState.local_path?.poses.map((pose) => ({
+    const localPath = state.local_path?.poses.map((pose) => ({
       x: pose.position.x,
       y: pose.position.y,
     })) ?? [];
@@ -596,16 +713,23 @@ export function SceneViewport({ state }: SceneViewportProps) {
     globalPathRef.current = buildPathLine(globalPath, "#4ce3d4", 0.06);
     localPathRef.current = buildPathLine(localPath, "#ff9850", 0.08);
     if (globalPathRef.current) {
+      globalPathRef.current.visible = layerVisibility.paths;
       scene.add(globalPathRef.current);
     }
     if (localPathRef.current) {
+      localPathRef.current.visible = layerVisibility.paths;
       scene.add(localPathRef.current);
+    }
+    if (goalMarker) {
+      goalMarkerRef.current = buildGoalMarker(goalMarker);
+      goalMarkerRef.current.visible = true;
+      scene.add(goalMarkerRef.current);
     }
 
     for (const [ref, grid, palette, yOffset] of [
-      [mapMeshRef, deferredState.map, "map", 0.005],
-      [globalCostmapMeshRef, deferredState.global_costmap, "global_costmap", 0.02],
-      [localCostmapMeshRef, deferredState.local_costmap, "local_costmap", 0.03],
+      [mapMeshRef, state.map, "map", 0.005],
+      [globalCostmapMeshRef, state.global_costmap, "global_costmap", 0.02],
+      [localCostmapMeshRef, state.local_costmap, "local_costmap", 0.03],
     ] as const) {
       if (ref.current) {
         scene.remove(ref.current);
@@ -614,6 +738,10 @@ export function SceneViewport({ state }: SceneViewportProps) {
       }
       if (grid) {
         ref.current = buildOccupancyMesh(grid, palette, yOffset);
+        ref.current.visible =
+          palette === "map" ? layerVisibility.map :
+          palette === "global_costmap" ? layerVisibility.globalCostmap :
+          layerVisibility.localCostmap;
         scene.add(ref.current);
       }
     }
@@ -624,12 +752,13 @@ export function SceneViewport({ state }: SceneViewportProps) {
       scanRef.current = null;
     }
     scanRef.current = buildScanPoints(
-      deferredState.scan,
-      deferredState.tf,
-      deferredState.tf_static,
-      deferredState.robot_pose,
+      state.scan,
+      state.tf,
+      state.tf_static,
+      state.robot_pose,
     );
     if (scanRef.current) {
+      scanRef.current.visible = layerVisibility.scan;
       scene.add(scanRef.current);
     }
 
@@ -639,44 +768,64 @@ export function SceneViewport({ state }: SceneViewportProps) {
       tfGroupRef.current = null;
     }
     tfGroupRef.current = buildTfGroup(
-      deferredState.tf,
-      deferredState.tf_static,
-      deferredState.robot_pose,
+      state.tf,
+      state.tf_static,
+      state.robot_pose,
     );
     if (tfGroupRef.current) {
+      tfGroupRef.current.visible = layerVisibility.tf;
       scene.add(tfGroupRef.current);
     }
 
-    const obstacleReport = deferredState.obstacle_report;
-    if (obstacleReport?.active) {
+    const obstacleReport = state.obstacle_report;
+    if (obstacleReport?.active && layerVisibility.obstacle) {
       obstacle.visible = true;
       obstacle.position.set(
         obstacleReport.obstacle_point.x,
         0.12,
-        obstacleReport.obstacle_point.y,
+        -obstacleReport.obstacle_point.y,
       );
       obstacle.scale.setScalar(1 + (obstacleReport.severity * 0.12));
     } else {
       obstacle.visible = false;
     }
 
-    if (deferredState.map && cameraRef.current) {
-      const widthMeters = deferredState.map.info.width * deferredState.map.info.resolution;
-      const heightMeters = deferredState.map.info.height * deferredState.map.info.resolution;
+    if (state.map && cameraRef.current) {
+      const controls = controlsRef.current;
+      const mapSignature = [
+        state.map.info.width,
+        state.map.info.height,
+        state.map.info.resolution,
+        state.map.info.origin.position.x,
+        state.map.info.origin.position.y,
+        state.map.info.origin.orientation.yaw,
+      ].join(":");
+      if (lastCenteredMapSignatureRef.current === mapSignature) {
+        renderRef.current?.();
+        return;
+      }
+      const widthMeters = state.map.info.width * state.map.info.resolution;
+      const heightMeters = state.map.info.height * state.map.info.resolution;
       const center = rotate2d(
         widthMeters / 2,
         heightMeters / 2,
-        deferredState.map.info.origin.orientation.yaw,
+        state.map.info.origin.orientation.yaw,
       );
-      const centerX = deferredState.map.info.origin.position.x + center.x;
-      const centerY = deferredState.map.info.origin.position.y + center.y;
+      const centerX = state.map.info.origin.position.x + center.x;
+      const centerY = state.map.info.origin.position.y + center.y;
       cameraRef.current.position.x = centerX;
-      cameraRef.current.position.z = centerY + 0.001;
-      cameraRef.current.lookAt(centerX, 0, centerY);
+      cameraRef.current.position.z = -(centerY + 0.001);
+      if (controls) {
+        controls.target.set(centerX, 0, -centerY);
+        controls.update();
+      } else {
+        cameraRef.current.lookAt(centerX, 0, -centerY);
+      }
+      lastCenteredMapSignatureRef.current = mapSignature;
     }
 
     renderRef.current?.();
-  }, [deferredState]);
+  }, [state, layerVisibility, goalMarker]);
 
   return <div className="scene-viewport" ref={viewportRef} />;
 }

@@ -28,21 +28,21 @@ function createInitialState() {
 }
 
 const telemetryTopicMap: Record<string, keyof BridgeState> = {
-  "amr/telemetry/robot_pose": "robot_pose",
-  "amr/telemetry/global_path": "global_path",
-  "amr/telemetry/local_path": "local_path",
-  "amr/telemetry/map": "map",
-  "amr/telemetry/global_costmap": "global_costmap",
-  "amr/telemetry/local_costmap": "local_costmap",
-  "amr/telemetry/motion_status": "motion_status",
-  "amr/telemetry/obstacle_report": "obstacle_report",
-  "amr/telemetry/scan": "scan",
-  "amr/telemetry/tf": "tf",
-  "amr/telemetry/tf_static": "tf_static",
+  "amr/robot/turtlebot3/viz/robot_pose": "robot_pose",
+  "amr/robot/turtlebot3/viz/global_path": "global_path",
+  "amr/robot/turtlebot3/viz/local_path": "local_path",
+  "amr/robot/turtlebot3/viz/map": "map",
+  "amr/robot/turtlebot3/viz/global_costmap": "global_costmap",
+  "amr/robot/turtlebot3/viz/local_costmap": "local_costmap",
+  "amr/robot/turtlebot3/viz/motion_status": "motion_status",
+  "amr/robot/turtlebot3/viz/obstacle_report": "obstacle_report",
+  "amr/robot/turtlebot3/viz/scan": "scan",
+  "amr/robot/turtlebot3/viz/tf": "tf",
+  "amr/robot/turtlebot3/viz/tf_static": "tf_static",
 };
 
 const topicSubscriptions = [
-  "amr/telemetry/#",
+  "amr/robot/turtlebot3/viz/#",
   "amr/response/#",
   "amr/feedback/#",
   "amr/status/#",
@@ -52,9 +52,29 @@ function isObjectPayload(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+type LayerVisibility = {
+  grid: boolean;
+  map: boolean;
+  globalCostmap: boolean;
+  localCostmap: boolean;
+  robot: boolean;
+  paths: boolean;
+  scan: boolean;
+  tf: boolean;
+  obstacle: boolean;
+};
+
+type GoalMarker = {
+  x: number;
+  y: number;
+  yaw: number;
+};
+
 export default function App() {
   const clientRef = useRef(new VizMqttClient());
   const binaryTopicsRef = useRef(new Set<string>());
+  const pendingTelemetryRef = useRef<Partial<BridgeState>>({});
+  const flushFrameRef = useRef<number | null>(null);
   const [mqttUrl, setMqttUrl] = useState(defaultMqttUrl);
   const [bridgeState, setBridgeState] = useState<BridgeState>(createInitialState);
   const [connectionLabel, setConnectionLabel] = useState("Disconnected");
@@ -65,9 +85,34 @@ export default function App() {
   const [goalX, setGoalX] = useState("2.5");
   const [goalY, setGoalY] = useState("0.0");
   const [goalYaw, setGoalYaw] = useState("0.0");
+  const [goalMarker, setGoalMarker] = useState<GoalMarker | null>(null);
+  const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
+    grid: true,
+    map: true,
+    globalCostmap: true,
+    localCostmap: true,
+    robot: true,
+    paths: true,
+    scan: true,
+    tf: true,
+    obstacle: true,
+  });
 
   useEffect(() => {
     const client = clientRef.current;
+    const flushTelemetry = () => {
+      flushFrameRef.current = null;
+      const pending = pendingTelemetryRef.current;
+      pendingTelemetryRef.current = {};
+      if (Object.keys(pending).length === 0) {
+        return;
+      }
+      setBridgeState((current) => ({
+        ...current,
+        ...pending,
+      }));
+    };
+
     const unsubscribeStatus = client.onStatusChange((status, detail) => {
       startTransition(() => {
         if (status === "connecting") {
@@ -93,52 +138,54 @@ export default function App() {
     });
 
     const unsubscribeMessage = client.onMessage((message: VizMqttMessage) => {
-      startTransition(() => {
-        const mappedChannel = telemetryTopicMap[message.topic];
-        if (mappedChannel && isObjectPayload(message.json)) {
-          setBridgeState((current) => ({
+      const mappedChannel = telemetryTopicMap[message.topic];
+      if (mappedChannel && isObjectPayload(message.json)) {
+        pendingTelemetryRef.current[mappedChannel] = message.json as BridgeState[keyof BridgeState];
+        if (flushFrameRef.current === null) {
+          flushFrameRef.current = window.requestAnimationFrame(flushTelemetry);
+        }
+        return;
+      }
+
+      if (mappedChannel && !message.text) {
+        if (!binaryTopicsRef.current.has(message.topic)) {
+          binaryTopicsRef.current.add(message.topic);
+          setEvents((current) => [
+            `Binary telemetry on ${message.topic}; waiting for modeled viz topics`,
             ...current,
-            [mappedChannel]: message.json as BridgeState[keyof BridgeState],
-          }));
-          return;
+          ].slice(0, 10));
         }
+        return;
+      }
 
-        if (mappedChannel && !message.text) {
-          if (!binaryTopicsRef.current.has(message.topic)) {
-            binaryTopicsRef.current.add(message.topic);
-            setEvents((current) => [
-              `Binary telemetry on ${message.topic}; waiting for modeled viz topics`,
-              ...current,
-            ].slice(0, 10));
-          }
-          return;
-        }
+      if (message.topic.startsWith("amr/response/") && isObjectPayload(message.json)) {
+        const success = message.json.success === true ? "OK" : "FAIL";
+        const detail = typeof message.json.message === "string" ? message.json.message : "ack";
+        setEvents((current) => [`${message.topic}: ${success} ${detail}`, ...current].slice(0, 10));
+        return;
+      }
 
-        if (message.topic.startsWith("amr/response/") && isObjectPayload(message.json)) {
-          const success = message.json.success === true ? "OK" : "FAIL";
-          const detail = typeof message.json.message === "string" ? message.json.message : "ack";
-          setEvents((current) => [`${message.topic}: ${success} ${detail}`, ...current].slice(0, 10));
-          return;
+      if ((message.topic.startsWith("amr/feedback/") || message.topic.startsWith("amr/status/")) && !message.text) {
+        if (!binaryTopicsRef.current.has(message.topic)) {
+          binaryTopicsRef.current.add(message.topic);
+          setEvents((current) => [
+            `Binary action stream on ${message.topic}`,
+            ...current,
+          ].slice(0, 10));
         }
+        return;
+      }
 
-        if ((message.topic.startsWith("amr/feedback/") || message.topic.startsWith("amr/status/")) && !message.text) {
-          if (!binaryTopicsRef.current.has(message.topic)) {
-            binaryTopicsRef.current.add(message.topic);
-            setEvents((current) => [
-              `Binary action stream on ${message.topic}`,
-              ...current,
-            ].slice(0, 10));
-          }
-          return;
-        }
-
-        if (message.text) {
-          setEvents((current) => [`${message.topic}: ${message.text}`, ...current].slice(0, 10));
-        }
-      });
+      if (message.text) {
+        setEvents((current) => [`${message.topic}: ${message.text}`, ...current].slice(0, 10));
+      }
     });
 
     return () => {
+      if (flushFrameRef.current !== null) {
+        window.cancelAnimationFrame(flushFrameRef.current);
+        flushFrameRef.current = null;
+      }
       unsubscribeStatus();
       unsubscribeMessage();
     };
@@ -158,6 +205,13 @@ export default function App() {
     if (!sent) {
       setEvents((current) => ["MQTT client is not connected", ...current].slice(0, 10));
     }
+  };
+
+  const toggleLayer = (layer: keyof LayerVisibility) => {
+    setLayerVisibility((current) => ({
+      ...current,
+      [layer]: !current[layer],
+    }));
   };
 
   return (
@@ -215,7 +269,11 @@ export default function App() {
             </div>
             <div className="button-stack">
               <button
-                onClick={() =>
+                onClick={() => {
+                  const x = Number(goalX);
+                  const y = Number(goalY);
+                  const yaw = Number(goalYaw);
+                  setGoalMarker({ x, y, yaw });
                   publishJson("amr/command/navigate_to_pose", {
                     request_id: createCommandId(),
                     goal_pose: {
@@ -224,27 +282,28 @@ export default function App() {
                         frame_id: "map",
                       },
                       pose: {
-                        position: { x: Number(goalX), y: Number(goalY), z: 0.0 },
+                        position: { x, y, z: 0.0 },
                         orientation: {
                           x: 0.0,
                           y: 0.0,
-                          z: Math.sin(Number(goalYaw) * 0.5),
-                          w: Math.cos(Number(goalYaw) * 0.5),
+                          z: Math.sin(yaw * 0.5),
+                          w: Math.cos(yaw * 0.5),
                         },
                       },
                     },
-                  })
-                }
+                  });
+                }}
               >
                 Send Goal
               </button>
               <button
                 className="danger"
-                onClick={() =>
+                onClick={() => {
+                  setGoalMarker(null);
                   publishJson("amr/command/cancel_navigate_to_pose", {
                     request_id: createCommandId(),
-                  })
-                }
+                  });
+                }}
               >
                 Cancel Goal
               </button>
@@ -265,6 +324,35 @@ export default function App() {
               >
                 Set Initial Pose
               </button>
+            </div>
+          </section>
+
+          <section className="panel-card">
+            <div className="panel-section-title">Layers</div>
+            <div className="layer-list">
+              {[
+                ["grid", "Grid"],
+                ["map", "Raw SLAM Map"],
+                ["globalCostmap", "Global Costmap"],
+                ["localCostmap", "Local Costmap"],
+                ["robot", "Robot"],
+                ["paths", "Plans"],
+                ["scan", "LaserScan"],
+                ["tf", "TF"],
+                ["obstacle", "Obstacle"],
+              ].map(([key, label]) => {
+                const layerKey = key as keyof LayerVisibility;
+                return (
+                  <label className="layer-item" key={key}>
+                    <input
+                      type="checkbox"
+                      checked={layerVisibility[layerKey]}
+                      onChange={() => toggleLayer(layerKey)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
             </div>
           </section>
         </aside>
@@ -288,7 +376,11 @@ export default function App() {
               TF {(bridgeState.tf?.transforms.length ?? 0) + (bridgeState.tf_static?.transforms.length ?? 0)} frames
             </span>
           </div>
-          <SceneViewport state={bridgeState} />
+          <SceneViewport
+            state={bridgeState}
+            layerVisibility={layerVisibility}
+            goalMarker={goalMarker}
+          />
         </section>
 
         <aside className="sidebar sidebar-right">

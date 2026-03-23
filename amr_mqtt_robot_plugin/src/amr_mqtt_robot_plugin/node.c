@@ -660,6 +660,210 @@ static bool amr_mqtt_robot_plugin_append_header(
     amr_mqtt_robot_plugin_builder_append(builder, "}");
 }
 
+static double amr_mqtt_robot_plugin_quaternion_to_yaw(
+  double x,
+  double y,
+  double z,
+  double w)
+{
+  const double siny_cosp = 2.0 * ((w * z) + (x * y));
+  const double cosy_cosp = 1.0 - 2.0 * ((y * y) + (z * z));
+  return atan2(siny_cosp, cosy_cosp);
+}
+
+static bool amr_mqtt_robot_plugin_append_pose_fields(
+  amr_mqtt_robot_plugin_string_builder_t * builder,
+  const geometry_msgs__msg__Pose * pose)
+{
+  const double yaw = amr_mqtt_robot_plugin_quaternion_to_yaw(
+    pose->orientation.x,
+    pose->orientation.y,
+    pose->orientation.z,
+    pose->orientation.w);
+  return amr_mqtt_robot_plugin_builder_appendf(
+    builder,
+    "\"position\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
+    "\"orientation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f,\"yaw\":%.6f}",
+    pose->position.x,
+    pose->position.y,
+    pose->position.z,
+    pose->orientation.x,
+    pose->orientation.y,
+    pose->orientation.z,
+    pose->orientation.w,
+    yaw);
+}
+
+static bool amr_mqtt_robot_plugin_append_pose_stamped(
+  amr_mqtt_robot_plugin_string_builder_t * builder,
+  const geometry_msgs__msg__PoseStamped * pose)
+{
+  if (!amr_mqtt_robot_plugin_builder_append(builder, "{") ||
+    !amr_mqtt_robot_plugin_append_header(builder, &pose->header) ||
+    !amr_mqtt_robot_plugin_builder_append(builder, ",") ||
+    !amr_mqtt_robot_plugin_append_pose_fields(builder, &pose->pose) ||
+    !amr_mqtt_robot_plugin_builder_append(builder, "}"))
+  {
+    return false;
+  }
+  return true;
+}
+
+static char * amr_mqtt_robot_plugin_serialize_pose_stamped(const void * message)
+{
+  const geometry_msgs__msg__PoseStamped * pose = (const geometry_msgs__msg__PoseStamped *)message;
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 256U) ||
+    !amr_mqtt_robot_plugin_append_pose_stamped(&builder, pose))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
+static char * amr_mqtt_robot_plugin_serialize_path(const void * message)
+{
+  const nav_msgs__msg__Path * path = (const nav_msgs__msg__Path *)message;
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 1024U) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "{") ||
+    !amr_mqtt_robot_plugin_append_header(&builder, &path->header) ||
+    !amr_mqtt_robot_plugin_builder_appendf(&builder, ",\"pose_count\":%zu,\"poses\":[", path->poses.size))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  for (size_t index = 0; index < path->poses.size; ++index) {
+    if (index > 0U && !amr_mqtt_robot_plugin_builder_append(&builder, ",")) {
+      amr_mqtt_robot_plugin_builder_fini(&builder);
+      return NULL;
+    }
+    if (!amr_mqtt_robot_plugin_append_pose_stamped(&builder, &path->poses.data[index])) {
+      amr_mqtt_robot_plugin_builder_fini(&builder);
+      return NULL;
+    }
+  }
+
+  if (!amr_mqtt_robot_plugin_builder_append(&builder, "]}")) {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
+static char * amr_mqtt_robot_plugin_serialize_occupancy_grid(const void * message)
+{
+  const nav_msgs__msg__OccupancyGrid * grid = (const nav_msgs__msg__OccupancyGrid *)message;
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+  const double origin_yaw = amr_mqtt_robot_plugin_quaternion_to_yaw(
+    grid->info.origin.orientation.x,
+    grid->info.origin.orientation.y,
+    grid->info.origin.orientation.z,
+    grid->info.origin.orientation.w);
+
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 2048U) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "{") ||
+    !amr_mqtt_robot_plugin_append_header(&builder, &grid->header) ||
+    !amr_mqtt_robot_plugin_builder_appendf(
+      &builder,
+      ",\"info\":{\"width\":%u,\"height\":%u,\"resolution\":%.6f,"
+      "\"origin\":{\"position\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
+      "\"orientation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f,\"yaw\":%.6f}}},\"data\":[",
+      grid->info.width,
+      grid->info.height,
+      grid->info.resolution,
+      grid->info.origin.position.x,
+      grid->info.origin.position.y,
+      grid->info.origin.position.z,
+      grid->info.origin.orientation.x,
+      grid->info.origin.orientation.y,
+      grid->info.origin.orientation.z,
+      grid->info.origin.orientation.w,
+      origin_yaw))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  for (size_t index = 0; index < grid->data.size; ++index) {
+    if (index > 0U && !amr_mqtt_robot_plugin_builder_append(&builder, ",")) {
+      amr_mqtt_robot_plugin_builder_fini(&builder);
+      return NULL;
+    }
+    if (!amr_mqtt_robot_plugin_builder_appendf(&builder, "%d", grid->data.data[index])) {
+      amr_mqtt_robot_plugin_builder_fini(&builder);
+      return NULL;
+    }
+  }
+
+  if (!amr_mqtt_robot_plugin_builder_append(&builder, "]}")) {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
+static char * amr_mqtt_robot_plugin_serialize_motion_status(const void * message)
+{
+  const amr_msgs__msg__MotionStatus * status = (const amr_msgs__msg__MotionStatus *)message;
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 512U) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "{") ||
+    !amr_mqtt_robot_plugin_append_header(&builder, &status->header) ||
+    !amr_mqtt_robot_plugin_builder_appendf(
+      &builder,
+      ",\"command_id\":%u,\"active\":%s,\"goal_reached\":%s,\"obstacle_detected\":%s,"
+      "\"remaining_distance\":%.6f,\"heading_error\":%.6f,\"current_pose\":",
+      status->command_id,
+      status->active ? "true" : "false",
+      status->goal_reached ? "true" : "false",
+      status->obstacle_detected ? "true" : "false",
+      status->remaining_distance,
+      status->heading_error) ||
+    !amr_mqtt_robot_plugin_append_pose_stamped(&builder, &status->current_pose) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "}"))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
+static char * amr_mqtt_robot_plugin_serialize_obstacle_report(const void * message)
+{
+  const amr_msgs__msg__ObstacleReport * report = (const amr_msgs__msg__ObstacleReport *)message;
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 512U) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "{") ||
+    !amr_mqtt_robot_plugin_append_header(&builder, &report->header) ||
+    !amr_mqtt_robot_plugin_builder_appendf(
+      &builder,
+      ",\"active\":%s,\"is_dynamic\":%s,\"blocks_path\":%s,\"severity\":%u,"
+      "\"distance\":%.6f,\"bearing\":%.6f,"
+      "\"obstacle_point\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},\"source\":",
+      report->active ? "true" : "false",
+      report->is_dynamic ? "true" : "false",
+      report->blocks_path ? "true" : "false",
+      report->severity,
+      report->distance,
+      report->bearing,
+      report->obstacle_point.x,
+      report->obstacle_point.y,
+      report->obstacle_point.z) ||
+    !amr_mqtt_robot_plugin_builder_append_json_string(&builder, report->source.data) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "}"))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
 static char * amr_mqtt_robot_plugin_serialize_scan(const void * message)
 {
   const sensor_msgs__msg__LaserScan * scan = (const sensor_msgs__msg__LaserScan *)message;
@@ -814,6 +1018,11 @@ static bool amr_mqtt_robot_plugin_append_transform_stamped(
   amr_mqtt_robot_plugin_string_builder_t * builder,
   const geometry_msgs__msg__TransformStamped * transform)
 {
+  const double yaw = amr_mqtt_robot_plugin_quaternion_to_yaw(
+    transform->transform.rotation.x,
+    transform->transform.rotation.y,
+    transform->transform.rotation.z,
+    transform->transform.rotation.w);
   return amr_mqtt_robot_plugin_builder_append(builder, "{") &&
     amr_mqtt_robot_plugin_append_header(builder, &transform->header) &&
     amr_mqtt_robot_plugin_builder_append(builder, ",\"child_frame_id\":") &&
@@ -821,14 +1030,15 @@ static bool amr_mqtt_robot_plugin_append_transform_stamped(
     amr_mqtt_robot_plugin_builder_appendf(
       builder,
       ",\"translation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
-      "\"rotation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f}}",
+      "\"rotation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f,\"yaw\":%.6f}}",
       transform->transform.translation.x,
       transform->transform.translation.y,
       transform->transform.translation.z,
       transform->transform.rotation.x,
       transform->transform.rotation.y,
       transform->transform.rotation.z,
-      transform->transform.rotation.w);
+      transform->transform.rotation.w,
+      yaw);
 }
 
 static char * amr_mqtt_robot_plugin_serialize_tf_message(const void * message)
@@ -860,6 +1070,33 @@ static char * amr_mqtt_robot_plugin_serialize_tf_message(const void * message)
   }
 
   return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
+static bool amr_mqtt_robot_plugin_build_viz_topic(
+  const char * raw_topic,
+  char * viz_topic,
+  size_t viz_topic_capacity)
+{
+  const char * telemetry_marker = NULL;
+  int written = 0;
+
+  if (raw_topic == NULL || viz_topic == NULL || viz_topic_capacity == 0U) {
+    return false;
+  }
+
+  telemetry_marker = strstr(raw_topic, "/telemetry/");
+  if (telemetry_marker == NULL) {
+    return false;
+  }
+
+  written = snprintf(
+    viz_topic,
+    viz_topic_capacity,
+    "%.*s/viz/%s",
+    (int)(telemetry_marker - raw_topic),
+    raw_topic,
+    telemetry_marker + strlen("/telemetry/"));
+  return written >= 0 && (size_t)written < viz_topic_capacity;
 }
 
 static char * amr_mqtt_robot_plugin_serialize_joint_states(const void * message)
@@ -963,6 +1200,7 @@ static void amr_mqtt_robot_plugin_telemetry_callback(const void * message, void 
   const amr_mqtt_robot_plugin_telemetry_endpoint_t * endpoint =
     (const amr_mqtt_robot_plugin_telemetry_endpoint_t *)context;
   char * payload = NULL;
+  char viz_topic[AMR_MQTT_ROBOT_PLUGIN_MAX_STRING_LENGTH] = {0};
   rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
 
   if (message == NULL || endpoint == NULL) {
@@ -984,6 +1222,19 @@ static void amr_mqtt_robot_plugin_telemetry_callback(const void * message, void 
       endpoint->mqtt_qos,
       endpoint->retained);
     (void)rmw_serialized_message_fini(&serialized_message);
+    if (endpoint->serializer != NULL &&
+      amr_mqtt_robot_plugin_build_viz_topic(endpoint->mqtt_topic, viz_topic, sizeof(viz_topic)))
+    {
+      payload = endpoint->serializer(message);
+      if (payload != NULL) {
+        (void)amr_mqtt_robot_plugin_publish_payload(
+          viz_topic,
+          payload,
+          endpoint->mqtt_qos,
+          endpoint->retained);
+        free(payload);
+      }
+    }
     return;
   }
 
@@ -1115,7 +1366,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     true,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_occupancy_grid);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[1],
     "robot_pose",
@@ -1128,7 +1379,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_pose_stamped);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[2],
     "global_path",
@@ -1141,7 +1392,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_path);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[3],
     "local_path",
@@ -1154,7 +1405,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_path);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[4],
     "global_costmap",
@@ -1167,7 +1418,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_occupancy_grid);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[5],
     "local_costmap",
@@ -1180,7 +1431,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_occupancy_grid);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[6],
     "motion_status",
@@ -1193,7 +1444,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_motion_status);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[7],
     "obstacle_report",
@@ -1206,7 +1457,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_obstacle_report);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[8],
     "scan",
@@ -1219,7 +1470,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_scan);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[9],
     "odom",
@@ -1258,7 +1509,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL);
+    amr_mqtt_robot_plugin_serialize_tf_message);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[12],
     "tf_static",
@@ -1269,9 +1520,9 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, tf2_msgs, msg, TFMessage)(),
     &k_transient_local_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.command_qos,
-    false,
     true,
-    NULL);
+    true,
+    amr_mqtt_robot_plugin_serialize_tf_message);
   amr_mqtt_robot_plugin_configure_endpoint(
     &g_amr_mqtt_robot_plugin_ros_state.telemetry_endpoints[13],
     "joint_states",
@@ -1295,7 +1546,7 @@ static int amr_mqtt_robot_plugin_init_ros_interfaces(void)
     ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, std_msgs, msg, String)(),
     &k_transient_local_qos,
     g_amr_mqtt_robot_plugin_config.mqtt.telemetry_qos,
-    false,
+    true,
     true,
     NULL);
 

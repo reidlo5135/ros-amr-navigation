@@ -906,7 +906,7 @@ static void amr_mqtt_bridge_publish_viz_telemetry(
     (int)strlen(payload),
     payload,
     0,
-    0,
+    retained ? 1 : 0,
     NULL);
   if (mqtt_rc != MQTTCLIENT_SUCCESS) {
     RCUTILS_LOG_ERROR_NAMED(
@@ -2628,7 +2628,7 @@ static void amr_mqtt_bridge_handle_robot_map_telemetry(
     k_viz_telemetry_map_topic,
     amr_mqtt_bridge_serialize_occupancy_grid,
     &map,
-    false);
+    true);
   nav_msgs__msg__OccupancyGrid__fini(&map);
 }
 
@@ -2898,7 +2898,7 @@ static void amr_mqtt_bridge_handle_robot_tf_telemetry(
     is_static ? k_viz_telemetry_tf_static_topic : k_viz_telemetry_tf_topic,
     amr_mqtt_bridge_serialize_tf_message,
     &tf_message,
-    false);
+    is_static);
   tf2_msgs__msg__TFMessage__fini(&tf_message);
 }
 
@@ -3024,7 +3024,7 @@ static void amr_mqtt_bridge_poll_mqtt(void)
     MQTTClient_freeMessage(&message);
     MQTTClient_free(topic_name);
     ++processed_count;
-  } while (processed_count < 8);
+  } while (processed_count < 64);
 }
 
 static int amr_mqtt_bridge_init_command_interfaces(void)
@@ -4015,7 +4015,7 @@ void amr_mqtt_bridge_spin(void)
   while (rcl_context_is_valid(&g_amr_mqtt_bridge_runtime.support.context)) {
     rcl_ret_t rc = rclc_executor_spin_some(
       &g_amr_mqtt_bridge_runtime.executor,
-      20 * 1000 * 1000);
+      2 * 1000 * 1000);
     if (rc != RCL_RET_OK && rc != RCL_RET_TIMEOUT) {
       fprintf(stderr, "Executor error: %s\n", rcl_get_error_string().str);
       rcl_reset_error();

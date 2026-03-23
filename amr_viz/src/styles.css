@@ -194,6 +194,27 @@ button.danger {
   grid-template-columns: 1fr;
 }
 
+.layer-list {
+  display: grid;
+  gap: 8px;
+}
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.layer-item input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .panel-section-title {
   font-size: 12px;
   font-weight: 700;

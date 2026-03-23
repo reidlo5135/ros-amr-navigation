@@ -29,10 +29,12 @@ export class VizMqttClient {
     this.emitStatus("connecting", url);
 
     const options: IClientOptions = {
-      connectTimeout: 3000,
-      reconnectPeriod: 0,
-      keepalive: 20,
+      connectTimeout: 10000,
+      reconnectPeriod: 3000,
+      reconnectOnConnackError: true,
+      keepalive: 60,
       clean: true,
+      resubscribe: true,
     };
 
     this.client = mqtt.connect(url, options);
@@ -41,6 +43,9 @@ export class VizMqttClient {
       if (subscriptions.length > 0) {
         this.client?.subscribe(subscriptions, { qos: 0 });
       }
+    });
+    this.client.on("reconnect", () => {
+      this.emitStatus("connecting", `${url} [reconnecting]`);
     });
     this.client.on("message", (topic, payload) => {
       const bytes = new Uint8Array(payload);
@@ -66,6 +71,10 @@ export class VizMqttClient {
       }
     });
     this.client.on("close", () => {
+      if (this.client?.reconnecting) {
+        this.emitStatus("connecting", `${url} [reconnecting]`);
+        return;
+      }
       this.emitStatus("disconnected", url);
     });
     this.client.on("error", (error) => {
