@@ -1,6 +1,6 @@
 {
   "name": "amr-viz",
-  "version": "0.6.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Web visualization app for ros-amr-navigation",
   "type": "module",

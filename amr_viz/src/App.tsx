@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from "react";
 
 import { SceneViewport } from "./components/SceneViewport";
-import type { BridgeState } from "./lib/protocol";
+import type { BridgeState, TfMessage, TransformMessage } from "./lib/protocol";
 import { VizMqttClient, type VizMqttMessage } from "./lib/mqtt";
 
 function createCommandId() {
@@ -51,6 +51,23 @@ const topicSubscriptions = [
 
 function isObjectPayload(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isTfMessage(value: unknown): value is TfMessage {
+  return isObjectPayload(value) && Array.isArray(value.transforms);
+}
+
+function mergeTfMessages(current: TfMessage | undefined, incoming: TfMessage): TfMessage {
+  const byChildFrame = new Map<string, TransformMessage>();
+  for (const transform of current?.transforms ?? []) {
+    byChildFrame.set(transform.child_frame_id, transform);
+  }
+  for (const transform of incoming.transforms) {
+    byChildFrame.set(transform.child_frame_id, transform);
+  }
+  return {
+    transforms: Array.from(byChildFrame.values()),
+  };
 }
 
 type LayerVisibility = {
@@ -145,7 +162,13 @@ export default function App() {
     const unsubscribeMessage = client.onMessage((message: VizMqttMessage) => {
       const mappedChannel = telemetryTopicMap[message.topic];
       if (mappedChannel && isObjectPayload(message.json)) {
-        pendingTelemetryRef.current[mappedChannel] = message.json as BridgeState[keyof BridgeState];
+        if ((mappedChannel === "tf" || mappedChannel === "tf_static") && isTfMessage(message.json)) {
+          const currentValue = (pendingTelemetryRef.current[mappedChannel] as TfMessage | undefined) ??
+            (bridgeState[mappedChannel] as TfMessage | undefined);
+          pendingTelemetryRef.current[mappedChannel] = mergeTfMessages(currentValue, message.json);
+        } else {
+          pendingTelemetryRef.current[mappedChannel] = message.json as BridgeState[keyof BridgeState];
+        }
         if (flushFrameRef.current === null) {
           flushFrameRef.current = window.requestAnimationFrame(flushTelemetry);
         }
@@ -194,7 +217,7 @@ export default function App() {
       unsubscribeStatus();
       unsubscribeMessage();
     };
-  }, [mqttUrl]);
+  }, [bridgeState, mqttUrl]);
 
   const connect = () => {
     clientRef.current.connect(mqttUrl, topicSubscriptions);
@@ -220,6 +243,7 @@ export default function App() {
   };
 
   const sendGoal = (x: number, y: number, yaw: number) => {
+    setInteractionMode("idle");
     setGoalMarker({ x, y, yaw, kind: "goal" });
     setGoalX(x.toFixed(2));
     setGoalY(y.toFixed(2));
@@ -245,6 +269,7 @@ export default function App() {
   };
 
   const setInitialPose = (x: number, y: number, yaw: number) => {
+    setInteractionMode("idle");
     setGoalMarker({ x, y, yaw, kind: "initial_pose" });
     setGoalX(x.toFixed(2));
     setGoalY(y.toFixed(2));
@@ -261,13 +286,42 @@ export default function App() {
     });
   };
 
-  const handleScenePosePlacement = (mode: Exclude<InteractionMode, "idle">, x: number, y: number, yaw: number) => {
+  const handleScenePoseSelection = (x: number, y: number, yaw: number) => {
+    setGoalX(x.toFixed(2));
+    setGoalY(y.toFixed(2));
+    setGoalYaw(yaw.toFixed(2));
+  };
+
+  const handleScenePosePlacement = (
+    mode: Exclude<InteractionMode, "idle">,
+    x: number,
+    y: number,
+    yaw: number,
+  ) => {
+    setGoalX(x.toFixed(2));
+    setGoalY(y.toFixed(2));
+    setGoalYaw(yaw.toFixed(2));
     if (mode === "goal") {
       sendGoal(x, y, yaw);
-    } else {
-      setInitialPose(x, y, yaw);
+      return;
     }
-    setInteractionMode("idle");
+    setInitialPose(x, y, yaw);
+  };
+
+  const toggleGoalMode = () => {
+    if (interactionMode === "goal") {
+      sendGoal(Number(goalX), Number(goalY), Number(goalYaw));
+      return;
+    }
+    setInteractionMode("goal");
+  };
+
+  const toggleInitialPoseMode = () => {
+    if (interactionMode === "initial_pose") {
+      setInitialPose(Number(goalX), Number(goalY), Number(goalYaw));
+      return;
+    }
+    setInteractionMode("initial_pose");
   };
 
   return (
@@ -299,7 +353,7 @@ export default function App() {
               <span>Broker WS</span>
               <input value={mqttUrl} onChange={(event) => setMqttUrl(event.target.value)} />
             </label>
-            <div className="button-stack compact-stack">
+            <div className="button-row">
               <button onClick={connect}>Connect</button>
               <button className="secondary" onClick={disconnect}>
                 Disconnect
@@ -308,8 +362,8 @@ export default function App() {
           </section>
 
           <section className="panel-card">
-            <div className="panel-section-title">Quick Goal</div>
-            <div className="field-grid">
+            <div className="panel-section-title">Goal Control</div>
+            <div className="field-grid field-grid-triple">
               <label className="field-label">
                 <span>X</span>
                 <input value={goalX} onChange={(event) => setGoalX(event.target.value)} />
@@ -323,54 +377,38 @@ export default function App() {
                 <input value={goalYaw} onChange={(event) => setGoalYaw(event.target.value)} />
               </label>
             </div>
-            <div className="button-stack">
+            <div className="button-row">
               <button
-                onClick={() => sendGoal(Number(goalX), Number(goalY), Number(goalYaw))}
+                className={interactionMode === "goal" ? "active-mode" : undefined}
+                onClick={toggleGoalMode}
               >
-                Send Goal
-              </button>
-              <button
-                className={interactionMode === "goal" ? "secondary active-mode" : "secondary"}
-                onClick={() =>
-                  setInteractionMode((current) => (current === "goal" ? "idle" : "goal"))
-                }
-              >
-                Goal On Map
+                Send
               </button>
               <button
                 className="danger"
                 onClick={() => {
-                  setGoalMarker(null);
                   setInteractionMode("idle");
+                  setGoalMarker(null);
                   publishJson("amr/command/cancel_navigate_to_pose", {
                     request_id: createCommandId(),
                   });
                 }}
               >
-                Cancel Goal
+                Cancel
               </button>
+            </div>
+            <div className="button-row single-row">
               <button
-                className="secondary"
-                onClick={() => setInitialPose(Number(goalX), Number(goalY), Number(goalYaw))}
+                className={`secondary${interactionMode === "initial_pose" ? " active-mode" : ""}`}
+                onClick={toggleInitialPoseMode}
               >
                 Set Initial Pose
               </button>
-              <button
-                className={interactionMode === "initial_pose" ? "secondary active-mode" : "secondary"}
-                onClick={() =>
-                  setInteractionMode((current) => (current === "initial_pose" ? "idle" : "initial_pose"))
-                }
-              >
-                Initial Pose On Map
-              </button>
             </div>
-            {interactionMode !== "idle" ? (
-              <div className="mode-hint">
-                {interactionMode === "goal"
-                  ? "Drag on map to set goal heading"
-                  : "Drag on map to set initial pose heading"}
-              </div>
-            ) : null}
+            <div className="mode-hint">
+              Select `Send` or `Set Initial Pose`, then left-drag on map to apply. Map interaction also updates
+              X / Y / Yaw.
+            </div>
           </section>
 
           <section className="panel-card">
@@ -426,6 +464,7 @@ export default function App() {
             state={bridgeState}
             layerVisibility={layerVisibility}
             goalMarker={goalMarker}
+            onPoseSelection={handleScenePoseSelection}
             interactionMode={interactionMode}
             onPosePlacement={handleScenePosePlacement}
           />

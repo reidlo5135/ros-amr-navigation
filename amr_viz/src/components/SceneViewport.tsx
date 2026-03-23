@@ -29,7 +29,8 @@ type SceneViewportProps = {
     yaw: number;
     kind: "goal" | "initial_pose";
   } | null;
-  interactionMode: "idle" | "goal" | "initial_pose";
+  interactionMode?: "idle" | "goal" | "initial_pose";
+  onPoseSelection?: (x: number, y: number, yaw: number) => void;
   onPosePlacement?: (mode: "goal" | "initial_pose", x: number, y: number, yaw: number) => void;
 };
 
@@ -54,10 +55,15 @@ type UrdfVisual = {
     | { type: "box"; size: THREE.Vector3 }
     | { type: "cylinder"; radius: number; length: number }
     | { type: "sphere"; radius: number }
-    | { type: "mesh"; scale: THREE.Vector3 };
+    | { type: "mesh"; scale: THREE.Vector3; filename: string };
   color: THREE.Color;
   opacity: number;
 };
+
+type UrdfProxyGeometry =
+  | { type: "box"; size: THREE.Vector3 }
+  | { type: "cylinder"; radius: number; length: number }
+  | { type: "sphere"; radius: number };
 
 function rotate2d(x: number, y: number, yaw: number) {
   const cosYaw = Math.cos(yaw);
@@ -116,6 +122,52 @@ function parseUrdfVisuals(robotDescription?: string): UrdfVisual[] {
       continue;
     }
 
+    const collisionNode = linkNode.querySelector(":scope > collision");
+    let collisionProxy:
+      | {
+          xyz: THREE.Vector3;
+          rpy: THREE.Vector3;
+          geometry: UrdfProxyGeometry;
+        }
+      | null = null;
+
+    if (collisionNode) {
+      const collisionOriginNode = collisionNode.querySelector(":scope > origin");
+      const collisionGeometryNode = collisionNode.querySelector(":scope > geometry");
+      if (collisionGeometryNode) {
+        const collisionBoxNode = collisionGeometryNode.querySelector("box");
+        const collisionCylinderNode = collisionGeometryNode.querySelector("cylinder");
+        const collisionSphereNode = collisionGeometryNode.querySelector("sphere");
+        let geometry: UrdfProxyGeometry | null = null;
+
+        if (collisionBoxNode) {
+          geometry = {
+            type: "box",
+            size: parseTriplet(collisionBoxNode.getAttribute("size"), 0.06),
+          };
+        } else if (collisionCylinderNode) {
+          geometry = {
+            type: "cylinder",
+            radius: Number(collisionCylinderNode.getAttribute("radius") ?? 0.03),
+            length: Number(collisionCylinderNode.getAttribute("length") ?? 0.06),
+          };
+        } else if (collisionSphereNode) {
+          geometry = {
+            type: "sphere",
+            radius: Number(collisionSphereNode.getAttribute("radius") ?? 0.04),
+          };
+        }
+
+        if (geometry) {
+          collisionProxy = {
+            xyz: parseTriplet(collisionOriginNode?.getAttribute("xyz"), 0),
+            rpy: parseTriplet(collisionOriginNode?.getAttribute("rpy"), 0),
+            geometry,
+          };
+        }
+      }
+    }
+
     for (const visualNode of Array.from(linkNode.querySelectorAll(":scope > visual"))) {
       const originNode = visualNode.querySelector(":scope > origin");
       const geometryNode = visualNode.querySelector(":scope > geometry");
@@ -161,8 +213,17 @@ function parseUrdfVisuals(robotDescription?: string): UrdfVisual[] {
           radius: Number(sphereNode.getAttribute("radius") ?? 0.04),
         };
       } else if (meshNode) {
-        const scale = parseTriplet(meshNode.getAttribute("scale"), 1);
-        geometry = { type: "mesh", scale };
+        if (collisionProxy) {
+          xyz.copy(collisionProxy.xyz);
+          geometry = collisionProxy.geometry;
+        } else {
+          const scale = parseTriplet(meshNode.getAttribute("scale"), 1);
+          geometry = {
+            type: "mesh",
+            scale,
+            filename: meshNode.getAttribute("filename") ?? "",
+          };
+        }
       }
 
       if (geometry) {
@@ -172,6 +233,26 @@ function parseUrdfVisuals(robotDescription?: string): UrdfVisual[] {
   }
 
   return visuals;
+}
+
+function addRobotOutline(object: THREE.Object3D) {
+  const mesh = object as THREE.Mesh;
+  if (!("geometry" in mesh) || !mesh.geometry) {
+    return;
+  }
+
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry),
+    new THREE.LineBasicMaterial({
+      color: "#111111",
+      transparent: true,
+      opacity: 0.35,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  outline.renderOrder = 41;
+  object.add(outline);
 }
 
 function disposeObject(object: THREE.Object3D | null) {
@@ -618,6 +699,10 @@ function buildTfGroup(
 
 function buildRobotVisualMesh(visual: UrdfVisual): THREE.Object3D {
   let object: THREE.Object3D;
+  const descriptor =
+    visual.geometry.type === "mesh"
+      ? `${visual.linkName} ${visual.geometry.filename}`.toLowerCase()
+      : visual.linkName.toLowerCase();
   const material = new THREE.MeshStandardMaterial({
     color: visual.color,
     transparent: visual.opacity < 0.999,
@@ -625,6 +710,8 @@ function buildRobotVisualMesh(visual: UrdfVisual): THREE.Object3D {
     metalness: 0.05,
     roughness: 0.88,
   });
+  material.depthTest = false;
+  material.depthWrite = false;
 
   switch (visual.geometry.type) {
     case "box":
@@ -655,17 +742,54 @@ function buildRobotVisualMesh(visual: UrdfVisual): THREE.Object3D {
       );
       break;
     case "mesh":
-      object = new THREE.Mesh(
-        new THREE.BoxGeometry(
-          Math.max(0.12 * visual.geometry.scale.x, 0.02),
-          Math.max(0.06 * visual.geometry.scale.z, 0.02),
-          Math.max(0.08 * visual.geometry.scale.y, 0.02),
-        ),
-        material,
-      );
+      {
+        if (descriptor.includes("wheel")) {
+          object = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.033, 0.033, 0.018, 24),
+            material,
+          );
+        } else if (descriptor.includes("caster") || descriptor.includes("ball")) {
+          object = new THREE.Mesh(
+            new THREE.SphereGeometry(0.018, 20, 20),
+            material,
+          );
+        } else if (descriptor.includes("laser") || descriptor.includes("lidar") || descriptor.includes("scan")) {
+          object = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.03, 0.03, 0.012, 28),
+            material,
+          );
+        } else if (descriptor.includes("base_link")) {
+          object = new THREE.Mesh(
+            new THREE.BoxGeometry(0.165, 0.022, 0.145),
+            material,
+          );
+        } else if (descriptor.includes("plate") || descriptor.includes("burger")) {
+          object = new THREE.Mesh(
+            new THREE.BoxGeometry(0.14, 0.012, 0.118),
+            material,
+          );
+        } else if (descriptor.includes("base")) {
+          object = new THREE.Mesh(
+            new THREE.BoxGeometry(0.15, 0.016, 0.13),
+            material,
+          );
+        } else {
+          object = new THREE.Mesh(
+            new THREE.BoxGeometry(
+              Math.max(0.14 * visual.geometry.scale.x, 0.05),
+              Math.max(0.05 * visual.geometry.scale.z, 0.03),
+              Math.max(0.14 * visual.geometry.scale.y, 0.05),
+            ),
+            material,
+          );
+        }
+      }
       break;
   }
 
+  const mesh = object as THREE.Mesh;
+  mesh.renderOrder = 40;
+  addRobotOutline(mesh);
   return object;
 }
 
@@ -683,22 +807,57 @@ function buildRobotModelGroup(
   if (visuals.length === 0) {
     const fallback = new THREE.Group();
     const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.082, 0.082, 0.04, 32),
+      new THREE.CylinderGeometry(0.082, 0.082, 0.028, 36),
       new THREE.MeshStandardMaterial({
-        color: "#121212",
-        metalness: 0.08,
-        roughness: 0.92,
+        color: "#101010",
+        metalness: 0.06,
+        roughness: 0.9,
+        depthTest: false,
+        depthWrite: false,
       }),
     );
-    body.rotation.z = Math.PI / 2;
-    body.position.y = 0.045;
-    const nose = new THREE.Mesh(
-      new THREE.ConeGeometry(0.04, 0.12, 3),
-      new THREE.MeshBasicMaterial({ color: "#111111" }),
+    body.position.y = 0.055;
+    body.renderOrder = 40;
+
+    const bodyOutline = new THREE.Mesh(
+      new THREE.RingGeometry(0.078, 0.092, 40),
+      new THREE.MeshBasicMaterial({
+        color: "#f2f5f8",
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
     );
-    nose.rotation.z = -Math.PI / 2;
-    nose.position.set(0.1, 0.045, 0);
-    fallback.add(body, nose);
+    bodyOutline.rotation.x = -Math.PI / 2;
+    bodyOutline.position.y = 0.07;
+    bodyOutline.renderOrder = 41;
+
+    const lidar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.028, 0.028, 0.03, 24),
+      new THREE.MeshStandardMaterial({
+        color: "#151515",
+        metalness: 0.05,
+        roughness: 0.88,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    lidar.position.set(0.0, 0.085, 0.0);
+    lidar.renderOrder = 42;
+
+    const heading = new THREE.Mesh(
+      new THREE.ConeGeometry(0.045, 0.13, 3),
+      new THREE.MeshBasicMaterial({
+        color: "#111111",
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    heading.rotation.z = -Math.PI / 2;
+    heading.position.set(0.115, 0.07, 0);
+    heading.renderOrder = 42;
+
+    fallback.add(body, bodyOutline, lidar, heading);
     group.add(fallback);
     if (robotPose) {
       group.position.set(robotPose.position.x, 0, -robotPose.position.y);
@@ -708,33 +867,18 @@ function buildRobotModelGroup(
   }
 
   for (const visual of visuals) {
-    const frame = resolveFrame(visual.linkName, lookup, robotPose, cache) ??
-      (robotPose
-        ? {
-            x: robotPose.position.x,
-            y: robotPose.position.y,
-            z: robotPose.position.z,
-            yaw: robotPose.orientation.yaw,
-          }
-        : null);
+    const frame = resolveFrame(visual.linkName, lookup, robotPose, cache);
     if (!frame) {
       continue;
     }
-
     const rotatedOrigin = rotate2d(visual.xyz.x, visual.xyz.y, frame.yaw);
     const mesh = buildRobotVisualMesh(visual);
     mesh.position.set(
       frame.x + rotatedOrigin.x,
-      frame.z + visual.xyz.z,
+      frame.z + visual.xyz.z + 0.01,
       -(frame.y + rotatedOrigin.y),
     );
-    mesh.rotation.set(
-      visual.rpy.x,
-      -(frame.yaw + visual.rpy.z),
-      visual.rpy.y,
-      "XYZ",
-    );
-    mesh.renderOrder = 18;
+    mesh.rotation.set(visual.rpy.x, -(frame.yaw + visual.rpy.z), visual.rpy.y, "XYZ");
     group.add(mesh);
   }
 
@@ -745,7 +889,8 @@ export function SceneViewport({
   state,
   layerVisibility,
   goalMarker,
-  interactionMode,
+  interactionMode = "idle",
+  onPoseSelection,
   onPosePlacement,
 }: SceneViewportProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -767,18 +912,26 @@ export function SceneViewport({
   const tfGroupRef = useRef<THREE.Group | null>(null);
   const lastCenteredMapSignatureRef = useRef<string>("");
   const renderRef = useRef<(() => void) | null>(null);
-  const interactionModeRef = useRef<"idle" | "goal" | "initial_pose">("idle");
+  const interactionModeRef = useRef<SceneViewportProps["interactionMode"]>("idle");
+  const onPoseSelectionRef = useRef<SceneViewportProps["onPoseSelection"]>(undefined);
   const onPosePlacementRef = useRef<SceneViewportProps["onPosePlacement"]>(undefined);
   const interactionStateRef = useRef<{
-    active: boolean;
     mode: "goal" | "initial_pose";
     start: THREE.Vector3;
   } | null>(null);
 
   useEffect(() => {
     interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
+
+  useEffect(() => {
+    onPoseSelectionRef.current = onPoseSelection;
+  }, [onPoseSelection]);
+
+  useEffect(() => {
     onPosePlacementRef.current = onPosePlacement;
-  }, [interactionMode, onPosePlacement]);
+  }, [onPosePlacement]);
+
   useEffect(() => {
     if (!viewportRef.current) {
       return;
@@ -941,7 +1094,7 @@ export function SceneViewport({
         x: start.x,
         y: -start.z,
         yaw,
-        kind: mode === "goal" ? "goal" : "initial_pose",
+        kind: mode,
       });
       previewMarkerRef.current.renderOrder = 29;
       scene.add(previewMarkerRef.current);
@@ -950,18 +1103,15 @@ export function SceneViewport({
 
     const handlePointerDown = (event: PointerEvent) => {
       const currentMode = interactionModeRef.current;
-      if (currentMode === "idle") {
-        return;
-      }
-      if (event.button !== 0 && event.button !== 2) {
+      if (currentMode === "idle" || event.button !== 0) {
         return;
       }
       const point = readGroundPoint(event);
       if (!point) {
         return;
       }
+      controls.enabled = false;
       interactionStateRef.current = {
-        active: true,
         mode: currentMode,
         start: point,
       };
@@ -970,7 +1120,7 @@ export function SceneViewport({
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (!interactionStateRef.current?.active) {
+      if (!interactionStateRef.current) {
         return;
       }
       const point = readGroundPoint(event);
@@ -982,17 +1132,19 @@ export function SceneViewport({
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      if (!interactionStateRef.current?.active) {
+      if (!interactionStateRef.current) {
         return;
       }
       const point = readGroundPoint(event) ?? interactionStateRef.current.start;
       const start = interactionStateRef.current.start;
       const mode = interactionStateRef.current.mode;
       interactionStateRef.current = null;
+      controls.enabled = true;
       clearPreview();
       const dx = point.x - start.x;
       const dy = -(point.z - start.z);
       const yaw = Math.atan2(dy, dx || 0.0001);
+      onPoseSelectionRef.current?.(start.x, -start.z, yaw);
       onPosePlacementRef.current?.(mode, start.x, -start.z, yaw);
       event.preventDefault();
     };
@@ -1012,6 +1164,7 @@ export function SceneViewport({
 
     return () => {
       clearPreview();
+      controls.enabled = true;
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
