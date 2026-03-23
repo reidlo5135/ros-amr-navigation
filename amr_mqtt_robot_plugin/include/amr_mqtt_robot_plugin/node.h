@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <MQTTClient.h>
 
@@ -155,6 +156,14 @@ typedef struct amr_mqtt_robot_plugin_telemetry_endpoint_s
   bool retained;
   bool raw_passthrough;
   amr_mqtt_robot_plugin_serializer_fn_t serializer;
+  bool raw_publish_once;
+  bool viz_publish_once;
+  uint64_t raw_min_period_ms;
+  uint64_t viz_min_period_ms;
+  uint64_t last_raw_publish_ms;
+  uint64_t last_viz_publish_ms;
+  bool raw_published_once;
+  bool viz_published_once;
 } amr_mqtt_robot_plugin_telemetry_endpoint_t;
 
 typedef struct amr_mqtt_robot_plugin_ros_state_s
