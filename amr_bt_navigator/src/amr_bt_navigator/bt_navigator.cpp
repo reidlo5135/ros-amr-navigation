@@ -256,6 +256,12 @@ void Btnavigator::handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose
 void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
   const auto goal = goal_handle->get_goal();
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Starting BT navigation execution: frame='%s' x=%.3f y=%.3f",
+    goal->goal_pose.header.frame_id.c_str(),
+    goal->goal_pose.pose.position.x,
+    goal->goal_pose.pose.position.y);
   BT::BehaviorTreeFactory factory;
   auto blackboard = BT::Blackboard::create();
   blackboard->set("navigator", this);
@@ -312,10 +318,25 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       nav_msgs::msg::Path plan;
       std::string error_message;
+      RCLCPP_INFO(
+        navigator->get_logger(),
+        "BT: requesting global plan from (%.3f, %.3f) to (%.3f, %.3f)",
+        current_pose.pose.position.x,
+        current_pose.pose.position.y,
+        goal_pose.pose.position.x,
+        goal_pose.pose.position.y);
       if (!navigator->request_global_plan(current_pose, goal_pose, plan, error_message)) {
+        RCLCPP_WARN(
+          navigator->get_logger(),
+          "BT: global plan request failed: %s",
+          error_message.c_str());
         blackboard->set("status_message", error_message);
         return BT::NodeStatus::FAILURE;
       }
+      RCLCPP_INFO(
+        navigator->get_logger(),
+        "BT: global plan ready with %zu poses",
+        plan.poses.size());
       blackboard->set("planned_path", plan);
       return BT::NodeStatus::SUCCESS;
     });
@@ -330,6 +351,11 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       goal_request.goal_pose = goal_pose;
       auto command = navigator->build_motion_command(goal_request, plan);
       navigator->publish_motion_command(command);
+      RCLCPP_INFO(
+        navigator->get_logger(),
+        "BT: motion command %u dispatched with %zu poses",
+        command.command_id,
+        plan.poses.size());
       blackboard->set("active_command", command);
       blackboard->set("recovery_attempts", 0);
       blackboard->set("status_message", std::string("Motion command dispatched."));
@@ -379,6 +405,11 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       std::string error_message;
       nav_msgs::msg::Path recovery_plan;
 
+      RCLCPP_WARN(
+        navigator->get_logger(),
+        "BT: obstacle blocking detected; starting recovery attempt %d",
+        attempts + 1);
+
       if (navigator->wait_for_local_escape_service(error_message) &&
         navigator->request_local_escape_plan(
           current_pose, active_command.plan, recovery_plan, error_message))
@@ -387,6 +418,10 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
         goal_request.goal_pose = goal_pose;
         auto command = navigator->build_motion_command(goal_request, recovery_plan);
         navigator->publish_motion_command(command);
+        RCLCPP_WARN(
+          navigator->get_logger(),
+          "BT: local escape recovery dispatched with %zu poses",
+          recovery_plan.poses.size());
         blackboard->set("active_command", command);
         blackboard->set("planned_path", recovery_plan);
         blackboard->set("recovery_attempts", 0);
@@ -403,6 +438,10 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
         goal_request.goal_pose = goal_pose;
         auto command = navigator->build_motion_command(goal_request, recovery_plan);
         navigator->publish_motion_command(command);
+        RCLCPP_WARN(
+          navigator->get_logger(),
+          "BT: global detour recovery dispatched with %zu poses",
+          recovery_plan.poses.size());
         blackboard->set("active_command", command);
         blackboard->set("planned_path", recovery_plan);
         blackboard->set("recovery_attempts", 0);
@@ -413,9 +452,16 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       }
 
       navigator->publish_stop_command();
+      RCLCPP_WARN(
+        navigator->get_logger(),
+        "BT: recovery failed; stop command issued");
       attempts += 1;
       blackboard->set("recovery_attempts", attempts);
       if (attempts >= navigator->recovery_max_retries_) {
+        RCLCPP_ERROR(
+          navigator->get_logger(),
+          "BT: recovery retries exceeded (%d); aborting goal",
+          attempts);
         blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
         blackboard->set(
           "status_message",
@@ -426,6 +472,10 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       blackboard->set(
         "status_message",
         std::string("Recovery failed. Stop issued before retry."));
+      RCLCPP_WARN(
+        navigator->get_logger(),
+        "BT: waiting %d ms before retry",
+        navigator->recovery_retry_delay_ms_);
       std::this_thread::sleep_for(std::chrono::milliseconds(navigator->recovery_retry_delay_ms_));
       return BT::NodeStatus::SUCCESS;
     });
@@ -493,6 +543,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     const auto outcome = static_cast<BtOutcome>(blackboard->get<int>("bt_outcome"));
     const auto message = blackboard->get<std::string>("status_message");
     if (outcome == BtOutcome::kSucceeded) {
+      RCLCPP_INFO(this->get_logger(), "BT: goal succeeded: %s", message.c_str());
       auto result = std::make_shared<NavigateToPose::Result>();
       result->success = true;
       result->message = message;
@@ -500,6 +551,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       return;
     }
     if (outcome == BtOutcome::kCanceled) {
+      RCLCPP_INFO(this->get_logger(), "BT: goal canceled: %s", message.c_str());
       auto result = std::make_shared<NavigateToPose::Result>();
       result->success = false;
       result->message = message;
@@ -507,6 +559,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       return;
     }
     if (outcome == BtOutcome::kStopped) {
+      RCLCPP_ERROR(this->get_logger(), "BT: goal aborted: %s", message.c_str());
       auto result = std::make_shared<NavigateToPose::Result>();
       result->success = false;
       result->message = message;

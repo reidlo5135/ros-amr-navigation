@@ -2277,6 +2277,35 @@ static char * amr_mqtt_robot_plugin_serialize_simple_response(
   return amr_mqtt_robot_plugin_builder_take(&builder);
 }
 
+static char * amr_mqtt_robot_plugin_serialize_navigate_response(
+  const char * request_id,
+  bool success,
+  int status_code,
+  bool accepted,
+  bool completed,
+  const char * message)
+{
+  amr_mqtt_robot_plugin_string_builder_t builder = {0};
+  if (!amr_mqtt_robot_plugin_builder_init(&builder, 320U) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "{\"request_id\":") ||
+    !amr_mqtt_robot_plugin_builder_append_json_string(&builder, request_id) ||
+    !amr_mqtt_robot_plugin_builder_appendf(
+      &builder,
+      ",\"success\":%s,\"accepted\":%s,\"completed\":%s,\"status_code\":%d,\"message\":",
+      success ? "true" : "false",
+      accepted ? "true" : "false",
+      completed ? "true" : "false",
+      status_code) ||
+    !amr_mqtt_robot_plugin_builder_append_json_string(&builder, message) ||
+    !amr_mqtt_robot_plugin_builder_append(&builder, "}"))
+  {
+    amr_mqtt_robot_plugin_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_robot_plugin_builder_take(&builder);
+}
+
 static void amr_mqtt_robot_plugin_publish_simple_response(
   const char * mqtt_topic,
   const char * request_id,
@@ -2289,6 +2318,32 @@ static void amr_mqtt_robot_plugin_publish_simple_response(
   }
   (void)amr_mqtt_robot_plugin_publish_payload(
     mqtt_topic,
+    payload,
+    g_amr_mqtt_robot_plugin_config.mqtt.service_qos,
+    false);
+  free(payload);
+}
+
+static void amr_mqtt_robot_plugin_publish_navigate_response(
+  const char * request_id,
+  bool success,
+  int status_code,
+  bool accepted,
+  bool completed,
+  const char * message)
+{
+  char * payload = amr_mqtt_robot_plugin_serialize_navigate_response(
+    request_id,
+    success,
+    status_code,
+    accepted,
+    completed,
+    message);
+  if (payload == NULL) {
+    return;
+  }
+  (void)amr_mqtt_robot_plugin_publish_payload(
+    g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
     payload,
     g_amr_mqtt_robot_plugin_config.mqtt.service_qos,
     false);
@@ -2833,7 +2888,9 @@ static void amr_mqtt_robot_plugin_poll_navigate_action(void)
         g_amr_mqtt_robot_plugin_config.mqtt.response_navigate_to_pose,
         g_amr_mqtt_robot_plugin_ros_state.navigate_state.request_id,
         goal_response.accepted,
-        goal_response.accepted ? "goal accepted" : "goal rejected");
+        goal_response.accepted ?
+        "goal accepted; planning and execution pending" :
+        "goal rejected");
 
       g_amr_mqtt_robot_plugin_ros_state.navigate_state.goal_response_pending = false;
       if (!goal_response.accepted) {
@@ -2925,6 +2982,13 @@ static void amr_mqtt_robot_plugin_poll_navigate_action(void)
       if (rc == RCL_RET_OK &&
         response_header.sequence_number == g_amr_mqtt_robot_plugin_ros_state.navigate_state.result_request_sequence_number)
       {
+        amr_mqtt_robot_plugin_publish_navigate_response(
+          g_amr_mqtt_robot_plugin_ros_state.navigate_state.request_id,
+          result_response.result.success,
+          (int)result_response.status,
+          true,
+          true,
+          result_response.result.message.data);
         memset(&g_amr_mqtt_robot_plugin_ros_state.navigate_state, 0, sizeof(g_amr_mqtt_robot_plugin_ros_state.navigate_state));
       }
       amr_msgs__action__NavigateToPose_GetResult_Response__fini(&result_response);
