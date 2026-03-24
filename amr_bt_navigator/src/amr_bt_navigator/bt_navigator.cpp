@@ -499,6 +499,18 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     });
 
   factory.registerSimpleAction(
+    "PublishStopCommand",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      navigator->publish_stop_command();
+      blackboard->set("status_message", std::string("Stop command dispatched."));
+      RCLCPP_WARN(
+        navigator->get_logger(),
+        "BT: stop command dispatched");
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
     "MarkCanceled",
     [blackboard](BT::TreeNode &) {
       blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kCanceled));
