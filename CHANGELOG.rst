@@ -4,6 +4,13 @@ Changelog
 2026-03-24
 ----------
 
+- Started the ``0.11.0`` cleanup-and-consolidation branch:
+
+  - removed unused packages such as ``amr_rviz_plugins`` and ``amr_obstacle_detection``
+  - removed the legacy server-side MQTT bridge package and consolidated the robot-side bridge into ``amr_mqtt_bridge``
+  - normalized include hygiene so implementation files now include only their paired headers
+  - refreshed all package ``README.md`` files to match the active MQTT-first ``0.11.0`` stack
+
 - Started the ``0.8.0`` planning-safety refinement branch:
 
   - introduced ``footprint.polygon`` and ``footprint.padding`` parameters in ``amr_costmap_server``
