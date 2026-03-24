@@ -284,8 +284,9 @@
       command: "/amr/motion/command"
       status: "/amr/motion/status"
     services:
-      local_escape: "/amr/local_planner/plan_local_escape"
       segment: "/amr/global_planner/plan_segment"
+      plan_recovery: "/amr/recovery_server/plan_recovery"
+      clear_costmap: "/amr/costmap_server/clear_costmap"
     actions:
       navigate_to_pose: "/amr/navigator/navigate_to_pose"
     defaults:
@@ -296,6 +297,18 @@
     recovery:
       max_retries: 4
       retry_delay_ms: 1000
+
+/amr/recovery_server:
+  ros__parameters:
+    services:
+      plan_recovery: "/amr/recovery_server/plan_recovery"
+    defaults:
+      node_id: "recovery"
+    recovery:
+      wait_duration_sec: 1.0
+      backup_distance: 0.20
+      backup_speed: 0.06
+      spin_angle_rad: 1.5707963267948966
 
 /amr/rviz_bridge:
   ros__parameters:

@@ -31,6 +31,8 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   min_heading_motion_scale_(0.15),
   max_linear_accel_(0.08),
   max_angular_accel_(0.8),
+  progress_required_movement_radius_(0.05),
+  progress_time_allowance_sec_(2.0),
   safety_gate_enabled_(true),
   safety_gate_allow_rotate_in_place_(true),
   safety_gate_stop_distance_(3.0),
@@ -38,10 +40,13 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   safety_gate_rotate_heading_threshold_(0.20),
   safety_gate_min_points_(3),
   velocity_control_mode_(VelocityControlMode::PID),
+  recovery_start_yaw_(0.0),
   has_command_(false),
   has_local_plan_(false),
   has_current_pose_(false),
-  has_latest_scan_(false)
+  has_latest_scan_(false),
+  has_progress_reference_(false),
+  has_recovery_reference_(false)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
@@ -66,6 +71,10 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->declare_parameter(
     "control.min_heading_motion_scale", this->min_heading_motion_scale_);
+  this->declare_parameter(
+    "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
+  this->declare_parameter(
+    "progress_checker.time_allowance_sec", this->progress_time_allowance_sec_);
 
   this->declare_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->declare_parameter(
@@ -119,6 +128,10 @@ MotionController::CallbackReturn MotionController::on_configure(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->get_parameter(
     "control.min_heading_motion_scale", this->min_heading_motion_scale_);
+  this->get_parameter(
+    "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
+  this->get_parameter(
+    "progress_checker.time_allowance_sec", this->progress_time_allowance_sec_);
 
   this->get_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->get_parameter(
@@ -271,6 +284,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->has_current_pose_ = false;
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
+  this->reset_progress_checker_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -296,6 +310,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->has_current_pose_ = false;
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
+  this->reset_progress_checker_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -305,10 +320,15 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
   this->has_command_ = true;
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
+  this->reset_progress_checker_state();
+  this->has_recovery_reference_ = false;
+  this->recovery_start_time_ = this->now();
+  this->recovery_start_yaw_ = 0.0;
   RCLCPP_INFO(
     this->get_logger(),
-    "Received motion command %u with goal x=%.3f y=%.3f",
+    "Received motion command %u mode=%u with goal x=%.3f y=%.3f",
     message->command_id,
+    message->mode,
     message->goal_pose.pose.position.x,
     message->goal_pose.pose.position.y);
 }
@@ -354,99 +374,187 @@ void MotionController::publish_control()
   status.header.frame_id =
     this->current_pose_.header.frame_id.empty() ? "map" : this->current_pose_.header.frame_id;
   status.current_pose = this->current_pose_;
+  status.command_id = this->has_command_ ? this->latest_command_.command_id : 0U;
+  status.mode = this->has_command_ ? this->latest_command_.mode :
+    amr_msgs::msg::MotionCommand::MODE_NAVIGATE;
+  status.active = false;
+  status.command_completed = false;
+  status.goal_reached = false;
+  status.obstacle_detected = false;
+  status.blocked = false;
+  status.stalled = false;
+  status.remaining_distance = 0.0;
+  status.heading_error = 0.0;
 
-  if (this->has_command_ && this->has_local_plan_ && this->has_current_pose_) {
-    const auto tracking_target = this->select_tracking_target();
-    const auto local_plan_remaining_distance =
-      this->estimate_remaining_distance(this->latest_local_plan_);
-    const auto goal_distance = this->pose_distance(
-      this->current_pose_, this->latest_command_.goal_pose);
-    debug_remaining_distance = std::max(local_plan_remaining_distance, goal_distance);
-    const auto current_yaw = this->quaternion_yaw(this->current_pose_.pose.orientation);
-    const auto goal_yaw = this->quaternion_yaw(this->latest_command_.goal_pose.pose.orientation);
-    const auto target_dx =
-      tracking_target.pose.position.x - this->current_pose_.pose.position.x;
-    const auto target_dy =
-      tracking_target.pose.position.y - this->current_pose_.pose.position.y;
-    double target_heading = goal_yaw;
-    if (goal_distance > this->rotate_in_place_goal_distance_) {
-      if ((target_dx * target_dx) + (target_dy * target_dy) > 1e-6) {
-        target_heading = std::atan2(target_dy, target_dx);
-      }
-    }
-    const auto heading_error = this->normalize_angle(target_heading - current_yaw);
-    const auto abs_heading_error = std::abs(heading_error);
+  const bool has_navigation_inputs =
+    this->has_command_ && this->has_current_pose_ &&
+    (this->latest_command_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE || this->has_local_plan_);
 
-    status.command_id = this->latest_command_.command_id;
+  if (has_navigation_inputs) {
     status.active = true;
-    status.obstacle_detected = this->is_safety_gate_triggered();
-    status.goal_reached =
-      goal_distance <= this->distance_tolerance_ &&
-      abs_heading_error <= this->goal_heading_tolerance_;
-    status.current_pose = this->current_pose_;
-    status.remaining_distance = goal_distance;
-    status.heading_error = heading_error;
+    const auto current_yaw = this->quaternion_yaw(this->current_pose_.pose.orientation);
 
-    if (status.goal_reached) {
-      this->has_command_ = false;
-      this->has_local_plan_ = false;
-      this->current_twist_ = geometry_msgs::msg::Twist();
-      this->reset_velocity_controller_state();
-      RCLCPP_INFO(
-        this->get_logger(),
-        "Goal reached for command %u",
-        status.command_id);
-    } else if (status.obstacle_detected) {
-      desired_twist = geometry_msgs::msg::Twist();
-      if (
-        this->safety_gate_allow_rotate_in_place_ &&
-        abs_heading_error > this->safety_gate_rotate_heading_threshold_)
+    if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE) {
+      const auto tracking_target = this->select_tracking_target();
+      const auto local_plan_remaining_distance =
+        this->estimate_remaining_distance(this->latest_local_plan_);
+      const auto goal_distance = this->pose_distance(
+        this->current_pose_, this->latest_command_.goal_pose);
+      debug_remaining_distance = std::max(local_plan_remaining_distance, goal_distance);
+      const auto goal_yaw = this->quaternion_yaw(this->latest_command_.goal_pose.pose.orientation);
+      const auto target_dx =
+        tracking_target.pose.position.x - this->current_pose_.pose.position.x;
+      const auto target_dy =
+        tracking_target.pose.position.y - this->current_pose_.pose.position.y;
+      double target_heading = goal_yaw;
+      if (goal_distance > this->rotate_in_place_goal_distance_) {
+        if ((target_dx * target_dx) + (target_dy * target_dy) > 1e-6) {
+          target_heading = std::atan2(target_dy, target_dx);
+        }
+      }
+      const auto heading_error = this->normalize_angle(target_heading - current_yaw);
+      const auto abs_heading_error = std::abs(heading_error);
+
+      status.obstacle_detected = this->is_safety_gate_triggered();
+      status.blocked = status.obstacle_detected;
+      status.goal_reached =
+        goal_distance <= this->distance_tolerance_ &&
+        abs_heading_error <= this->goal_heading_tolerance_;
+      status.remaining_distance = goal_distance;
+      status.heading_error = heading_error;
+
+      if (!this->has_progress_reference_) {
+        this->progress_reference_pose_ = this->current_pose_;
+        this->progress_reference_time_ = this->now();
+        this->has_progress_reference_ = true;
+      } else if (
+        this->pose_distance(this->current_pose_, this->progress_reference_pose_) >=
+        this->progress_required_movement_radius_)
       {
+        this->progress_reference_pose_ = this->current_pose_;
+        this->progress_reference_time_ = this->now();
+      } else if (
+        !status.blocked &&
+        (this->now() - this->progress_reference_time_).seconds() >=
+        this->progress_time_allowance_sec_)
+      {
+        status.stalled = true;
+      }
+
+      if (status.goal_reached) {
+        status.command_completed = true;
+        this->has_command_ = false;
+        this->has_local_plan_ = false;
+        this->current_twist_ = geometry_msgs::msg::Twist();
+        this->reset_velocity_controller_state();
+        this->reset_progress_checker_state();
+        RCLCPP_INFO(
+          this->get_logger(),
+          "Goal reached for command %u",
+          status.command_id);
+      } else if (status.blocked || status.stalled) {
+        desired_twist = geometry_msgs::msg::Twist();
+        if (
+          status.blocked &&
+          this->safety_gate_allow_rotate_in_place_ &&
+          abs_heading_error > this->safety_gate_rotate_heading_threshold_)
+        {
+          desired_twist.angular.z = this->clamp(
+            this->angular_gain_ * heading_error,
+            -this->max_angular_speed_,
+            this->max_angular_speed_);
+        }
+        RCLCPP_INFO_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          1000,
+          "Navigation hold: blocked=%s stalled=%s",
+          status.blocked ? "true" : "false",
+          status.stalled ? "true" : "false");
+      } else {
         desired_twist.angular.z = this->clamp(
           this->angular_gain_ * heading_error,
           -this->max_angular_speed_,
           this->max_angular_speed_);
+
+        const bool rotate_in_place_only =
+          goal_distance <= this->rotate_in_place_goal_distance_ &&
+          abs_heading_error > this->rotate_in_place_threshold_;
+        if (!rotate_in_place_only) {
+          const double base_linear_speed = std::max(
+            0.0, std::min(this->linear_speed_, goal_distance));
+          double scale = 1.0;
+          if (abs_heading_error > this->heading_slowdown_threshold_) {
+            const double scale_window = std::max(
+              3.14159265358979323846 - this->heading_slowdown_threshold_,
+              1e-6);
+            scale = 1.0 - (
+              (abs_heading_error - this->heading_slowdown_threshold_) /
+              scale_window);
+          }
+
+          scale = this->clamp(scale, this->min_heading_motion_scale_, 1.0);
+          desired_twist.linear.x = base_linear_speed * scale;
+          if (goal_distance > this->rotate_in_place_goal_distance_) {
+            desired_twist.linear.x = std::max(
+              std::min(this->min_linear_speed_, base_linear_speed),
+              desired_twist.linear.x);
+          }
+        }
       }
-      RCLCPP_INFO_THROTTLE(
-        this->get_logger(),
-        *this->get_clock(),
-        1000,
-        "Obstacle detected in forward stop zone; holding linear velocity and applying recovery heading when needed");
     } else {
-      desired_twist.angular.z = this->clamp(
-        this->angular_gain_ * heading_error,
-        -this->max_angular_speed_,
-        this->max_angular_speed_);
+      this->ensure_recovery_reference_initialized();
+      const double elapsed_sec = (this->now() - this->recovery_start_time_).seconds();
 
-      const bool rotate_in_place_only =
-        goal_distance <= this->rotate_in_place_goal_distance_ &&
-        abs_heading_error > this->rotate_in_place_threshold_;
-      if (!rotate_in_place_only) {
-        const double base_linear_speed = std::max(
-          0.0, std::min(this->linear_speed_, goal_distance));
-        double scale = 1.0;
-        if (abs_heading_error > this->heading_slowdown_threshold_) {
-          const double scale_window = std::max(
-            3.14159265358979323846 - this->heading_slowdown_threshold_,
-            1e-6);
-          scale = 1.0 - (
-            (abs_heading_error - this->heading_slowdown_threshold_) /
-            scale_window);
+      if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_BACKUP) {
+        const double traveled = this->pose_distance(this->current_pose_, this->recovery_reference_pose_);
+        const double remaining = std::max(0.0, this->latest_command_.recovery_distance - traveled);
+        status.remaining_distance = remaining;
+        debug_remaining_distance = remaining;
+        if (
+          remaining <= this->distance_tolerance_ ||
+          (this->latest_command_.recovery_duration > 0.0 &&
+          elapsed_sec >= this->latest_command_.recovery_duration))
+        {
+          status.command_completed = true;
+        } else {
+          desired_twist.linear.x =
+            -std::max(this->latest_command_.recovery_speed, this->min_linear_speed_);
         }
+      } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_SPIN) {
+        const double target_yaw = this->recovery_start_yaw_ + this->latest_command_.recovery_angle;
+        const double heading_error = this->normalize_angle(target_yaw - current_yaw);
+        status.heading_error = heading_error;
+        status.remaining_distance = std::abs(heading_error);
+        debug_remaining_distance = status.remaining_distance;
+        if (std::abs(heading_error) <= this->goal_heading_tolerance_) {
+          status.command_completed = true;
+        } else {
+          desired_twist.angular.z = this->clamp(
+            this->angular_gain_ * heading_error,
+            -this->max_angular_speed_,
+            this->max_angular_speed_);
+        }
+      } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_WAIT) {
+        const double remaining = std::max(0.0, this->latest_command_.recovery_duration - elapsed_sec);
+        status.remaining_distance = remaining;
+        debug_remaining_distance = remaining;
+        status.command_completed = remaining <= 1e-3;
+      }
 
-        scale = this->clamp(scale, this->min_heading_motion_scale_, 1.0);
-        desired_twist.linear.x = base_linear_speed * scale;
-        if (goal_distance > this->rotate_in_place_goal_distance_) {
-          desired_twist.linear.x = std::max(
-            std::min(this->min_linear_speed_, base_linear_speed),
-            desired_twist.linear.x);
-        }
+      if (status.command_completed) {
+        this->has_command_ = false;
+        this->current_twist_ = geometry_msgs::msg::Twist();
+        this->reset_velocity_controller_state();
+        this->reset_progress_checker_state();
+        RCLCPP_INFO(
+          this->get_logger(),
+          "Recovery command %u completed",
+          status.command_id);
       }
     }
   } else {
-    status.active = false;
     status.goal_reached = true;
-    status.obstacle_detected = false;
   }
 
   this->current_twist_ = this->apply_velocity_controller(this->current_twist_, desired_twist);
@@ -477,6 +585,17 @@ void MotionController::reset_velocity_controller_state()
   this->angular_controller_state_ = AxisControllerState{};
 }
 
+void MotionController::reset_progress_checker_state()
+{
+  this->progress_reference_pose_ = geometry_msgs::msg::PoseStamped();
+  this->recovery_reference_pose_ = geometry_msgs::msg::PoseStamped();
+  this->progress_reference_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->recovery_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->recovery_start_yaw_ = 0.0;
+  this->has_progress_reference_ = false;
+  this->has_recovery_reference_ = false;
+}
+
 void MotionController::publish_zero_twist()
 {
   this->current_twist_ = geometry_msgs::msg::Twist();
@@ -485,6 +604,18 @@ void MotionController::publish_zero_twist()
   }
 
   this->cmd_vel_publisher_->publish(this->current_twist_);
+}
+
+void MotionController::ensure_recovery_reference_initialized()
+{
+  if (this->has_recovery_reference_) {
+    return;
+  }
+
+  this->recovery_reference_pose_ = this->current_pose_;
+  this->recovery_start_time_ = this->now();
+  this->recovery_start_yaw_ = this->quaternion_yaw(this->current_pose_.pose.orientation);
+  this->has_recovery_reference_ = true;
 }
 
 MotionController::VelocityControlMode MotionController::parse_velocity_control_mode(

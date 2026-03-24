@@ -1,8 +1,12 @@
 std_msgs/Header header
 uint32 command_id
+uint8 mode
 bool active
+bool command_completed
 bool goal_reached
 bool obstacle_detected
+bool blocked
+bool stalled
 geometry_msgs/PoseStamped current_pose
 float64 remaining_distance
 float64 heading_error

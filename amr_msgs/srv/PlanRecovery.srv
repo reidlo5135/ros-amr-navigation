@@ -1,0 +1,7 @@
+string behavior
+geometry_msgs/PoseStamped current_pose
+geometry_msgs/PoseStamped goal_pose
+---
+bool success
+string message
+amr_msgs/MotionCommand command

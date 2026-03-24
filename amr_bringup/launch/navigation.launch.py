@@ -29,6 +29,14 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[bringup_params_file()],
     )
+    recovery_server = LifecycleNode(
+        package="amr_recovery_server",
+        executable="amr_recovery_server",
+        name="recovery_server",
+        namespace="amr",
+        output="screen",
+        parameters=[bringup_params_file()],
+    )
     bt_navigator = LifecycleNode(
         package="amr_bt_navigator",
         executable="amr_bt_navigator",
@@ -57,6 +65,7 @@ def generate_launch_description() -> LaunchDescription:
                 "managed_nodes": [
                     "/amr/local_planner",
                     "/amr/motion_controller",
+                    "/amr/recovery_server",
                     "/amr/navigator",
                 ],
                 "initial_pose.enabled": False,
@@ -66,6 +75,7 @@ def generate_launch_description() -> LaunchDescription:
 
     ld.add_action(local_planner)
     ld.add_action(motion_controller)
+    ld.add_action(recovery_server)
     ld.add_action(bt_navigator)
     ld.add_action(rviz_bridge)
     ld.add_action(navigation_manager)

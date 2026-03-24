@@ -1,0 +1,4 @@
+bool local_only
+---
+bool success
+string message

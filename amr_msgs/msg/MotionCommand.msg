@@ -1,7 +1,16 @@
+uint8 MODE_NAVIGATE=0
+uint8 MODE_BACKUP=1
+uint8 MODE_SPIN=2
+uint8 MODE_WAIT=3
 std_msgs/Header header
 uint32 command_id
+uint8 mode
 string route_id
 string node_id
 nav_msgs/Path plan
 geometry_msgs/PoseStamped goal_pose
 bool align_heading_at_goal
+float64 recovery_distance
+float64 recovery_speed
+float64 recovery_angle
+float64 recovery_duration

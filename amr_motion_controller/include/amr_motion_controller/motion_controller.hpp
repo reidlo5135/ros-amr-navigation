@@ -58,6 +58,7 @@ private:
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void publish_control();
   void reset_velocity_controller_state();
+  void reset_progress_checker_state();
   void publish_zero_twist();
   VelocityControlMode parse_velocity_control_mode(const std::string & mode) const;
   double apply_axis_controller(
@@ -76,6 +77,7 @@ private:
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
   bool is_safety_gate_triggered() const;
+  void ensure_recovery_reference_initialized();
   double pose_distance(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal) const;
@@ -108,6 +110,8 @@ private:
   double min_heading_motion_scale_;
   double max_linear_accel_;
   double max_angular_accel_;
+  double progress_required_movement_radius_;
+  double progress_time_allowance_sec_;
   bool safety_gate_enabled_;
   bool safety_gate_allow_rotate_in_place_;
   double safety_gate_stop_distance_;
@@ -123,11 +127,18 @@ private:
   amr_msgs::msg::MotionCommand latest_command_;
   nav_msgs::msg::Path latest_local_plan_;
   geometry_msgs::msg::PoseStamped current_pose_;
+  geometry_msgs::msg::PoseStamped progress_reference_pose_;
+  geometry_msgs::msg::PoseStamped recovery_reference_pose_;
   sensor_msgs::msg::LaserScan latest_scan_;
+  rclcpp::Time progress_reference_time_;
+  rclcpp::Time recovery_start_time_;
+  double recovery_start_yaw_;
   bool has_command_;
   bool has_local_plan_;
   bool has_current_pose_;
   bool has_latest_scan_;
+  bool has_progress_reference_;
+  bool has_recovery_reference_;
 };
 
 }  // namespace amr_motion_controller

@@ -22,8 +22,8 @@
         <MarkSucceeded />
       </Sequence>
       <Sequence name="obstacle_recovery_sequence">
-        <CheckObstacleBlocking />
-        <HandleObstacleRecovery />
+        <CheckRecoveryNeeded />
+        <HandleRecoveryCycle />
       </Sequence>
       <WaitFeedbackPeriod />
     </Fallback>

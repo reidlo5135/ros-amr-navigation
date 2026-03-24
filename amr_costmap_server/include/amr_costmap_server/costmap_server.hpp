@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "amr_msgs/srv/clear_costmap.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -31,6 +32,9 @@ private:
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
+  void handle_clear_costmap(
+    const std::shared_ptr<amr_msgs::srv::ClearCostmap::Request> request,
+    std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response);
   void rebuild_costmaps();
   void publish_costmaps();
   void update_footprint_metrics();
@@ -40,6 +44,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
+  rclcpp::Service<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_service_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr global_costmap_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr local_costmap_publisher_;
 
@@ -48,6 +53,7 @@ private:
   std::string scan_topic_;
   std::string global_costmap_topic_;
   std::string local_costmap_topic_;
+  std::string clear_costmap_service_name_;
   int obstacle_threshold_;
   double global_inflation_radius_;
   int global_inflation_cost_;

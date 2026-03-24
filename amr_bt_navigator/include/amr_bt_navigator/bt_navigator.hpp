@@ -8,7 +8,8 @@
 #include "amr_msgs/action/navigate_to_pose.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
-#include "amr_msgs/srv/plan_local_escape.hpp"
+#include "amr_msgs/srv/clear_costmap.hpp"
+#include "amr_msgs/srv/plan_recovery.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
@@ -49,16 +50,22 @@ private:
   amr_msgs::msg::MotionStatus get_motion_status_copy() const;
   bool is_navigator_ready(std::string & error_message) const;
   bool wait_for_planner_service(std::string & error_message);
-  bool wait_for_local_escape_service(std::string & error_message);
+  bool wait_for_recovery_services(std::string & error_message);
   bool request_global_plan(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
     nav_msgs::msg::Path & plan,
     std::string & error_message);
-  bool request_local_escape_plan(
+  bool request_recovery_command(
+    const std::string & behavior,
     const geometry_msgs::msg::PoseStamped & current_pose,
-    const nav_msgs::msg::Path & source_plan,
-    nav_msgs::msg::Path & plan,
+    const geometry_msgs::msg::PoseStamped & goal_pose,
+    amr_msgs::msg::MotionCommand & command,
+    std::string & error_message);
+  bool clear_local_costmap(std::string & error_message);
+  bool wait_for_command_completion(
+    uint32_t command_id,
+    int timeout_ms,
     std::string & error_message);
   amr_msgs::msg::MotionCommand build_motion_command(
     const NavigateToPose::Goal & goal,
@@ -67,7 +74,8 @@ private:
   void publish_stop_command();
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
-  rclcpp::Client<amr_msgs::srv::PlanLocalEscape>::SharedPtr local_escape_client_;
+  rclcpp::Client<amr_msgs::srv::PlanRecovery>::SharedPtr plan_recovery_client_;
+  rclcpp::Client<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_client_;
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
@@ -76,7 +84,8 @@ private:
   std::string command_topic_;
   std::string current_pose_topic_;
   std::string motion_status_topic_;
-  std::string local_escape_service_;
+  std::string plan_recovery_service_;
+  std::string clear_costmap_service_;
   std::string plan_segment_service_;
   std::string behavior_tree_xml_path_;
   std::string default_node_id_;

@@ -22,6 +22,7 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   scan_topic_(""),
   global_costmap_topic_(""),
   local_costmap_topic_(""),
+  clear_costmap_service_name_("/amr/costmap_server/clear_costmap"),
   obstacle_threshold_(50),
   global_inflation_radius_(0.20),
   global_inflation_cost_(80),
@@ -43,6 +44,7 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.global", this->global_costmap_topic_);
   this->declare_parameter("topics.local", this->local_costmap_topic_);
+  this->declare_parameter("services.clear_costmap", this->clear_costmap_service_name_);
   this->declare_parameter("inflation.obstacle_threshold", this->obstacle_threshold_);
   this->declare_parameter("inflation.global.radius", this->global_inflation_radius_);
   this->declare_parameter("inflation.global.cost", this->global_inflation_cost_);
@@ -64,6 +66,7 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.global", this->global_costmap_topic_);
   this->get_parameter("topics.local", this->local_costmap_topic_);
+  this->get_parameter("services.clear_costmap", this->clear_costmap_service_name_);
   this->get_parameter("inflation.obstacle_threshold", this->obstacle_threshold_);
   this->get_parameter("inflation.global.radius", this->global_inflation_radius_);
   this->get_parameter("inflation.global.cost", this->global_inflation_cost_);
@@ -107,6 +110,14 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
     [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
       this->handle_scan(message);
     });
+  this->clear_costmap_service_ = this->create_service<amr_msgs::srv::ClearCostmap>(
+    this->clear_costmap_service_name_,
+    [this](
+      const std::shared_ptr<amr_msgs::srv::ClearCostmap::Request> request,
+      std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response)
+    {
+      this->handle_clear_costmap(request, response);
+    });
   this->global_costmap_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
     this->global_costmap_topic_,
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
@@ -116,12 +127,13 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured costmap server with map='%s', pose='%s', scan='%s', global='%s', local='%s', footprint_radius=%.3f m padding=%.3f m",
+    "Configured costmap server with map='%s', pose='%s', scan='%s', global='%s', local='%s', clear='%s', footprint_radius=%.3f m padding=%.3f m",
     this->map_topic_.c_str(),
     this->pose_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->global_costmap_topic_.c_str(),
     this->local_costmap_topic_.c_str(),
+    this->clear_costmap_service_name_.c_str(),
     this->footprint_circumscribed_radius_,
     this->footprint_padding_);
   return CallbackReturn::SUCCESS;
@@ -162,6 +174,7 @@ CostmapServer::CallbackReturn CostmapServer::on_cleanup(
   this->map_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->scan_subscription_.reset();
+  this->clear_costmap_service_.reset();
   this->global_costmap_publisher_.reset();
   this->local_costmap_publisher_.reset();
   this->map_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
@@ -203,6 +216,34 @@ void CostmapServer::handle_scan(
   this->has_scan_ = true;
   this->rebuild_costmaps();
   this->publish_costmaps();
+}
+
+void CostmapServer::handle_clear_costmap(
+  const std::shared_ptr<amr_msgs::srv::ClearCostmap::Request> request,
+  std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response)
+{
+  if (!this->has_map_ || !this->map_) {
+    response->success = false;
+    response->message = "Static map is not available yet.";
+    return;
+  }
+
+  if (request->local_only) {
+    this->latest_scan_ = sensor_msgs::msg::LaserScan();
+    this->has_scan_ = false;
+    this->local_costmap_ = this->global_costmap_;
+    this->publish_costmaps();
+    response->success = true;
+    response->message = "Cleared local dynamic obstacle layer.";
+    return;
+  }
+
+  this->latest_scan_ = sensor_msgs::msg::LaserScan();
+  this->has_scan_ = false;
+  this->rebuild_costmaps();
+  this->publish_costmaps();
+  response->success = true;
+  response->message = "Rebuilt global and local costmaps from the static map.";
 }
 
 void CostmapServer::rebuild_costmaps()
