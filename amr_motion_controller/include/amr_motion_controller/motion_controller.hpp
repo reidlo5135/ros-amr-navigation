@@ -104,6 +104,7 @@ private:
   double max_angular_speed_;
   double distance_tolerance_;
   double goal_heading_tolerance_;
+  double goal_reach_heading_tolerance_;
   double rotate_in_place_threshold_;
   double rotate_in_place_goal_distance_;
   double heading_slowdown_threshold_;
