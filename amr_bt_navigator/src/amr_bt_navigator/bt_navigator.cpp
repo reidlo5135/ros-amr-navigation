@@ -25,6 +25,16 @@ enum class BtOutcome
   kStopped
 };
 
+std::string get_default_behavior_tree_xml_path()
+{
+  try {
+    return ament_index_cpp::get_package_share_directory("amr_bt_navigator") +
+           "/config/navigate_to_pose.xml";
+  } catch (const std::exception &) {
+    return "config/navigate_to_pose.xml";
+  }
+}
+
 }  // namespace
 
 Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
@@ -47,12 +57,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   has_motion_status_(false),
   has_obstacle_report_(false)
 {
-  try {
-    this->behavior_tree_xml_path_ =
-      ament_index_cpp::get_package_share_directory("amr_bt_navigator") + "/config/navigate_to_pose.xml";
-  } catch (const std::exception &) {
-    this->behavior_tree_xml_path_ = "config/navigate_to_pose.xml";
-  }
+  this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
@@ -61,6 +66,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("services.local_escape", this->local_escape_service_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
   this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
+  this->declare_parameter("behavior_tree_xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
   this->declare_parameter(
     "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
@@ -80,12 +86,24 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("services.local_escape", this->local_escape_service_);
   this->get_parameter("services.segment", this->plan_segment_service_);
   this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
+  {
+    std::string legacy_behavior_tree_xml_path;
+    if (this->get_parameter("behavior_tree_xml_path", legacy_behavior_tree_xml_path) &&
+      !legacy_behavior_tree_xml_path.empty())
+    {
+      this->behavior_tree_xml_path_ = legacy_behavior_tree_xml_path;
+    }
+  }
   this->get_parameter("defaults.node_id", this->default_node_id_);
   this->get_parameter(
     "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
   this->get_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->get_parameter("recovery.max_retries", this->recovery_max_retries_);
   this->get_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
+
+  if (this->behavior_tree_xml_path_.empty()) {
+    this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
+  }
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
