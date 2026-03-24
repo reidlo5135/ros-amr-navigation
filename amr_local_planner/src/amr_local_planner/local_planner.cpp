@@ -764,21 +764,19 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
         1.0 - 2.0 * (
           current_pose.pose.orientation.y * current_pose.pose.orientation.y +
           current_pose.pose.orientation.z * current_pose.pose.orientation.z));
+      const double goal_heading_dx =
+        rejoin_pose.pose.position.x - current_pose.pose.position.x;
+      const double goal_heading_dy =
+        rejoin_pose.pose.position.y - current_pose.pose.position.y;
       double path_heading = current_yaw;
-      if (sliced_plan.poses.size() >= 2U) {
+      if ((goal_heading_dx * goal_heading_dx) + (goal_heading_dy * goal_heading_dy) > 1e-6) {
+        path_heading = std::atan2(goal_heading_dy, goal_heading_dx);
+      } else if (sliced_plan.poses.size() >= 2U) {
         const auto & heading_target = sliced_plan.poses[1U];
         const double heading_dx =
           heading_target.pose.position.x - current_pose.pose.position.x;
         const double heading_dy =
           heading_target.pose.position.y - current_pose.pose.position.y;
-        if ((heading_dx * heading_dx) + (heading_dy * heading_dy) > 1e-6) {
-          path_heading = std::atan2(heading_dy, heading_dx);
-        }
-      } else {
-        const double heading_dx =
-          rejoin_pose.pose.position.x - current_pose.pose.position.x;
-        const double heading_dy =
-          rejoin_pose.pose.position.y - current_pose.pose.position.y;
         if ((heading_dx * heading_dx) + (heading_dy * heading_dy) > 1e-6) {
           path_heading = std::atan2(heading_dy, heading_dx);
         }
