@@ -764,10 +764,36 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
         1.0 - 2.0 * (
           current_pose.pose.orientation.y * current_pose.pose.orientation.y +
           current_pose.pose.orientation.z * current_pose.pose.orientation.z));
+      double path_heading = current_yaw;
+      if (sliced_plan.poses.size() >= 2U) {
+        const auto & heading_target = sliced_plan.poses[1U];
+        const double heading_dx =
+          heading_target.pose.position.x - current_pose.pose.position.x;
+        const double heading_dy =
+          heading_target.pose.position.y - current_pose.pose.position.y;
+        if ((heading_dx * heading_dx) + (heading_dy * heading_dy) > 1e-6) {
+          path_heading = std::atan2(heading_dy, heading_dx);
+        }
+      } else {
+        const double heading_dx =
+          rejoin_pose.pose.position.x - current_pose.pose.position.x;
+        const double heading_dy =
+          rejoin_pose.pose.position.y - current_pose.pose.position.y;
+        if ((heading_dx * heading_dx) + (heading_dy * heading_dy) > 1e-6) {
+          path_heading = std::atan2(heading_dy, heading_dx);
+        }
+      }
       const double forward_distance = std::max(
         this->dynamic_obstacle_escape_forward_distance_,
         this->latest_obstacle_report_.distance + 0.35);
-      const double preferred_sign = this->latest_obstacle_report_.bearing >= 0.0 ? -1.0 : 1.0;
+      const double obstacle_heading = current_yaw + this->latest_obstacle_report_.bearing;
+      const double path_forward_x = std::cos(path_heading);
+      const double path_forward_y = std::sin(path_heading);
+      const double obstacle_vector_x = std::cos(obstacle_heading);
+      const double obstacle_vector_y = std::sin(obstacle_heading);
+      const double obstacle_side =
+        (path_forward_x * obstacle_vector_y) - (path_forward_y * obstacle_vector_x);
+      const double preferred_sign = obstacle_side >= 0.0 ? -1.0 : 1.0;
       const std::vector<double> escape_signs{preferred_sign, -preferred_sign};
       double best_score = std::numeric_limits<double>::max();
 
@@ -777,12 +803,12 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
         escape_pose.pose.orientation = current_pose.pose.orientation;
         escape_pose.pose.position.x =
           current_pose.pose.position.x +
-          (std::cos(current_yaw) * forward_distance) -
-          (std::sin(current_yaw) * sign * this->dynamic_obstacle_escape_lateral_distance_);
+          (std::cos(path_heading) * forward_distance) -
+          (std::sin(path_heading) * sign * this->dynamic_obstacle_escape_lateral_distance_);
         escape_pose.pose.position.y =
           current_pose.pose.position.y +
-          (std::sin(current_yaw) * forward_distance) +
-          (std::cos(current_yaw) * sign * this->dynamic_obstacle_escape_lateral_distance_);
+          (std::sin(path_heading) * forward_distance) +
+          (std::cos(path_heading) * sign * this->dynamic_obstacle_escape_lateral_distance_);
         escape_pose.pose.position.z = 0.0;
 
         int escape_x = 0;

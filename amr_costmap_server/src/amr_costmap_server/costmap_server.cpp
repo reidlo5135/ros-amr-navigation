@@ -188,8 +188,10 @@ void CostmapServer::rebuild_costmaps()
   }
 
   const auto original = this->global_costmap_.data;
+  const double footprint_effective_radius =
+    this->footprint_circumscribed_radius_ + this->footprint_padding_;
   const double global_effective_radius =
-    this->global_inflation_radius_ + this->footprint_circumscribed_radius_ + this->footprint_padding_;
+    std::max(this->global_inflation_radius_, footprint_effective_radius);
   const int global_radius_cells = std::max(
     0,
     static_cast<int>(std::ceil(
@@ -240,8 +242,7 @@ void CostmapServer::rebuild_costmaps()
 
   const double resolution = static_cast<double>(this->local_costmap_.info.resolution);
   const double local_effective_radius =
-    this->local_dynamic_inflation_radius_ + this->footprint_circumscribed_radius_ +
-    this->footprint_padding_;
+    std::max(this->local_dynamic_inflation_radius_, footprint_effective_radius);
   const int dynamic_radius_cells = std::max(
     1,
     static_cast<int>(std::ceil(local_effective_radius / resolution)));

@@ -24,6 +24,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   angular_gain_(1.5),
   max_angular_speed_(0.8),
   distance_tolerance_(0.15),
+  goal_heading_tolerance_(0.20),
   rotate_in_place_threshold_(0.6),
   rotate_in_place_goal_distance_(0.35),
   heading_slowdown_threshold_(0.2),
@@ -56,6 +57,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   this->declare_parameter("control.angular_gain", this->angular_gain_);
   this->declare_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->declare_parameter("control.distance_tolerance", this->distance_tolerance_);
+  this->declare_parameter("control.goal_heading_tolerance", this->goal_heading_tolerance_);
   this->declare_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->declare_parameter(
@@ -108,6 +110,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("control.angular_gain", this->angular_gain_);
   this->get_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->get_parameter("control.distance_tolerance", this->distance_tolerance_);
+  this->get_parameter("control.goal_heading_tolerance", this->goal_heading_tolerance_);
   this->get_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->get_parameter(
@@ -370,8 +373,8 @@ void MotionController::publish_control()
     status.active = true;
     status.obstacle_detected = this->is_safety_gate_triggered();
     status.goal_reached =
-      goal_distance <= this->distance_tolerance_ ||
-      this->latest_local_plan_.poses.empty();
+      goal_distance <= this->distance_tolerance_ &&
+      abs_heading_error <= this->goal_heading_tolerance_;
     status.current_pose = this->current_pose_;
     status.remaining_distance = goal_distance;
     status.heading_error = heading_error;
