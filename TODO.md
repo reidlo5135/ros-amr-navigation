@@ -1,4 +1,137 @@
-# 2026-03-24
+# ROAD MAP
+
+```mermaid
+timeline
+    title ROS AMR Navigation Road Map
+    0.1.x : A* global planning MVP
+          : AMCL-lite localization
+          : PID motion control
+    0.2.x : Costmap-based replanning
+          : SLAM-lite mapping workflow
+          : lifecycle bringup
+    0.3.x : Dynamic obstacle split
+          : centralized costmap ownership
+          : total bringup stabilization
+    0.4.x : Web viz scaffold
+    0.5.x : MQTT architecture transition
+          : robot/server bridge split
+          : raw ROS mirroring
+    0.6.x : Direct MQTT web viz
+          : interactive control panel
+    0.7.x : MQTT session recovery
+          : TF/rendering stabilization
+    0.8.x : Footprint-aware inflation
+          : planning safety refinement
+    0.9.x : BT navigator skeleton
+          : escape/detour recovery flow
+    0.10.x : recovery server responsibilities
+           : local costmap-driven dynamic handling
+           : package consolidation
+    0.11.x : exact planning/control quality uplift
+           : docs and package normalization
+    1.0.0 : indoor AMR runtime stabilization
+          : reliable recovery, footprint collision, operator UX
+    2.0.0 : fleet-ready operation model
+          : mission workflows, docking, battery, map lifecycle
+```
+
+## Product Direction
+
+This project is building toward a self-owned indoor AMR stack for TurtleBot3-class robots with:
+- on-robot localization, planning, control, recovery, and MQTT telemetry
+- browser-based operations and visualization
+- clear package responsibilities across mapping, navigation, recovery, and operator tooling
+- predictable behavior in narrow corridors, dynamic obstacles, and long-running indoor operation
+
+## Version Journey
+
+| Version | Focus | Result |
+| --- | --- | --- |
+| `0.1.x` | MVP navigation core | A* global planning, AMCL-lite localization, PID-based motion loop, first runtime bringup |
+| `0.2.x` | Mapping and replanning | costmap-based replanning, RViz goal bridge, SLAM-lite mapping workflow, lifecycle management |
+| `0.3.x` | Obstacle/costmap ownership | dynamic obstacle split, centralized costmap ownership, total bringup refinement |
+| `0.4.x` | Web visualization start | `amr_viz` web scaffold and runtime scripts |
+| `0.5.x` | MQTT-first architecture | ROS-MQTT transport, command bridge, robot/server role split, raw ROS serialization |
+| `0.6.x` | Direct web operations | direct MQTT web visualization, web control panel, reduced visualization latency |
+| `0.7.x` | Viz/operator polish | interactive map control, URDF-based rendering attempts, MQTT reconnect hardening |
+| `0.8.x` | Planning safety | footprint-aware inflation and planner safety tuning |
+| `0.9.x` | Behavior-based orchestration | BT navigator skeleton, escape/detour recovery flow, better goal/result reporting |
+| `0.10.x` | Runtime role cleanup | recovery server responsibilities, local costmap-driven dynamic handling, unused package removal |
+| `0.11.x` | Consolidation and quality uplift | package normalization, include hygiene, documentation refresh, next-stage planner/controller quality work |
+
+## 0.11.x Focus
+
+- exact footprint collision instead of footprint-radius approximation
+- stronger local costmap authority for blocked/free judgments
+- controller/progress/goal checker separation
+- recovery behavior tuning for narrow-corridor indoor operation
+- operator-facing diagnostics that explain `running`, `recovering`, `stopped`, `aborted`, and `reached`
+
+## Toward 1.0.0
+
+- reliable indoor point-to-point navigation in narrow corridors
+- exact footprint-aware planning and collision checks
+- stable final-approach behavior with low oscillation near goal
+- recovery stack with wait / backup / spin / replan / clear-costmap policies
+- MQTT/web operations that remain responsive during continuous motion
+- map lifecycle that supports create, freeze, save, load, and reuse without manual recovery
+
+## Toward 2.0.0
+
+- battery-aware operation and return-home behavior
+- docking / homing workflow
+- simple mission model such as saved destinations and route execution
+- map/version lifecycle for deployment to multiple robots or sites
+- long-duration stability, observability, and operator tooling suitable for field use
+
+## Core Technical Tracks
+
+### Planning and Costmaps
+
+- exact polygon footprint collision shared by costmap, global planner, and local planner
+- stronger local costmap semantics for dynamic obstacles detected from live scan
+- cleaner separation between global detour and local escape
+- corridor and doorway behavior tuning without over-inflation
+
+### Control and Recovery
+
+- progress checker and goal checker separation inside `amr_motion_controller`
+- smoother final heading alignment and stop behavior
+- deterministic recovery sequencing across wait / backup / spin / replan
+- fewer oscillations during recovery exit and global path rejoin
+
+### Mapping and Localization
+
+- stable `map -> odom -> base_footprint -> base_link` chain
+- practical mapping-mode and navigation-mode transition
+- better map lifecycle procedures for save/load/freeze/reuse
+
+### MQTT and Operations
+
+- robot-side MQTT transport remains the single telemetry source
+- leaner visualization payloads for web consumers
+- robust reconnect, retained static data, and low-latency live telemetry
+- operator visibility into recovery state, goal state, and planner/controller health
+
+### Visualization and UX
+
+- clearer robot model rendering and TF interpretation
+- layer-aware debugging for map, costmap, scan, plans, and recovery state
+- map-native goal/initial-pose interaction
+- stronger status semantics for accepted / running / recovering / aborted / reached
+
+# Daily TODO Memo
+
+## Active Queue
+
+| Date | Detail |
+| --- | --- |
+| `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
+| `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
+| `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
+| `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
+
+## 2026-03-24
 
 - `amr_costmap_server` footprint polygon 고도화
   - 현재는 footprint polygon을 circumscribed radius로 환산해 inflation에 반영하는 1차 구조
@@ -12,20 +145,20 @@
   - 현재의 형식적 BT 사용에서 벗어나 실제 의사결정 트리로 재구성
   - 동적 장애물 판단과 recovery 선택은 반드시 `amr_bt_navigator`가 담당
   - 각 feature package는 판단이 아닌 수행 역할만 하도록 책임 분리
-  - 3번 local escaping replan 정책과 직접 연계
+  - local escaping replan 정책과 직접 연계
 
-# 2026-03-23
+## 2026-03-23
 
 - `amr_viz` React + MQTT 완전 전환
   - 현재 과도기적 viz/bridge 흔적 정리
   - browser 기반 운영 화면을 MQTT client 전제로 재구성
   - `goal`, `status`, `feedback`, `map`, `path`, `costmap` 확인 흐름 재정리
-- `amr_mqtt_bridge`, `amr_mqtt_robot_plugin` 소스 구조 개편
+- `amr_mqtt_bridge` 소스 구조 개편
   - `rcl` 관련 로직과 `MQTT` 관련 로직을 별도 `.h/.c` 파일로 분리
   - 예시: `node.h`, `node.c`, `mqtt.h`, `mqtt.c`
   - 직렬화/역직렬화, topic routing, ROS interface init/fini 책임도 파일 단위로 분리
 
-# 2026-03-20
+## 2026-03-20
 
 - `amr_viz`를 순수 React Web 프로젝트로 전환
   - Electron 관련 shell / 실행 경로 제거
@@ -40,7 +173,6 @@
   - visualization / control / telemetry 용 메시지 스키마 별도 정의
   - publish / subscribe 채널 구조, topic naming, QoS 대응 전략 설계
 - React Web client를 MQTT 기반 통신 구조로 전환
-
   - WebSocket direct bridge 대신 MQTT client 사용
   - low-latency 상태 갱신, command 송신, initial pose / goal / status 흐름 재정리
   - host browser 렌더링 + VM/Ubuntu Server bridge/hosting 역할 분리 유지
@@ -49,7 +181,7 @@
   - launch / logging / serialization overhead 최소화
   - 실사용 기준으로 RViz 대비 가벼운 운영 viz 목표 재설정
 
-# 2026-03-18
+## 2026-03-18
 
 - dynamic obstacle escaping 고도화
   - 현재 local replan이 escape보다 기존 global plan 복귀를 너무 빨리 시도해 어색한 주행이 발생함
@@ -85,102 +217,3 @@
   - 수동 `initial_pose` 없이 시작 가능한 global localization 흐름 설계
   - map 전체 particle 분포 초기화 및 scan 기반 수렴 절차 검토
   - kidnapped 상황 대응용 relocalization 조건과 fallback 동작 정의
-
-# 로드맵
-
-## 1단계. 현재 MVP 안정화
-
-- localization 안정화
-  - `AMCL-lite` pose 흔들림, yaw drift, initial pose 적용 후 수렴성 개선
-  - `map -> odom -> base_link` TF 일관성 점검
-  - `scan`, `odom`, `map` 타임스탬프 및 frame 정합성 확인
-- global/local planning 안정화
-  - A* 경로 품질 개선
-  - local plan 생성 품질 개선
-  - 회전만 반복하는 케이스, 턴 구간 oscillation 제거
-- motion control 안정화
-  - `P / PI / PID` 파라미터 튜닝
-  - 저속 주행에서 overshoot, goal 근처 떨림, 제자리 회전 과다 현상 보정
-  - 정지 명령 이후 residual `cmd_vel` 제거
-- bringup/rviz/debug 체계 정리
-  - 주요 토픽, TF, 상태 로그 기준 확립
-  - 운영 중 확인할 최소 디버그 포인트 문서화
-
-## 2단계. 실내 자율주행 기본기 완성
-
-- obstacle 대응 강화
-  - `scan` 기반 전방/측방 위험 구역 판단
-  - local path 상 충돌 예상 시 감속 또는 정지
-  - 단순 obstacle_detected 상태만이 아니라 정지/재시도 흐름 추가
-- recovery behavior 추가
-  - 정지
-  - 후진
-  - 제자리 회전
-  - replan
-- navigation 실행 안정화
-  - goal 취소, 중단, 재시작 처리
-  - planner/controller timeout 처리
-  - stuck 판단 기준 추가
-
-## 3단계. 저가형 로봇 청소기 수준의 실내 주행 품질
-
-- 좁은 실내 공간 대응
-  - 복도, 문틀, 가구 사이 통로에서 안정적으로 통과
-  - 급회전 구간에서 local plan / control oscillation 억제
-- 동적 장애물 대응
-  - 사람, 의자, 작은 물체 등으로 인해 path가 막히는 상황에서 정지 후 재시도
-  - 단순 충돌 회피보다 "멈춤 -> 대기 -> 재계획" 흐름 우선 구현
-- 근거리 안전 주행
-  - 벽을 과하게 긁지 않도록 clearance 유지
-  - obstacle inflation 또는 safety margin 개념 도입
-- goal 도달 품질 향상
-  - 목표 근처 overshoot 최소화
-  - heading alignment와 goal tolerance 세분화
-  - 도착 판정 후 불필요한 추가 회전 억제
-
-## 4단계. 맵 운용 현실화
-
-- custom mapping / localization 전략 구체화
-  - 자체 mapping mode와 static navigation mode의 역할 분리
-  - map save/load/freeze 절차 정리
-  - mapping 완료 후 자동 전환 기준 정의
-- map 관리 기능
-  - 진입 금지 구역, 가상벽, 운영 금지 구역 표현 방식 정의
-  - occupancy map 기반의 기본 운용 절차 문서화
-- map 업데이트 정책
-  - 환경이 조금 바뀌었을 때 재매핑할지, localization만 유지할지 기준 정의
-  - 맵 버전 관리, 배포, 교체 절차 정리
-
-## 5단계. 제품성 기능 추가
-
-- 도킹/복귀
-  - 저전압 또는 미션 종료 시 홈 복귀
-  - 초기에는 단순 goal 복귀 방식으로 구현
-- battery/mission 관리
-  - 배터리 상태 수신
-  - 주행 중단 후 복귀 조건 정의
-- 사용자 운용 기능
-  - 주행 시작, 정지, 일시정지
-  - 수동 goal 이동과 자동 주행 모드 분리
-  - 저장된 위치로 이동하는 단순 mission 기능 검토
-
-## 6단계. 최종 품질 목표
-
-- 장시간 주행 안정성 검증
-  - 20분 이상 연속 주행 시 pose drift, oscillation, stuck 빈도 확인
-- 저가형 로봇 청소기 수준의 주행/맵 핸들링 기준 정리
-  - 벽/가구에 과하게 부딪히지 않을 것
-  - 단일 실내 공간에서 localization을 잃지 않을 것
-  - goal 주행과 자동 주행 모드 전환이 끊기지 않을 것
-  - 재실행 시 initial pose 및 map 로드 절차가 단순할 것
-
-## 구현 원칙
-
-- 가능하면 직접 구현 유지
-  - localization, planner, controller, mapping, relocalization은 자체 구현 우선
-- 예외적으로 사용 가능한 외부 패키지
-  - 없음
-- 되도록 피할 것
-  - Nav2 전체 의존
-  - 과한 behavior tree/plugin 체계 도입
-  - 초기 단계에서 고급 MPC/TEB/DWB 수준 복잡도 구현
