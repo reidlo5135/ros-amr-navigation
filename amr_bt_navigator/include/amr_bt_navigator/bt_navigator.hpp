@@ -48,9 +48,18 @@ private:
   void handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message);
   geometry_msgs::msg::PoseStamped get_current_pose_copy() const;
   amr_msgs::msg::MotionStatus get_motion_status_copy() const;
+  amr_msgs::msg::ObstacleReport get_obstacle_report_copy() const;
+  bool is_navigator_ready(std::string & error_message) const;
+  bool wait_for_planner_service(std::string & error_message);
+  bool request_global_plan(
+    const geometry_msgs::msg::PoseStamped & start,
+    const geometry_msgs::msg::PoseStamped & goal,
+    nav_msgs::msg::Path & plan,
+    std::string & error_message);
   amr_msgs::msg::MotionCommand build_motion_command(
     const NavigateToPose::Goal & goal,
     const nav_msgs::msg::Path & plan);
+  void publish_motion_command(const amr_msgs::msg::MotionCommand & command);
   void publish_stop_command();
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
@@ -65,6 +74,7 @@ private:
   std::string motion_status_topic_;
   std::string obstacle_report_topic_;
   std::string plan_segment_service_;
+  std::string behavior_tree_xml_path_;
   std::string default_node_id_;
   int planner_wait_timeout_ms_;
   int feedback_period_ms_;

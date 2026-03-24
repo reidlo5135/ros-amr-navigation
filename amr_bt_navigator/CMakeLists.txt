@@ -14,7 +14,9 @@ include_directories(
 )
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(amr_msgs REQUIRED)
+find_package(behaviortree_cpp_v3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -28,7 +30,9 @@ add_executable(${PROJECT_NAME}
 )
 
 ament_target_dependencies(${PROJECT_NAME}
+  ament_index_cpp
   amr_msgs
+  behaviortree_cpp_v3
   geometry_msgs
   lifecycle_msgs
   nav_msgs
@@ -40,6 +44,11 @@ ament_target_dependencies(${PROJECT_NAME}
 install(TARGETS
   ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  config
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

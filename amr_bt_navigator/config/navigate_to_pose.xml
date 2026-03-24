@@ -1,0 +1,32 @@
+<root BTCPP_format="4">
+  <BehaviorTree ID="PlanAndDispatch">
+    <Sequence name="plan_and_dispatch">
+      <CheckNavigatorReady />
+      <CheckCurrentPose />
+      <WaitForPlannerService />
+      <RequestGlobalPlan />
+      <PublishMotionCommand />
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="MonitorExecution">
+    <Fallback name="monitor_execution">
+      <Sequence name="cancel_sequence">
+        <CheckCancelRequested />
+        <PublishStopCommand />
+        <MarkCanceled />
+      </Sequence>
+      <Sequence name="goal_reached_sequence">
+        <CheckGoalReached />
+        <PublishStopCommand />
+        <MarkSucceeded />
+      </Sequence>
+      <Sequence name="obstacle_stop_sequence">
+        <CheckObstacleBlocking />
+        <PublishStopCommand />
+        <MarkStopped />
+      </Sequence>
+      <WaitFeedbackPeriod />
+    </Fallback>
+  </BehaviorTree>
+</root>

@@ -4,12 +4,28 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
+#include "behaviortree_cpp_v3/bt_factory.h"
 #include "lifecycle_msgs/msg/state.hpp"
 
 namespace amr_bt_navigator
 {
+
+namespace
+{
+
+enum class BtOutcome
+{
+  kRunning,
+  kSucceeded,
+  kCanceled,
+  kStopped
+};
+
+}  // namespace
 
 Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("navigator", options),
@@ -19,6 +35,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   motion_status_topic_(""),
   obstacle_report_topic_(""),
   plan_segment_service_("/amr/global_planner/plan_segment"),
+  behavior_tree_xml_path_(""),
   default_node_id_("start"),
   planner_wait_timeout_ms_(2000),
   feedback_period_ms_(100),
@@ -27,12 +44,19 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   has_motion_status_(false),
   has_obstacle_report_(false)
 {
+  try {
+    this->behavior_tree_xml_path_ =
+      ament_index_cpp::get_package_share_directory("amr_bt_navigator") + "/config/navigate_to_pose.xml";
+  } catch (const std::exception &) {
+    this->behavior_tree_xml_path_ = "config/navigate_to_pose.xml";
+  }
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
   this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
+  this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
   this->declare_parameter(
     "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
@@ -48,6 +72,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("topics.status", this->motion_status_topic_);
   this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->get_parameter("services.segment", this->plan_segment_service_);
+  this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   this->get_parameter("defaults.node_id", this->default_node_id_);
   this->get_parameter(
     "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
@@ -106,13 +131,14 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', obstacle_report='%s', planner='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', obstacle_report='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->motion_status_topic_.c_str(),
     this->obstacle_report_topic_.c_str(),
-    this->plan_segment_service_.c_str());
+    this->plan_segment_service_.c_str(),
+    this->behavior_tree_xml_path_.c_str());
 
   return CallbackReturn::SUCCESS;
 }
@@ -215,94 +241,182 @@ void Btnavigator::handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose
 
 void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
-  if (
-    !this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated() ||
-    !this->plan_segment_client_)
-  {
-    auto result = std::make_shared<NavigateToPose::Result>();
-    result->success = false;
-    result->message = "Navigator is not active.";
-    goal_handle->abort(result);
-    return;
-  }
-
   const auto goal = goal_handle->get_goal();
-  const auto current_pose = this->get_current_pose_copy();
-  if (current_pose.header.frame_id.empty()) {
+  BT::BehaviorTreeFactory factory;
+  auto blackboard = BT::Blackboard::create();
+  blackboard->set("navigator", this);
+  blackboard->set("goal_handle", goal_handle);
+  blackboard->set("goal_pose", goal->goal_pose);
+  blackboard->set("planned_path", nav_msgs::msg::Path());
+  blackboard->set("active_command", amr_msgs::msg::MotionCommand());
+  blackboard->set("status_message", std::string("Behavior tree is running."));
+  blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
+
+  factory.registerSimpleCondition(
+    "CheckNavigatorReady",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      std::string error_message;
+      if (navigator->is_navigator_ready(error_message)) {
+        return BT::NodeStatus::SUCCESS;
+      }
+      blackboard->set("status_message", error_message);
+      return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleCondition(
+    "CheckCurrentPose",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto current_pose = navigator->get_current_pose_copy();
+      if (current_pose.header.frame_id.empty()) {
+        blackboard->set("status_message", std::string("Current pose is not available yet."));
+        return BT::NodeStatus::FAILURE;
+      }
+      blackboard->set("current_pose", current_pose);
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
+    "WaitForPlannerService",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      std::string error_message;
+      if (navigator->wait_for_planner_service(error_message)) {
+        return BT::NodeStatus::SUCCESS;
+      }
+      blackboard->set("status_message", error_message);
+      return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleAction(
+    "RequestGlobalPlan",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
+      const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
+      nav_msgs::msg::Path plan;
+      std::string error_message;
+      if (!navigator->request_global_plan(current_pose, goal_pose, plan, error_message)) {
+        blackboard->set("status_message", error_message);
+        return BT::NodeStatus::FAILURE;
+      }
+      blackboard->set("planned_path", plan);
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
+    "PublishMotionCommand",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
+      const auto plan = blackboard->get<nav_msgs::msg::Path>("planned_path");
+      NavigateToPose::Goal goal_request;
+      goal_request.goal_pose = goal_pose;
+      auto command = navigator->build_motion_command(goal_request, plan);
+      navigator->publish_motion_command(command);
+      blackboard->set("active_command", command);
+      blackboard->set("status_message", std::string("Motion command dispatched."));
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleCondition(
+    "CheckCancelRequested",
+    [blackboard](BT::TreeNode &) {
+      const auto goal_handle_local =
+        blackboard->get<std::shared_ptr<GoalHandleNavigateToPose>>("goal_handle");
+      return goal_handle_local->is_canceling() ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleCondition(
+    "CheckGoalReached",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto status = navigator->get_motion_status_copy();
+      const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
+      if (status.command_id == command.command_id && status.goal_reached) {
+        return BT::NodeStatus::SUCCESS;
+      }
+      return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleCondition(
+    "CheckObstacleBlocking",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto status = navigator->get_motion_status_copy();
+      const auto obstacle = navigator->get_obstacle_report_copy();
+      if (status.obstacle_detected || (obstacle.active && obstacle.blocks_path)) {
+        return BT::NodeStatus::SUCCESS;
+      }
+      return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleAction(
+    "PublishStopCommand",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      navigator->publish_stop_command();
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
+    "MarkCanceled",
+    [blackboard](BT::TreeNode &) {
+      blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kCanceled));
+      blackboard->set("status_message", std::string("Route execution canceled."));
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
+    "MarkSucceeded",
+    [blackboard](BT::TreeNode &) {
+      blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kSucceeded));
+      blackboard->set("status_message", std::string("Goal reached."));
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
+    "MarkStopped",
+    [blackboard](BT::TreeNode &) {
+      blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+      blackboard->set(
+        "status_message",
+        std::string("Obstacle blocking path; navigator issued stop command."));
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleAction(
+    "WaitFeedbackPeriod",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      std::this_thread::sleep_for(std::chrono::milliseconds(navigator->feedback_period_ms_));
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  BT::Tree plan_tree;
+  BT::Tree monitor_tree;
+  try {
+    factory.registerBehaviorTreeFromFile(this->behavior_tree_xml_path_);
+    plan_tree = factory.createTree("PlanAndDispatch", blackboard);
+    monitor_tree = factory.createTree("MonitorExecution", blackboard);
+  } catch (const std::exception & error) {
     auto result = std::make_shared<NavigateToPose::Result>();
     result->success = false;
-    result->message = "Current pose is not available yet.";
+    result->message = std::string("Failed to initialize behavior tree: ") + error.what();
     goal_handle->abort(result);
     return;
   }
 
-  if (!this->plan_segment_client_->wait_for_service(
-      std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
-  {
+  if (plan_tree.tickRoot() != BT::NodeStatus::SUCCESS) {
     auto result = std::make_shared<NavigateToPose::Result>();
     result->success = false;
-    result->message = "Global planner service is not available.";
+    result->message = blackboard->get<std::string>("status_message");
     goal_handle->abort(result);
     return;
   }
-
-  auto request = std::make_shared<amr_msgs::srv::PlanSegment::Request>();
-  request->start = current_pose;
-  request->goal = goal->goal_pose;
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Requesting global plan: start=(%.3f, %.3f) goal=(%.3f, %.3f)",
-    request->start.pose.position.x,
-    request->start.pose.position.y,
-    request->goal.pose.position.x,
-    request->goal.pose.position.y);
-
-  auto future = this->plan_segment_client_->async_send_request(request);
-  if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
-      std::future_status::ready)
-  {
-    auto result = std::make_shared<NavigateToPose::Result>();
-    result->success = false;
-    result->message = "Timed out while waiting for a global plan.";
-    goal_handle->abort(result);
-    return;
-  }
-
-  const auto response = future.get();
-  if (!response->success) {
-    auto result = std::make_shared<NavigateToPose::Result>();
-    result->success = false;
-    result->message = response->message;
-    goal_handle->abort(result);
-    return;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Received global plan with %zu poses",
-    response->plan.poses.size());
-
-  auto command = this->build_motion_command(*goal, response->plan);
-  this->motion_command_publisher_->publish(command);
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Published motion command %u toward goal x=%.3f y=%.3f",
-    command.command_id,
-    command.goal_pose.pose.position.x,
-    command.goal_pose.pose.position.y);
 
   while (rclcpp::ok()) {
-    if (goal_handle->is_canceling()) {
-      this->publish_stop_command();
-      RCLCPP_INFO(this->get_logger(), "Navigation canceled; published stop command");
-      auto result = std::make_shared<NavigateToPose::Result>();
-      result->success = false;
-      result->message = "Route execution canceled.";
-      goal_handle->canceled(result);
-      return;
-    }
-
     const auto status = this->get_motion_status_copy();
     const auto pose = this->get_current_pose_copy();
 
@@ -312,23 +426,39 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     feedback->heading_error = status.heading_error;
     goal_handle->publish_feedback(feedback);
 
-    if (status.command_id == command.command_id && status.goal_reached) {
-      this->publish_stop_command();
-      RCLCPP_INFO(
-        this->get_logger(),
-        "Goal reached for command %u at x=%.3f y=%.3f",
-        command.command_id,
-        pose.pose.position.x,
-        pose.pose.position.y);
+    blackboard->set("current_pose", pose);
+    const auto monitor_status = monitor_tree.tickRoot();
+    (void)monitor_status;
+
+    const auto outcome = static_cast<BtOutcome>(blackboard->get<int>("bt_outcome"));
+    const auto message = blackboard->get<std::string>("status_message");
+    if (outcome == BtOutcome::kSucceeded) {
       auto result = std::make_shared<NavigateToPose::Result>();
       result->success = true;
-      result->message = "Goal reached.";
+      result->message = message;
       goal_handle->succeed(result);
       return;
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(this->feedback_period_ms_));
+    if (outcome == BtOutcome::kCanceled) {
+      auto result = std::make_shared<NavigateToPose::Result>();
+      result->success = false;
+      result->message = message;
+      goal_handle->canceled(result);
+      return;
+    }
+    if (outcome == BtOutcome::kStopped) {
+      auto result = std::make_shared<NavigateToPose::Result>();
+      result->success = false;
+      result->message = message;
+      goal_handle->abort(result);
+      return;
+    }
   }
+
+  auto result = std::make_shared<NavigateToPose::Result>();
+  result->success = false;
+  result->message = "Navigator stopped because ROS is shutting down.";
+  goal_handle->abort(result);
 }
 
 void Btnavigator::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
@@ -364,6 +494,79 @@ amr_msgs::msg::MotionStatus Btnavigator::get_motion_status_copy() const
   return this->latest_motion_status_;
 }
 
+amr_msgs::msg::ObstacleReport Btnavigator::get_obstacle_report_copy() const
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  return this->latest_obstacle_report_;
+}
+
+bool Btnavigator::is_navigator_ready(std::string & error_message) const
+{
+  if (
+    !this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated() ||
+    !this->plan_segment_client_)
+  {
+    error_message = "Navigator is not active.";
+    return false;
+  }
+  error_message.clear();
+  return true;
+}
+
+bool Btnavigator::wait_for_planner_service(std::string & error_message)
+{
+  if (!this->plan_segment_client_) {
+    error_message = "Global planner client is not configured.";
+    return false;
+  }
+  if (!this->plan_segment_client_->wait_for_service(
+      std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
+  {
+    error_message = "Global planner service is not available.";
+    return false;
+  }
+  error_message.clear();
+  return true;
+}
+
+bool Btnavigator::request_global_plan(
+  const geometry_msgs::msg::PoseStamped & start,
+  const geometry_msgs::msg::PoseStamped & goal,
+  nav_msgs::msg::Path & plan,
+  std::string & error_message)
+{
+  auto request = std::make_shared<amr_msgs::srv::PlanSegment::Request>();
+  request->start = start;
+  request->goal = goal;
+
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Requesting global plan: start=(%.3f, %.3f) goal=(%.3f, %.3f)",
+    request->start.pose.position.x,
+    request->start.pose.position.y,
+    request->goal.pose.position.x,
+    request->goal.pose.position.y);
+
+  auto future = this->plan_segment_client_->async_send_request(request);
+  if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
+      std::future_status::ready)
+  {
+    error_message = "Timed out while waiting for a global plan.";
+    return false;
+  }
+
+  const auto response = future.get();
+  if (!response->success) {
+    error_message = response->message;
+    return false;
+  }
+
+  plan = response->plan;
+  RCLCPP_INFO(this->get_logger(), "Received global plan with %zu poses", plan.poses.size());
+  error_message.clear();
+  return true;
+}
+
 amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   const NavigateToPose::Goal & goal,
   const nav_msgs::msg::Path & plan)
@@ -379,6 +582,20 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   command.goal_pose = goal.goal_pose;
   command.align_heading_at_goal = true;
   return command;
+}
+
+void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand & command)
+{
+  if (!this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated()) {
+    return;
+  }
+  this->motion_command_publisher_->publish(command);
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Published motion command %u toward goal x=%.3f y=%.3f",
+    command.command_id,
+    command.goal_pose.pose.position.x,
+    command.goal_pose.pose.position.y);
 }
 
 void Btnavigator::publish_stop_command()
