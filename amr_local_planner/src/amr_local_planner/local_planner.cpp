@@ -305,6 +305,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   dynamic_obstacle_replan_lookahead_distance_(1.4),
   dynamic_obstacle_escape_forward_distance_(1.2),
   dynamic_obstacle_escape_lateral_distance_(0.55),
+  dynamic_obstacle_goal_proximity_disable_distance_(0.45),
   nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
   last_progress_index_(0U),
@@ -335,6 +336,9 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
     "dynamic_obstacle.escape_forward_distance", this->dynamic_obstacle_escape_forward_distance_);
   this->declare_parameter(
     "dynamic_obstacle.escape_lateral_distance", this->dynamic_obstacle_escape_lateral_distance_);
+  this->declare_parameter(
+    "dynamic_obstacle.goal_proximity_disable_distance",
+    this->dynamic_obstacle_goal_proximity_disable_distance_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State & state)
@@ -363,6 +367,9 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     "dynamic_obstacle.escape_forward_distance", this->dynamic_obstacle_escape_forward_distance_);
   this->get_parameter(
     "dynamic_obstacle.escape_lateral_distance", this->dynamic_obstacle_escape_lateral_distance_);
+  this->get_parameter(
+    "dynamic_obstacle.goal_proximity_disable_distance",
+    this->dynamic_obstacle_goal_proximity_disable_distance_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
@@ -676,6 +683,12 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
     return sliced_plan;
   }
 
+  const double goal_distance = this->pose_distance(current_pose, sliced_plan.poses.back());
+  if (goal_distance <= this->dynamic_obstacle_goal_proximity_disable_distance_) {
+    this->working_costmap_ = this->inflated_map_;
+    return sliced_plan;
+  }
+
   this->working_costmap_ = this->inflated_map_;
   const auto & working_map = this->working_costmap_;
 
@@ -764,11 +777,18 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
       const double forward_distance = std::max(
         this->dynamic_obstacle_escape_forward_distance_,
         this->pose_distance(current_pose, blocked_pose) + 0.15);
+      const double blocked_dx = blocked_pose.pose.position.x - current_pose.pose.position.x;
+      const double blocked_dy = blocked_pose.pose.position.y - current_pose.pose.position.y;
+      const double blocked_side =
+        (std::cos(path_heading) * blocked_dy) - (std::sin(path_heading) * blocked_dx);
+      double preferred_sign = blocked_side >= 0.0 ? -1.0 : 1.0;
       const double left_occupancy = this->sample_lateral_occupancy(
         current_pose.pose.position.x, current_pose.pose.position.y, path_heading, 1.0);
       const double right_occupancy = this->sample_lateral_occupancy(
         current_pose.pose.position.x, current_pose.pose.position.y, path_heading, -1.0);
-      const double preferred_sign = left_occupancy <= right_occupancy ? 1.0 : -1.0;
+      if (std::abs(left_occupancy - right_occupancy) > 0.25) {
+        preferred_sign = left_occupancy <= right_occupancy ? 1.0 : -1.0;
+      }
       const std::vector<double> escape_signs{preferred_sign, -preferred_sign};
       double best_score = std::numeric_limits<double>::max();
 

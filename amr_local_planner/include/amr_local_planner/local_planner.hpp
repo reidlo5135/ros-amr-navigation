@@ -122,6 +122,7 @@ private:
   double dynamic_obstacle_replan_lookahead_distance_;
   double dynamic_obstacle_escape_forward_distance_;
   double dynamic_obstacle_escape_lateral_distance_;
+  double dynamic_obstacle_goal_proximity_disable_distance_;
   int nearest_free_search_radius_cells_;
   uint32_t last_command_id_;
   std::size_t last_progress_index_;

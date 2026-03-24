@@ -229,6 +229,7 @@
       replan_lookahead_distance: 2.0
       escape_forward_distance: 0.75
       escape_lateral_distance: 0.30
+      goal_proximity_disable_distance: 0.45
 
 /amr/motion_controller:
   ros__parameters:
