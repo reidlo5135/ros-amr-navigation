@@ -162,8 +162,8 @@
         radius: 0.20
         cost: 80
       local:
-        radius: 0.30
-        cost: 100
+        radius: 0.22
+        cost: 90
 
 /amr/navigation_manager:
   ros__parameters:
@@ -223,8 +223,8 @@
     dynamic_obstacle:
       enabled: true
       replan_lookahead_distance: 2.0
-      escape_forward_distance: 1.2
-      escape_lateral_distance: 0.55
+      escape_forward_distance: 0.75
+      escape_lateral_distance: 0.30
 
 /amr/motion_controller:
   ros__parameters:

@@ -1073,11 +1073,11 @@ export function SceneViewport({
 
     const obstacle = new THREE.Group();
     const obstacleInflation = new THREE.Mesh(
-      new THREE.RingGeometry(0.12, 0.22, 24),
+      new THREE.CircleGeometry(0.24, 32),
       new THREE.MeshBasicMaterial({
-        color: "#b21d53",
+        color: "#cf4562",
         transparent: true,
-        opacity: 0.52,
+        opacity: 0.18,
         side: THREE.DoubleSide,
         depthTest: false,
         depthWrite: false,
@@ -1086,30 +1086,21 @@ export function SceneViewport({
     obstacleInflation.rotation.x = -Math.PI / 2;
     obstacleInflation.position.y = 0.03;
     obstacleInflation.renderOrder = 26;
-    const obstacleCore = new THREE.Mesh(
-      new THREE.CircleGeometry(0.05, 24),
-      new THREE.MeshBasicMaterial({
-        color: "#2b0310",
-        transparent: false,
+    const obstaclePoints = new THREE.Points(
+      new THREE.BufferGeometry(),
+      new THREE.PointsMaterial({
+        color: "#1dd14d",
+        size: 0.09,
+        transparent: true,
+        opacity: 1,
+        sizeAttenuation: true,
         depthTest: false,
         depthWrite: false,
       }),
     );
-    obstacleCore.rotation.x = -Math.PI / 2;
-    obstacleCore.position.y = 0.034;
-    obstacleCore.renderOrder = 27;
-    const obstacleNeedle = new THREE.Mesh(
-      new THREE.ConeGeometry(0.035, 0.12, 3),
-      new THREE.MeshBasicMaterial({
-        color: "#ff7ca8",
-        depthTest: false,
-        depthWrite: false,
-      }),
-    );
-    obstacleNeedle.rotation.z = -Math.PI / 2;
-    obstacleNeedle.position.set(0.16, 0.05, 0);
-    obstacleNeedle.renderOrder = 28;
-    obstacle.add(obstacleInflation, obstacleCore, obstacleNeedle);
+    obstaclePoints.position.y = 0.034;
+    obstaclePoints.renderOrder = 27;
+    obstacle.add(obstacleInflation, obstaclePoints);
     obstacle.visible = false;
     scene.add(obstacle);
 
@@ -1377,11 +1368,27 @@ export function SceneViewport({
       obstacle.visible = true;
       obstacle.position.set(
         obstacleReport.obstacle_point.x,
-        0.12,
+        0.0,
         -obstacleReport.obstacle_point.y,
       );
-      obstacle.scale.setScalar(1 + (obstacleReport.severity * 0.12));
-      obstacle.rotation.y = -obstacleReport.bearing;
+      const inflationRadius = 0.18 + (obstacleReport.severity * 0.03);
+      const obstacleInflation = obstacle.children[0] as THREE.Mesh;
+      obstacleInflation.scale.setScalar(inflationRadius / 0.24);
+      const obstaclePoints = obstacle.children[1] as THREE.Points;
+      const pointPositions = new Float32Array([
+        0.00, 0.0, 0.00,
+        0.03, 0.0, 0.00,
+        -0.03, 0.0, 0.00,
+        0.00, 0.0, 0.03,
+        0.00, 0.0, -0.03,
+        0.02, 0.0, 0.02,
+        -0.02, 0.0, 0.02,
+        0.02, 0.0, -0.02,
+        -0.02, 0.0, -0.02,
+      ]);
+      obstaclePoints.geometry.dispose();
+      obstaclePoints.geometry = new THREE.BufferGeometry();
+      obstaclePoints.geometry.setAttribute("position", new THREE.BufferAttribute(pointPositions, 3));
     } else {
       obstacle.visible = false;
     }

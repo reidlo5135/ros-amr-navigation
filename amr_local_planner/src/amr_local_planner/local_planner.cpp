@@ -783,7 +783,7 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
       }
       const double forward_distance = std::max(
         this->dynamic_obstacle_escape_forward_distance_,
-        this->latest_obstacle_report_.distance + 0.35);
+        this->latest_obstacle_report_.distance + 0.20);
       const double obstacle_heading = current_yaw + this->latest_obstacle_report_.bearing;
       const double path_forward_x = std::cos(path_heading);
       const double path_forward_y = std::sin(path_heading);
@@ -833,7 +833,16 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
 
         std::vector<GridCell> combined_path = escape_path;
         combined_path.insert(combined_path.end(), rejoin_path.begin() + 1, rejoin_path.end());
-        const double score = grid_path_length(combined_path);
+        const double escape_goal_dx =
+          escape_pose.pose.position.x - rejoin_pose.pose.position.x;
+        const double escape_goal_dy =
+          escape_pose.pose.position.y - rejoin_pose.pose.position.y;
+        const double lateral_alignment_penalty =
+          std::abs(
+          (-std::sin(path_heading) * escape_goal_dx) +
+          (std::cos(path_heading) * escape_goal_dy));
+        const double score =
+          grid_path_length(combined_path) + (lateral_alignment_penalty * 2.0);
         if (score < best_score) {
           best_score = score;
           best_grid_path = std::move(combined_path);
