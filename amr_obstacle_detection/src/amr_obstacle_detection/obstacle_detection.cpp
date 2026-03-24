@@ -25,6 +25,7 @@ ObstacleDetection::ObstacleDetection(const rclcpp::NodeOptions & options)
   minimum_points_(3),
   static_clearance_cells_(2),
   blocking_distance_(1.2),
+  blocking_lateral_distance_(0.18),
   critical_distance_(0.25),
   high_distance_(0.7),
   medium_distance_(1.2),
@@ -44,6 +45,8 @@ ObstacleDetection::ObstacleDetection(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "detection.static_clearance_cells", this->static_clearance_cells_);
   this->declare_parameter("detection.blocking_distance", this->blocking_distance_);
+  this->declare_parameter(
+    "detection.blocking_lateral_distance", this->blocking_lateral_distance_);
   this->declare_parameter("detection.critical_distance", this->critical_distance_);
   this->declare_parameter("detection.high_distance", this->high_distance_);
   this->declare_parameter("detection.medium_distance", this->medium_distance_);
@@ -63,6 +66,8 @@ ObstacleDetection::CallbackReturn ObstacleDetection::on_configure(
   this->get_parameter("detection.minimum_points", this->minimum_points_);
   this->get_parameter("detection.static_clearance_cells", this->static_clearance_cells_);
   this->get_parameter("detection.blocking_distance", this->blocking_distance_);
+  this->get_parameter(
+    "detection.blocking_lateral_distance", this->blocking_lateral_distance_);
   this->get_parameter("detection.critical_distance", this->critical_distance_);
   this->get_parameter("detection.high_distance", this->high_distance_);
   this->get_parameter("detection.medium_distance", this->medium_distance_);
@@ -193,6 +198,10 @@ amr_msgs::msg::ObstacleReport ObstacleDetection::build_obstacle_report() const
   double closest_bearing = 0.0;
   geometry_msgs::msg::Point closest_point;
   bool closest_is_dynamic = false;
+  double blocking_candidate_distance = std::numeric_limits<double>::infinity();
+  double blocking_candidate_bearing = 0.0;
+  geometry_msgs::msg::Point blocking_candidate_point;
+  bool has_blocking_candidate = false;
   int hit_count = 0;
 
   for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
@@ -230,6 +239,23 @@ amr_msgs::msg::ObstacleReport ObstacleDetection::build_obstacle_report() const
       closest_point = point;
       closest_is_dynamic = !static_match;
     }
+
+    if (!static_match) {
+      const double forward_projection = range * std::cos(scan_bearing);
+      const double lateral_offset = std::abs(range * std::sin(scan_bearing));
+      if (
+        forward_projection > 0.0 &&
+        forward_projection <= this->blocking_distance_ &&
+        lateral_offset <= this->blocking_lateral_distance_)
+      {
+        if (!has_blocking_candidate || range < blocking_candidate_distance) {
+          has_blocking_candidate = true;
+          blocking_candidate_distance = range;
+          blocking_candidate_bearing = scan_bearing;
+          blocking_candidate_point = point;
+        }
+      }
+    }
   }
 
   if (hit_count < this->minimum_points_ || !std::isfinite(closest_distance)) {
@@ -237,17 +263,25 @@ amr_msgs::msg::ObstacleReport ObstacleDetection::build_obstacle_report() const
   }
 
   report.active = true;
-  report.is_dynamic = closest_is_dynamic;
-  report.blocks_path = closest_is_dynamic && closest_distance <= this->blocking_distance_;
-  report.distance = closest_distance;
-  report.bearing = closest_bearing;
-  report.obstacle_point = closest_point;
+  if (has_blocking_candidate) {
+    report.is_dynamic = true;
+    report.blocks_path = true;
+    report.distance = blocking_candidate_distance;
+    report.bearing = blocking_candidate_bearing;
+    report.obstacle_point = blocking_candidate_point;
+  } else {
+    report.is_dynamic = closest_is_dynamic;
+    report.blocks_path = false;
+    report.distance = closest_distance;
+    report.bearing = closest_bearing;
+    report.obstacle_point = closest_point;
+  }
 
-  if (closest_distance <= this->critical_distance_) {
+  if (report.distance <= this->critical_distance_) {
     report.severity = amr_msgs::msg::ObstacleReport::SEVERITY_CRITICAL;
-  } else if (closest_distance <= this->high_distance_) {
+  } else if (report.distance <= this->high_distance_) {
     report.severity = amr_msgs::msg::ObstacleReport::SEVERITY_HIGH;
-  } else if (closest_distance <= this->medium_distance_) {
+  } else if (report.distance <= this->medium_distance_) {
     report.severity = amr_msgs::msg::ObstacleReport::SEVERITY_MEDIUM;
   } else {
     report.severity = amr_msgs::msg::ObstacleReport::SEVERITY_LOW;

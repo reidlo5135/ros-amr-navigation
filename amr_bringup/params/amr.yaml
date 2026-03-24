@@ -134,6 +134,7 @@
       minimum_points: 3
       static_clearance_cells: 4
       blocking_distance: 0.8
+      blocking_lateral_distance: 0.20
       critical_distance: 0.25
       high_distance: 0.7
       medium_distance: 1.2

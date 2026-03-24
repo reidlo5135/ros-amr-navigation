@@ -60,6 +60,7 @@ private:
   int minimum_points_;
   int static_clearance_cells_;
   double blocking_distance_;
+  double blocking_lateral_distance_;
   double critical_distance_;
   double high_distance_;
   double medium_distance_;
