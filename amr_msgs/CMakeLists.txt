@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotionCommand.msg"
   "msg/ObstacleReport.msg"
   "msg/MotionStatus.msg"
+  "srv/PlanLocalEscape.srv"
   "srv/PlanSegment.srv"
   "srv/PlanRoute.srv"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs action_msgs nav_msgs

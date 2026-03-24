@@ -293,6 +293,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   map_topic_(""),
   obstacle_report_topic_(""),
   local_plan_topic_(""),
+  local_escape_service_name_("/amr/local_planner/plan_local_escape"),
   publish_period_ms_(100),
   lookahead_distance_(0.8),
   goal_tolerance_(0.15),
@@ -319,6 +320,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.costmap", this->map_topic_);
   this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
+  this->declare_parameter("services.local_escape", this->local_escape_service_name_);
   this->declare_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->declare_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->declare_parameter("planner.goal_tolerance", this->goal_tolerance_);
@@ -346,6 +348,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("topics.costmap", this->map_topic_);
   this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
+  this->get_parameter("services.local_escape", this->local_escape_service_name_);
   this->get_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->get_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->get_parameter("planner.goal_tolerance", this->goal_tolerance_);
@@ -402,6 +405,14 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     [this](const amr_msgs::msg::ObstacleReport::SharedPtr message) {
       this->handle_obstacle_report(message);
     });
+  this->local_escape_service_ = this->create_service<amr_msgs::srv::PlanLocalEscape>(
+    this->local_escape_service_name_,
+    [this](
+      const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
+      std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response)
+    {
+      this->handle_plan_local_escape(request, response);
+    });
   this->local_plan_publisher_ = this->create_publisher<nav_msgs::msg::Path>(
     this->local_plan_topic_, rclcpp::SystemDefaultsQoS());
   this->timer_ = this->create_wall_timer(
@@ -451,6 +462,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
   this->obstacle_report_subscription_.reset();
+  this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
@@ -475,6 +487,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
   this->obstacle_report_subscription_.reset();
+  this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
@@ -534,6 +547,45 @@ void LocalPlanner::handle_obstacle_report(
 {
   this->latest_obstacle_report_ = *message;
   this->has_obstacle_report_ = true;
+}
+
+void LocalPlanner::handle_plan_local_escape(
+  const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
+  std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response)
+{
+  if (!response) {
+    return;
+  }
+
+  response->success = false;
+  response->plan = nav_msgs::msg::Path();
+
+  if (!this->has_map_ || this->inflated_map_.data.empty()) {
+    response->message = "Local planner map is not available yet.";
+    return;
+  }
+
+  if (request->source_plan.poses.empty()) {
+    response->message = "Source plan is empty.";
+    return;
+  }
+
+  const auto closest_index =
+    this->find_closest_pose_index(request->source_plan, request->current_pose, 0U);
+  const auto escape_plan = this->build_inflated_local_plan(
+    request->source_plan,
+    request->current_pose,
+    closest_index,
+    std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_));
+
+  if (escape_plan.poses.size() < 2U) {
+    response->message = "Local escape planner could not build a valid recovery path.";
+    return;
+  }
+
+  response->success = true;
+  response->plan = escape_plan;
+  response->message = "Local escape recovery plan is ready.";
 }
 
 void LocalPlanner::publish_local_plan()

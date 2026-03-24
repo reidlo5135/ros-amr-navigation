@@ -207,6 +207,8 @@
       costmap: "/amr/costmap/local"
       obstacle_report: "/amr/obstacle/report"
       plan: "/amr/planner/local"
+    services:
+      local_escape: "/amr/local_planner/plan_local_escape"
     planner:
       publish_period_ms: 100
       lookahead_distance: 0.8
@@ -276,6 +278,7 @@
       status: "/amr/motion/status"
       obstacle_report: "/amr/obstacle/report"
     services:
+      local_escape: "/amr/local_planner/plan_local_escape"
       segment: "/amr/global_planner/plan_segment"
     actions:
       navigate_to_pose: "/amr/navigator/navigate_to_pose"
@@ -284,6 +287,9 @@
     execution:
       planner_wait_timeout_ms: 2000
       feedback_period_ms: 100
+    recovery:
+      max_retries: 4
+      retry_delay_ms: 1000
 
 /amr/rviz_bridge:
   ros__parameters:

@@ -8,6 +8,7 @@
 
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/obstacle_report.hpp"
+#include "amr_msgs/srv/plan_local_escape.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/path.hpp"
@@ -36,6 +37,9 @@ private:
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message);
+  void handle_plan_local_escape(
+    const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
+    std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response);
   void publish_local_plan();
   nav_msgs::msg::Path build_local_plan(
     const amr_msgs::msg::MotionCommand & command,
@@ -92,6 +96,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
   rclcpp::Subscription<amr_msgs::msg::ObstacleReport>::SharedPtr obstacle_report_subscription_;
+  rclcpp::Service<amr_msgs::srv::PlanLocalEscape>::SharedPtr local_escape_service_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_plan_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -100,6 +105,7 @@ private:
   std::string map_topic_;
   std::string obstacle_report_topic_;
   std::string local_plan_topic_;
+  std::string local_escape_service_name_;
   int publish_period_ms_;
   double lookahead_distance_;
   double goal_tolerance_;

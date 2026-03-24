@@ -34,11 +34,14 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   current_pose_topic_(""),
   motion_status_topic_(""),
   obstacle_report_topic_(""),
+  local_escape_service_("/amr/local_planner/plan_local_escape"),
   plan_segment_service_("/amr/global_planner/plan_segment"),
   behavior_tree_xml_path_(""),
   default_node_id_("start"),
   planner_wait_timeout_ms_(2000),
   feedback_period_ms_(100),
+  recovery_max_retries_(3),
+  recovery_retry_delay_ms_(700),
   next_command_id_(1U),
   has_current_pose_(false),
   has_motion_status_(false),
@@ -55,12 +58,15 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
   this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
+  this->declare_parameter("services.local_escape", this->local_escape_service_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
   this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
   this->declare_parameter(
     "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
   this->declare_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
+  this->declare_parameter("recovery.max_retries", this->recovery_max_retries_);
+  this->declare_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
 }
 
 Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::State & state)
@@ -71,12 +77,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.status", this->motion_status_topic_);
   this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
+  this->get_parameter("services.local_escape", this->local_escape_service_);
   this->get_parameter("services.segment", this->plan_segment_service_);
   this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   this->get_parameter("defaults.node_id", this->default_node_id_);
   this->get_parameter(
     "execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
   this->get_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
+  this->get_parameter("recovery.max_retries", this->recovery_max_retries_);
+  this->get_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
@@ -94,6 +103,8 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   this->motion_command_publisher_ = this->create_publisher<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS());
+  this->local_escape_client_ = this->create_client<amr_msgs::srv::PlanLocalEscape>(
+    this->local_escape_service_);
   this->plan_segment_client_ = this->create_client<amr_msgs::srv::PlanSegment>(
     this->plan_segment_service_);
   this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -131,12 +142,13 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', obstacle_report='%s', planner='%s', bt_xml='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', obstacle_report='%s', local_escape='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->motion_status_topic_.c_str(),
     this->obstacle_report_topic_.c_str(),
+    this->local_escape_service_.c_str(),
     this->plan_segment_service_.c_str(),
     this->behavior_tree_xml_path_.c_str());
 
@@ -167,6 +179,7 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
 {
   (void)state;
   this->action_server_.reset();
+  this->local_escape_client_.reset();
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
@@ -186,6 +199,7 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
 {
   (void)state;
   this->action_server_.reset();
+  this->local_escape_client_.reset();
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
@@ -251,6 +265,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   blackboard->set("active_command", amr_msgs::msg::MotionCommand());
   blackboard->set("status_message", std::string("Behavior tree is running."));
   blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
+  blackboard->set("recovery_attempts", 0);
 
   factory.registerSimpleCondition(
     "CheckNavigatorReady",
@@ -316,6 +331,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       auto command = navigator->build_motion_command(goal_request, plan);
       navigator->publish_motion_command(command);
       blackboard->set("active_command", command);
+      blackboard->set("recovery_attempts", 0);
       blackboard->set("status_message", std::string("Motion command dispatched."));
       return BT::NodeStatus::SUCCESS;
     });
@@ -353,10 +369,64 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     });
 
   factory.registerSimpleAction(
-    "PublishStopCommand",
+    "HandleObstacleRecovery",
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
+      const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
+      const auto active_command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
+      auto attempts = blackboard->get<int>("recovery_attempts");
+      std::string error_message;
+      nav_msgs::msg::Path recovery_plan;
+
+      if (navigator->wait_for_local_escape_service(error_message) &&
+        navigator->request_local_escape_plan(
+          current_pose, active_command.plan, recovery_plan, error_message))
+      {
+        NavigateToPose::Goal goal_request;
+        goal_request.goal_pose = goal_pose;
+        auto command = navigator->build_motion_command(goal_request, recovery_plan);
+        navigator->publish_motion_command(command);
+        blackboard->set("active_command", command);
+        blackboard->set("planned_path", recovery_plan);
+        blackboard->set("recovery_attempts", 0);
+        blackboard->set(
+          "status_message",
+          std::string("Obstacle detected. Local escape recovery command dispatched."));
+        return BT::NodeStatus::SUCCESS;
+      }
+
+      if (navigator->wait_for_planner_service(error_message) &&
+        navigator->request_global_plan(current_pose, goal_pose, recovery_plan, error_message))
+      {
+        NavigateToPose::Goal goal_request;
+        goal_request.goal_pose = goal_pose;
+        auto command = navigator->build_motion_command(goal_request, recovery_plan);
+        navigator->publish_motion_command(command);
+        blackboard->set("active_command", command);
+        blackboard->set("planned_path", recovery_plan);
+        blackboard->set("recovery_attempts", 0);
+        blackboard->set(
+          "status_message",
+          std::string("Obstacle detected. Global detour recovery command dispatched."));
+        return BT::NodeStatus::SUCCESS;
+      }
+
       navigator->publish_stop_command();
+      attempts += 1;
+      blackboard->set("recovery_attempts", attempts);
+      if (attempts >= navigator->recovery_max_retries_) {
+        blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+        blackboard->set(
+          "status_message",
+          std::string("Recovery retries exceeded. Navigator aborted after stop."));
+        return BT::NodeStatus::SUCCESS;
+      }
+
+      blackboard->set(
+        "status_message",
+        std::string("Recovery failed. Stop issued before retry."));
+      std::this_thread::sleep_for(std::chrono::milliseconds(navigator->recovery_retry_delay_ms_));
       return BT::NodeStatus::SUCCESS;
     });
 
@@ -373,16 +443,6 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     [blackboard](BT::TreeNode &) {
       blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kSucceeded));
       blackboard->set("status_message", std::string("Goal reached."));
-      return BT::NodeStatus::SUCCESS;
-    });
-
-  factory.registerSimpleAction(
-    "MarkStopped",
-    [blackboard](BT::TreeNode &) {
-      blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
-      blackboard->set(
-        "status_message",
-        std::string("Obstacle blocking path; navigator issued stop command."));
       return BT::NodeStatus::SUCCESS;
     });
 
@@ -529,6 +589,22 @@ bool Btnavigator::wait_for_planner_service(std::string & error_message)
   return true;
 }
 
+bool Btnavigator::wait_for_local_escape_service(std::string & error_message)
+{
+  if (!this->local_escape_client_) {
+    error_message = "Local escape planner client is not configured.";
+    return false;
+  }
+  if (!this->local_escape_client_->wait_for_service(
+      std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
+  {
+    error_message = "Local escape planner service is not available.";
+    return false;
+  }
+  error_message.clear();
+  return true;
+}
+
 bool Btnavigator::request_global_plan(
   const geometry_msgs::msg::PoseStamped & start,
   const geometry_msgs::msg::PoseStamped & goal,
@@ -563,6 +639,35 @@ bool Btnavigator::request_global_plan(
 
   plan = response->plan;
   RCLCPP_INFO(this->get_logger(), "Received global plan with %zu poses", plan.poses.size());
+  error_message.clear();
+  return true;
+}
+
+bool Btnavigator::request_local_escape_plan(
+  const geometry_msgs::msg::PoseStamped & current_pose,
+  const nav_msgs::msg::Path & source_plan,
+  nav_msgs::msg::Path & plan,
+  std::string & error_message)
+{
+  auto request = std::make_shared<amr_msgs::srv::PlanLocalEscape::Request>();
+  request->current_pose = current_pose;
+  request->source_plan = source_plan;
+
+  auto future = this->local_escape_client_->async_send_request(request);
+  if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
+      std::future_status::ready)
+  {
+    error_message = "Timed out while waiting for a local escape plan.";
+    return false;
+  }
+
+  const auto response = future.get();
+  if (!response->success) {
+    error_message = response->message;
+    return false;
+  }
+
+  plan = response->plan;
   error_message.clear();
   return true;
 }

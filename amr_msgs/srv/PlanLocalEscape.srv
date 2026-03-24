@@ -1,0 +1,6 @@
+geometry_msgs/PoseStamped current_pose
+nav_msgs/Path source_plan
+---
+bool success
+nav_msgs/Path plan
+string message

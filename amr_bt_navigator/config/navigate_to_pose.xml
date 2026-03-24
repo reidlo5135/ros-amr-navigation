@@ -21,10 +21,9 @@
         <PublishStopCommand />
         <MarkSucceeded />
       </Sequence>
-      <Sequence name="obstacle_stop_sequence">
+      <Sequence name="obstacle_recovery_sequence">
         <CheckObstacleBlocking />
-        <PublishStopCommand />
-        <MarkStopped />
+        <HandleObstacleRecovery />
       </Sequence>
       <WaitFeedbackPeriod />
     </Fallback>
