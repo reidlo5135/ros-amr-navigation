@@ -31,7 +31,9 @@ timeline
            : docs and package normalization
     1.0.0 : indoor AMR runtime stabilization
           : reliable recovery, footprint collision, operator UX
+          : vehicle-spec abstraction start
     2.0.0 : fleet-ready operation model
+          : Ackermann-ready planning/control architecture
           : mission workflows, docking, battery, map lifecycle
 ```
 
@@ -75,9 +77,22 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - recovery stack with wait / backup / spin / replan / clear-costmap policies
 - MQTT/web operations that remain responsive during continuous motion
 - map lifecycle that supports create, freeze, save, load, and reuse without manual recovery
+- vehicle-spec parameter model introduction
+  - `vehicle.type: diff_drive | ackermann | oht`
+  - shared `footprint`, speed/acceleration limits, and per-vehicle geometry fields
+  - central `amr.yaml` vehicle section that all planning/control packages consume
 
 ## Toward 2.0.0
 
+- Ackermann support as the next realistic vehicle-class expansion
+  - `motion_controller` must stop assuming pure `linear.x + angular.z` diff-drive control
+  - controller core should produce vehicle-neutral targets such as speed / heading / curvature
+  - vehicle adapters should convert those targets into diff-drive or Ackermann ROS commands
+  - local planner should branch by vehicle type instead of forcing one geometry model on all vehicles
+  - global planning should add path smoothing first, then consider curvature-constrained planning if needed
+- OHT support only after Ackermann architecture is mature
+  - reuse the same vehicle-spec / adapter / planner split
+  - extend to rail-like or guideway-like constraints only after the generic vehicle model is stable
 - battery-aware operation and return-home behavior
 - docking / homing workflow
 - simple mission model such as saved destinations and route execution
@@ -92,6 +107,11 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - stronger local costmap semantics for dynamic obstacles detected from live scan
 - cleaner separation between global detour and local escape
 - corridor and doorway behavior tuning without over-inflation
+- vehicle-aware planning path
+  - keep global A* as the first common planner
+  - add path smoothing before replacing the global planner
+  - make local planner responsible for vehicle-specific feasibility
+  - evaluate Hybrid A* / state-lattice only after Ackermann local control and collision semantics are stable
 
 ### Control and Recovery
 
@@ -99,6 +119,11 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - smoother final heading alignment and stop behavior
 - deterministic recovery sequencing across wait / backup / spin / replan
 - fewer oscillations during recovery exit and global path rejoin
+- vehicle-neutral control core
+  - split controller logic into shared tracking core + vehicle kinematics adapter
+  - `DiffDriveAdapter` keeps `/cmd_vel`
+  - future `AckermannAdapter` should emit steering-compatible commands
+  - OHT or other future vehicle classes should plug into the same abstraction boundary
 
 ### Mapping and Localization
 
@@ -112,6 +137,30 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - leaner visualization payloads for web consumers
 - robust reconnect, retained static data, and low-latency live telemetry
 - operator visibility into recovery state, goal state, and planner/controller health
+- vehicle-type-aware command transport
+  - operator and MQTT command schema should move toward vehicle-neutral motion intent
+  - robot-side bridge should translate the common command model into vehicle-specific ROS topics
+  - avoid hard-coding `/cmd_vel` as the only long-term motion interface
+
+## Ackermann Expansion Notes
+
+- first target is not OHT but Ackermann-capable indoor navigation
+- required order of work:
+  1. add vehicle-spec parameters in `amr.yaml`
+  2. generalize `amr_motion_controller` into controller core + vehicle adapter
+  3. extend `amr_msgs` with vehicle-neutral motion command fields
+  4. split `amr_local_planner` by vehicle type or strategy
+  5. add global path smoothing for non-diff-drive vehicles
+  6. upgrade footprint collision from radius approximation to exact polygon checks
+  7. only then consider curvature-constrained global planning
+- Ackermann-specific items to remember:
+  - wheelbase
+  - track width
+  - steering limits
+  - minimum turning radius
+  - reverse policy
+  - front/rear overhang
+  - swept footprint during turns
 
 ### Visualization and UX
 
