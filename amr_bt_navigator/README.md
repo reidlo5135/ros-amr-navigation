@@ -1,47 +1,37 @@
 # amr_bt_navigator
 
-`amr_bt_navigator` accepts goal requests, asks the global planner for a path, dispatches `MotionCommand`, and tracks motion status until completion.
+BehaviorTree.CPP v3 based navigation decision server.
 
-## Interfaces
+## Role
 
-- subscribes: `/amr/localization/pose`
-- subscribes: `/amr/motion/status`
-- subscribes: `/amr/obstacle/report`
-- publishes: `/amr/motion/command`
-- calls: `/amr/global_planner/plan_segment`
-- serves action: `/amr/navigator/navigate_to_pose`
+- serves `NavigateToPose`
+- requests global plans
+- dispatches motion commands
+- monitors progress and blocked states
+- chooses recovery behaviors through BT flow
 
-## Execution Logic
+## Current Recovery Direction
 
-- receives a `NavigateToPose` goal
-- reads the latest estimated pose
-- receives obstacle reports that will feed future behavior-level recovery and replanning decisions
-- requests a global segment plan from the current pose to the goal
-- publishes a `MotionCommand` containing the global path and goal pose
-- monitors `MotionStatus` until goal reached, cancel, or failure
-- publishes periodic action feedback with current pose, remaining distance, and heading error
+Nav2-style responsibility split:
+- `amr_bt_navigator`: decide
+- `amr_global_planner`: global replan
+- `amr_local_planner`: local replan / local escape
+- `amr_motion_controller`: execute
+- `amr_recovery_server`: wait / backup / spin commands
 
-## Goal Flow
+## Important Files
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant Nav as amr_bt_navigator
-    participant Plan as amr_global_planner
-    participant Motion as amr_motion_controller
+- `config/navigate_to_pose.xml`
+- `src/amr_bt_navigator/bt_navigator.cpp`
 
-    User->>Nav: NavigateToPose(goal_pose)
-    Nav->>Plan: PlanSegment(current_pose, goal_pose)
-    Plan-->>Nav: Path
-    Nav->>Motion: MotionCommand
-    loop until goal_reached
-        Motion-->>Nav: MotionStatus
-        Nav-->>User: feedback
-    end
-    Nav-->>User: result
-```
+## Inputs
 
-## Notes
+- `/amr/localization/pose`
+- `/amr/motion/status`
+- `/amr/global_planner/plan_segment`
+- `/amr/recovery_server/plan_recovery`
+- `/amr/costmap_server/clear_costmap`
 
-- the node is lifecycle-managed but currently uses a lightweight action orchestration flow rather than a full behavior tree engine
-- `default_node_id` remains available for internal command metadata
+## Output
+
+- `/amr/motion/command`

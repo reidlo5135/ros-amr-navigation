@@ -1,8 +1,5 @@
 #include "amr_lifecycle_manager/lifecycle_manager.hpp"
 
-#include <chrono>
-#include <cmath>
-
 namespace amr_lifecycle_manager
 {
 

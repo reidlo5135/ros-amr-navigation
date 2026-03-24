@@ -1,9 +1,5 @@
 #include "amr_costmap_server/costmap_server.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstddef>
-
 namespace amr_costmap_server
 {
 

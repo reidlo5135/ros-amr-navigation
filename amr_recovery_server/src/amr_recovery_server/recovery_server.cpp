@@ -1,7 +1,5 @@
 #include "amr_recovery_server/recovery_server.hpp"
 
-#include <cmath>
-
 namespace amr_recovery_server
 {
 

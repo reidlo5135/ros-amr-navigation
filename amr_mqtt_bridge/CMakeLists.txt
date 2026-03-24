@@ -9,24 +9,6 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-find_package(ament_cmake REQUIRED)
-find_package(action_msgs REQUIRED)
-find_package(amr_msgs REQUIRED)
-find_package(builtin_interfaces REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(rcl REQUIRED)
-find_package(rcl_action REQUIRED)
-find_package(rclc REQUIRED)
-find_package(rcl_yaml_param_parser REQUIRED)
-find_package(rcutils REQUIRED)
-find_package(rmw REQUIRED)
-find_package(rosidl_runtime_c REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(tf2_msgs REQUIRED)
-find_package(unique_identifier_msgs REQUIRED)
-
 find_path(PAHO_MQTT_INCLUDE_DIR MQTTClient.h)
 find_library(PAHO_MQTT3C_LIBRARY NAMES paho-mqtt3c)
 
@@ -41,16 +23,31 @@ include_directories(
   ${PAHO_MQTT_INCLUDE_DIR}
 )
 
+find_package(ament_cmake REQUIRED)
+find_package(action_msgs REQUIRED)
+find_package(amr_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(rcl REQUIRED)
+find_package(rcl_action REQUIRED)
+find_package(rclc REQUIRED)
+find_package(rcl_yaml_param_parser REQUIRED)
+find_package(rcutils REQUIRED)
+find_package(rmw REQUIRED)
+find_package(rosidl_runtime_c REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(tf2_msgs REQUIRED)
+
 set(SOURCES
-  src/amr_mqtt_bridge/node.c
-  src/amr_mqtt_bridge/mqtt.c
+  src/${PROJECT_NAME}/node.c
+  src/${PROJECT_NAME}/mqtt.c
   src/main.c
 )
 
 set(DEPENDS
-  amr_msgs
   action_msgs
-  builtin_interfaces
+  amr_msgs
   geometry_msgs
   nav_msgs
   rcl
@@ -63,7 +60,6 @@ set(DEPENDS
   sensor_msgs
   std_msgs
   tf2_msgs
-  unique_identifier_msgs
 )
 
 set(EXEC_NAME
@@ -90,11 +86,6 @@ install(TARGETS
 
 install(DIRECTORY
   launch
-  DESTINATION share/${PROJECT_NAME}
-)
-
-install(DIRECTORY
-  config
   DESTINATION share/${PROJECT_NAME}
 )
 

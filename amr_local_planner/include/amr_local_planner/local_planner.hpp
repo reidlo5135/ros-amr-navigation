@@ -1,9 +1,15 @@
 #ifndef AMR_LOCAL_PLANNER__LOCAL_PLANNER_HPP_
 #define AMR_LOCAL_PLANNER__LOCAL_PLANNER_HPP_
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstddef>
+#include <limits>
 #include <memory>
+#include <queue>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "amr_msgs/msg/motion_command.hpp"

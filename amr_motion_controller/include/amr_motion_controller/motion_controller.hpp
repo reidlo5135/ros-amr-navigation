@@ -1,6 +1,11 @@
 #ifndef AMR_MOTION_CONTROLLER__MOTION_CONTROLLER_HPP_
 #define AMR_MOTION_CONTROLLER__MOTION_CONTROLLER_HPP_
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <limits>
 #include <string>
 
 #include "amr_msgs/msg/motion_command.hpp"

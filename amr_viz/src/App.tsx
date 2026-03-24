@@ -35,7 +35,6 @@ const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/global_costmap": "global_costmap",
   "amr/robot/turtlebot3/viz/local_costmap": "local_costmap",
   "amr/robot/turtlebot3/viz/motion_status": "motion_status",
-  "amr/robot/turtlebot3/viz/obstacle_report": "obstacle_report",
   "amr/robot/turtlebot3/viz/scan": "scan",
   "amr/robot/turtlebot3/viz/tf": "tf",
   "amr/robot/turtlebot3/viz/tf_static": "tf_static",
@@ -79,7 +78,6 @@ type LayerVisibility = {
   paths: boolean;
   scan: boolean;
   tf: boolean;
-  obstacle: boolean;
 };
 
 type GoalMarker = {
@@ -117,7 +115,6 @@ export default function App() {
     paths: true,
     scan: true,
     tf: true,
-    obstacle: true,
   });
 
   useEffect(() => {
@@ -336,12 +333,6 @@ export default function App() {
               ? `${bridgeState.robot_pose.position.x.toFixed(2)}, ${bridgeState.robot_pose.position.y.toFixed(2)}`
               : "--"}
           </span>
-          <span className="topbar-chip">
-            Obstacle{" "}
-            {bridgeState.obstacle_report?.active
-              ? `${bridgeState.obstacle_report.distance.toFixed(2)} m`
-              : "clear"}
-          </span>
         </div>
       </header>
 
@@ -423,7 +414,6 @@ export default function App() {
                 ["paths", "Plans"],
                 ["scan", "LaserScan"],
                 ["tf", "TF"],
-                ["obstacle", "Obstacle"],
               ].map(([key, label]) => {
                 const layerKey = key as keyof LayerVisibility;
                 return (
@@ -493,32 +483,6 @@ export default function App() {
               <div className="metric-row">
                 <span>Goal</span>
                 <strong>{bridgeState.motion_status?.goal_reached ? "Reached" : "Running"}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel-card">
-            <div className="panel-section-title">Obstacle</div>
-            <div className="metric-list">
-              <div className="metric-row">
-                <span>Type</span>
-                <strong>
-                  {bridgeState.obstacle_report?.active
-                    ? bridgeState.obstacle_report.is_dynamic
-                      ? "Dynamic"
-                      : "Static"
-                    : "Clear"}
-                </strong>
-              </div>
-              <div className="metric-row">
-                <span>Distance</span>
-                <strong>
-                  {bridgeState.obstacle_report?.distance?.toFixed(2) ?? "--"} m
-                </strong>
-              </div>
-              <div className="metric-row">
-                <span>Blocks Path</span>
-                <strong>{bridgeState.obstacle_report?.blocks_path ? "Yes" : "No"}</strong>
               </div>
             </div>
           </section>

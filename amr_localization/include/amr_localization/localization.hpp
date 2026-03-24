@@ -1,6 +1,10 @@
 #ifndef AMR_LOCALIZATION__LOCALIZATION_HPP_
 #define AMR_LOCALIZATION__LOCALIZATION_HPP_
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <random>
 #include <string>

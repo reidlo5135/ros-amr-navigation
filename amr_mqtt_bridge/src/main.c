@@ -1,12 +1,13 @@
 #include "amr_mqtt_bridge/node.h"
 
-int main(int argc, const char * const * argv)
+int main(int argc, const char *argv[])
 {
-  int return_code = amr_mqtt_bridge_init(argc, argv);
-  if (return_code != 0) {
-    return return_code;
+  rcl_ret_t rc = amr_mqtt_bridge_initialize(argc, argv);
+  if (rc != RCL_RET_OK) {
+    return (int)rc;
   }
 
-  amr_mqtt_bridge_spin();
-  return amr_mqtt_bridge_shutdown();
+  amr_mqtt_bridge_run();
+  rc = amr_mqtt_bridge_terminate();
+  return (int)rc;
 }

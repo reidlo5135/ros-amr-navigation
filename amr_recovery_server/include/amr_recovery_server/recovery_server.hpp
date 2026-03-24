@@ -1,6 +1,8 @@
 #ifndef AMR_RECOVERY_SERVER__RECOVERY_SERVER_HPP_
 #define AMR_RECOVERY_SERVER__RECOVERY_SERVER_HPP_
 
+#include <cmath>
+#include <memory>
 #include <string>
 
 #include "amr_msgs/msg/motion_command.hpp"

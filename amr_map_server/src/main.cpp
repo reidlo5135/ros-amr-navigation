@@ -1,7 +1,4 @@
-#include <memory>
-
 #include "amr_map_server/map_server.hpp"
-#include "rclcpp/executors/single_threaded_executor.hpp"
 
 int main(int argc, char ** argv)
 {

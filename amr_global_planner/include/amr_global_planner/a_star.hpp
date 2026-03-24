@@ -1,9 +1,14 @@
 #ifndef AMR_GLOBAL_PLANNER__A_STAR_HPP_
 #define AMR_GLOBAL_PLANNER__A_STAR_HPP_
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <queue>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace amr_global_planner::planner

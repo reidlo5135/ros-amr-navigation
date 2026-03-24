@@ -1,23 +1,5 @@
 #include "amr_map_server/map_server.hpp"
 
-#include <cmath>
-#include <chrono>
-#include <algorithm>
-#include <cstdint>
-#include <filesystem>
-#include <fstream>
-#include <limits>
-#include <sstream>
-#include <string>
-#include <stdexcept>
-#include <vector>
-
-#include "ament_index_cpp/get_package_share_directory.hpp"
-#include "opencv2/imgcodecs.hpp"
-#include "opencv2/imgproc.hpp"
-#include "std_srvs/srv/trigger.hpp"
-#include "yaml-cpp/yaml.h"
-
 namespace amr_map_server
 {
 

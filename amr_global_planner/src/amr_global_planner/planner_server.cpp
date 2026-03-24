@@ -1,10 +1,5 @@
 #include "amr_global_planner/planner_server.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <memory>
-#include <vector>
-
 namespace amr_global_planner
 {
 

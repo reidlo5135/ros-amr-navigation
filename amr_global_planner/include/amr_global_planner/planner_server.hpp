@@ -1,6 +1,8 @@
 #ifndef AMR_GLOBAL_PLANNER__PLANNER_SERVER_HPP_
 #define AMR_GLOBAL_PLANNER__PLANNER_SERVER_HPP_
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>

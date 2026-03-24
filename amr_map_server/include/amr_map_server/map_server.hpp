@@ -1,21 +1,34 @@
 #ifndef AMR_MAP_SERVER__MAP_SERVER_HPP_
 #define AMR_MAP_SERVER__MAP_SERVER_HPP_
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <mutex>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/srv/get_map.hpp"
+#include "opencv2/imgcodecs.hpp"
+#include "opencv2/imgproc.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "tf2_ros/transform_broadcaster.h"
+#include "yaml-cpp/yaml.h"
 
 namespace amr_map_server
 {

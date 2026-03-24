@@ -1,13 +1,5 @@
 #include "amr_local_planner/local_planner.hpp"
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <limits>
-#include <queue>
-#include <utility>
-#include <vector>
-
 namespace amr_local_planner
 {
 

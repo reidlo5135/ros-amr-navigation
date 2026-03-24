@@ -1,10 +1,5 @@
 #include "amr_localization/localization.hpp"
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <limits>
-
 namespace amr_localization
 {
 

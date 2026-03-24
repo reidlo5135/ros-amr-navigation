@@ -45,14 +45,6 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[bringup_params_file()],
     )
-    rviz_bridge = Node(
-        package="amr_rviz_plugins",
-        executable="amr_goal_bridge",
-        name="rviz_bridge",
-        namespace="amr",
-        output="screen",
-        parameters=[bringup_params_file()],
-    )
     navigation_manager = Node(
         package="amr_lifecycle_manager",
         executable="amr_lifecycle_manager",
@@ -77,6 +69,5 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(motion_controller)
     ld.add_action(recovery_server)
     ld.add_action(bt_navigator)
-    ld.add_action(rviz_bridge)
     ld.add_action(navigation_manager)
     return ld

@@ -2,6 +2,8 @@
 #define AMR_LIFECYCLE_MANAGER__LIFECYCLE_MANAGER_HPP_
 
 #include <atomic>
+#include <chrono>
+#include <cmath>
 #include <string>
 #include <thread>
 #include <vector>

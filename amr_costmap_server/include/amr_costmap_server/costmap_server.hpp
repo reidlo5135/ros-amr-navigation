@@ -1,6 +1,9 @@
 #ifndef AMR_COSTMAP_SERVER__COSTMAP_SERVER_HPP_
 #define AMR_COSTMAP_SERVER__COSTMAP_SERVER_HPP_
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <string>
 #include <vector>
 

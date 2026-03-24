@@ -1,26 +1,24 @@
 # amr_costmap_server
 
-`amr_costmap_server` owns the global and local costmaps used by the planners.
+Costmap producer for the AMR stack.
 
-## Responsibilities
+## Role
 
-- Subscribe to the official map
-- Build the global inflated costmap
-- Overlay dynamic obstacle reports into the local costmap
-- Publish `/amr/costmap/global` and `/amr/costmap/local`
+- publishes static inflated global costmap from SLAM map
+- publishes scan-based dynamic inflated local costmap
+- applies footprint-aware inflation scaling
+- exposes `clear_costmap` service for recovery
 
-## Does Not Own
+## Costmap Model
 
-- Global or local path generation
-- Obstacle detection from raw scans
-- Motion command generation
+- `global_costmap`: static map obstacles with inflation
+- `local_costmap`: current local scan hits that differ from static map, inflated for near-term avoidance
 
-## Interface Graph
+## Important Interfaces
 
-```mermaid
-flowchart LR
-    A[/amr/map/data] --> B[amr_costmap_server]
-    C[/amr/obstacle/report] --> B
-    B --> D[/amr/costmap/global]
-    B --> E[/amr/costmap/local]
-```
+- input: `/amr/map/data`
+- input: `/amr/localization/pose`
+- input: `/scan`
+- output: `/amr/costmap/global`
+- output: `/amr/costmap/local`
+- service: `/amr/costmap_server/clear_costmap`

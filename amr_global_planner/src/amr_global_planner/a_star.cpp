@@ -1,11 +1,5 @@
 #include "amr_global_planner/a_star.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
-#include <queue>
-#include <utility>
-
 namespace amr_global_planner::planner
 {
 

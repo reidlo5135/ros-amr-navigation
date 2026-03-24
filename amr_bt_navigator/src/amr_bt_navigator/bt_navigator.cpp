@@ -1,16 +1,5 @@
 #include "amr_bt_navigator/bt_navigator.hpp"
 
-#include <algorithm>
-#include <chrono>
-#include <future>
-#include <memory>
-#include <stdexcept>
-#include <thread>
-
-#include "ament_index_cpp/get_package_share_directory.hpp"
-#include "behaviortree_cpp_v3/bt_factory.h"
-#include "lifecycle_msgs/msg/state.hpp"
-
 namespace amr_bt_navigator
 {
 

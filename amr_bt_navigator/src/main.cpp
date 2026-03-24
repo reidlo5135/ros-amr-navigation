@@ -1,7 +1,4 @@
-#include <memory>
-
 #include "amr_bt_navigator/bt_navigator.hpp"
-#include "rclcpp/executors/single_threaded_executor.hpp"
 
 int main(int argc, char ** argv)
 {

@@ -1,74 +1,8 @@
 #include "amr_mqtt_bridge/node.h"
-#include "amr_mqtt_bridge/mqtt.h"
-
-#include <math.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
-#include <rcl/graph.h>
-#include <rcl/arguments.h>
-#include <rcl/client.h>
-#include <rcl/error_handling.h>
-#include <rcl/publisher.h>
-#include <rcl/wait.h>
-#include <rcl_action/action_client.h>
-#include <rcl_action/wait.h>
-#include <rmw/rmw.h>
-#include <rmw/serialized_message.h>
-#include <rcutils/error_handling.h>
-#include <rcutils/logging.h>
-#include <rcutils/logging_macros.h>
-#include <rosidl_runtime_c/action_type_support_struct.h>
-#include <rosidl_runtime_c/message_type_support_struct.h>
-#include <rosidl_runtime_c/primitives_sequence_functions.h>
-#include <rosidl_runtime_c/service_type_support_struct.h>
-#include <rosidl_runtime_c/string_functions.h>
-#include <rcl_yaml_param_parser/parser.h>
-
-#include <action_msgs/msg/detail/goal_status_array__functions.h>
-#include <amr_msgs/action/detail/navigate_to_pose__functions.h>
-#include <amr_msgs/action/detail/navigate_to_pose__type_support.h>
-#include <amr_msgs/srv/detail/plan_route__functions.h>
-#include <amr_msgs/srv/detail/plan_segment__functions.h>
-#include <geometry_msgs/msg/detail/pose_stamped__functions.h>
-#include <geometry_msgs/msg/detail/pose_stamped__type_support.h>
-#include <geometry_msgs/msg/detail/transform_stamped__functions.h>
-#include <geometry_msgs/msg/detail/twist__functions.h>
-#include <geometry_msgs/msg/detail/twist__type_support.h>
-#include <geometry_msgs/msg/detail/pose_with_covariance_stamped__functions.h>
-#include <geometry_msgs/msg/detail/pose_with_covariance_stamped__type_support.h>
-#include <nav_msgs/msg/detail/occupancy_grid__functions.h>
-#include <nav_msgs/msg/detail/occupancy_grid__type_support.h>
-#include <nav_msgs/msg/detail/odometry__functions.h>
-#include <nav_msgs/msg/detail/odometry__type_support.h>
-#include <nav_msgs/msg/detail/path__functions.h>
-#include <nav_msgs/msg/detail/path__type_support.h>
-#include <amr_msgs/msg/detail/motion_status__functions.h>
-#include <amr_msgs/msg/detail/motion_status__type_support.h>
-#include <amr_msgs/msg/detail/obstacle_report__functions.h>
-#include <amr_msgs/msg/detail/obstacle_report__type_support.h>
-#include <sensor_msgs/msg/detail/imu__functions.h>
-#include <sensor_msgs/msg/detail/imu__type_support.h>
-#include <sensor_msgs/msg/detail/joint_state__functions.h>
-#include <sensor_msgs/msg/detail/joint_state__type_support.h>
-#include <sensor_msgs/msg/detail/laser_scan__functions.h>
-#include <sensor_msgs/msg/detail/laser_scan__type_support.h>
-#include <std_msgs/msg/detail/string__functions.h>
-#include <std_msgs/msg/detail/string__type_support.h>
-#include <tf2_msgs/msg/detail/tf_message__functions.h>
-#include <tf2_msgs/msg/detail/tf_message__type_support.h>
-#include <rclc/publisher.h>
-#include <rclc/subscription.h>
 
 amr_mqtt_bridge_runtime_t g_amr_mqtt_bridge_runtime = {0};
-
 amr_mqtt_bridge_mqtt_state_t g_amr_mqtt_bridge_mqtt = {0};
-
 amr_mqtt_bridge_config_t g_amr_mqtt_bridge_config = {0};
-
 amr_mqtt_bridge_ros_state_t g_amr_mqtt_bridge_ros_state = {0};
 
 typedef struct amr_mqtt_bridge_string_builder_s
@@ -78,25 +12,18 @@ typedef struct amr_mqtt_bridge_string_builder_s
   size_t capacity;
 } amr_mqtt_bridge_string_builder_t;
 
-static void amr_mqtt_bridge_fini_messages(void);
-static void amr_mqtt_bridge_fini_subscriptions(void);
-static void amr_mqtt_bridge_log_rcl_fini_error(const char * label, rcl_ret_t rc);
-static void amr_mqtt_bridge_poll_mqtt(void);
-static int amr_mqtt_bridge_init_robot_publishers(void);
-static void amr_mqtt_bridge_fini_robot_publishers(void);
-
 static const char * k_node_name = "/amr/mqtt_bridge";
-static const char * k_viz_telemetry_robot_pose_topic = "amr/telemetry/robot_pose";
-static const char * k_viz_telemetry_global_path_topic = "amr/telemetry/global_path";
-static const char * k_viz_telemetry_local_path_topic = "amr/telemetry/local_path";
-static const char * k_viz_telemetry_map_topic = "amr/telemetry/map";
-static const char * k_viz_telemetry_global_costmap_topic = "amr/telemetry/global_costmap";
-static const char * k_viz_telemetry_local_costmap_topic = "amr/telemetry/local_costmap";
-static const char * k_viz_telemetry_motion_status_topic = "amr/telemetry/motion_status";
-static const char * k_viz_telemetry_obstacle_report_topic = "amr/telemetry/obstacle_report";
-static const char * k_viz_telemetry_scan_topic = "amr/telemetry/scan";
-static const char * k_viz_telemetry_tf_topic = "amr/telemetry/tf";
-static const char * k_viz_telemetry_tf_static_topic = "amr/telemetry/tf_static";
+static const rmw_qos_profile_t k_sensor_qos = {
+  RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+  10,
+  RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
+  RMW_QOS_POLICY_DURABILITY_VOLATILE,
+  RMW_QOS_DEADLINE_DEFAULT,
+  RMW_QOS_LIFESPAN_DEFAULT,
+  RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT,
+  RMW_QOS_LIVELINESS_LEASE_DURATION_DEFAULT,
+  false
+};
 static const rmw_qos_profile_t k_default_qos = {
   RMW_QOS_POLICY_HISTORY_KEEP_LAST,
   10,
@@ -120,18 +47,40 @@ static const rmw_qos_profile_t k_transient_local_qos = {
   false
 };
 
+static void amr_mqtt_bridge_log_rcl_error(const char * label, rcl_ret_t rc)
+{
+  if (rc == RCL_RET_OK) {
+    return;
+  }
+  RCUTILS_LOG_ERROR_NAMED(
+    "amr_mqtt_bridge",
+    "Failed to finalize %s: %s",
+    label,
+    rcl_get_error_string().str);
+  rcl_reset_error();
+  g_amr_mqtt_bridge_runtime.return_code = 1;
+}
+
 static void amr_mqtt_bridge_copy_string(char * destination, size_t capacity, const char * source)
 {
   if (capacity == 0U) {
     return;
   }
-
   if (source == NULL) {
     destination[0] = '\0';
     return;
   }
-
   (void)snprintf(destination, capacity, "%s", source);
+}
+
+static uint64_t amr_mqtt_bridge_now_ms(void)
+{
+  struct timespec timestamp;
+  if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0) {
+    return 0U;
+  }
+
+  return ((uint64_t)timestamp.tv_sec * 1000ULL) + ((uint64_t)timestamp.tv_nsec / 1000000ULL);
 }
 
 static void amr_mqtt_bridge_set_default_config(void)
@@ -139,68 +88,213 @@ static void amr_mqtt_bridge_set_default_config(void)
   memset(&g_amr_mqtt_bridge_config, 0, sizeof(g_amr_mqtt_bridge_config));
 
   amr_mqtt_bridge_copy_string(
-    g_amr_mqtt_bridge_config.broker.host, sizeof(g_amr_mqtt_bridge_config.broker.host), "127.0.0.1");
+    g_amr_mqtt_bridge_config.broker.host,
+    sizeof(g_amr_mqtt_bridge_config.broker.host),
+    "192.168.61.35");
   g_amr_mqtt_bridge_config.broker.port = 1883;
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.broker.client_id,
     sizeof(g_amr_mqtt_bridge_config.broker.client_id),
     "amr_mqtt_bridge");
-  g_amr_mqtt_bridge_config.broker.keep_alive_sec = 20;
-  g_amr_mqtt_bridge_config.broker.clean_session = true;
+  g_amr_mqtt_bridge_config.broker.keep_alive_sec = 300;
+  g_amr_mqtt_bridge_config.broker.clean_session = false;
 
   amr_mqtt_bridge_copy_string(
-    g_amr_mqtt_bridge_config.mqtt.root, sizeof(g_amr_mqtt_bridge_config.mqtt.root), "amr");
+    g_amr_mqtt_bridge_config.mqtt.root,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.root),
+    "amr/robot/turtlebot3");
   g_amr_mqtt_bridge_config.mqtt.telemetry_qos = 0;
   g_amr_mqtt_bridge_config.mqtt.command_qos = 0;
   g_amr_mqtt_bridge_config.mqtt.service_qos = 0;
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose), "amr/robot/turtlebot3/telemetry/robot_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path), "amr/robot/turtlebot3/telemetry/global_path");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path), "amr/robot/turtlebot3/telemetry/local_path");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_map), "amr/telemetry/map");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap), "amr/robot/turtlebot3/telemetry/global_costmap");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap), "amr/robot/turtlebot3/telemetry/local_costmap");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status), "amr/robot/turtlebot3/telemetry/motion_status");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report), "amr/robot/turtlebot3/telemetry/obstacle_report");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel), "amr/robot/turtlebot3/command/cmd_vel");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map), "amr/robot/turtlebot3/telemetry/map");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan), "amr/robot/turtlebot3/telemetry/scan");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom), "amr/robot/turtlebot3/telemetry/odom");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu), "amr/robot/turtlebot3/telemetry/imu");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf), "amr/robot/turtlebot3/telemetry/tf");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static), "amr/robot/turtlebot3/telemetry/tf_static");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states), "amr/robot/turtlebot3/telemetry/joint_states");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_robot_description, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_robot_description), "amr/robot/turtlebot3/telemetry/robot_description");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose), "amr/command/navigate_to_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose), "amr/command/set_initial_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose), "amr/feedback/navigate_to_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose), "amr/status/navigate_to_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose), "amr/response/set_initial_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose), "amr/response/navigate_to_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.request_plan_segment, sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_segment), "amr/request/plan_segment");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.request_plan_route, sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_route), "amr/request/plan_route");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.response_plan_segment, sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_segment), "amr/response/plan_segment");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.mqtt.response_plan_route, sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_route), "amr/response/plan_route");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_map,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_map),
+    "amr/robot/turtlebot3/telemetry/map");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose),
+    "amr/robot/turtlebot3/telemetry/robot_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_global_path,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path),
+    "amr/robot/turtlebot3/telemetry/global_path");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_local_path,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path),
+    "amr/robot/turtlebot3/telemetry/local_path");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap),
+    "amr/robot/turtlebot3/telemetry/global_costmap");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap),
+    "amr/robot/turtlebot3/telemetry/local_costmap");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status),
+    "amr/robot/turtlebot3/telemetry/motion_status");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_scan,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_scan),
+    "amr/robot/turtlebot3/telemetry/scan");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_odom,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_odom),
+    "amr/robot/turtlebot3/telemetry/odom");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_imu,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_imu),
+    "amr/robot/turtlebot3/telemetry/imu");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_tf,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_tf),
+    "amr/robot/turtlebot3/telemetry/tf");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_tf_static,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_tf_static),
+    "amr/robot/turtlebot3/telemetry/tf_static");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states),
+    "amr/robot/turtlebot3/telemetry/joint_states");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description),
+    "amr/robot/turtlebot3/telemetry/robot_description");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.command_cmd_vel,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.command_cmd_vel),
+    "amr/robot/turtlebot3/command/cmd_vel");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose),
+    "amr/command/set_initial_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose),
+    "amr/command/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose),
+    "amr/command/cancel_navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose),
+    "amr/feedback/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose),
+    "amr/status/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose),
+    "amr/response/set_initial_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose),
+    "amr/response/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.request_plan_segment,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_segment),
+    "amr/request/plan_segment");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.request_plan_route,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_route),
+    "amr/request/plan_route");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_segment),
+    "amr/response/plan_segment");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.response_plan_route,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_route),
+    "amr/response/plan_route");
 
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_pose, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_pose), "/amr/localization/pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_global_path, sizeof(g_amr_mqtt_bridge_config.ros.topic_global_path), "/amr/planner/global");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_local_path, sizeof(g_amr_mqtt_bridge_config.ros.topic_local_path), "/amr/planner/local");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_map, sizeof(g_amr_mqtt_bridge_config.ros.topic_map), "/amr/map/data");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_global_costmap, sizeof(g_amr_mqtt_bridge_config.ros.topic_global_costmap), "/amr/costmap/global");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_local_costmap, sizeof(g_amr_mqtt_bridge_config.ros.topic_local_costmap), "/amr/costmap/local");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_motion_status, sizeof(g_amr_mqtt_bridge_config.ros.topic_motion_status), "/amr/motion/status");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_obstacle_report, sizeof(g_amr_mqtt_bridge_config.ros.topic_obstacle_report), "/amr/obstacle/report");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_velocity, sizeof(g_amr_mqtt_bridge_config.ros.topic_velocity), "/cmd_vel");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_scan, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_scan), "/scan");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_odom, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_odom), "/odom");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_imu, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_imu), "/imu");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_tf, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_tf), "/tf");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_tf_static, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_tf_static), "/tf_static");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_joint_states, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_joint_states), "/joint_states");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_robot_description, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_description), "/robot_description");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_rviz_goal, sizeof(g_amr_mqtt_bridge_config.ros.topic_rviz_goal), "/amr/rviz/goal");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_initial_pose, sizeof(g_amr_mqtt_bridge_config.ros.topic_initial_pose), "/amr/localization/initial_pose");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_navigate_feedback, sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_feedback), "/amr/navigator/navigate_to_pose/feedback");
-  amr_mqtt_bridge_copy_string(g_amr_mqtt_bridge_config.ros.topic_navigate_status, sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_status), "/amr/navigator/navigate_to_pose/status");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_map,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_map),
+    "/amr/map/data");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_robot_pose,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_pose),
+    "/amr/localization/pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_global_path,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_global_path),
+    "/amr/planner/global");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_local_path,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_local_path),
+    "/amr/planner/local");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_global_costmap,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_global_costmap),
+    "/amr/costmap/global");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_local_costmap,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_local_costmap),
+    "/amr/costmap/local");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_motion_status,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_motion_status),
+    "/amr/motion/status");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_scan,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_scan),
+    "/scan");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_odom,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_odom),
+    "/odom");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_imu,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_imu),
+    "/imu");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_tf,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_tf),
+    "/tf");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_tf_static,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_tf_static),
+    "/tf_static");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_joint_states,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_joint_states),
+    "/joint_states");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_robot_description,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_description),
+    "/robot_description");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_cmd_vel,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_cmd_vel),
+    "/cmd_vel");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_initial_pose,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_initial_pose),
+    "/amr/localization/initial_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_navigate_feedback,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_feedback),
+    "/amr/navigator/navigate_to_pose/feedback");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_navigate_status,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_status),
+    "/amr/navigator/navigate_to_pose/status");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.service_plan_segment,
+    sizeof(g_amr_mqtt_bridge_config.ros.service_plan_segment),
+    "/amr/global_planner/plan_segment");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.service_plan_route,
+    sizeof(g_amr_mqtt_bridge_config.ros.service_plan_route),
+    "/amr/global_planner/plan_route");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.action_navigate_to_pose,
+    sizeof(g_amr_mqtt_bridge_config.ros.action_navigate_to_pose),
+    "/amr/navigator/navigate_to_pose");
 }
 
 static const rcl_node_params_t * amr_mqtt_bridge_find_node_params(
@@ -216,16 +310,10 @@ static const rcl_node_params_t * amr_mqtt_bridge_find_node_params(
     if (current_name == NULL) {
       continue;
     }
-
-    if (strcmp(current_name, node_name) == 0) {
-      return &params->params[node_index];
-    }
-
-    if (node_name[0] == '/' && strcmp(current_name, node_name + 1) == 0) {
-      return &params->params[node_index];
-    }
-
-    if (current_name[0] == '/' && strcmp(current_name + 1, node_name) == 0) {
+    if (strcmp(current_name, node_name) == 0 ||
+      (node_name[0] == '/' && strcmp(current_name, node_name + 1) == 0) ||
+      (current_name[0] == '/' && strcmp(current_name + 1, node_name) == 0))
+    {
       return &params->params[node_index];
     }
   }
@@ -257,11 +345,11 @@ static void amr_mqtt_bridge_read_string_param(
   char * destination,
   size_t capacity)
 {
-  const rcl_variant_t * variant = amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
+  const rcl_variant_t * variant =
+    amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
   if (variant == NULL || variant->string_value == NULL) {
     return;
   }
-
   amr_mqtt_bridge_copy_string(destination, capacity, variant->string_value);
 }
 
@@ -270,11 +358,11 @@ static void amr_mqtt_bridge_read_integer_param(
   const char * parameter_name,
   int * destination)
 {
-  const rcl_variant_t * variant = amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
+  const rcl_variant_t * variant =
+    amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
   if (variant == NULL || variant->integer_value == NULL || destination == NULL) {
     return;
   }
-
   *destination = (int)(*variant->integer_value);
 }
 
@@ -283,35 +371,29 @@ static void amr_mqtt_bridge_read_bool_param(
   const char * parameter_name,
   bool * destination)
 {
-  const rcl_variant_t * variant = amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
+  const rcl_variant_t * variant =
+    amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
   if (variant == NULL || variant->bool_value == NULL || destination == NULL) {
     return;
   }
-
   *destination = *variant->bool_value;
 }
 
 static void amr_mqtt_bridge_load_parameter_overrides(void)
 {
   rcl_params_t * parameter_overrides = NULL;
+  const rcl_node_params_t * node_params = NULL;
   rcl_ret_t rc = rcl_arguments_get_param_overrides(
     &g_amr_mqtt_bridge_runtime.support.context.global_arguments,
     &parameter_overrides);
-  if (rc != RCL_RET_OK) {
-    RCUTILS_LOG_WARN_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to read parameter overrides, using defaults: %s",
-      rcl_get_error_string().str);
-    rcl_reset_error();
+  if (rc != RCL_RET_OK || parameter_overrides == NULL) {
+    if (rc != RCL_RET_OK) {
+      rcl_reset_error();
+    }
     return;
   }
 
-  if (parameter_overrides == NULL) {
-    return;
-  }
-
-  const rcl_node_params_t * node_params =
-    amr_mqtt_bridge_find_node_params(parameter_overrides, k_node_name);
+  node_params = amr_mqtt_bridge_find_node_params(parameter_overrides, k_node_name);
   if (node_params != NULL) {
     amr_mqtt_bridge_read_string_param(node_params, "broker.host", g_amr_mqtt_bridge_config.broker.host, sizeof(g_amr_mqtt_bridge_config.broker.host));
     amr_mqtt_bridge_read_integer_param(node_params, "broker.port", &g_amr_mqtt_bridge_config.broker.port);
@@ -325,25 +407,24 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_integer_param(node_params, "mqtt.qos.telemetry", &g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
     amr_mqtt_bridge_read_integer_param(node_params, "mqtt.qos.command", &g_amr_mqtt_bridge_config.mqtt.command_qos);
     amr_mqtt_bridge_read_integer_param(node_params, "mqtt.qos.service", &g_amr_mqtt_bridge_config.mqtt.service_qos);
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.map", g_amr_mqtt_bridge_config.mqtt.telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_map));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.robot_pose", g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.global_path", g_amr_mqtt_bridge_config.mqtt.telemetry_global_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_path));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.local_path", g_amr_mqtt_bridge_config.mqtt.telemetry_local_path, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_path));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.map", g_amr_mqtt_bridge_config.mqtt.telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_map));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.global_costmap", g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.local_costmap", g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.motion_status", g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.obstacle_report", g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.robot_cmd_vel", g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.map", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.scan", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.odom", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.imu", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.tf", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.tf_static", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.joint_states", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.robot.telemetry.robot_description", g_amr_mqtt_bridge_config.mqtt.robot_telemetry_robot_description, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_telemetry_robot_description));
-    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.scan", g_amr_mqtt_bridge_config.mqtt.telemetry_scan, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_scan));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.odom", g_amr_mqtt_bridge_config.mqtt.telemetry_odom, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_odom));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.imu", g_amr_mqtt_bridge_config.mqtt.telemetry_imu, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_imu));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.tf", g_amr_mqtt_bridge_config.mqtt.telemetry_tf, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_tf));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.tf_static", g_amr_mqtt_bridge_config.mqtt.telemetry_tf_static, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_tf_static));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.joint_states", g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.robot_description", g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.cmd_vel", g_amr_mqtt_bridge_config.mqtt.command_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_cmd_vel));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.cancel_navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.feedback.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.status.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose));
@@ -353,54 +434,30 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.plan_segment", g_amr_mqtt_bridge_config.mqtt.response_plan_segment, sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_segment));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.plan_route", g_amr_mqtt_bridge_config.mqtt.response_plan_route, sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_route));
 
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.map", g_amr_mqtt_bridge_config.ros.topic_map, sizeof(g_amr_mqtt_bridge_config.ros.topic_map));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot_pose", g_amr_mqtt_bridge_config.ros.topic_robot_pose, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_pose));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.global_path", g_amr_mqtt_bridge_config.ros.topic_global_path, sizeof(g_amr_mqtt_bridge_config.ros.topic_global_path));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.local_path", g_amr_mqtt_bridge_config.ros.topic_local_path, sizeof(g_amr_mqtt_bridge_config.ros.topic_local_path));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.map", g_amr_mqtt_bridge_config.ros.topic_map, sizeof(g_amr_mqtt_bridge_config.ros.topic_map));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.global_costmap", g_amr_mqtt_bridge_config.ros.topic_global_costmap, sizeof(g_amr_mqtt_bridge_config.ros.topic_global_costmap));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.local_costmap", g_amr_mqtt_bridge_config.ros.topic_local_costmap, sizeof(g_amr_mqtt_bridge_config.ros.topic_local_costmap));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.motion_status", g_amr_mqtt_bridge_config.ros.topic_motion_status, sizeof(g_amr_mqtt_bridge_config.ros.topic_motion_status));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.obstacle_report", g_amr_mqtt_bridge_config.ros.topic_obstacle_report, sizeof(g_amr_mqtt_bridge_config.ros.topic_obstacle_report));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.velocity", g_amr_mqtt_bridge_config.ros.topic_velocity, sizeof(g_amr_mqtt_bridge_config.ros.topic_velocity));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.scan", g_amr_mqtt_bridge_config.ros.topic_robot_scan, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_scan));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.odom", g_amr_mqtt_bridge_config.ros.topic_robot_odom, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_odom));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.imu", g_amr_mqtt_bridge_config.ros.topic_robot_imu, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_imu));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.tf", g_amr_mqtt_bridge_config.ros.topic_robot_tf, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_tf));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.tf_static", g_amr_mqtt_bridge_config.ros.topic_robot_tf_static, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_tf_static));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.joint_states", g_amr_mqtt_bridge_config.ros.topic_robot_joint_states, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_joint_states));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot.robot_description", g_amr_mqtt_bridge_config.ros.topic_robot_description, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_description));
-    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.rviz_goal", g_amr_mqtt_bridge_config.ros.topic_rviz_goal, sizeof(g_amr_mqtt_bridge_config.ros.topic_rviz_goal));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.scan", g_amr_mqtt_bridge_config.ros.topic_scan, sizeof(g_amr_mqtt_bridge_config.ros.topic_scan));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.odom", g_amr_mqtt_bridge_config.ros.topic_odom, sizeof(g_amr_mqtt_bridge_config.ros.topic_odom));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.imu", g_amr_mqtt_bridge_config.ros.topic_imu, sizeof(g_amr_mqtt_bridge_config.ros.topic_imu));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.tf", g_amr_mqtt_bridge_config.ros.topic_tf, sizeof(g_amr_mqtt_bridge_config.ros.topic_tf));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.tf_static", g_amr_mqtt_bridge_config.ros.topic_tf_static, sizeof(g_amr_mqtt_bridge_config.ros.topic_tf_static));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.joint_states", g_amr_mqtt_bridge_config.ros.topic_joint_states, sizeof(g_amr_mqtt_bridge_config.ros.topic_joint_states));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot_description", g_amr_mqtt_bridge_config.ros.topic_robot_description, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_description));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.cmd_vel", g_amr_mqtt_bridge_config.ros.topic_cmd_vel, sizeof(g_amr_mqtt_bridge_config.ros.topic_cmd_vel));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.initial_pose", g_amr_mqtt_bridge_config.ros.topic_initial_pose, sizeof(g_amr_mqtt_bridge_config.ros.topic_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.navigate_feedback", g_amr_mqtt_bridge_config.ros.topic_navigate_feedback, sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_feedback));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.navigate_status", g_amr_mqtt_bridge_config.ros.topic_navigate_status, sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_status));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.services.plan_segment", g_amr_mqtt_bridge_config.ros.service_plan_segment, sizeof(g_amr_mqtt_bridge_config.ros.service_plan_segment));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.services.plan_route", g_amr_mqtt_bridge_config.ros.service_plan_route, sizeof(g_amr_mqtt_bridge_config.ros.service_plan_route));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.actions.navigate_to_pose", g_amr_mqtt_bridge_config.ros.action_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.ros.action_navigate_to_pose));
   }
 
   rcl_yaml_node_struct_fini(parameter_overrides);
-}
-
-static void amr_mqtt_bridge_log_config(void)
-{
-  RCUTILS_LOG_INFO_NAMED(
-    "amr_mqtt_bridge",
-    "Configured broker %s:%d with client_id='%s'",
-    g_amr_mqtt_bridge_config.broker.host,
-    g_amr_mqtt_bridge_config.broker.port,
-    g_amr_mqtt_bridge_config.broker.client_id);
-}
-
-static void amr_mqtt_bridge_log_rcl_fini_error(const char * label, rcl_ret_t rc)
-{
-  if (rc == RCL_RET_OK) {
-    return;
-  }
-
-  RCUTILS_LOG_ERROR_NAMED(
-    "amr_mqtt_bridge",
-    "Failed to finalize %s: %s",
-    label,
-    rcl_get_error_string().str);
-  rcl_reset_error();
-  g_amr_mqtt_bridge_runtime.return_code = 1;
 }
 
 static bool amr_mqtt_bridge_builder_init(
@@ -413,7 +470,6 @@ static bool amr_mqtt_bridge_builder_init(
     builder->capacity = 0U;
     return false;
   }
-
   builder->data[0] = '\0';
   builder->length = 0U;
   builder->capacity = initial_capacity;
@@ -438,17 +494,14 @@ static bool amr_mqtt_bridge_builder_reserve(
   if (required_capacity <= builder->capacity) {
     return true;
   }
-
   size_t new_capacity = builder->capacity == 0U ? 256U : builder->capacity;
   while (new_capacity < required_capacity) {
     new_capacity *= 2U;
   }
-
   char * resized = (char *)realloc(builder->data, new_capacity);
   if (resized == NULL) {
     return false;
   }
-
   builder->data = resized;
   builder->capacity = new_capacity;
   return true;
@@ -462,7 +515,6 @@ static bool amr_mqtt_bridge_builder_append(
   if (!amr_mqtt_bridge_builder_reserve(builder, text_length)) {
     return false;
   }
-
   memcpy(builder->data + builder->length, text, text_length + 1U);
   builder->length += text_length;
   return true;
@@ -475,20 +527,20 @@ static bool amr_mqtt_bridge_builder_appendf(
 {
   va_list args;
   va_list args_copy;
+  int required = 0;
+
   va_start(args, format);
   va_copy(args_copy, args);
-  int required = vsnprintf(NULL, 0, format, args_copy);
+  required = vsnprintf(NULL, 0, format, args_copy);
   va_end(args_copy);
   if (required < 0) {
     va_end(args);
     return false;
   }
-
   if (!amr_mqtt_bridge_builder_reserve(builder, (size_t)required)) {
     va_end(args);
     return false;
   }
-
   (void)vsnprintf(builder->data + builder->length, builder->capacity - builder->length, format, args);
   builder->length += (size_t)required;
   va_end(args);
@@ -503,67 +555,34 @@ static bool amr_mqtt_bridge_builder_append_json_string(
   if (!amr_mqtt_bridge_builder_append(builder, "\"")) {
     return false;
   }
-
   for (size_t index = 0; safe_text[index] != '\0'; ++index) {
     char current = safe_text[index];
-    switch (current) {
-      case '\\':
-        if (!amr_mqtt_bridge_builder_append(builder, "\\\\")) {
-          return false;
-        }
-        break;
-      case '"':
-        if (!amr_mqtt_bridge_builder_append(builder, "\\\"")) {
-          return false;
-        }
-        break;
-      case '\n':
-        if (!amr_mqtt_bridge_builder_append(builder, "\\n")) {
-          return false;
-        }
-        break;
-      case '\r':
-        if (!amr_mqtt_bridge_builder_append(builder, "\\r")) {
-          return false;
-        }
-        break;
-      case '\t':
-        if (!amr_mqtt_bridge_builder_append(builder, "\\t")) {
-          return false;
-        }
-        break;
-      default:
-      {
-        char buffer[2] = {current, '\0'};
-        if (!amr_mqtt_bridge_builder_append(builder, buffer)) {
-          return false;
-        }
-        break;
+    if (current == '\\') {
+      if (!amr_mqtt_bridge_builder_append(builder, "\\\\")) {
+        return false;
+      }
+    } else if (current == '"') {
+      if (!amr_mqtt_bridge_builder_append(builder, "\\\"")) {
+        return false;
+      }
+    } else {
+      char buffer[2] = {current, '\0'};
+      if (!amr_mqtt_bridge_builder_append(builder, buffer)) {
+        return false;
       }
     }
   }
-
   return amr_mqtt_bridge_builder_append(builder, "\"");
 }
 
-static char * amr_mqtt_bridge_builder_take(amr_mqtt_bridge_string_builder_t * builder)
+static char * amr_mqtt_bridge_builder_take(
+  amr_mqtt_bridge_string_builder_t * builder)
 {
   char * data = builder->data;
   builder->data = NULL;
   builder->length = 0U;
   builder->capacity = 0U;
   return data;
-}
-
-static double amr_mqtt_bridge_quaternion_to_yaw(
-  double x,
-  double y,
-  double z,
-  double w)
-{
-  const double siny_cosp = 2.0 * ((w * z) + (x * y));
-  const double cosy_cosp = 1.0 - 2.0 * ((y * y) + (z * z));
-  return atan2(siny_cosp, cosy_cosp);
 }
 
 static bool amr_mqtt_bridge_append_header(
@@ -577,6 +596,17 @@ static bool amr_mqtt_bridge_append_header(
     header->stamp.nanosec) &&
     amr_mqtt_bridge_builder_append_json_string(builder, header->frame_id.data) &&
     amr_mqtt_bridge_builder_append(builder, "}");
+}
+
+static double amr_mqtt_bridge_quaternion_to_yaw(
+  double x,
+  double y,
+  double z,
+  double w)
+{
+  const double siny_cosp = 2.0 * ((w * z) + (x * y));
+  const double cosy_cosp = 1.0 - 2.0 * ((y * y) + (z * z));
+  return atan2(siny_cosp, cosy_cosp);
 }
 
 static bool amr_mqtt_bridge_append_pose_fields(
@@ -738,33 +768,110 @@ static char * amr_mqtt_bridge_serialize_motion_status(const void * message)
     amr_mqtt_bridge_builder_fini(&builder);
     return NULL;
   }
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
+static char * amr_mqtt_bridge_serialize_scan(const void * message)
+{
+  const sensor_msgs__msg__LaserScan * scan = (const sensor_msgs__msg__LaserScan *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 1024U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{") ||
+    !amr_mqtt_bridge_append_header(&builder, &scan->header) ||
+    !amr_mqtt_bridge_builder_appendf(
+      &builder,
+      ",\"angle_min\":%.6f,\"angle_max\":%.6f,\"angle_increment\":%.6f,"
+      "\"range_min\":%.6f,\"range_max\":%.6f,\"ranges_count\":%zu,\"ranges\":[",
+      scan->angle_min,
+      scan->angle_max,
+      scan->angle_increment,
+      scan->range_min,
+      scan->range_max,
+      scan->ranges.size))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  for (size_t index = 0; index < scan->ranges.size; ++index) {
+    if (index > 0U && !amr_mqtt_bridge_builder_append(&builder, ",")) {
+      amr_mqtt_bridge_builder_fini(&builder);
+      return NULL;
+    }
+    if (!amr_mqtt_bridge_builder_appendf(&builder, "%.6f", scan->ranges.data[index])) {
+      amr_mqtt_bridge_builder_fini(&builder);
+      return NULL;
+    }
+  }
+
+  if (!amr_mqtt_bridge_builder_append(&builder, "]}")) {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
+static char * amr_mqtt_bridge_serialize_odom(const void * message)
+{
+  const nav_msgs__msg__Odometry * odom = (const nav_msgs__msg__Odometry *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{") ||
+    !amr_mqtt_bridge_append_header(&builder, &odom->header) ||
+    !amr_mqtt_bridge_builder_append(&builder, ",\"child_frame_id\":") ||
+    !amr_mqtt_bridge_builder_append_json_string(&builder, odom->child_frame_id.data) ||
+    !amr_mqtt_bridge_builder_appendf(
+      &builder,
+      ",\"pose\":{\"position\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
+      "\"orientation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f}},"
+      "\"twist\":{\"linear\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
+      "\"angular\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f}}}",
+      odom->pose.pose.position.x,
+      odom->pose.pose.position.y,
+      odom->pose.pose.position.z,
+      odom->pose.pose.orientation.x,
+      odom->pose.pose.orientation.y,
+      odom->pose.pose.orientation.z,
+      odom->pose.pose.orientation.w,
+      odom->twist.twist.linear.x,
+      odom->twist.twist.linear.y,
+      odom->twist.twist.linear.z,
+      odom->twist.twist.angular.x,
+      odom->twist.twist.angular.y,
+      odom->twist.twist.angular.z))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
 
   return amr_mqtt_bridge_builder_take(&builder);
 }
 
-static char * amr_mqtt_bridge_serialize_obstacle_report(const void * message)
+static char * amr_mqtt_bridge_serialize_imu(const void * message)
 {
-  const amr_msgs__msg__ObstacleReport * report = (const amr_msgs__msg__ObstacleReport *)message;
+  const sensor_msgs__msg__Imu * imu = (const sensor_msgs__msg__Imu *)message;
   amr_mqtt_bridge_string_builder_t builder = {0};
+
   if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
     !amr_mqtt_bridge_builder_append(&builder, "{") ||
-    !amr_mqtt_bridge_append_header(&builder, &report->header) ||
+    !amr_mqtt_bridge_append_header(&builder, &imu->header) ||
     !amr_mqtt_bridge_builder_appendf(
       &builder,
-      ",\"active\":%s,\"is_dynamic\":%s,\"blocks_path\":%s,\"severity\":%u,"
-      "\"distance\":%.6f,\"bearing\":%.6f,"
-      "\"obstacle_point\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},\"source\":",
-      report->active ? "true" : "false",
-      report->is_dynamic ? "true" : "false",
-      report->blocks_path ? "true" : "false",
-      report->severity,
-      report->distance,
-      report->bearing,
-      report->obstacle_point.x,
-      report->obstacle_point.y,
-      report->obstacle_point.z) ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, report->source.data) ||
-    !amr_mqtt_bridge_builder_append(&builder, "}"))
+      ",\"orientation\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f,\"w\":%.6f},"
+      "\"angular_velocity\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f},"
+      "\"linear_acceleration\":{\"x\":%.6f,\"y\":%.6f,\"z\":%.6f}}",
+      imu->orientation.x,
+      imu->orientation.y,
+      imu->orientation.z,
+      imu->orientation.w,
+      imu->angular_velocity.x,
+      imu->angular_velocity.y,
+      imu->angular_velocity.z,
+      imu->linear_acceleration.x,
+      imu->linear_acceleration.y,
+      imu->linear_acceleration.z))
   {
     amr_mqtt_bridge_builder_fini(&builder);
     return NULL;
@@ -775,7 +882,28 @@ static char * amr_mqtt_bridge_serialize_obstacle_report(const void * message)
 
 static bool amr_mqtt_bridge_builder_append_double_array(
   amr_mqtt_bridge_string_builder_t * builder,
-  const rosidl_runtime_c__double__Sequence * values)
+  const double * values,
+  size_t count)
+{
+  if (!amr_mqtt_bridge_builder_append(builder, "[")) {
+    return false;
+  }
+
+  for (size_t index = 0; index < count; ++index) {
+    if (index > 0U && !amr_mqtt_bridge_builder_append(builder, ",")) {
+      return false;
+    }
+    if (!amr_mqtt_bridge_builder_appendf(builder, "%.6f", values[index])) {
+      return false;
+    }
+  }
+
+  return amr_mqtt_bridge_builder_append(builder, "]");
+}
+
+static bool amr_mqtt_bridge_builder_append_string_array(
+  amr_mqtt_bridge_string_builder_t * builder,
+  const rosidl_runtime_c__String__Sequence * values)
 {
   if (!amr_mqtt_bridge_builder_append(builder, "[")) {
     return false;
@@ -785,7 +913,7 @@ static bool amr_mqtt_bridge_builder_append_double_array(
     if (index > 0U && !amr_mqtt_bridge_builder_append(builder, ",")) {
       return false;
     }
-    if (!amr_mqtt_bridge_builder_appendf(builder, "%.6f", values->data[index])) {
+    if (!amr_mqtt_bridge_builder_append_json_string(builder, values->data[index].data)) {
       return false;
     }
   }
@@ -802,7 +930,6 @@ static bool amr_mqtt_bridge_append_transform_stamped(
     transform->transform.rotation.y,
     transform->transform.rotation.z,
     transform->transform.rotation.w);
-
   return amr_mqtt_bridge_builder_append(builder, "{") &&
     amr_mqtt_bridge_append_header(builder, &transform->header) &&
     amr_mqtt_bridge_builder_append(builder, ",\"child_frame_id\":") &&
@@ -819,33 +946,6 @@ static bool amr_mqtt_bridge_append_transform_stamped(
       transform->transform.rotation.z,
       transform->transform.rotation.w,
       yaw);
-}
-
-static char * amr_mqtt_bridge_serialize_scan(const void * message)
-{
-  const sensor_msgs__msg__LaserScan * scan = (const sensor_msgs__msg__LaserScan *)message;
-  amr_mqtt_bridge_string_builder_t builder = {0};
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 2048U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{") ||
-    !amr_mqtt_bridge_append_header(&builder, &scan->header) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      ",\"angle_min\":%.6f,\"angle_max\":%.6f,\"angle_increment\":%.6f,"
-      "\"range_min\":%.6f,\"range_max\":%.6f,\"ranges\":",
-      scan->angle_min,
-      scan->angle_max,
-      scan->angle_increment,
-      scan->range_min,
-      scan->range_max) ||
-    !amr_mqtt_bridge_builder_append_double_array(&builder, &scan->ranges) ||
-    !amr_mqtt_bridge_builder_append(&builder, "}"))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  return amr_mqtt_bridge_builder_take(&builder);
 }
 
 static char * amr_mqtt_bridge_serialize_tf_message(const void * message)
@@ -879,120 +979,768 @@ static char * amr_mqtt_bridge_serialize_tf_message(const void * message)
   return amr_mqtt_bridge_builder_take(&builder);
 }
 
-static void amr_mqtt_bridge_publish_viz_telemetry(
-  const char * mqtt_topic,
-  amr_mqtt_bridge_serializer_fn_t serializer,
-  const void * message,
-  bool retained)
+static bool amr_mqtt_bridge_build_viz_topic(
+  const char * raw_topic,
+  char * viz_topic,
+  size_t viz_topic_capacity)
 {
+  const char * telemetry_marker = NULL;
+  int written = 0;
+
+  if (raw_topic == NULL || viz_topic == NULL || viz_topic_capacity == 0U) {
+    return false;
+  }
+
+  telemetry_marker = strstr(raw_topic, "/telemetry/");
+  if (telemetry_marker == NULL) {
+    return false;
+  }
+
+  written = snprintf(
+    viz_topic,
+    viz_topic_capacity,
+    "%.*s/viz/%s",
+    (int)(telemetry_marker - raw_topic),
+    raw_topic,
+    telemetry_marker + strlen("/telemetry/"));
+  return written >= 0 && (size_t)written < viz_topic_capacity;
+}
+
+static char * amr_mqtt_bridge_serialize_joint_states(const void * message)
+{
+  const sensor_msgs__msg__JointState * joint_states = (const sensor_msgs__msg__JointState *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{") ||
+    !amr_mqtt_bridge_append_header(&builder, &joint_states->header) ||
+    !amr_mqtt_bridge_builder_append(&builder, ",\"name\":") ||
+    !amr_mqtt_bridge_builder_append_string_array(&builder, &joint_states->name) ||
+    !amr_mqtt_bridge_builder_append(&builder, ",\"position\":") ||
+    !amr_mqtt_bridge_builder_append_double_array(&builder, joint_states->position.data, joint_states->position.size) ||
+    !amr_mqtt_bridge_builder_append(&builder, ",\"velocity\":") ||
+    !amr_mqtt_bridge_builder_append_double_array(&builder, joint_states->velocity.data, joint_states->velocity.size) ||
+    !amr_mqtt_bridge_builder_append(&builder, ",\"effort\":") ||
+    !amr_mqtt_bridge_builder_append_double_array(&builder, joint_states->effort.data, joint_states->effort.size) ||
+    !amr_mqtt_bridge_builder_append(&builder, "}"))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
+static char * amr_mqtt_bridge_serialize_string_message(const void * message)
+{
+  const std_msgs__msg__String * string_message = (const std_msgs__msg__String *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{\"data\":") ||
+    !amr_mqtt_bridge_builder_append_json_string(&builder, string_message->data.data) ||
+    !amr_mqtt_bridge_builder_append(&builder, "}"))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
+static bool amr_mqtt_bridge_serialize_message_raw(
+  const void * ros_message,
+  const rosidl_message_type_support_t * type_support,
+  rmw_serialized_message_t * serialized_message)
+{
+  size_t capacity = 1024U;
+  rmw_ret_t rmw_rc = RMW_RET_ERROR;
+
+  if (serialized_message == NULL) {
+    return false;
+  }
+
+  *serialized_message = rmw_get_zero_initialized_serialized_message();
+  if (rmw_serialized_message_init(
+      serialized_message,
+      capacity,
+      &g_amr_mqtt_bridge_runtime.allocator) != RMW_RET_OK)
+  {
+    return false;
+  }
+
+  while (capacity <= (1024U * 1024U)) {
+    rmw_rc = rmw_serialize(ros_message, type_support, serialized_message);
+    if (rmw_rc == RMW_RET_OK) {
+      return true;
+    }
+
+    capacity *= 2U;
+    if (capacity > (1024U * 1024U)) {
+      break;
+    }
+    if (rmw_serialized_message_resize(serialized_message, capacity) != RMW_RET_OK) {
+      break;
+    }
+  }
+
+  (void)rmw_serialized_message_fini(serialized_message);
+  *serialized_message = rmw_get_zero_initialized_serialized_message();
+  return false;
+}
+
+static bool amr_mqtt_bridge_deserialize_twist_raw(
+  const void * payload,
+  size_t payload_length,
+  geometry_msgs__msg__Twist * twist)
+{
+  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+  rmw_ret_t rmw_rc = RMW_RET_ERROR;
+
+  if (payload == NULL || payload_length == 0U || twist == NULL) {
+    return false;
+  }
+
+  if (rmw_serialized_message_init(
+      &serialized_message,
+      payload_length,
+      &g_amr_mqtt_bridge_runtime.allocator) != RMW_RET_OK)
+  {
+    return false;
+  }
+
+  memcpy(serialized_message.buffer, payload, payload_length);
+  serialized_message.buffer_length = payload_length;
+  rmw_rc = rmw_deserialize(
+    &serialized_message,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+    twist);
+  (void)rmw_serialized_message_fini(&serialized_message);
+  return rmw_rc == RMW_RET_OK;
+}
+
+static void amr_mqtt_bridge_telemetry_callback(const void * message, void * context)
+{
+  amr_mqtt_bridge_telemetry_endpoint_t * endpoint =
+    (amr_mqtt_bridge_telemetry_endpoint_t *)context;
   char * payload = NULL;
+  char viz_topic[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+  const uint64_t now_ms = amr_mqtt_bridge_now_ms();
 
-  if (mqtt_topic == NULL || serializer == NULL || message == NULL) {
+  if (message == NULL || endpoint == NULL) {
     return;
   }
 
-  payload = serializer(message);
+  if (endpoint->raw_passthrough) {
+    const bool should_publish_raw =
+      (!endpoint->raw_publish_once || !endpoint->raw_published_once) &&
+      (endpoint->raw_min_period_ms == 0U ||
+      now_ms >= (endpoint->last_raw_publish_ms + endpoint->raw_min_period_ms));
+
+    if (should_publish_raw) {
+      if (!amr_mqtt_bridge_serialize_message_raw(
+          message,
+          endpoint->type_support,
+          &serialized_message))
+      {
+        return;
+      }
+      (void)amr_mqtt_bridge_publish_binary_payload(
+        endpoint->mqtt_topic,
+        serialized_message.buffer,
+        serialized_message.buffer_length,
+        endpoint->mqtt_qos,
+        endpoint->retained);
+      (void)rmw_serialized_message_fini(&serialized_message);
+      endpoint->last_raw_publish_ms = now_ms;
+      endpoint->raw_published_once = true;
+    }
+
+    if (endpoint->serializer != NULL &&
+      amr_mqtt_bridge_build_viz_topic(endpoint->mqtt_topic, viz_topic, sizeof(viz_topic)))
+    {
+      const bool should_publish_viz =
+        (!endpoint->viz_publish_once || !endpoint->viz_published_once) &&
+        (endpoint->viz_min_period_ms == 0U ||
+        now_ms >= (endpoint->last_viz_publish_ms + endpoint->viz_min_period_ms));
+      if (should_publish_viz) {
+        payload = endpoint->serializer(message);
+        if (payload != NULL) {
+          (void)amr_mqtt_bridge_publish_payload(
+            viz_topic,
+            payload,
+            endpoint->mqtt_qos,
+            endpoint->retained);
+          free(payload);
+          endpoint->last_viz_publish_ms = now_ms;
+          endpoint->viz_published_once = true;
+        }
+      }
+    }
+    return;
+  }
+
+  if (endpoint->serializer == NULL) {
+    return;
+  }
+
+  payload = endpoint->serializer(message);
   if (payload == NULL) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to serialize modeled viz telemetry for '%s'",
-      mqtt_topic);
     return;
   }
-
-  int mqtt_rc = MQTTClient_publish(
-    g_amr_mqtt_bridge_mqtt.client,
-    mqtt_topic,
-    (int)strlen(payload),
+  (void)amr_mqtt_bridge_publish_payload(
+    endpoint->mqtt_topic,
     payload,
-    0,
-    retained ? 1 : 0,
-    NULL);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to publish modeled viz telemetry on '%s': rc=%d (%s)",
-      mqtt_topic,
-      mqtt_rc,
-      MQTTClient_strerror(mqtt_rc));
-  }
+    endpoint->mqtt_qos,
+    endpoint->retained);
   free(payload);
 }
 
-static char * amr_mqtt_bridge_serialize_twist_command(const void * message)
+static void amr_mqtt_bridge_configure_endpoint(
+  amr_mqtt_bridge_telemetry_endpoint_t * endpoint,
+  const char * label,
+  const char * ros_topic,
+  const char * mqtt_topic,
+  rcl_subscription_t * subscription,
+  void * message,
+  const rosidl_message_type_support_t * type_support,
+  const rmw_qos_profile_t * qos_profile,
+  int mqtt_qos,
+  bool retained,
+  bool raw_passthrough,
+  amr_mqtt_bridge_serializer_fn_t serializer,
+  bool raw_publish_once,
+  bool viz_publish_once,
+  uint64_t raw_min_period_ms,
+  uint64_t viz_min_period_ms)
 {
-  const geometry_msgs__msg__Twist * twist = (const geometry_msgs__msg__Twist *)message;
-  amr_mqtt_bridge_string_builder_t builder = {0};
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 128U) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      "{\"x\":%.6f,\"z\":%.6f}",
-      twist->linear.x,
-      twist->angular.z))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  return amr_mqtt_bridge_builder_take(&builder);
+  memset(endpoint, 0, sizeof(*endpoint));
+  endpoint->label = label;
+  endpoint->ros_topic = ros_topic;
+  endpoint->mqtt_topic = mqtt_topic;
+  endpoint->subscription = subscription;
+  endpoint->message = message;
+  endpoint->type_support = type_support;
+  endpoint->qos_profile = qos_profile;
+  endpoint->mqtt_qos = mqtt_qos;
+  endpoint->retained = retained;
+  endpoint->raw_passthrough = raw_passthrough;
+  endpoint->serializer = serializer;
+  endpoint->raw_publish_once = raw_publish_once;
+  endpoint->viz_publish_once = viz_publish_once;
+  endpoint->raw_min_period_ms = raw_min_period_ms;
+  endpoint->viz_min_period_ms = viz_min_period_ms;
 }
 
-static char * amr_mqtt_bridge_serialize_initial_pose_command(const void * message)
+static int amr_mqtt_bridge_add_subscription(
+  amr_mqtt_bridge_telemetry_endpoint_t * endpoint)
 {
-  const geometry_msgs__msg__PoseWithCovarianceStamped * initial_pose =
-    (const geometry_msgs__msg__PoseWithCovarianceStamped *)message;
-  const double yaw = amr_mqtt_bridge_quaternion_to_yaw(
-    initial_pose->pose.pose.orientation.x,
-    initial_pose->pose.pose.orientation.y,
-    initial_pose->pose.pose.orientation.z,
-    initial_pose->pose.pose.orientation.w);
-  amr_mqtt_bridge_string_builder_t builder = {0};
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 256U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":\"ros_initial_pose\",\"frame_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, initial_pose->header.frame_id.data) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      ",\"x\":%.6f,\"y\":%.6f,\"yaw\":%.6f,\"covariance_x\":%.6f,\"covariance_y\":%.6f,\"covariance_yaw\":%.6f}",
-      initial_pose->pose.pose.position.x,
-      initial_pose->pose.pose.position.y,
-      yaw,
-      initial_pose->pose.covariance[0],
-      initial_pose->pose.covariance[7],
-      initial_pose->pose.covariance[35]))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
+  rcl_ret_t rc = rclc_subscription_init(
+    endpoint->subscription,
+    &g_amr_mqtt_bridge_runtime.node,
+    endpoint->type_support,
+    endpoint->ros_topic,
+    endpoint->qos_profile);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
   }
 
-  return amr_mqtt_bridge_builder_take(&builder);
+  rc = rclc_executor_add_subscription_with_context(
+    &g_amr_mqtt_bridge_runtime.executor,
+    endpoint->subscription,
+    endpoint->message,
+    amr_mqtt_bridge_telemetry_callback,
+    endpoint,
+    ON_NEW_DATA);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+
+  return 0;
 }
 
-static char * amr_mqtt_bridge_serialize_navigate_goal_command(const void * message)
+static int amr_mqtt_bridge_init_ros_interfaces(void)
 {
-  const geometry_msgs__msg__PoseStamped * goal = (const geometry_msgs__msg__PoseStamped *)message;
-  amr_mqtt_bridge_string_builder_t builder = {0};
-  char * pose_payload = NULL;
+  rcl_ret_t rc;
 
-  pose_payload = amr_mqtt_bridge_serialize_pose_stamped(message);
-  if (pose_payload == NULL) {
-    return NULL;
-  }
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 384U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":\"ros_rviz_goal\",\"goal_pose\":") ||
-    !amr_mqtt_bridge_builder_append(&builder, pose_payload) ||
-    !amr_mqtt_bridge_builder_append(&builder, "}"))
+  memset(&g_amr_mqtt_bridge_ros_state, 0, sizeof(g_amr_mqtt_bridge_ros_state));
+  if (!nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_bridge_ros_state.map_message) ||
+    !geometry_msgs__msg__PoseStamped__init(&g_amr_mqtt_bridge_ros_state.robot_pose_message) ||
+    !nav_msgs__msg__Path__init(&g_amr_mqtt_bridge_ros_state.global_path_message) ||
+    !nav_msgs__msg__Path__init(&g_amr_mqtt_bridge_ros_state.local_path_message) ||
+    !nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_bridge_ros_state.global_costmap_message) ||
+    !nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_bridge_ros_state.local_costmap_message) ||
+    !amr_msgs__msg__MotionStatus__init(&g_amr_mqtt_bridge_ros_state.motion_status_message) ||
+    !sensor_msgs__msg__LaserScan__init(&g_amr_mqtt_bridge_ros_state.scan_message) ||
+    !nav_msgs__msg__Odometry__init(&g_amr_mqtt_bridge_ros_state.odom_message) ||
+    !sensor_msgs__msg__Imu__init(&g_amr_mqtt_bridge_ros_state.imu_message) ||
+    !tf2_msgs__msg__TFMessage__init(&g_amr_mqtt_bridge_ros_state.tf_message) ||
+    !tf2_msgs__msg__TFMessage__init(&g_amr_mqtt_bridge_ros_state.tf_static_message) ||
+    !sensor_msgs__msg__JointState__init(&g_amr_mqtt_bridge_ros_state.joint_states_message) ||
+    !std_msgs__msg__String__init(&g_amr_mqtt_bridge_ros_state.robot_description_message) ||
+    !geometry_msgs__msg__Twist__init(&g_amr_mqtt_bridge_ros_state.cmd_vel_message) ||
+    !action_msgs__msg__GoalStatusArray__init(&g_amr_mqtt_bridge_ros_state.navigate_status_message))
   {
-    free(pose_payload);
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.messages_initialized = true;
+
+  g_amr_mqtt_bridge_ros_state.map_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.robot_pose_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.global_path_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.local_path_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.global_costmap_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.local_costmap_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.motion_status_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.scan_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.odom_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.imu_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.tf_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.tf_static_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.joint_states_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.robot_description_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count = AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS;
+
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[0],
+    "map",
+    g_amr_mqtt_bridge_config.ros.topic_map,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_map,
+    &g_amr_mqtt_bridge_ros_state.map_subscription,
+    &g_amr_mqtt_bridge_ros_state.map_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
+    &k_transient_local_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    true,
+    true,
+    amr_mqtt_bridge_serialize_occupancy_grid,
+    true,
+    true,
+    0U,
+    0U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[1],
+    "robot_pose",
+    g_amr_mqtt_bridge_config.ros.topic_robot_pose,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose,
+    &g_amr_mqtt_bridge_ros_state.robot_pose_subscription,
+    &g_amr_mqtt_bridge_ros_state.robot_pose_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, geometry_msgs, msg, PoseStamped)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_pose_stamped,
+    false,
+    false,
+    0U,
+    50U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[2],
+    "global_path",
+    g_amr_mqtt_bridge_config.ros.topic_global_path,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_global_path,
+    &g_amr_mqtt_bridge_ros_state.global_path_subscription,
+    &g_amr_mqtt_bridge_ros_state.global_path_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, Path)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_path,
+    false,
+    false,
+    0U,
+    200U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[3],
+    "local_path",
+    g_amr_mqtt_bridge_config.ros.topic_local_path,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_local_path,
+    &g_amr_mqtt_bridge_ros_state.local_path_subscription,
+    &g_amr_mqtt_bridge_ros_state.local_path_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, Path)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_path,
+    false,
+    false,
+    0U,
+    100U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[4],
+    "global_costmap",
+    g_amr_mqtt_bridge_config.ros.topic_global_costmap,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap,
+    &g_amr_mqtt_bridge_ros_state.global_costmap_subscription,
+    &g_amr_mqtt_bridge_ros_state.global_costmap_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_occupancy_grid,
+    false,
+    false,
+    0U,
+    300U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[5],
+    "local_costmap",
+    g_amr_mqtt_bridge_config.ros.topic_local_costmap,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap,
+    &g_amr_mqtt_bridge_ros_state.local_costmap_subscription,
+    &g_amr_mqtt_bridge_ros_state.local_costmap_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, OccupancyGrid)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_occupancy_grid,
+    false,
+    false,
+    0U,
+    150U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[6],
+    "motion_status",
+    g_amr_mqtt_bridge_config.ros.topic_motion_status,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status,
+    &g_amr_mqtt_bridge_ros_state.motion_status_subscription,
+    &g_amr_mqtt_bridge_ros_state.motion_status_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, amr_msgs, msg, MotionStatus)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_motion_status,
+    false,
+    false,
+    0U,
+    100U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[7],
+    "scan",
+    g_amr_mqtt_bridge_config.ros.topic_scan,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_scan,
+    &g_amr_mqtt_bridge_ros_state.scan_subscription,
+    &g_amr_mqtt_bridge_ros_state.scan_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, sensor_msgs, msg, LaserScan)(),
+    &k_sensor_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_scan,
+    false,
+    false,
+    0U,
+    100U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[8],
+    "odom",
+    g_amr_mqtt_bridge_config.ros.topic_odom,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_odom,
+    &g_amr_mqtt_bridge_ros_state.odom_subscription,
+    &g_amr_mqtt_bridge_ros_state.odom_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, nav_msgs, msg, Odometry)(),
+    &k_sensor_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    NULL,
+    false,
+    false,
+    0U,
+    0U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[9],
+    "imu",
+    g_amr_mqtt_bridge_config.ros.topic_imu,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_imu,
+    &g_amr_mqtt_bridge_ros_state.imu_subscription,
+    &g_amr_mqtt_bridge_ros_state.imu_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, sensor_msgs, msg, Imu)(),
+    &k_sensor_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    NULL,
+    false,
+    false,
+    0U,
+    0U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[10],
+    "tf",
+    g_amr_mqtt_bridge_config.ros.topic_tf,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_tf,
+    &g_amr_mqtt_bridge_ros_state.tf_subscription,
+    &g_amr_mqtt_bridge_ros_state.tf_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, tf2_msgs, msg, TFMessage)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_tf_message,
+    false,
+    false,
+    0U,
+    50U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[11],
+    "tf_static",
+    g_amr_mqtt_bridge_config.ros.topic_tf_static,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_tf_static,
+    &g_amr_mqtt_bridge_ros_state.tf_static_subscription,
+    &g_amr_mqtt_bridge_ros_state.tf_static_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, tf2_msgs, msg, TFMessage)(),
+    &k_transient_local_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    true,
+    true,
+    amr_mqtt_bridge_serialize_tf_message,
+    true,
+    true,
+    0U,
+    0U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[12],
+    "joint_states",
+    g_amr_mqtt_bridge_config.ros.topic_joint_states,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states,
+    &g_amr_mqtt_bridge_ros_state.joint_states_subscription,
+    &g_amr_mqtt_bridge_ros_state.joint_states_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, sensor_msgs, msg, JointState)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    NULL,
+    false,
+    false,
+    0U,
+    0U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[13],
+    "robot_description",
+    g_amr_mqtt_bridge_config.ros.topic_robot_description,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description,
+    &g_amr_mqtt_bridge_ros_state.robot_description_subscription,
+    &g_amr_mqtt_bridge_ros_state.robot_description_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, std_msgs, msg, String)(),
+    &k_transient_local_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    true,
+    true,
+    amr_mqtt_bridge_serialize_string_message,
+    true,
+    true,
+    0U,
+    0U);
+
+  for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index) {
+    if (amr_mqtt_bridge_add_subscription(&g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index]) != 0) {
+      return 1;
+    }
+  }
+  g_amr_mqtt_bridge_ros_state.subscriptions_initialized = true;
+
+  g_amr_mqtt_bridge_ros_state.cmd_vel_publisher = rcl_get_zero_initialized_publisher();
+  g_amr_mqtt_bridge_ros_state.initial_pose_publisher = rcl_get_zero_initialized_publisher();
+  g_amr_mqtt_bridge_ros_state.plan_segment_client = rcl_get_zero_initialized_client();
+  g_amr_mqtt_bridge_ros_state.plan_route_client = rcl_get_zero_initialized_client();
+  g_amr_mqtt_bridge_ros_state.navigate_to_pose_client = rcl_action_get_zero_initialized_client();
+  g_amr_mqtt_bridge_ros_state.navigate_wait_set = rcl_get_zero_initialized_wait_set();
+  rc = rclc_publisher_init_default(
+    &g_amr_mqtt_bridge_ros_state.cmd_vel_publisher,
+    &g_amr_mqtt_bridge_runtime.node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+    g_amr_mqtt_bridge_config.ros.topic_cmd_vel);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.cmd_vel_publisher_initialized = true;
+
+  rc = rclc_publisher_init_default(
+    &g_amr_mqtt_bridge_ros_state.initial_pose_publisher,
+    &g_amr_mqtt_bridge_runtime.node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseWithCovarianceStamped),
+    g_amr_mqtt_bridge_config.ros.topic_initial_pose);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.initial_pose_publisher_initialized = true;
+
+  {
+    rcl_client_options_t client_options = rcl_client_get_default_options();
+    rc = rcl_client_init(
+      &g_amr_mqtt_bridge_ros_state.plan_segment_client,
+      &g_amr_mqtt_bridge_runtime.node,
+      ROSIDL_GET_SRV_TYPE_SUPPORT(amr_msgs, srv, PlanSegment),
+      g_amr_mqtt_bridge_config.ros.service_plan_segment,
+      &client_options);
+  }
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.plan_segment_client_initialized = true;
+
+  {
+    rcl_client_options_t client_options = rcl_client_get_default_options();
+    rc = rcl_client_init(
+      &g_amr_mqtt_bridge_ros_state.plan_route_client,
+      &g_amr_mqtt_bridge_runtime.node,
+      ROSIDL_GET_SRV_TYPE_SUPPORT(amr_msgs, srv, PlanRoute),
+      g_amr_mqtt_bridge_config.ros.service_plan_route,
+      &client_options);
+  }
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.plan_route_client_initialized = true;
+
+  {
+    rcl_action_client_options_t action_options = rcl_action_client_get_default_options();
+    rc = rcl_action_client_init(
+      &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
+      &g_amr_mqtt_bridge_runtime.node,
+      ROSIDL_GET_ACTION_TYPE_SUPPORT(amr_msgs, NavigateToPose),
+      g_amr_mqtt_bridge_config.ros.action_navigate_to_pose,
+      &action_options);
+  }
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+    return 1;
+  }
+  g_amr_mqtt_bridge_ros_state.navigate_to_pose_client_initialized = true;
+
+  {
+    size_t num_subscriptions = 0U;
+    size_t num_guard_conditions = 0U;
+    size_t num_timers = 0U;
+    size_t num_clients = 0U;
+    size_t num_services = 0U;
+
+    rc = rcl_action_client_wait_set_get_num_entities(
+      &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
+      &num_subscriptions,
+      &num_guard_conditions,
+      &num_timers,
+      &num_clients,
+      &num_services);
+    if (rc != RCL_RET_OK) {
+      rcl_reset_error();
+      return 1;
+    }
+
+    rc = rcl_wait_set_init(
+      &g_amr_mqtt_bridge_ros_state.navigate_wait_set,
+      num_subscriptions,
+      num_guard_conditions,
+      num_timers,
+      num_clients,
+      num_services,
+      0U,
+      &g_amr_mqtt_bridge_runtime.support.context,
+      g_amr_mqtt_bridge_runtime.allocator);
+    if (rc != RCL_RET_OK) {
+      rcl_reset_error();
+      return 1;
+    }
+  }
+  g_amr_mqtt_bridge_ros_state.navigate_wait_set_initialized = true;
+  g_amr_mqtt_bridge_ros_state.navigate_status_message_initialized = true;
+  memset(&g_amr_mqtt_bridge_ros_state.navigate_state, 0, sizeof(g_amr_mqtt_bridge_ros_state.navigate_state));
+  return 0;
+}
+
+static void amr_mqtt_bridge_fini_ros_interfaces(void)
+{
+  if (g_amr_mqtt_bridge_ros_state.subscriptions_initialized) {
+    for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index) {
+      if (g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index].subscription != NULL) {
+        amr_mqtt_bridge_log_rcl_error(
+          "subscription",
+          rcl_subscription_fini(
+            g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index].subscription,
+            &g_amr_mqtt_bridge_runtime.node));
+      }
+    }
+    g_amr_mqtt_bridge_ros_state.subscriptions_initialized = false;
   }
 
-  free(pose_payload);
-  (void)goal;
-  return amr_mqtt_bridge_builder_take(&builder);
+  if (g_amr_mqtt_bridge_ros_state.cmd_vel_publisher_initialized) {
+    amr_mqtt_bridge_log_rcl_error(
+      "cmd_vel publisher",
+      rcl_publisher_fini(
+        &g_amr_mqtt_bridge_ros_state.cmd_vel_publisher,
+        &g_amr_mqtt_bridge_runtime.node));
+    g_amr_mqtt_bridge_ros_state.cmd_vel_publisher_initialized = false;
+  }
+
+  if (g_amr_mqtt_bridge_ros_state.navigate_wait_set_initialized) {
+    amr_mqtt_bridge_log_rcl_error(
+      "navigate wait set",
+      rcl_wait_set_fini(&g_amr_mqtt_bridge_ros_state.navigate_wait_set));
+    g_amr_mqtt_bridge_ros_state.navigate_wait_set_initialized = false;
+  }
+  if (g_amr_mqtt_bridge_ros_state.navigate_to_pose_client_initialized) {
+    amr_mqtt_bridge_log_rcl_error(
+      "navigate action client",
+      rcl_action_client_fini(
+        &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
+        &g_amr_mqtt_bridge_runtime.node));
+    g_amr_mqtt_bridge_ros_state.navigate_to_pose_client_initialized = false;
+  }
+  if (g_amr_mqtt_bridge_ros_state.plan_route_client_initialized) {
+    amr_mqtt_bridge_log_rcl_error(
+      "plan_route client",
+      rcl_client_fini(&g_amr_mqtt_bridge_ros_state.plan_route_client, &g_amr_mqtt_bridge_runtime.node));
+    g_amr_mqtt_bridge_ros_state.plan_route_client_initialized = false;
+  }
+  if (g_amr_mqtt_bridge_ros_state.plan_segment_client_initialized) {
+    amr_mqtt_bridge_log_rcl_error(
+      "plan_segment client",
+      rcl_client_fini(&g_amr_mqtt_bridge_ros_state.plan_segment_client, &g_amr_mqtt_bridge_runtime.node));
+    g_amr_mqtt_bridge_ros_state.plan_segment_client_initialized = false;
+  }
+  if (g_amr_mqtt_bridge_ros_state.initial_pose_publisher_initialized) {
+    amr_mqtt_bridge_log_rcl_error(
+      "initial_pose publisher",
+      rcl_publisher_fini(
+        &g_amr_mqtt_bridge_ros_state.initial_pose_publisher,
+        &g_amr_mqtt_bridge_runtime.node));
+    g_amr_mqtt_bridge_ros_state.initial_pose_publisher_initialized = false;
+  }
+
+  if (g_amr_mqtt_bridge_ros_state.messages_initialized) {
+    geometry_msgs__msg__PoseStamped__fini(&g_amr_mqtt_bridge_ros_state.robot_pose_message);
+    nav_msgs__msg__Path__fini(&g_amr_mqtt_bridge_ros_state.global_path_message);
+    nav_msgs__msg__Path__fini(&g_amr_mqtt_bridge_ros_state.local_path_message);
+    nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_bridge_ros_state.global_costmap_message);
+    nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_bridge_ros_state.local_costmap_message);
+    amr_msgs__msg__MotionStatus__fini(&g_amr_mqtt_bridge_ros_state.motion_status_message);
+    nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_bridge_ros_state.map_message);
+    sensor_msgs__msg__LaserScan__fini(&g_amr_mqtt_bridge_ros_state.scan_message);
+    nav_msgs__msg__Odometry__fini(&g_amr_mqtt_bridge_ros_state.odom_message);
+    sensor_msgs__msg__Imu__fini(&g_amr_mqtt_bridge_ros_state.imu_message);
+    tf2_msgs__msg__TFMessage__fini(&g_amr_mqtt_bridge_ros_state.tf_message);
+    tf2_msgs__msg__TFMessage__fini(&g_amr_mqtt_bridge_ros_state.tf_static_message);
+    sensor_msgs__msg__JointState__fini(&g_amr_mqtt_bridge_ros_state.joint_states_message);
+    std_msgs__msg__String__fini(&g_amr_mqtt_bridge_ros_state.robot_description_message);
+    geometry_msgs__msg__Twist__fini(&g_amr_mqtt_bridge_ros_state.cmd_vel_message);
+    action_msgs__msg__GoalStatusArray__fini(&g_amr_mqtt_bridge_ros_state.navigate_status_message);
+    g_amr_mqtt_bridge_ros_state.messages_initialized = false;
+  }
 }
 
 static const char * amr_mqtt_bridge_skip_whitespace(const char * text)
@@ -1151,6 +1899,30 @@ static bool amr_mqtt_bridge_extract_json_double_in_range(
   return parse_end != value;
 }
 
+static bool amr_mqtt_bridge_extract_json_bool_in_range(
+  const char * begin,
+  const char * end,
+  const char * key,
+  bool * output)
+{
+  const char * value = amr_mqtt_bridge_find_value_for_key(begin, end, key);
+
+  if (value == NULL || output == NULL) {
+    return false;
+  }
+
+  if ((size_t)(end - value) >= 4U && strncmp(value, "true", 4U) == 0) {
+    *output = true;
+    return true;
+  }
+  if ((size_t)(end - value) >= 5U && strncmp(value, "false", 5U) == 0) {
+    *output = false;
+    return true;
+  }
+
+  return false;
+}
+
 static bool amr_mqtt_bridge_extract_json_object_in_range(
   const char * begin,
   const char * end,
@@ -1197,6 +1969,20 @@ static bool amr_mqtt_bridge_extract_json_array_in_range(
   *array_begin = value;
   *array_end = close + 1;
   return true;
+}
+
+static void amr_mqtt_bridge_fill_quaternion_from_yaw(
+  double yaw,
+  geometry_msgs__msg__Quaternion * orientation)
+{
+  if (orientation == NULL) {
+    return;
+  }
+
+  orientation->x = 0.0;
+  orientation->y = 0.0;
+  orientation->z = sin(yaw * 0.5);
+  orientation->w = cos(yaw * 0.5);
 }
 
 static bool amr_mqtt_bridge_parse_pose_stamped_in_range(
@@ -1249,7 +2035,7 @@ static bool amr_mqtt_bridge_parse_pose_stamped_in_range(
 
   pose->header.stamp.sec = 0;
   pose->header.stamp.nanosec = 0U;
-  rosidl_runtime_c__String__assign(&pose->header.frame_id, frame_id);
+  (void)rosidl_runtime_c__String__assign(&pose->header.frame_id, frame_id);
   return true;
 }
 
@@ -1318,537 +2104,6 @@ static bool amr_mqtt_bridge_parse_waypoints_array(
   return true;
 }
 
-static bool amr_mqtt_bridge_parse_header_in_range(
-  const char * begin,
-  const char * end,
-  std_msgs__msg__Header * header)
-{
-  const char * stamp_begin = NULL;
-  const char * stamp_end = NULL;
-  const char * header_begin = begin;
-  const char * header_end = end;
-  char frame_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
-  double stamp_sec = 0.0;
-  double stamp_nanosec = 0.0;
-
-  if (header == NULL) {
-    return false;
-  }
-
-  if (amr_mqtt_bridge_extract_json_object_in_range(begin, end, "header", &header_begin, &header_end)) {
-    begin = header_begin;
-    end = header_end;
-  }
-
-  if (amr_mqtt_bridge_extract_json_object_in_range(begin, end, "stamp", &stamp_begin, &stamp_end)) {
-    (void)amr_mqtt_bridge_extract_json_double_in_range(stamp_begin, stamp_end, "sec", &stamp_sec);
-    (void)amr_mqtt_bridge_extract_json_double_in_range(stamp_begin, stamp_end, "nanosec", &stamp_nanosec);
-  }
-  (void)amr_mqtt_bridge_extract_json_string_in_range(begin, end, "frame_id", frame_id, sizeof(frame_id));
-
-  header->stamp.sec = (int32_t)stamp_sec;
-  header->stamp.nanosec = (uint32_t)stamp_nanosec;
-  if (frame_id[0] != '\0') {
-    (void)rosidl_runtime_c__String__assign(&header->frame_id, frame_id);
-  }
-  return true;
-}
-
-static size_t amr_mqtt_bridge_count_numbers_in_array(const char * begin, const char * end)
-{
-  const char * cursor = begin + 1;
-  size_t count = 0U;
-
-  while (cursor < end && *cursor != ']') {
-    cursor = amr_mqtt_bridge_skip_whitespace(cursor);
-    if (cursor >= end || *cursor == ']') {
-      break;
-    }
-
-    char * parse_end = NULL;
-    (void)strtod(cursor, &parse_end);
-    if (parse_end == cursor) {
-      ++cursor;
-      continue;
-    }
-
-    ++count;
-    cursor = parse_end;
-    while (cursor < end && *cursor != ',' && *cursor != ']') {
-      ++cursor;
-    }
-    if (cursor < end && *cursor == ',') {
-      ++cursor;
-    }
-  }
-
-  return count;
-}
-
-static bool amr_mqtt_bridge_parse_float_sequence_in_array(
-  const char * begin,
-  const char * end,
-  rosidl_runtime_c__float__Sequence * sequence)
-{
-  const char * cursor = begin + 1;
-  size_t index = 0U;
-  size_t count = amr_mqtt_bridge_count_numbers_in_array(begin, end);
-
-  if (!rosidl_runtime_c__float__Sequence__init(sequence, count)) {
-    return false;
-  }
-
-  while (cursor < end && *cursor != ']' && index < count) {
-    cursor = amr_mqtt_bridge_skip_whitespace(cursor);
-    if (cursor >= end || *cursor == ']') {
-      break;
-    }
-
-    char * parse_end = NULL;
-    double value = strtod(cursor, &parse_end);
-    if (parse_end == cursor) {
-      rosidl_runtime_c__float__Sequence__fini(sequence);
-      return false;
-    }
-    sequence->data[index++] = (float)value;
-    cursor = parse_end;
-    while (cursor < end && *cursor != ',' && *cursor != ']') {
-      ++cursor;
-    }
-    if (cursor < end && *cursor == ',') {
-      ++cursor;
-    }
-  }
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_parse_double_sequence_in_array(
-  const char * begin,
-  const char * end,
-  rosidl_runtime_c__double__Sequence * sequence)
-{
-  const char * cursor = begin + 1;
-  size_t index = 0U;
-  size_t count = amr_mqtt_bridge_count_numbers_in_array(begin, end);
-
-  if (!rosidl_runtime_c__double__Sequence__init(sequence, count)) {
-    return false;
-  }
-
-  while (cursor < end && *cursor != ']' && index < count) {
-    cursor = amr_mqtt_bridge_skip_whitespace(cursor);
-    if (cursor >= end || *cursor == ']') {
-      break;
-    }
-
-    char * parse_end = NULL;
-    double value = strtod(cursor, &parse_end);
-    if (parse_end == cursor) {
-      rosidl_runtime_c__double__Sequence__fini(sequence);
-      return false;
-    }
-    sequence->data[index++] = value;
-    cursor = parse_end;
-    while (cursor < end && *cursor != ',' && *cursor != ']') {
-      ++cursor;
-    }
-    if (cursor < end && *cursor == ',') {
-      ++cursor;
-    }
-  }
-
-  return true;
-}
-
-static size_t amr_mqtt_bridge_count_strings_in_array(const char * begin, const char * end)
-{
-  const char * cursor = begin + 1;
-  size_t count = 0U;
-
-  while (cursor < end && *cursor != ']') {
-    cursor = amr_mqtt_bridge_skip_whitespace(cursor);
-    if (cursor >= end || *cursor == ']') {
-      break;
-    }
-    if (*cursor != '"') {
-      ++cursor;
-      continue;
-    }
-    ++count;
-    ++cursor;
-    while (cursor < end) {
-      if (*cursor == '\\' && (cursor + 1) < end) {
-        cursor += 2;
-        continue;
-      }
-      if (*cursor == '"') {
-        ++cursor;
-        break;
-      }
-      ++cursor;
-    }
-  }
-
-  return count;
-}
-
-static bool amr_mqtt_bridge_parse_string_sequence_in_array(
-  const char * begin,
-  const char * end,
-  rosidl_runtime_c__String__Sequence * sequence)
-{
-  const char * cursor = begin + 1;
-  size_t index = 0U;
-  size_t count = amr_mqtt_bridge_count_strings_in_array(begin, end);
-
-  if (!rosidl_runtime_c__String__Sequence__init(sequence, count)) {
-    return false;
-  }
-
-  while (cursor < end && *cursor != ']' && index < count) {
-    cursor = amr_mqtt_bridge_skip_whitespace(cursor);
-    if (cursor >= end || *cursor == ']') {
-      break;
-    }
-    if (*cursor != '"') {
-      ++cursor;
-      continue;
-    }
-
-    const char * value_begin = cursor + 1;
-    ++cursor;
-    while (cursor < end) {
-      if (*cursor == '\\' && (cursor + 1) < end) {
-        cursor += 2;
-        continue;
-      }
-      if (*cursor == '"') {
-        break;
-      }
-      ++cursor;
-    }
-    if (cursor >= end || *cursor != '"') {
-      rosidl_runtime_c__String__Sequence__fini(sequence);
-      return false;
-    }
-
-    size_t length = (size_t)(cursor - value_begin);
-    char buffer[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
-    if (length >= sizeof(buffer)) {
-      length = sizeof(buffer) - 1U;
-    }
-    memcpy(buffer, value_begin, length);
-    buffer[length] = '\0';
-    if (!rosidl_runtime_c__String__assign(&sequence->data[index], buffer)) {
-      rosidl_runtime_c__String__Sequence__fini(sequence);
-      return false;
-    }
-    ++index;
-    ++cursor;
-  }
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_parse_transform_stamped_in_range(
-  const char * begin,
-  const char * end,
-  geometry_msgs__msg__TransformStamped * transform)
-{
-  const char * translation_begin = NULL;
-  const char * translation_end = NULL;
-  const char * rotation_begin = NULL;
-  const char * rotation_end = NULL;
-  char child_frame_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
-
-  if (transform == NULL) {
-    return false;
-  }
-
-  if (!amr_mqtt_bridge_parse_header_in_range(begin, end, &transform->header)) {
-    return false;
-  }
-  (void)amr_mqtt_bridge_extract_json_string_in_range(begin, end, "child_frame_id", child_frame_id, sizeof(child_frame_id));
-  if (child_frame_id[0] != '\0') {
-    (void)rosidl_runtime_c__String__assign(&transform->child_frame_id, child_frame_id);
-  }
-
-  if (!amr_mqtt_bridge_extract_json_object_in_range(begin, end, "translation", &translation_begin, &translation_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(begin, end, "rotation", &rotation_begin, &rotation_end))
-  {
-    return false;
-  }
-
-  return amr_mqtt_bridge_extract_json_double_in_range(translation_begin, translation_end, "x", &transform->transform.translation.x) &&
-    amr_mqtt_bridge_extract_json_double_in_range(translation_begin, translation_end, "y", &transform->transform.translation.y) &&
-    amr_mqtt_bridge_extract_json_double_in_range(translation_begin, translation_end, "z", &transform->transform.translation.z) &&
-    amr_mqtt_bridge_extract_json_double_in_range(rotation_begin, rotation_end, "x", &transform->transform.rotation.x) &&
-    amr_mqtt_bridge_extract_json_double_in_range(rotation_begin, rotation_end, "y", &transform->transform.rotation.y) &&
-    amr_mqtt_bridge_extract_json_double_in_range(rotation_begin, rotation_end, "z", &transform->transform.rotation.z) &&
-    amr_mqtt_bridge_extract_json_double_in_range(rotation_begin, rotation_end, "w", &transform->transform.rotation.w);
-}
-
-static bool amr_mqtt_bridge_parse_laser_scan_payload(
-  const char * payload,
-  sensor_msgs__msg__LaserScan * scan)
-{
-  const char * ranges_begin = NULL;
-  const char * ranges_end = NULL;
-  double angle_min = 0.0;
-  double angle_max = 0.0;
-  double angle_increment = 0.0;
-  double range_min = 0.0;
-  double range_max = 0.0;
-
-  if (scan == NULL || !sensor_msgs__msg__LaserScan__init(scan)) {
-    return false;
-  }
-
-  (void)amr_mqtt_bridge_parse_header_in_range(payload, payload + strlen(payload), &scan->header);
-  if (!amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "angle_min", &angle_min) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "angle_max", &angle_max) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "angle_increment", &angle_increment) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "range_min", &range_min) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "range_max", &range_max) ||
-    !amr_mqtt_bridge_extract_json_array_in_range(payload, payload + strlen(payload), "ranges", &ranges_begin, &ranges_end) ||
-    !amr_mqtt_bridge_parse_float_sequence_in_array(ranges_begin, ranges_end, &scan->ranges))
-  {
-    sensor_msgs__msg__LaserScan__fini(scan);
-    return false;
-  }
-
-  scan->angle_min = (float)angle_min;
-  scan->angle_max = (float)angle_max;
-  scan->angle_increment = (float)angle_increment;
-  scan->range_min = (float)range_min;
-  scan->range_max = (float)range_max;
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_parse_odometry_payload(
-  const char * payload,
-  nav_msgs__msg__Odometry * odom)
-{
-  const char * pose_begin = NULL;
-  const char * pose_end = NULL;
-  const char * position_begin = NULL;
-  const char * position_end = NULL;
-  const char * orientation_begin = NULL;
-  const char * orientation_end = NULL;
-  const char * twist_begin = NULL;
-  const char * twist_end = NULL;
-  const char * linear_begin = NULL;
-  const char * linear_end = NULL;
-  const char * angular_begin = NULL;
-  const char * angular_end = NULL;
-  char child_frame_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
-
-  if (odom == NULL || !nav_msgs__msg__Odometry__init(odom)) {
-    return false;
-  }
-
-  (void)amr_mqtt_bridge_parse_header_in_range(payload, payload + strlen(payload), &odom->header);
-  (void)amr_mqtt_bridge_extract_json_string_in_range(payload, payload + strlen(payload), "child_frame_id", child_frame_id, sizeof(child_frame_id));
-  if (child_frame_id[0] != '\0') {
-    (void)rosidl_runtime_c__String__assign(&odom->child_frame_id, child_frame_id);
-  }
-
-  if (!amr_mqtt_bridge_extract_json_object_in_range(payload, payload + strlen(payload), "pose", &pose_begin, &pose_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(pose_begin, pose_end, "position", &position_begin, &position_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(pose_begin, pose_end, "orientation", &orientation_begin, &orientation_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(payload, payload + strlen(payload), "twist", &twist_begin, &twist_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(twist_begin, twist_end, "linear", &linear_begin, &linear_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(twist_begin, twist_end, "angular", &angular_begin, &angular_end))
-  {
-    nav_msgs__msg__Odometry__fini(odom);
-    return false;
-  }
-
-  if (!amr_mqtt_bridge_extract_json_double_in_range(position_begin, position_end, "x", &odom->pose.pose.position.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(position_begin, position_end, "y", &odom->pose.pose.position.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(position_begin, position_end, "z", &odom->pose.pose.position.z) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "x", &odom->pose.pose.orientation.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "y", &odom->pose.pose.orientation.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "z", &odom->pose.pose.orientation.z) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "w", &odom->pose.pose.orientation.w) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(linear_begin, linear_end, "x", &odom->twist.twist.linear.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(linear_begin, linear_end, "y", &odom->twist.twist.linear.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(linear_begin, linear_end, "z", &odom->twist.twist.linear.z) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(angular_begin, angular_end, "x", &odom->twist.twist.angular.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(angular_begin, angular_end, "y", &odom->twist.twist.angular.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(angular_begin, angular_end, "z", &odom->twist.twist.angular.z))
-  {
-    nav_msgs__msg__Odometry__fini(odom);
-    return false;
-  }
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_parse_imu_payload(
-  const char * payload,
-  sensor_msgs__msg__Imu * imu)
-{
-  const char * orientation_begin = NULL;
-  const char * orientation_end = NULL;
-  const char * angular_begin = NULL;
-  const char * angular_end = NULL;
-  const char * linear_begin = NULL;
-  const char * linear_end = NULL;
-
-  if (imu == NULL || !sensor_msgs__msg__Imu__init(imu)) {
-    return false;
-  }
-
-  (void)amr_mqtt_bridge_parse_header_in_range(payload, payload + strlen(payload), &imu->header);
-  if (!amr_mqtt_bridge_extract_json_object_in_range(payload, payload + strlen(payload), "orientation", &orientation_begin, &orientation_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(payload, payload + strlen(payload), "angular_velocity", &angular_begin, &angular_end) ||
-    !amr_mqtt_bridge_extract_json_object_in_range(payload, payload + strlen(payload), "linear_acceleration", &linear_begin, &linear_end))
-  {
-    sensor_msgs__msg__Imu__fini(imu);
-    return false;
-  }
-
-  if (!amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "x", &imu->orientation.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "y", &imu->orientation.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "z", &imu->orientation.z) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(orientation_begin, orientation_end, "w", &imu->orientation.w) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(angular_begin, angular_end, "x", &imu->angular_velocity.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(angular_begin, angular_end, "y", &imu->angular_velocity.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(angular_begin, angular_end, "z", &imu->angular_velocity.z) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(linear_begin, linear_end, "x", &imu->linear_acceleration.x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(linear_begin, linear_end, "y", &imu->linear_acceleration.y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(linear_begin, linear_end, "z", &imu->linear_acceleration.z))
-  {
-    sensor_msgs__msg__Imu__fini(imu);
-    return false;
-  }
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_parse_tf_message_payload(
-  const char * payload,
-  tf2_msgs__msg__TFMessage * tf_message)
-{
-  const char * transforms_begin = NULL;
-  const char * transforms_end = NULL;
-  const char * cursor = NULL;
-  size_t index = 0U;
-  size_t count = 0U;
-  int array_depth = 0;
-
-  if (tf_message == NULL || !tf2_msgs__msg__TFMessage__init(tf_message)) {
-    return false;
-  }
-
-  if (!amr_mqtt_bridge_extract_json_array_in_range(payload, payload + strlen(payload), "transforms", &transforms_begin, &transforms_end)) {
-    tf2_msgs__msg__TFMessage__fini(tf_message);
-    return false;
-  }
-
-  count = amr_mqtt_bridge_count_objects_in_array(transforms_begin, transforms_end);
-  if (!geometry_msgs__msg__TransformStamped__Sequence__init(&tf_message->transforms, count)) {
-    tf2_msgs__msg__TFMessage__fini(tf_message);
-    return false;
-  }
-
-  cursor = transforms_begin;
-  while (cursor < transforms_end && index < count) {
-    if (*cursor == '[') {
-      ++array_depth;
-    } else if (*cursor == ']') {
-      --array_depth;
-    } else if (*cursor == '{' && array_depth == 1) {
-      const char * object_end = amr_mqtt_bridge_find_matching_delimiter(cursor, '{', '}');
-      if (object_end == NULL || object_end > transforms_end ||
-        !amr_mqtt_bridge_parse_transform_stamped_in_range(cursor, object_end + 1, &tf_message->transforms.data[index]))
-      {
-        tf2_msgs__msg__TFMessage__fini(tf_message);
-        return false;
-      }
-      ++index;
-      cursor = object_end + 1;
-      continue;
-    }
-    ++cursor;
-  }
-
-  return true;
-}
-
-static bool amr_mqtt_bridge_parse_joint_state_payload(
-  const char * payload,
-  sensor_msgs__msg__JointState * joint_state)
-{
-  const char * names_begin = NULL;
-  const char * names_end = NULL;
-  const char * position_begin = NULL;
-  const char * position_end = NULL;
-  const char * velocity_begin = NULL;
-  const char * velocity_end = NULL;
-  const char * effort_begin = NULL;
-  const char * effort_end = NULL;
-
-  if (joint_state == NULL || !sensor_msgs__msg__JointState__init(joint_state)) {
-    return false;
-  }
-
-  (void)amr_mqtt_bridge_parse_header_in_range(payload, payload + strlen(payload), &joint_state->header);
-  if (!amr_mqtt_bridge_extract_json_array_in_range(payload, payload + strlen(payload), "name", &names_begin, &names_end) ||
-    !amr_mqtt_bridge_parse_string_sequence_in_array(names_begin, names_end, &joint_state->name))
-  {
-    sensor_msgs__msg__JointState__fini(joint_state);
-    return false;
-  }
-
-  if (amr_mqtt_bridge_extract_json_array_in_range(payload, payload + strlen(payload), "position", &position_begin, &position_end) &&
-    !amr_mqtt_bridge_parse_double_sequence_in_array(position_begin, position_end, &joint_state->position))
-  {
-    sensor_msgs__msg__JointState__fini(joint_state);
-    return false;
-  }
-  if (amr_mqtt_bridge_extract_json_array_in_range(payload, payload + strlen(payload), "velocity", &velocity_begin, &velocity_end) &&
-    !amr_mqtt_bridge_parse_double_sequence_in_array(velocity_begin, velocity_end, &joint_state->velocity))
-  {
-    sensor_msgs__msg__JointState__fini(joint_state);
-    return false;
-  }
-  if (amr_mqtt_bridge_extract_json_array_in_range(payload, payload + strlen(payload), "effort", &effort_begin, &effort_end) &&
-    !amr_mqtt_bridge_parse_double_sequence_in_array(effort_begin, effort_end, &joint_state->effort))
-  {
-    sensor_msgs__msg__JointState__fini(joint_state);
-    return false;
-  }
-
-  return true;
-}
-
-static void amr_mqtt_bridge_fill_quaternion_from_yaw(
-  double yaw,
-  geometry_msgs__msg__Quaternion * quaternion)
-{
-  quaternion->x = 0.0;
-  quaternion->y = 0.0;
-  quaternion->z = sin(yaw * 0.5);
-  quaternion->w = cos(yaw * 0.5);
-}
-
-static void amr_mqtt_bridge_format_uuid(
-  const uint8_t uuid[16],
-  char * output,
-  size_t output_capacity)
-{
-  (void)snprintf(
-    output,
-    output_capacity,
-    "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-    uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
-    uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
-}
-
 static void amr_mqtt_bridge_generate_goal_uuid(uint8_t uuid[16])
 {
   static uint32_t sequence = 0U;
@@ -1899,113 +2154,25 @@ static char * amr_mqtt_bridge_serialize_simple_response(
   return amr_mqtt_bridge_builder_take(&builder);
 }
 
-static char * amr_mqtt_bridge_serialize_plan_segment_response(
+static char * amr_mqtt_bridge_serialize_navigate_response(
   const char * request_id,
-  const amr_msgs__srv__PlanSegment_Response * response)
-{
-  amr_mqtt_bridge_string_builder_t builder = {0};
-  if (!amr_mqtt_bridge_builder_init(&builder, 1024U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, request_id) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      ",\"success\":%s,\"message\":",
-      response->success ? "true" : "false") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, response->message.data) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"plan\":"))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  {
-    char * plan_payload = amr_mqtt_bridge_serialize_path(&response->plan);
-    if (plan_payload == NULL) {
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    if (!amr_mqtt_bridge_builder_append(&builder, plan_payload) ||
-      !amr_mqtt_bridge_builder_append(&builder, "}"))
-    {
-      free(plan_payload);
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    free(plan_payload);
-  }
-
-  return amr_mqtt_bridge_builder_take(&builder);
-}
-
-static char * amr_mqtt_bridge_serialize_plan_route_response(
-  const char * request_id,
-  const amr_msgs__srv__PlanRoute_Response * response)
-{
-  amr_mqtt_bridge_string_builder_t builder = {0};
-  if (!amr_mqtt_bridge_builder_init(&builder, 1024U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, request_id) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      ",\"success\":%s,\"message\":",
-      response->success ? "true" : "false") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, response->message.data) ||
-    !amr_mqtt_bridge_builder_appendf(&builder, ",\"plans_count\":%zu,\"plans\":[", response->plans.size))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  for (size_t index = 0; index < response->plans.size; ++index) {
-    char * plan_payload = NULL;
-    if (index > 0U && !amr_mqtt_bridge_builder_append(&builder, ",")) {
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    plan_payload = amr_mqtt_bridge_serialize_path(&response->plans.data[index]);
-    if (plan_payload == NULL) {
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    if (!amr_mqtt_bridge_builder_append(&builder, plan_payload)) {
-      free(plan_payload);
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    free(plan_payload);
-  }
-
-  if (!amr_mqtt_bridge_builder_append(&builder, "]}")) {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  return amr_mqtt_bridge_builder_take(&builder);
-}
-
-static char * amr_mqtt_bridge_serialize_navigate_goal_response(
-  const char * request_id,
-  const uint8_t goal_uuid[16],
-  const amr_msgs__action__NavigateToPose_SendGoal_Response * response,
+  bool success,
+  int status_code,
+  bool accepted,
+  bool completed,
   const char * message)
 {
-  char uuid_text[64] = {0};
   amr_mqtt_bridge_string_builder_t builder = {0};
-  amr_mqtt_bridge_format_uuid(goal_uuid, uuid_text, sizeof(uuid_text));
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 256U) ||
+  if (!amr_mqtt_bridge_builder_init(&builder, 320U) ||
     !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":") ||
     !amr_mqtt_bridge_builder_append_json_string(&builder, request_id) ||
     !amr_mqtt_bridge_builder_appendf(
       &builder,
-      ",\"accepted\":%s,\"goal_id\":",
-      response->accepted ? "true" : "false") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, uuid_text) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      ",\"stamp\":{\"sec\":%d,\"nanosec\":%u},\"message\":",
-      response->stamp.sec,
-      response->stamp.nanosec) ||
+      ",\"success\":%s,\"accepted\":%s,\"completed\":%s,\"status_code\":%d,\"message\":",
+      success ? "true" : "false",
+      accepted ? "true" : "false",
+      completed ? "true" : "false",
+      status_code) ||
     !amr_mqtt_bridge_builder_append_json_string(&builder, message) ||
     !amr_mqtt_bridge_builder_append(&builder, "}"))
   {
@@ -2014,206 +2181,6 @@ static char * amr_mqtt_bridge_serialize_navigate_goal_response(
   }
 
   return amr_mqtt_bridge_builder_take(&builder);
-}
-
-static char * amr_mqtt_bridge_serialize_navigate_result_response(
-  const char * request_id,
-  const uint8_t goal_uuid[16],
-  const amr_msgs__action__NavigateToPose_GetResult_Response * response)
-{
-  char uuid_text[64] = {0};
-  amr_mqtt_bridge_string_builder_t builder = {0};
-  amr_mqtt_bridge_format_uuid(goal_uuid, uuid_text, sizeof(uuid_text));
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 256U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, request_id) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"goal_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, uuid_text) ||
-    !amr_mqtt_bridge_builder_appendf(
-      &builder,
-      ",\"status\":%d,\"success\":%s,\"message\":",
-      response->status,
-      response->result.success ? "true" : "false") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, response->result.message.data) ||
-    !amr_mqtt_bridge_builder_append(&builder, "}"))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  return amr_mqtt_bridge_builder_take(&builder);
-}
-
-static char * amr_mqtt_bridge_serialize_navigate_feedback_message(
-  const char * request_id,
-  const amr_msgs__action__NavigateToPose_FeedbackMessage * feedback_message)
-{
-  char uuid_text[64] = {0};
-  amr_mqtt_bridge_string_builder_t builder = {0};
-  amr_mqtt_bridge_format_uuid(feedback_message->goal_id.uuid, uuid_text, sizeof(uuid_text));
-
-  if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
-    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, request_id) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"goal_id\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, uuid_text) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"current_pose\":"))
-  {
-    amr_mqtt_bridge_builder_fini(&builder);
-    return NULL;
-  }
-
-  {
-    char * pose_payload = amr_mqtt_bridge_serialize_pose_stamped(&feedback_message->feedback.current_pose);
-    if (pose_payload == NULL) {
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    if (!amr_mqtt_bridge_builder_append(&builder, pose_payload) ||
-      !amr_mqtt_bridge_builder_appendf(
-        &builder,
-        ",\"remaining_distance\":%.6f,\"heading_error\":%.6f}",
-        feedback_message->feedback.remaining_distance,
-        feedback_message->feedback.heading_error))
-    {
-      free(pose_payload);
-      amr_mqtt_bridge_builder_fini(&builder);
-      return NULL;
-    }
-    free(pose_payload);
-  }
-
-  return amr_mqtt_bridge_builder_take(&builder);
-}
-
-static bool amr_mqtt_bridge_wait_for_service_response(
-  rcl_client_t * client,
-  void * response,
-  int64_t expected_sequence_number,
-  int timeout_ms)
-{
-  rcl_wait_set_t wait_set = rcl_get_zero_initialized_wait_set();
-  int elapsed_ms = 0;
-  rcl_ret_t rc = rcl_wait_set_init(
-    &wait_set,
-    0U,
-    0U,
-    0U,
-    1U,
-    0U,
-    0U,
-    &g_amr_mqtt_bridge_runtime.support.context,
-    g_amr_mqtt_bridge_runtime.allocator);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return false;
-  }
-
-  while (elapsed_ms < timeout_ms) {
-    rmw_request_id_t response_header;
-    memset(&response_header, 0, sizeof(response_header));
-    rc = rcl_wait_set_clear(&wait_set);
-    if (rc != RCL_RET_OK) {
-      break;
-    }
-    rc = rcl_wait_set_add_client(&wait_set, client, NULL);
-    if (rc != RCL_RET_OK) {
-      break;
-    }
-    rc = rcl_wait(&wait_set, 100 * 1000 * 1000);
-    if (rc == RCL_RET_TIMEOUT) {
-      elapsed_ms += 100;
-      continue;
-    }
-    if (rc != RCL_RET_OK) {
-      break;
-    }
-    rc = rcl_take_response(client, &response_header, response);
-    if (rc == RCL_RET_OK && response_header.sequence_number == expected_sequence_number) {
-      amr_mqtt_bridge_log_rcl_fini_error("service wait set", rcl_wait_set_fini(&wait_set));
-      return true;
-    }
-    if (rc != RCL_RET_OK && rc != RCL_RET_CLIENT_TAKE_FAILED) {
-      break;
-    }
-    if (rc != RCL_RET_OK) {
-      rcl_reset_error();
-    }
-    elapsed_ms += 100;
-  }
-
-  amr_mqtt_bridge_log_rcl_fini_error("service wait set", rcl_wait_set_fini(&wait_set));
-  return false;
-}
-
-static bool amr_mqtt_bridge_serialize_message_raw(
-  const void * ros_message,
-  const rosidl_message_type_support_t * type_support,
-  rmw_serialized_message_t * serialized_message)
-{
-  size_t capacity = 1024U;
-  rmw_ret_t rmw_rc = RMW_RET_ERROR;
-
-  if (serialized_message == NULL) {
-    return false;
-  }
-
-  *serialized_message = rmw_get_zero_initialized_serialized_message();
-  if (rmw_serialized_message_init(
-      serialized_message,
-      capacity,
-      &g_amr_mqtt_bridge_runtime.allocator) != RMW_RET_OK)
-  {
-    return false;
-  }
-
-  while (capacity <= (1024U * 1024U)) {
-    rmw_rc = rmw_serialize(ros_message, type_support, serialized_message);
-    if (rmw_rc == RMW_RET_OK) {
-      return true;
-    }
-
-    capacity *= 2U;
-    if (capacity > (1024U * 1024U)) {
-      break;
-    }
-    if (rmw_serialized_message_resize(serialized_message, capacity) != RMW_RET_OK) {
-      break;
-    }
-  }
-
-  (void)rmw_serialized_message_fini(serialized_message);
-  *serialized_message = rmw_get_zero_initialized_serialized_message();
-  return false;
-}
-
-static bool amr_mqtt_bridge_deserialize_message_raw(
-  const void * payload,
-  size_t payload_length,
-  const rosidl_message_type_support_t * type_support,
-  void * ros_message)
-{
-  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
-  rmw_ret_t rmw_rc = RMW_RET_ERROR;
-
-  if (payload == NULL || payload_length == 0U || ros_message == NULL) {
-    return false;
-  }
-
-  if (rmw_serialized_message_init(
-      &serialized_message,
-      payload_length,
-      &g_amr_mqtt_bridge_runtime.allocator) != RMW_RET_OK)
-  {
-    return false;
-  }
-
-  memcpy(serialized_message.buffer, payload, payload_length);
-  serialized_message.buffer_length = payload_length;
-  rmw_rc = rmw_deserialize(&serialized_message, type_support, ros_message);
-  (void)rmw_serialized_message_fini(&serialized_message);
-  return rmw_rc == RMW_RET_OK;
 }
 
 static void amr_mqtt_bridge_publish_simple_response(
@@ -2229,7 +2196,34 @@ static void amr_mqtt_bridge_publish_simple_response(
   (void)amr_mqtt_bridge_publish_payload(
     mqtt_topic,
     payload,
-    g_amr_mqtt_bridge_config.mqtt.service_qos);
+    g_amr_mqtt_bridge_config.mqtt.service_qos,
+    false);
+  free(payload);
+}
+
+static void amr_mqtt_bridge_publish_navigate_response(
+  const char * request_id,
+  bool success,
+  int status_code,
+  bool accepted,
+  bool completed,
+  const char * message)
+{
+  char * payload = amr_mqtt_bridge_serialize_navigate_response(
+    request_id,
+    success,
+    status_code,
+    accepted,
+    completed,
+    message);
+  if (payload == NULL) {
+    return;
+  }
+  (void)amr_mqtt_bridge_publish_payload(
+    g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+    payload,
+    g_amr_mqtt_bridge_config.mqtt.service_qos,
+    false);
   free(payload);
 }
 
@@ -2250,10 +2244,35 @@ static bool amr_mqtt_bridge_wait_for_service_available(rcl_client_t * client, in
       return false;
     }
     elapsed_ms += 100;
-    struct timespec sleep_time = {.tv_sec = 0, .tv_nsec = 100 * 1000 * 1000};
-    nanosleep(&sleep_time, NULL);
+    {
+      struct timespec sleep_time = {.tv_sec = 0, .tv_nsec = 100 * 1000 * 1000};
+      nanosleep(&sleep_time, NULL);
+    }
   }
   return false;
+}
+
+static void amr_mqtt_bridge_handle_cmd_vel_message(
+  const void * payload,
+  size_t payload_length)
+{
+  rcl_ret_t rc;
+
+  if (!amr_mqtt_bridge_deserialize_twist_raw(
+      payload,
+      payload_length,
+      &g_amr_mqtt_bridge_ros_state.cmd_vel_message))
+  {
+    return;
+  }
+
+  rc = rcl_publish(
+    &g_amr_mqtt_bridge_ros_state.cmd_vel_publisher,
+    &g_amr_mqtt_bridge_ros_state.cmd_vel_message,
+    NULL);
+  if (rc != RCL_RET_OK) {
+    rcl_reset_error();
+  }
 }
 
 static void amr_mqtt_bridge_handle_set_initial_pose_command(const char * payload)
@@ -2335,7 +2354,6 @@ static void amr_mqtt_bridge_handle_set_initial_pose_command(const char * payload
 static void amr_mqtt_bridge_handle_plan_segment_request(const char * payload)
 {
   amr_msgs__srv__PlanSegment_Request request;
-  amr_msgs__srv__PlanSegment_Response response;
   char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
   const char * start_begin = NULL;
   const char * start_end = NULL;
@@ -2343,14 +2361,15 @@ static void amr_mqtt_bridge_handle_plan_segment_request(const char * payload)
   const char * goal_end = NULL;
   int64_t sequence_number = 0;
   rcl_ret_t rc;
-  char * response_payload = NULL;
 
   memset(&request, 0, sizeof(request));
-  memset(&response, 0, sizeof(response));
-  if (!amr_msgs__srv__PlanSegment_Request__init(&request) ||
-    !amr_msgs__srv__PlanSegment_Response__init(&response))
-  {
-    goto fail;
+  if (!amr_msgs__srv__PlanSegment_Request__init(&request)) {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
+      "",
+      false,
+      "failed to allocate request");
+    return;
   }
 
   if (!amr_mqtt_bridge_extract_json_string_in_range(
@@ -2360,63 +2379,52 @@ static void amr_mqtt_bridge_handle_plan_segment_request(const char * payload)
     !amr_mqtt_bridge_parse_pose_stamped_in_range(start_begin, start_end, &request.start) ||
     !amr_mqtt_bridge_parse_pose_stamped_in_range(goal_begin, goal_end, &request.goal))
   {
-    goto fail;
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
+      request_id[0] != '\0' ? request_id : "",
+      false,
+      "invalid plan_segment payload");
+    amr_msgs__srv__PlanSegment_Request__fini(&request);
+    return;
   }
 
-  if (!amr_mqtt_bridge_wait_for_service_available(&g_amr_mqtt_bridge_ros_state.plan_segment_client, 1000)) {
+  if (!amr_mqtt_bridge_wait_for_service_available(
+      &g_amr_mqtt_bridge_ros_state.plan_segment_client, 1000))
+  {
     amr_mqtt_bridge_publish_simple_response(
       g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
       request_id,
       false,
       "plan_segment service unavailable");
-    goto done;
+    amr_msgs__srv__PlanSegment_Request__fini(&request);
+    return;
   }
 
-  rc = rcl_send_request(&g_amr_mqtt_bridge_ros_state.plan_segment_client, &request, &sequence_number);
-  if (rc != RCL_RET_OK ||
-    !amr_mqtt_bridge_wait_for_service_response(
-      &g_amr_mqtt_bridge_ros_state.plan_segment_client,
-      &response,
-      sequence_number,
-      3000))
-  {
+  rc = rcl_send_request(
+    &g_amr_mqtt_bridge_ros_state.plan_segment_client,
+    &request,
+    &sequence_number);
+  amr_msgs__srv__PlanSegment_Request__fini(&request);
+  if (rc != RCL_RET_OK) {
     rcl_reset_error();
     amr_mqtt_bridge_publish_simple_response(
       g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
       request_id,
       false,
-      "plan_segment request failed or timed out");
-    goto done;
+      "failed to dispatch plan_segment request");
+    return;
   }
 
-  response_payload = amr_mqtt_bridge_serialize_plan_segment_response(request_id, &response);
-  if (response_payload != NULL) {
-    (void)amr_mqtt_bridge_publish_payload(
-      g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
-      response_payload,
-      g_amr_mqtt_bridge_config.mqtt.service_qos);
-    free(response_payload);
-  }
-
-done:
-  amr_msgs__srv__PlanSegment_Request__fini(&request);
-  amr_msgs__srv__PlanSegment_Response__fini(&response);
-  return;
-
-fail:
   amr_mqtt_bridge_publish_simple_response(
     g_amr_mqtt_bridge_config.mqtt.response_plan_segment,
-    request_id[0] != '\0' ? request_id : "",
-    false,
-    "invalid plan_segment payload");
-  amr_msgs__srv__PlanSegment_Request__fini(&request);
-  amr_msgs__srv__PlanSegment_Response__fini(&response);
+    request_id,
+    true,
+    "plan_segment request dispatched");
 }
 
 static void amr_mqtt_bridge_handle_plan_route_request(const char * payload)
 {
   amr_msgs__srv__PlanRoute_Request request;
-  amr_msgs__srv__PlanRoute_Response response;
   char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
   const char * start_begin = NULL;
   const char * start_end = NULL;
@@ -2424,14 +2432,15 @@ static void amr_mqtt_bridge_handle_plan_route_request(const char * payload)
   const char * waypoints_end = NULL;
   int64_t sequence_number = 0;
   rcl_ret_t rc;
-  char * response_payload = NULL;
 
   memset(&request, 0, sizeof(request));
-  memset(&response, 0, sizeof(response));
-  if (!amr_msgs__srv__PlanRoute_Request__init(&request) ||
-    !amr_msgs__srv__PlanRoute_Response__init(&response))
-  {
-    goto fail;
+  if (!amr_msgs__srv__PlanRoute_Request__init(&request)) {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_plan_route,
+      "",
+      false,
+      "failed to allocate request");
+    return;
   }
 
   if (!amr_mqtt_bridge_extract_json_string_in_range(
@@ -2441,74 +2450,121 @@ static void amr_mqtt_bridge_handle_plan_route_request(const char * payload)
     !amr_mqtt_bridge_parse_pose_stamped_in_range(start_begin, start_end, &request.start) ||
     !amr_mqtt_bridge_parse_waypoints_array(waypoints_begin, waypoints_end, &request.waypoints))
   {
-    goto fail;
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_plan_route,
+      request_id[0] != '\0' ? request_id : "",
+      false,
+      "invalid plan_route payload");
+    amr_msgs__srv__PlanRoute_Request__fini(&request);
+    return;
   }
 
-  if (!amr_mqtt_bridge_wait_for_service_available(&g_amr_mqtt_bridge_ros_state.plan_route_client, 1000)) {
+  if (!amr_mqtt_bridge_wait_for_service_available(
+      &g_amr_mqtt_bridge_ros_state.plan_route_client, 1000))
+  {
     amr_mqtt_bridge_publish_simple_response(
       g_amr_mqtt_bridge_config.mqtt.response_plan_route,
       request_id,
       false,
       "plan_route service unavailable");
-    goto done;
+    amr_msgs__srv__PlanRoute_Request__fini(&request);
+    return;
   }
 
-  rc = rcl_send_request(&g_amr_mqtt_bridge_ros_state.plan_route_client, &request, &sequence_number);
-  if (rc != RCL_RET_OK ||
-    !amr_mqtt_bridge_wait_for_service_response(
-      &g_amr_mqtt_bridge_ros_state.plan_route_client,
-      &response,
-      sequence_number,
-      3000))
-  {
+  rc = rcl_send_request(
+    &g_amr_mqtt_bridge_ros_state.plan_route_client,
+    &request,
+    &sequence_number);
+  amr_msgs__srv__PlanRoute_Request__fini(&request);
+  if (rc != RCL_RET_OK) {
     rcl_reset_error();
     amr_mqtt_bridge_publish_simple_response(
       g_amr_mqtt_bridge_config.mqtt.response_plan_route,
       request_id,
       false,
-      "plan_route request failed or timed out");
-    goto done;
+      "failed to dispatch plan_route request");
+    return;
   }
 
-  response_payload = amr_mqtt_bridge_serialize_plan_route_response(request_id, &response);
-  if (response_payload != NULL) {
-    (void)amr_mqtt_bridge_publish_payload(
-      g_amr_mqtt_bridge_config.mqtt.response_plan_route,
-      response_payload,
-      g_amr_mqtt_bridge_config.mqtt.service_qos);
-    free(response_payload);
-  }
-
-done:
-  amr_msgs__srv__PlanRoute_Request__fini(&request);
-  amr_msgs__srv__PlanRoute_Response__fini(&response);
-  return;
-
-fail:
   amr_mqtt_bridge_publish_simple_response(
     g_amr_mqtt_bridge_config.mqtt.response_plan_route,
-    request_id[0] != '\0' ? request_id : "",
-    false,
-    "invalid plan_route payload");
-  amr_msgs__srv__PlanRoute_Request__fini(&request);
-  amr_msgs__srv__PlanRoute_Response__fini(&response);
+    request_id,
+    true,
+    "plan_route request dispatched");
 }
 
 static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload)
 {
   amr_msgs__action__NavigateToPose_SendGoal_Request request;
-  amr_msgs__action__NavigateToPose_SendGoal_Response response;
   const char * goal_begin = NULL;
   const char * goal_end = NULL;
   char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  bool cancel_requested = false;
   bool is_available = false;
   int64_t sequence_number = 0;
   rcl_ret_t rc;
-  char * response_payload = NULL;
 
   memset(&request, 0, sizeof(request));
-  memset(&response, 0, sizeof(response));
   if (!amr_msgs__action__NavigateToPose_SendGoal_Request__init(&request)) {
+    return;
+  }
+
+  (void)amr_mqtt_bridge_extract_json_string_in_range(
+    payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id));
+  if (amr_mqtt_bridge_extract_json_bool_in_range(
+      payload, payload + strlen(payload), "cancel", &cancel_requested) && cancel_requested)
+  {
+    action_msgs__srv__CancelGoal_Request cancel_request;
+
+    if (!g_amr_mqtt_bridge_ros_state.navigate_state.active) {
+      amr_mqtt_bridge_publish_simple_response(
+        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+        request_id,
+        false,
+        "no active navigate_to_pose goal");
+      amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
+      return;
+    }
+
+    memset(&cancel_request, 0, sizeof(cancel_request));
+    if (!action_msgs__srv__CancelGoal_Request__init(&cancel_request)) {
+      amr_mqtt_bridge_publish_simple_response(
+        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+        request_id,
+        false,
+        "failed to initialize cancel request");
+      amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
+      return;
+    }
+
+    memcpy(
+      cancel_request.goal_info.goal_id.uuid,
+      g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
+      sizeof(g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid));
+    cancel_request.goal_info.stamp.sec = 0;
+    cancel_request.goal_info.stamp.nanosec = 0U;
+
+    rc = rcl_action_send_cancel_request(
+      &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
+      &cancel_request,
+      &sequence_number);
+    action_msgs__srv__CancelGoal_Request__fini(&cancel_request);
+    amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
+    if (rc != RCL_RET_OK) {
+      rcl_reset_error();
+      amr_mqtt_bridge_publish_simple_response(
+        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+        request_id,
+        false,
+        "failed to dispatch goal cancel");
+      return;
+    }
+
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+      request_id,
+      true,
+      "goal cancel dispatched");
     return;
   }
 
@@ -2517,33 +2573,21 @@ static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload
     !amr_mqtt_bridge_extract_json_object_in_range(payload, payload + strlen(payload), "goal_pose", &goal_begin, &goal_end) ||
     !amr_mqtt_bridge_parse_pose_stamped_in_range(goal_begin, goal_end, &request.goal.goal_pose))
   {
-    response.accepted = false;
-    response_payload = amr_mqtt_bridge_serialize_navigate_goal_response("", g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid, &response, "invalid navigate_to_pose payload");
-    if (response_payload != NULL) {
-      (void)amr_mqtt_bridge_publish_payload(
-        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
-        response_payload,
-        g_amr_mqtt_bridge_config.mqtt.command_qos);
-      free(response_payload);
-    }
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+      request_id[0] != '\0' ? request_id : "",
+      false,
+      "invalid navigate_to_pose payload");
     amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
     return;
   }
 
   if (g_amr_mqtt_bridge_ros_state.navigate_state.active) {
-    response.accepted = false;
-    response_payload = amr_mqtt_bridge_serialize_navigate_goal_response(
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
       request_id,
-      g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
-      &response,
+      false,
       "navigate_to_pose goal already active");
-    if (response_payload != NULL) {
-      (void)amr_mqtt_bridge_publish_payload(
-        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
-        response_payload,
-        g_amr_mqtt_bridge_config.mqtt.command_qos);
-      free(response_payload);
-    }
     amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
     return;
   }
@@ -2554,19 +2598,11 @@ static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload
     &is_available);
   if (rc != RCL_RET_OK || !is_available) {
     rcl_reset_error();
-    response.accepted = false;
-    response_payload = amr_mqtt_bridge_serialize_navigate_goal_response(
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
       request_id,
-      g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
-      &response,
+      false,
       "navigate_to_pose action unavailable");
-    if (response_payload != NULL) {
-      (void)amr_mqtt_bridge_publish_payload(
-        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
-        response_payload,
-        g_amr_mqtt_bridge_config.mqtt.command_qos);
-      free(response_payload);
-    }
     amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
     return;
   }
@@ -2580,19 +2616,11 @@ static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload
   amr_msgs__action__NavigateToPose_SendGoal_Request__fini(&request);
   if (rc != RCL_RET_OK) {
     rcl_reset_error();
-    response.accepted = false;
-    response_payload = amr_mqtt_bridge_serialize_navigate_goal_response(
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
       request_id,
-      g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
-      &response,
+      false,
       "failed to send navigate_to_pose goal");
-    if (response_payload != NULL) {
-      (void)amr_mqtt_bridge_publish_payload(
-        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
-        response_payload,
-        g_amr_mqtt_bridge_config.mqtt.command_qos);
-      free(response_payload);
-    }
     return;
   }
 
@@ -2607,577 +2635,62 @@ static void amr_mqtt_bridge_handle_navigate_to_pose_command(const char * payload
     request_id);
 }
 
-static void amr_mqtt_bridge_handle_robot_map_telemetry(
-  const void * payload,
-  size_t payload_length)
+static void amr_mqtt_bridge_handle_navigate_cancel_command(const char * payload)
 {
-  nav_msgs__msg__OccupancyGrid map;
-  memset(&map, 0, sizeof(map));
-  if (!nav_msgs__msg__OccupancyGrid__init(&map) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
-      &map))
-  {
-    nav_msgs__msg__OccupancyGrid__fini(&map);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_map_publisher, &map, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    k_viz_telemetry_map_topic,
-    amr_mqtt_bridge_serialize_occupancy_grid,
-    &map,
-    true);
-  nav_msgs__msg__OccupancyGrid__fini(&map);
-}
-
-static void amr_mqtt_bridge_handle_robot_pose_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  geometry_msgs__msg__PoseStamped robot_pose;
-  memset(&robot_pose, 0, sizeof(robot_pose));
-  if (!geometry_msgs__msg__PoseStamped__init(&robot_pose) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseStamped),
-      &robot_pose))
-  {
-    geometry_msgs__msg__PoseStamped__fini(&robot_pose);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_pose_publisher, &robot_pose, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    k_viz_telemetry_robot_pose_topic,
-    amr_mqtt_bridge_serialize_pose_stamped,
-    &robot_pose,
-    false);
-  geometry_msgs__msg__PoseStamped__fini(&robot_pose);
-}
-
-static void amr_mqtt_bridge_handle_path_telemetry(
-  const void * payload,
-  size_t payload_length,
-  bool is_global)
-{
-  nav_msgs__msg__Path path;
-  rcl_publisher_t * publisher = is_global ?
-    &g_amr_mqtt_bridge_ros_state.global_path_publisher :
-    &g_amr_mqtt_bridge_ros_state.local_path_publisher;
-
-  memset(&path, 0, sizeof(path));
-  if (!nav_msgs__msg__Path__init(&path) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Path),
-      &path))
-  {
-    nav_msgs__msg__Path__fini(&path);
-    return;
-  }
-  (void)rcl_publish(publisher, &path, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    is_global ? k_viz_telemetry_global_path_topic : k_viz_telemetry_local_path_topic,
-    amr_mqtt_bridge_serialize_path,
-    &path,
-    false);
-  nav_msgs__msg__Path__fini(&path);
-}
-
-static void amr_mqtt_bridge_handle_costmap_telemetry(
-  const void * payload,
-  size_t payload_length,
-  bool is_global)
-{
-  nav_msgs__msg__OccupancyGrid costmap;
-  rcl_publisher_t * publisher = is_global ?
-    &g_amr_mqtt_bridge_ros_state.global_costmap_publisher :
-    &g_amr_mqtt_bridge_ros_state.local_costmap_publisher;
-
-  memset(&costmap, 0, sizeof(costmap));
-  if (!nav_msgs__msg__OccupancyGrid__init(&costmap) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
-      &costmap))
-  {
-    nav_msgs__msg__OccupancyGrid__fini(&costmap);
-    return;
-  }
-  (void)rcl_publish(publisher, &costmap, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    is_global ? k_viz_telemetry_global_costmap_topic : k_viz_telemetry_local_costmap_topic,
-    amr_mqtt_bridge_serialize_occupancy_grid,
-    &costmap,
-    false);
-  nav_msgs__msg__OccupancyGrid__fini(&costmap);
-}
-
-static void amr_mqtt_bridge_handle_motion_status_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  amr_msgs__msg__MotionStatus motion_status;
-  memset(&motion_status, 0, sizeof(motion_status));
-  if (!amr_msgs__msg__MotionStatus__init(&motion_status) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, msg, MotionStatus),
-      &motion_status))
-  {
-    amr_msgs__msg__MotionStatus__fini(&motion_status);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.motion_status_publisher, &motion_status, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    k_viz_telemetry_motion_status_topic,
-    amr_mqtt_bridge_serialize_motion_status,
-    &motion_status,
-    false);
-  amr_msgs__msg__MotionStatus__fini(&motion_status);
-}
-
-static void amr_mqtt_bridge_handle_obstacle_report_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  amr_msgs__msg__ObstacleReport obstacle_report;
-  memset(&obstacle_report, 0, sizeof(obstacle_report));
-  if (!amr_msgs__msg__ObstacleReport__init(&obstacle_report) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, msg, ObstacleReport),
-      &obstacle_report))
-  {
-    amr_msgs__msg__ObstacleReport__fini(&obstacle_report);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.obstacle_report_publisher, &obstacle_report, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    k_viz_telemetry_obstacle_report_topic,
-    amr_mqtt_bridge_serialize_obstacle_report,
-    &obstacle_report,
-    false);
-  amr_msgs__msg__ObstacleReport__fini(&obstacle_report);
-}
-
-static void amr_mqtt_bridge_handle_navigate_feedback_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  amr_msgs__action__NavigateToPose_FeedbackMessage feedback_message;
-  memset(&feedback_message, 0, sizeof(feedback_message));
-  if (!amr_msgs__action__NavigateToPose_FeedbackMessage__init(&feedback_message) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, action, NavigateToPose_FeedbackMessage),
-      &feedback_message))
-  {
-    amr_msgs__action__NavigateToPose_FeedbackMessage__fini(&feedback_message);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher, &feedback_message, NULL);
-  amr_msgs__action__NavigateToPose_FeedbackMessage__fini(&feedback_message);
-}
-
-static void amr_mqtt_bridge_handle_navigate_status_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  action_msgs__msg__GoalStatusArray status_message;
-  memset(&status_message, 0, sizeof(status_message));
-  if (!action_msgs__msg__GoalStatusArray__init(&status_message) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(action_msgs, msg, GoalStatusArray),
-      &status_message))
-  {
-    action_msgs__msg__GoalStatusArray__fini(&status_message);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.navigate_status_publisher, &status_message, NULL);
-  action_msgs__msg__GoalStatusArray__fini(&status_message);
-}
-
-static void amr_mqtt_bridge_handle_robot_scan_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  sensor_msgs__msg__LaserScan scan;
-  memset(&scan, 0, sizeof(scan));
-  if (!sensor_msgs__msg__LaserScan__init(&scan) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan),
-      &scan))
-  {
-    sensor_msgs__msg__LaserScan__fini(&scan);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_scan_publisher, &scan, NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    k_viz_telemetry_scan_topic,
-    amr_mqtt_bridge_serialize_scan,
-    &scan,
-    false);
-  sensor_msgs__msg__LaserScan__fini(&scan);
-}
-
-static void amr_mqtt_bridge_handle_robot_odom_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  nav_msgs__msg__Odometry odom;
-  memset(&odom, 0, sizeof(odom));
-  if (!nav_msgs__msg__Odometry__init(&odom) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-      &odom))
-  {
-    nav_msgs__msg__Odometry__fini(&odom);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_odom_publisher, &odom, NULL);
-  nav_msgs__msg__Odometry__fini(&odom);
-}
-
-static void amr_mqtt_bridge_handle_robot_imu_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  sensor_msgs__msg__Imu imu;
-  memset(&imu, 0, sizeof(imu));
-  if (!sensor_msgs__msg__Imu__init(&imu) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-      &imu))
-  {
-    sensor_msgs__msg__Imu__fini(&imu);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_imu_publisher, &imu, NULL);
-  sensor_msgs__msg__Imu__fini(&imu);
-}
-
-static void amr_mqtt_bridge_handle_robot_tf_telemetry(
-  const void * payload,
-  size_t payload_length,
-  bool is_static)
-{
-  tf2_msgs__msg__TFMessage tf_message;
-  memset(&tf_message, 0, sizeof(tf_message));
-  if (!tf2_msgs__msg__TFMessage__init(&tf_message) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage),
-      &tf_message))
-  {
-    tf2_msgs__msg__TFMessage__fini(&tf_message);
-    return;
-  }
-  (void)rcl_publish(
-    is_static ? &g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher :
-    &g_amr_mqtt_bridge_ros_state.robot_tf_publisher,
-    &tf_message,
-    NULL);
-  amr_mqtt_bridge_publish_viz_telemetry(
-    is_static ? k_viz_telemetry_tf_static_topic : k_viz_telemetry_tf_topic,
-    amr_mqtt_bridge_serialize_tf_message,
-    &tf_message,
-    is_static);
-  tf2_msgs__msg__TFMessage__fini(&tf_message);
-}
-
-static void amr_mqtt_bridge_handle_robot_joint_states_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  sensor_msgs__msg__JointState joint_state;
-  memset(&joint_state, 0, sizeof(joint_state));
-  if (!sensor_msgs__msg__JointState__init(&joint_state) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-      &joint_state))
-  {
-    sensor_msgs__msg__JointState__fini(&joint_state);
-    return;
-  }
-  (void)rcl_publish(&g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher, &joint_state, NULL);
-  sensor_msgs__msg__JointState__fini(&joint_state);
-}
-
-static void amr_mqtt_bridge_handle_robot_description_telemetry(
-  const void * payload,
-  size_t payload_length)
-{
-  std_msgs__msg__String robot_description;
-  memset(&robot_description, 0, sizeof(robot_description));
-  if (!std_msgs__msg__String__init(&robot_description) ||
-    !amr_mqtt_bridge_deserialize_message_raw(
-      payload,
-      payload_length,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
-      &robot_description))
-  {
-    std_msgs__msg__String__fini(&robot_description);
-    return;
-  }
-  (void)rcl_publish(
-    &g_amr_mqtt_bridge_ros_state.robot_description_publisher,
-    &robot_description,
-    NULL);
-  std_msgs__msg__String__fini(&robot_description);
-}
-
-static void amr_mqtt_bridge_handle_mqtt_message(
-  const char * topic,
-  const void * payload,
-  size_t payload_length)
-{
-  if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_robot_pose) == 0) {
-    amr_mqtt_bridge_handle_robot_pose_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_global_path) == 0) {
-    amr_mqtt_bridge_handle_path_telemetry(payload, payload_length, true);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_local_path) == 0) {
-    amr_mqtt_bridge_handle_path_telemetry(payload, payload_length, false);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_global_costmap) == 0) {
-    amr_mqtt_bridge_handle_costmap_telemetry(payload, payload_length, true);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_local_costmap) == 0) {
-    amr_mqtt_bridge_handle_costmap_telemetry(payload, payload_length, false);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_motion_status) == 0) {
-    amr_mqtt_bridge_handle_motion_status_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.telemetry_obstacle_report) == 0) {
-    amr_mqtt_bridge_handle_obstacle_report_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose) == 0) {
-    amr_mqtt_bridge_handle_navigate_feedback_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose) == 0) {
-    amr_mqtt_bridge_handle_navigate_status_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_map) == 0) {
-    amr_mqtt_bridge_handle_robot_map_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_scan) == 0) {
-    amr_mqtt_bridge_handle_robot_scan_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_odom) == 0) {
-    amr_mqtt_bridge_handle_robot_odom_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_imu) == 0) {
-    amr_mqtt_bridge_handle_robot_imu_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf) == 0) {
-    amr_mqtt_bridge_handle_robot_tf_telemetry(payload, payload_length, false);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_tf_static) == 0) {
-    amr_mqtt_bridge_handle_robot_tf_telemetry(payload, payload_length, true);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_joint_states) == 0) {
-    amr_mqtt_bridge_handle_robot_joint_states_telemetry(payload, payload_length);
-  } else if (strcmp(topic, g_amr_mqtt_bridge_config.mqtt.robot_telemetry_robot_description) == 0) {
-    amr_mqtt_bridge_handle_robot_description_telemetry(payload, payload_length);
-  }
-}
-
-static void amr_mqtt_bridge_poll_mqtt(void)
-{
-  int mqtt_rc = 0;
-  int processed_count = 0;
-
-  if (!amr_mqtt_bridge_ensure_connected()) {
-    return;
-  }
-
-  do {
-    char * topic_name = NULL;
-    int topic_length = 0;
-    MQTTClient_message * message = NULL;
-    mqtt_rc = MQTTClient_receive(
-      g_amr_mqtt_bridge_mqtt.client,
-      &topic_name,
-      &topic_length,
-      &message,
-      0UL);
-    if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-      if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
-        g_amr_mqtt_bridge_mqtt.connected = false;
-      }
-      break;
-    }
-    if (message == NULL || topic_name == NULL) {
-      break;
-    }
-
-    amr_mqtt_bridge_handle_mqtt_message(
-      topic_name,
-      message->payload,
-      (size_t)message->payloadlen);
-
-    MQTTClient_freeMessage(&message);
-    MQTTClient_free(topic_name);
-    ++processed_count;
-  } while (processed_count < 64);
-}
-
-static int amr_mqtt_bridge_init_command_interfaces(void)
-{
+  action_msgs__srv__CancelGoal_Request cancel_request;
+  char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  int64_t sequence_number = 0;
   rcl_ret_t rc;
-  size_t num_subscriptions = 0U;
-  size_t num_guard_conditions = 0U;
-  size_t num_timers = 0U;
-  size_t num_clients = 0U;
-  size_t num_services = 0U;
 
-  g_amr_mqtt_bridge_ros_state.initial_pose_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.plan_segment_client = rcl_get_zero_initialized_client();
-  g_amr_mqtt_bridge_ros_state.plan_route_client = rcl_get_zero_initialized_client();
-  g_amr_mqtt_bridge_ros_state.navigate_to_pose_client = rcl_action_get_zero_initialized_client();
-  g_amr_mqtt_bridge_ros_state.navigate_wait_set = rcl_get_zero_initialized_wait_set();
+  (void)amr_mqtt_bridge_extract_json_string_in_range(
+    payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id));
 
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.initial_pose_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseWithCovarianceStamped),
-    g_amr_mqtt_bridge_config.ros.topic_initial_pose);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
+  if (!g_amr_mqtt_bridge_ros_state.navigate_state.active) {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+      request_id,
+      false,
+      "no active navigate_to_pose goal");
+    return;
   }
-  g_amr_mqtt_bridge_ros_state.initial_pose_publisher_initialized = true;
 
-  {
-    rcl_client_options_t client_options = rcl_client_get_default_options();
-    rc = rcl_client_init(
-      &g_amr_mqtt_bridge_ros_state.plan_segment_client,
-      &g_amr_mqtt_bridge_runtime.node,
-      ROSIDL_GET_SRV_TYPE_SUPPORT(amr_msgs, srv, PlanSegment),
-      g_amr_mqtt_bridge_config.ros.service_plan_segment,
-      &client_options);
+  memset(&cancel_request, 0, sizeof(cancel_request));
+  if (!action_msgs__srv__CancelGoal_Request__init(&cancel_request)) {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+      request_id,
+      false,
+      "failed to initialize cancel request");
+    return;
   }
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.plan_segment_client_initialized = true;
 
-  {
-    rcl_client_options_t client_options = rcl_client_get_default_options();
-    rc = rcl_client_init(
-      &g_amr_mqtt_bridge_ros_state.plan_route_client,
-      &g_amr_mqtt_bridge_runtime.node,
-      ROSIDL_GET_SRV_TYPE_SUPPORT(amr_msgs, srv, PlanRoute),
-      g_amr_mqtt_bridge_config.ros.service_plan_route,
-      &client_options);
-  }
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.plan_route_client_initialized = true;
+  memcpy(
+    cancel_request.goal_info.goal_id.uuid,
+    g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
+    sizeof(g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid));
+  cancel_request.goal_info.stamp.sec = 0;
+  cancel_request.goal_info.stamp.nanosec = 0U;
 
-  {
-    rcl_action_client_options_t action_options = rcl_action_client_get_default_options();
-    rc = rcl_action_client_init(
-      &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
-      &g_amr_mqtt_bridge_runtime.node,
-      ROSIDL_GET_ACTION_TYPE_SUPPORT(amr_msgs, NavigateToPose),
-      g_amr_mqtt_bridge_config.ros.action_navigate_to_pose,
-      &action_options);
-  }
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.navigate_to_pose_client_initialized = true;
-
-  rc = rcl_action_client_wait_set_get_num_entities(
+  rc = rcl_action_send_cancel_request(
     &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
-    &num_subscriptions,
-    &num_guard_conditions,
-    &num_timers,
-    &num_clients,
-    &num_services);
+    &cancel_request,
+    &sequence_number);
+  action_msgs__srv__CancelGoal_Request__fini(&cancel_request);
   if (rc != RCL_RET_OK) {
     rcl_reset_error();
-    return 1;
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+      request_id,
+      false,
+      "failed to dispatch goal cancel");
+    return;
   }
 
-  rc = rcl_wait_set_init(
-    &g_amr_mqtt_bridge_ros_state.navigate_wait_set,
-    num_subscriptions,
-    num_guard_conditions,
-    num_timers,
-    num_clients,
-    num_services,
-    0U,
-    &g_amr_mqtt_bridge_runtime.support.context,
-    g_amr_mqtt_bridge_runtime.allocator);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.navigate_wait_set_initialized = true;
-
-  if (!action_msgs__msg__GoalStatusArray__init(&g_amr_mqtt_bridge_ros_state.navigate_status_message)) {
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.navigate_status_message_initialized = true;
-
-  memset(&g_amr_mqtt_bridge_ros_state.navigate_state, 0, sizeof(g_amr_mqtt_bridge_ros_state.navigate_state));
-  return 0;
-}
-
-static void amr_mqtt_bridge_fini_command_interfaces(void)
-{
-  if (g_amr_mqtt_bridge_ros_state.navigate_wait_set_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "navigate wait set",
-      rcl_wait_set_fini(&g_amr_mqtt_bridge_ros_state.navigate_wait_set));
-    g_amr_mqtt_bridge_ros_state.navigate_wait_set_initialized = false;
-  }
-
-  if (g_amr_mqtt_bridge_ros_state.navigate_to_pose_client_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "navigate action client",
-      rcl_action_client_fini(
-        &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
-        &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.navigate_to_pose_client_initialized = false;
-  }
-
-  if (g_amr_mqtt_bridge_ros_state.plan_route_client_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "plan_route client",
-      rcl_client_fini(&g_amr_mqtt_bridge_ros_state.plan_route_client, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.plan_route_client_initialized = false;
-  }
-
-  if (g_amr_mqtt_bridge_ros_state.plan_segment_client_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "plan_segment client",
-      rcl_client_fini(&g_amr_mqtt_bridge_ros_state.plan_segment_client, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.plan_segment_client_initialized = false;
-  }
-
-  if (g_amr_mqtt_bridge_ros_state.initial_pose_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "initial_pose publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.initial_pose_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.initial_pose_publisher_initialized = false;
-  }
-
-  if (g_amr_mqtt_bridge_ros_state.navigate_status_message_initialized) {
-    action_msgs__msg__GoalStatusArray__fini(&g_amr_mqtt_bridge_ros_state.navigate_status_message);
-    g_amr_mqtt_bridge_ros_state.navigate_status_message_initialized = false;
-  }
+  amr_mqtt_bridge_publish_simple_response(
+    g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+    request_id,
+    true,
+    "goal cancel dispatched");
 }
 
 static void amr_mqtt_bridge_poll_navigate_action(void)
@@ -3238,7 +2751,6 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
     amr_msgs__action__NavigateToPose_SendGoal_Response goal_response;
     amr_msgs__action__NavigateToPose_GetResult_Request result_request;
     int64_t result_sequence_number = 0;
-    char * response_payload = NULL;
 
     memset(&response_header, 0, sizeof(response_header));
     memset(&goal_response, 0, sizeof(goal_response));
@@ -3249,18 +2761,13 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
     if (rc == RCL_RET_OK &&
       response_header.sequence_number == g_amr_mqtt_bridge_ros_state.navigate_state.goal_request_sequence_number)
     {
-      response_payload = amr_mqtt_bridge_serialize_navigate_goal_response(
+      amr_mqtt_bridge_publish_simple_response(
+        g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
         g_amr_mqtt_bridge_ros_state.navigate_state.request_id,
-        g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
-        &goal_response,
-        goal_response.accepted ? "goal accepted" : "goal rejected");
-      if (response_payload != NULL) {
-        (void)amr_mqtt_bridge_publish_payload(
-          g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
-          response_payload,
-          g_amr_mqtt_bridge_config.mqtt.command_qos);
-        free(response_payload);
-      }
+        goal_response.accepted,
+        goal_response.accepted ?
+        "goal accepted; planning and execution pending" :
+        "goal rejected");
 
       g_amr_mqtt_bridge_ros_state.navigate_state.goal_response_pending = false;
       if (!goal_response.accepted) {
@@ -3285,7 +2792,7 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
 
   if (is_feedback_ready) {
     amr_msgs__action__NavigateToPose_FeedbackMessage feedback_message;
-    char * feedback_payload = NULL;
+    rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
 
     memset(&feedback_message, 0, sizeof(feedback_message));
     if (amr_msgs__action__NavigateToPose_FeedbackMessage__init(&feedback_message)) {
@@ -3295,18 +2802,19 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
       if (rc == RCL_RET_OK &&
         amr_mqtt_bridge_uuid_equals(
           feedback_message.goal_id.uuid,
-          g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid))
+          g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid) &&
+        amr_mqtt_bridge_serialize_message_raw(
+          &feedback_message,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, action, NavigateToPose_FeedbackMessage),
+          &serialized_message))
       {
-        feedback_payload = amr_mqtt_bridge_serialize_navigate_feedback_message(
-          g_amr_mqtt_bridge_ros_state.navigate_state.request_id,
-          &feedback_message);
-        if (feedback_payload != NULL) {
-          (void)amr_mqtt_bridge_publish_payload(
-            g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose,
-            feedback_payload,
-            g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
-          free(feedback_payload);
-        }
+        (void)amr_mqtt_bridge_publish_binary_payload(
+          g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose,
+          serialized_message.buffer,
+          serialized_message.buffer_length,
+          g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+          false);
+        (void)rmw_serialized_message_fini(&serialized_message);
       }
       amr_msgs__action__NavigateToPose_FeedbackMessage__fini(&feedback_message);
     }
@@ -3317,6 +2825,20 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
       &g_amr_mqtt_bridge_ros_state.navigate_to_pose_client,
       &g_amr_mqtt_bridge_ros_state.navigate_status_message);
     if (rc == RCL_RET_OK) {
+      rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+      if (amr_mqtt_bridge_serialize_message_raw(
+          &g_amr_mqtt_bridge_ros_state.navigate_status_message,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(action_msgs, msg, GoalStatusArray),
+          &serialized_message))
+      {
+        (void)amr_mqtt_bridge_publish_binary_payload(
+          g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose,
+          serialized_message.buffer,
+          serialized_message.buffer_length,
+          g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+          false);
+        (void)rmw_serialized_message_fini(&serialized_message);
+      }
       action_msgs__msg__GoalStatusArray__fini(&g_amr_mqtt_bridge_ros_state.navigate_status_message);
       g_amr_mqtt_bridge_ros_state.navigate_status_message_initialized =
         action_msgs__msg__GoalStatusArray__init(&g_amr_mqtt_bridge_ros_state.navigate_status_message);
@@ -3326,7 +2848,6 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
   if (is_result_response_ready && g_amr_mqtt_bridge_ros_state.navigate_state.result_response_pending) {
     rmw_request_id_t response_header;
     amr_msgs__action__NavigateToPose_GetResult_Response result_response;
-    char * result_payload = NULL;
 
     memset(&response_header, 0, sizeof(response_header));
     memset(&result_response, 0, sizeof(result_response));
@@ -3338,17 +2859,13 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
       if (rc == RCL_RET_OK &&
         response_header.sequence_number == g_amr_mqtt_bridge_ros_state.navigate_state.result_request_sequence_number)
       {
-        result_payload = amr_mqtt_bridge_serialize_navigate_result_response(
+        amr_mqtt_bridge_publish_navigate_response(
           g_amr_mqtt_bridge_ros_state.navigate_state.request_id,
-          g_amr_mqtt_bridge_ros_state.navigate_state.goal_uuid,
-          &result_response);
-        if (result_payload != NULL) {
-          (void)amr_mqtt_bridge_publish_payload(
-            g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
-            result_payload,
-            g_amr_mqtt_bridge_config.mqtt.command_qos);
-          free(result_payload);
-        }
+          result_response.result.success,
+          (int)result_response.status,
+          true,
+          true,
+          result_response.result.message.data);
         memset(&g_amr_mqtt_bridge_ros_state.navigate_state, 0, sizeof(g_amr_mqtt_bridge_ros_state.navigate_state));
       }
       amr_msgs__action__NavigateToPose_GetResult_Response__fini(&result_response);
@@ -3356,576 +2873,85 @@ static void amr_mqtt_bridge_poll_navigate_action(void)
   }
 }
 
-static void amr_mqtt_bridge_telemetry_callback(const void * message, void * context)
+static void amr_mqtt_bridge_poll_mqtt(void)
 {
-  const amr_mqtt_bridge_telemetry_endpoint_t * endpoint =
-    (const amr_mqtt_bridge_telemetry_endpoint_t *)context;
-  rmw_serialized_message_t serialized_message = rmw_get_zero_initialized_serialized_message();
+  int mqtt_rc = 0;
+  int processed_count = 0;
 
-  if (message == NULL || endpoint == NULL) {
+  if (!amr_mqtt_bridge_ensure_connected()) {
     return;
   }
 
-  if (endpoint->raw_passthrough) {
-    if (!amr_mqtt_bridge_serialize_message_raw(
-        message,
-        endpoint->type_support,
-        &serialized_message))
-    {
-      RCUTILS_LOG_ERROR_NAMED(
-        "amr_mqtt_bridge",
-        "Failed to serialize raw '%s' telemetry payload",
-        endpoint->label);
-      return;
+  do {
+    char * topic_name = NULL;
+    int topic_length = 0;
+    MQTTClient_message * message = NULL;
+    mqtt_rc = MQTTClient_receive(
+      g_amr_mqtt_bridge_mqtt.client,
+      &topic_name,
+      &topic_length,
+      &message,
+      0UL);
+    if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+      if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
+        g_amr_mqtt_bridge_mqtt.connected = false;
+      }
+      break;
+    }
+    if (message == NULL || topic_name == NULL) {
+      break;
     }
 
-    (void)amr_mqtt_bridge_publish_binary_payload(
-      endpoint->mqtt_topic,
-      serialized_message.buffer,
-      serialized_message.buffer_length,
-      endpoint->mqtt_qos);
-    (void)rmw_serialized_message_fini(&serialized_message);
-    return;
-  }
-
-  if (endpoint->serializer == NULL) {
-    return;
-  }
-
-  char * payload = endpoint->serializer(message);
-  if (payload == NULL) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to serialize '%s' telemetry payload",
-      endpoint->label);
-    return;
-  }
-
-  (void)amr_mqtt_bridge_publish_payload(
-    endpoint->mqtt_topic,
-    payload,
-    endpoint->mqtt_qos);
-  free(payload);
-}
-
-static int amr_mqtt_bridge_init_messages(void)
-{
-  memset(&g_amr_mqtt_bridge_ros_state, 0, sizeof(g_amr_mqtt_bridge_ros_state));
-
-  if (!geometry_msgs__msg__PoseStamped__init(&g_amr_mqtt_bridge_ros_state.robot_pose_message) ||
-    !nav_msgs__msg__Path__init(&g_amr_mqtt_bridge_ros_state.global_path_message) ||
-    !nav_msgs__msg__Path__init(&g_amr_mqtt_bridge_ros_state.local_path_message) ||
-    !nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_bridge_ros_state.map_message) ||
-    !nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_bridge_ros_state.global_costmap_message) ||
-    !nav_msgs__msg__OccupancyGrid__init(&g_amr_mqtt_bridge_ros_state.local_costmap_message) ||
-    !amr_msgs__msg__MotionStatus__init(&g_amr_mqtt_bridge_ros_state.motion_status_message) ||
-    !amr_msgs__msg__ObstacleReport__init(&g_amr_mqtt_bridge_ros_state.obstacle_report_message) ||
-    !geometry_msgs__msg__Twist__init(&g_amr_mqtt_bridge_ros_state.velocity_message) ||
-    !geometry_msgs__msg__PoseWithCovarianceStamped__init(&g_amr_mqtt_bridge_ros_state.initial_pose_message) ||
-    !geometry_msgs__msg__PoseStamped__init(&g_amr_mqtt_bridge_ros_state.rviz_goal_message))
-  {
-    RCUTILS_LOG_ERROR_NAMED("amr_mqtt_bridge", "Failed to initialize telemetry messages");
-    amr_mqtt_bridge_fini_messages();
-    return 1;
-  }
-
-  g_amr_mqtt_bridge_ros_state.messages_initialized = true;
-  return 0;
-}
-
-static void amr_mqtt_bridge_fini_messages(void)
-{
-  if (!g_amr_mqtt_bridge_ros_state.messages_initialized) {
-    return;
-  }
-
-  geometry_msgs__msg__PoseStamped__fini(&g_amr_mqtt_bridge_ros_state.robot_pose_message);
-  nav_msgs__msg__Path__fini(&g_amr_mqtt_bridge_ros_state.global_path_message);
-  nav_msgs__msg__Path__fini(&g_amr_mqtt_bridge_ros_state.local_path_message);
-  nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_bridge_ros_state.map_message);
-  nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_bridge_ros_state.global_costmap_message);
-  nav_msgs__msg__OccupancyGrid__fini(&g_amr_mqtt_bridge_ros_state.local_costmap_message);
-  amr_msgs__msg__MotionStatus__fini(&g_amr_mqtt_bridge_ros_state.motion_status_message);
-  amr_msgs__msg__ObstacleReport__fini(&g_amr_mqtt_bridge_ros_state.obstacle_report_message);
-  geometry_msgs__msg__Twist__fini(&g_amr_mqtt_bridge_ros_state.velocity_message);
-  geometry_msgs__msg__PoseWithCovarianceStamped__fini(&g_amr_mqtt_bridge_ros_state.initial_pose_message);
-  geometry_msgs__msg__PoseStamped__fini(&g_amr_mqtt_bridge_ros_state.rviz_goal_message);
-  g_amr_mqtt_bridge_ros_state.messages_initialized = false;
-}
-
-static void amr_mqtt_bridge_configure_endpoint(
-  amr_mqtt_bridge_telemetry_endpoint_t * endpoint,
-  const char * label,
-  const char * ros_topic,
-  const char * mqtt_topic,
-  rcl_subscription_t * subscription,
-  void * message,
-  const rosidl_message_type_support_t * type_support,
-  const rmw_qos_profile_t * qos_profile,
-  int mqtt_qos,
-  bool raw_passthrough,
-  amr_mqtt_bridge_serializer_fn_t serializer)
-{
-  endpoint->label = label;
-  endpoint->ros_topic = ros_topic;
-  endpoint->mqtt_topic = mqtt_topic;
-  endpoint->subscription = subscription;
-  endpoint->message = message;
-  endpoint->type_support = type_support;
-  endpoint->qos_profile = qos_profile;
-  endpoint->mqtt_qos = mqtt_qos;
-  endpoint->raw_passthrough = raw_passthrough;
-  endpoint->serializer = serializer;
-}
-
-static int amr_mqtt_bridge_add_subscription(amr_mqtt_bridge_telemetry_endpoint_t * endpoint)
-{
-  rcl_ret_t rc = rclc_subscription_init(
-    endpoint->subscription,
-    &g_amr_mqtt_bridge_runtime.node,
-    endpoint->type_support,
-    endpoint->ros_topic,
-    endpoint->qos_profile);
-  if (rc != RCL_RET_OK) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to create subscription for '%s' on '%s': %s",
-      endpoint->label,
-      endpoint->ros_topic,
-      rcl_get_error_string().str);
-    rcl_reset_error();
-    return 1;
-  }
-
-  rc = rclc_executor_add_subscription_with_context(
-    &g_amr_mqtt_bridge_runtime.executor,
-    endpoint->subscription,
-    endpoint->message,
-    amr_mqtt_bridge_telemetry_callback,
-    endpoint,
-    ON_NEW_DATA);
-  if (rc != RCL_RET_OK) {
-    RCUTILS_LOG_ERROR_NAMED(
-      "amr_mqtt_bridge",
-      "Failed to add executor subscription for '%s': %s",
-      endpoint->label,
-      rcl_get_error_string().str);
-    rcl_reset_error();
-    return 1;
-  }
-
-  return 0;
-}
-
-static int amr_mqtt_bridge_init_subscriptions(void)
-{
-  g_amr_mqtt_bridge_ros_state.velocity_subscription = rcl_get_zero_initialized_subscription();
-  g_amr_mqtt_bridge_ros_state.initial_pose_subscription = rcl_get_zero_initialized_subscription();
-  g_amr_mqtt_bridge_ros_state.rviz_goal_subscription = rcl_get_zero_initialized_subscription();
-  g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count = 3U;
-  g_amr_mqtt_bridge_ros_state.subscriptions_initialized = true;
-
-  amr_mqtt_bridge_configure_endpoint(
-    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[0],
-    "velocity",
-    g_amr_mqtt_bridge_config.ros.topic_velocity,
-    g_amr_mqtt_bridge_config.mqtt.command_robot_cmd_vel,
-    &g_amr_mqtt_bridge_ros_state.velocity_subscription,
-    &g_amr_mqtt_bridge_ros_state.velocity_message,
-    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, geometry_msgs, msg, Twist)(),
-    &k_default_qos,
-    g_amr_mqtt_bridge_config.mqtt.command_qos,
-    true,
-    NULL);
-  amr_mqtt_bridge_configure_endpoint(
-    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[1],
-    "initial_pose",
-    g_amr_mqtt_bridge_config.ros.topic_initial_pose,
-    g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose,
-    &g_amr_mqtt_bridge_ros_state.initial_pose_subscription,
-    &g_amr_mqtt_bridge_ros_state.initial_pose_message,
-    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, geometry_msgs, msg, PoseWithCovarianceStamped)(),
-    &k_default_qos,
-    g_amr_mqtt_bridge_config.mqtt.command_qos,
-    false,
-    amr_mqtt_bridge_serialize_initial_pose_command);
-  amr_mqtt_bridge_configure_endpoint(
-    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[2],
-    "rviz_goal",
-    g_amr_mqtt_bridge_config.ros.topic_rviz_goal,
-    g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose,
-    &g_amr_mqtt_bridge_ros_state.rviz_goal_subscription,
-    &g_amr_mqtt_bridge_ros_state.rviz_goal_message,
-    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, geometry_msgs, msg, PoseStamped)(),
-    &k_default_qos,
-    g_amr_mqtt_bridge_config.mqtt.command_qos,
-    false,
-    amr_mqtt_bridge_serialize_navigate_goal_command);
-
-  for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index) {
-    if (amr_mqtt_bridge_add_subscription(&g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index]) != 0) {
-      amr_mqtt_bridge_fini_subscriptions();
-      return 1;
+    if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_cmd_vel) == 0) {
+      amr_mqtt_bridge_handle_cmd_vel_message(
+        message->payload,
+        (size_t)message->payloadlen);
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_set_initial_pose_command(payload_text);
+        free(payload_text);
+      }
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_navigate_to_pose_command(payload_text);
+        free(payload_text);
+      }
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_navigate_cancel_command(payload_text);
+        free(payload_text);
+      }
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.request_plan_segment) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_plan_segment_request(payload_text);
+        free(payload_text);
+      }
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.request_plan_route) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_plan_route_request(payload_text);
+        free(payload_text);
+      }
     }
-  }
 
-  RCUTILS_LOG_INFO_NAMED(
-    "amr_mqtt_bridge",
-    "Initialized %zu telemetry subscriptions",
-    g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count);
-  return 0;
+    MQTTClient_freeMessage(&message);
+    MQTTClient_free(topic_name);
+    ++processed_count;
+  } while (processed_count < 8);
 }
 
-static void amr_mqtt_bridge_fini_subscriptions(void)
+rcl_ret_t amr_mqtt_bridge_initialize(int argc, const char *argv[])
 {
-  if (!g_amr_mqtt_bridge_ros_state.subscriptions_initialized) {
-    return;
-  }
-
-  for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index) {
-    rcl_subscription_t * subscription = g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index].subscription;
-    if (subscription != NULL) {
-      rcl_ret_t rc = rcl_subscription_fini(subscription, &g_amr_mqtt_bridge_runtime.node);
-      amr_mqtt_bridge_log_rcl_fini_error("subscription", rc);
-    }
-  }
-
-  g_amr_mqtt_bridge_ros_state.subscriptions_initialized = false;
-}
-
-static int amr_mqtt_bridge_init_robot_publishers(void)
-{
-  rcl_ret_t rc = RCL_RET_OK;
-  rcl_publisher_options_t transient_local_options = rcl_publisher_get_default_options();
-  transient_local_options.qos = k_transient_local_qos;
-
-  g_amr_mqtt_bridge_ros_state.robot_pose_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.global_path_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.local_path_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_map_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.global_costmap_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.local_costmap_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.motion_status_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.obstacle_report_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_scan_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_odom_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_imu_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_tf_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.robot_description_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher = rcl_get_zero_initialized_publisher();
-  g_amr_mqtt_bridge_ros_state.navigate_status_publisher = rcl_get_zero_initialized_publisher();
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.robot_pose_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, PoseStamped),
-    g_amr_mqtt_bridge_config.ros.topic_robot_pose);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_pose_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.global_path_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Path),
-    g_amr_mqtt_bridge_config.ros.topic_global_path);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.global_path_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.local_path_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Path),
-    g_amr_mqtt_bridge_config.ros.topic_local_path);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.local_path_publisher_initialized = true;
-
-  rc = rcl_publisher_init(
-    &g_amr_mqtt_bridge_ros_state.robot_map_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
-    g_amr_mqtt_bridge_config.ros.topic_map,
-    &transient_local_options);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_map_publisher_initialized = true;
-
-  rc = rcl_publisher_init(
-    &g_amr_mqtt_bridge_ros_state.global_costmap_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
-    g_amr_mqtt_bridge_config.ros.topic_global_costmap,
-    &transient_local_options);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.global_costmap_publisher_initialized = true;
-
-  rc = rcl_publisher_init(
-    &g_amr_mqtt_bridge_ros_state.local_costmap_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, OccupancyGrid),
-    g_amr_mqtt_bridge_config.ros.topic_local_costmap,
-    &transient_local_options);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.local_costmap_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.motion_status_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, msg, MotionStatus),
-    g_amr_mqtt_bridge_config.ros.topic_motion_status);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.motion_status_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.obstacle_report_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, msg, ObstacleReport),
-    g_amr_mqtt_bridge_config.ros.topic_obstacle_report);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.obstacle_report_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.robot_scan_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan),
-    g_amr_mqtt_bridge_config.ros.topic_robot_scan);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_scan_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.robot_odom_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-    g_amr_mqtt_bridge_config.ros.topic_robot_odom);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_odom_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.robot_imu_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    g_amr_mqtt_bridge_config.ros.topic_robot_imu);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_imu_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.robot_tf_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage),
-    g_amr_mqtt_bridge_config.ros.topic_robot_tf);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_tf_publisher_initialized = true;
-
-  rc = rcl_publisher_init(
-    &g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(tf2_msgs, msg, TFMessage),
-    g_amr_mqtt_bridge_config.ros.topic_robot_tf_static,
-    &transient_local_options);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-    g_amr_mqtt_bridge_config.ros.topic_robot_joint_states);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher_initialized = true;
-
-  rc = rcl_publisher_init(
-    &g_amr_mqtt_bridge_ros_state.robot_description_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
-    g_amr_mqtt_bridge_config.ros.topic_robot_description,
-    &transient_local_options);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.robot_description_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(amr_msgs, action, NavigateToPose_FeedbackMessage),
-    g_amr_mqtt_bridge_config.ros.topic_navigate_feedback);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher_initialized = true;
-
-  rc = rclc_publisher_init_default(
-    &g_amr_mqtt_bridge_ros_state.navigate_status_publisher,
-    &g_amr_mqtt_bridge_runtime.node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(action_msgs, msg, GoalStatusArray),
-    g_amr_mqtt_bridge_config.ros.topic_navigate_status);
-  if (rc != RCL_RET_OK) {
-    rcl_reset_error();
-    return 1;
-  }
-  g_amr_mqtt_bridge_ros_state.navigate_status_publisher_initialized = true;
-
-  return 0;
-}
-
-static void amr_mqtt_bridge_fini_robot_publishers(void)
-{
-  if (g_amr_mqtt_bridge_ros_state.navigate_status_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "navigate_status publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.navigate_status_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.navigate_status_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "navigate_feedback publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.navigate_feedback_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.obstacle_report_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "obstacle_report publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.obstacle_report_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.obstacle_report_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.motion_status_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "motion_status publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.motion_status_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.motion_status_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.local_costmap_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "local_costmap publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.local_costmap_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.local_costmap_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.global_costmap_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "global_costmap publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.global_costmap_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.global_costmap_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_map_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot map publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_map_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_map_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.local_path_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "local_path publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.local_path_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.local_path_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.global_path_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "global_path publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.global_path_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.global_path_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_pose_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot_pose publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_pose_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_pose_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot joint_states publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_joint_states_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_description_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot_description publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_description_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_description_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot tf_static publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_tf_static_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_tf_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot tf publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_tf_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_tf_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_imu_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot imu publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_imu_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_imu_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_odom_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot odom publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_odom_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_odom_publisher_initialized = false;
-  }
-  if (g_amr_mqtt_bridge_ros_state.robot_scan_publisher_initialized) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "robot scan publisher",
-      rcl_publisher_fini(&g_amr_mqtt_bridge_ros_state.robot_scan_publisher, &g_amr_mqtt_bridge_runtime.node));
-    g_amr_mqtt_bridge_ros_state.robot_scan_publisher_initialized = false;
-  }
-}
-
-int amr_mqtt_bridge_init(int argc, const char * const * argv)
-{
-  rcutils_ret_t logging_ret = rcutils_logging_set_logger_level(
-    "amr_mqtt_bridge", RCUTILS_LOG_SEVERITY_INFO);
-  if (logging_ret != RCUTILS_RET_OK) {
-    fprintf(stderr, "Failed to configure logger level: %s\n", rcutils_get_error_string().str);
-    rcutils_reset_error();
-  }
+  rcl_ret_t rc;
 
   g_amr_mqtt_bridge_runtime.allocator = rcl_get_default_allocator();
   (void)memset(&g_amr_mqtt_bridge_runtime.support, 0, sizeof(g_amr_mqtt_bridge_runtime.support));
@@ -3934,29 +2960,23 @@ int amr_mqtt_bridge_init(int argc, const char * const * argv)
   g_amr_mqtt_bridge_runtime.return_code = 0;
   amr_mqtt_bridge_set_default_config();
 
-  rcl_ret_t rc = rclc_support_init(
+  rc = rclc_support_init(
     &g_amr_mqtt_bridge_runtime.support,
     argc,
     argv,
     &g_amr_mqtt_bridge_runtime.allocator);
   if (rc != RCL_RET_OK) {
-    fprintf(stderr, "Failed to initialize rclc support: %s\n", rcl_get_error_string().str);
-    rcl_reset_error();
-    return 1;
+    return rc;
   }
 
   amr_mqtt_bridge_load_parameter_overrides();
   rc = rclc_node_init_default(
     &g_amr_mqtt_bridge_runtime.node,
-    "mqtt_bridge",
-    "/amr",
+    AMR_MQTT_BRIDGE_NODE_NAME,
+    AMR_MQTT_BRIDGE_NODE_NAMESPACE,
     &g_amr_mqtt_bridge_runtime.support);
   if (rc != RCL_RET_OK) {
-    fprintf(stderr, "Failed to initialize amr_mqtt_bridge node: %s\n", rcl_get_error_string().str);
-    rcl_reset_error();
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "support", rclc_support_fini(&g_amr_mqtt_bridge_runtime.support));
-    return 1;
+    return rc;
   }
 
   rc = rclc_executor_init(
@@ -3965,48 +2985,25 @@ int amr_mqtt_bridge_init(int argc, const char * const * argv)
     AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS,
     &g_amr_mqtt_bridge_runtime.allocator);
   if (rc != RCL_RET_OK) {
-    fprintf(stderr, "Failed to initialize executor: %s\n", rcl_get_error_string().str);
-    rcl_reset_error();
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "node", rcl_node_fini(&g_amr_mqtt_bridge_runtime.node));
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "support", rclc_support_fini(&g_amr_mqtt_bridge_runtime.support));
-    return 1;
+    return rc;
   }
 
-  if (amr_mqtt_bridge_connect_mqtt() != 0) {
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "executor", rclc_executor_fini(&g_amr_mqtt_bridge_runtime.executor));
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "node", rcl_node_fini(&g_amr_mqtt_bridge_runtime.node));
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "support", rclc_support_fini(&g_amr_mqtt_bridge_runtime.support));
-    return 1;
-  }
-
-  if (amr_mqtt_bridge_init_messages() != 0 ||
-    amr_mqtt_bridge_init_subscriptions() != 0 ||
-    amr_mqtt_bridge_init_robot_publishers() != 0)
+  if (amr_mqtt_bridge_connect_mqtt() != 0 ||
+    amr_mqtt_bridge_init_ros_interfaces() != 0)
   {
-    amr_mqtt_bridge_disconnect_mqtt();
-    amr_mqtt_bridge_fini_robot_publishers();
-    amr_mqtt_bridge_fini_subscriptions();
-    amr_mqtt_bridge_fini_messages();
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "executor", rclc_executor_fini(&g_amr_mqtt_bridge_runtime.executor));
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "node", rcl_node_fini(&g_amr_mqtt_bridge_runtime.node));
-    amr_mqtt_bridge_log_rcl_fini_error(
-      "support", rclc_support_fini(&g_amr_mqtt_bridge_runtime.support));
-    return 1;
+    return RCL_RET_ERROR;
   }
 
   g_amr_mqtt_bridge_runtime.is_initialized = true;
-  amr_mqtt_bridge_log_config();
-  return 0;
+  RCUTILS_LOG_INFO_NAMED(
+    "amr_mqtt_bridge",
+    "Initialized MQTT robot plugin with broker %s:%d",
+    g_amr_mqtt_bridge_config.broker.host,
+    g_amr_mqtt_bridge_config.broker.port);
+  return RCL_RET_OK;
 }
 
-void amr_mqtt_bridge_spin(void)
+void amr_mqtt_bridge_run(void)
 {
   if (!g_amr_mqtt_bridge_runtime.is_initialized) {
     return;
@@ -4015,37 +3012,34 @@ void amr_mqtt_bridge_spin(void)
   while (rcl_context_is_valid(&g_amr_mqtt_bridge_runtime.support.context)) {
     rcl_ret_t rc = rclc_executor_spin_some(
       &g_amr_mqtt_bridge_runtime.executor,
-      2 * 1000 * 1000);
+      20 * 1000 * 1000);
     if (rc != RCL_RET_OK && rc != RCL_RET_TIMEOUT) {
-      fprintf(stderr, "Executor error: %s\n", rcl_get_error_string().str);
       rcl_reset_error();
       g_amr_mqtt_bridge_runtime.return_code = 1;
       break;
     }
     amr_mqtt_bridge_poll_mqtt();
+    amr_mqtt_bridge_poll_navigate_action();
   }
 }
 
-int amr_mqtt_bridge_shutdown(void)
+rcl_ret_t amr_mqtt_bridge_terminate(void)
 {
   if (!g_amr_mqtt_bridge_runtime.is_initialized) {
-    return g_amr_mqtt_bridge_runtime.return_code;
+    return (rcl_ret_t)g_amr_mqtt_bridge_runtime.return_code;
   }
 
-  amr_mqtt_bridge_fini_robot_publishers();
-  amr_mqtt_bridge_fini_subscriptions();
-  amr_mqtt_bridge_fini_messages();
+  amr_mqtt_bridge_fini_ros_interfaces();
   amr_mqtt_bridge_disconnect_mqtt();
-
-  rcl_ret_t rc = rclc_executor_fini(&g_amr_mqtt_bridge_runtime.executor);
-  amr_mqtt_bridge_log_rcl_fini_error("executor", rc);
-
-  rc = rcl_node_fini(&g_amr_mqtt_bridge_runtime.node);
-  amr_mqtt_bridge_log_rcl_fini_error("node", rc);
-
-  rc = rclc_support_fini(&g_amr_mqtt_bridge_runtime.support);
-  amr_mqtt_bridge_log_rcl_fini_error("support", rc);
-
+  amr_mqtt_bridge_log_rcl_error(
+    "executor",
+    rclc_executor_fini(&g_amr_mqtt_bridge_runtime.executor));
+  amr_mqtt_bridge_log_rcl_error(
+    "node",
+    rcl_node_fini(&g_amr_mqtt_bridge_runtime.node));
+  amr_mqtt_bridge_log_rcl_error(
+    "support",
+    rclc_support_fini(&g_amr_mqtt_bridge_runtime.support));
   g_amr_mqtt_bridge_runtime.is_initialized = false;
-  return g_amr_mqtt_bridge_runtime.return_code;
+  return (rcl_ret_t)g_amr_mqtt_bridge_runtime.return_code;
 }

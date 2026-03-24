@@ -60,18 +60,6 @@ export type MotionStatusMessage = {
   heading_error: number;
 };
 
-export type ObstacleReportMessage = {
-  header: Header;
-  active: boolean;
-  is_dynamic: boolean;
-  blocks_path: boolean;
-  severity: number;
-  distance: number;
-  bearing: number;
-  obstacle_point: Vector3;
-  source: string;
-};
-
 export type LaserScanMessage = {
   header: Header;
   angle_min: number;
@@ -111,7 +99,6 @@ export type BridgeState = {
   global_costmap?: OccupancyGridMessage;
   local_costmap?: OccupancyGridMessage;
   motion_status?: MotionStatusMessage;
-  obstacle_report?: ObstacleReportMessage;
   scan?: LaserScanMessage;
   tf?: TfMessage;
   tf_static?: TfMessage;

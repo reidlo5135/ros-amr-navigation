@@ -1,121 +1,63 @@
 # amr_mqtt_bridge
 
-`amr_mqtt_bridge` is the VBox/server-side MQTT <-> ROS mirror for the AMR
-stack.
+Robot-side ROS <-> MQTT bridge package.
 
-Its job is to receive MQTT traffic produced by the robot, reconstruct a local
-VBox ROS graph for RViz and operator tools, and emit selected MQTT commands
-from VBox-side ROS topics. It also publishes modeled JSON telemetry for the
-web client on `amr/viz/telemetry/*`.
+This package is the renamed and consolidated successor of the old `amr_mqtt_robot_plugin`.
 
-## Placement
+## Role
 
-- VBox Ubuntu server
-  - `mosquitto`
-  - `amr_mqtt_bridge`
-  - `rviz2` or `amr_viz`
+- runs on TurtleBot3
+- reads ROS topics, services, and actions from the on-robot stack
+- publishes raw telemetry to MQTT
+- publishes web-friendly JSON viz topics to MQTT
+- consumes MQTT commands and dispatches them into local ROS
 
-## Requirements
+## Parameter Section
 
-```bash
-sudo apt install -y libpaho-mqtt-dev
-sudo apt install -y mosquitto mosquitto-clients
+Use the central `amr_bringup/params/amr.yaml` section:
+
+```yaml
+/amr/mqtt_bridge:
 ```
 
-Expected ROS environment:
+## MQTT Topics
 
-- ROS 2 Humble
-- `rclc`
+Raw telemetry:
+- `amr/robot/turtlebot3/telemetry/map`
+- `amr/robot/turtlebot3/telemetry/tf_static`
+- `amr/robot/turtlebot3/telemetry/robot_description`
+- `amr/robot/turtlebot3/telemetry/scan`
+- `amr/robot/turtlebot3/telemetry/odom`
+- `amr/robot/turtlebot3/telemetry/imu`
+- `amr/robot/turtlebot3/telemetry/tf`
+- `amr/robot/turtlebot3/telemetry/joint_states`
+- `amr/robot/turtlebot3/telemetry/robot_pose`
+- `amr/robot/turtlebot3/telemetry/global_costmap`
+- `amr/robot/turtlebot3/telemetry/local_costmap`
+- `amr/robot/turtlebot3/telemetry/global_path`
+- `amr/robot/turtlebot3/telemetry/local_path`
+- `amr/robot/turtlebot3/telemetry/motion_status`
 
-## Parameters
+Viz JSON:
+- `amr/robot/turtlebot3/viz/map`
+- `amr/robot/turtlebot3/viz/global_costmap`
+- `amr/robot/turtlebot3/viz/local_costmap`
+- `amr/robot/turtlebot3/viz/robot_pose`
+- `amr/robot/turtlebot3/viz/global_path`
+- `amr/robot/turtlebot3/viz/local_path`
+- `amr/robot/turtlebot3/viz/motion_status`
+- `amr/robot/turtlebot3/viz/scan`
+- `amr/robot/turtlebot3/viz/tf`
+- `amr/robot/turtlebot3/viz/tf_static`
+- `amr/robot/turtlebot3/viz/robot_description`
 
-Shared runtime mapping lives in:
-
-- [`amr_bringup/params/amr.yaml`](/home/reidlo/ws/src/ros-amr-navigation/amr_bringup/params/amr.yaml)
-
-Relevant section:
-
-- `/amr/mqtt_bridge`
-
-## MQTT -> ROS Mirror
-
-Navigation telemetry reconstructed into VBox ROS:
-
-- `amr/telemetry/robot_pose` -> `/amr/localization/pose`
-- `amr/telemetry/global_path` -> `/amr/planner/global`
-- `amr/telemetry/local_path` -> `/amr/planner/local`
-- `amr/robot/turtlebot3/telemetry/map` -> `/amr/map/data`
-- `amr/telemetry/global_costmap` -> `/amr/costmap/global`
-- `amr/telemetry/local_costmap` -> `/amr/costmap/local`
-- `amr/telemetry/motion_status` -> `/amr/motion/status`
-- `amr/telemetry/obstacle_report` -> `/amr/obstacle/report`
-
-Robot telemetry reconstructed into VBox ROS:
-
-- `amr/robot/turtlebot3/telemetry/scan` -> `/scan`
-- `amr/robot/turtlebot3/telemetry/odom` -> `/odom`
-- `amr/robot/turtlebot3/telemetry/imu` -> `/imu`
-- `amr/robot/turtlebot3/telemetry/tf` -> `/tf`
-- `amr/robot/turtlebot3/telemetry/tf_static` -> `/tf_static`
-- `amr/robot/turtlebot3/telemetry/joint_states` -> `/joint_states`
-- `amr/robot/turtlebot3/telemetry/robot_description` -> `/robot_description`
-
-Mirrored action monitoring:
-
-- `amr/feedback/navigate_to_pose` -> `/amr/navigator/navigate_to_pose/feedback`
-- `amr/status/navigate_to_pose` -> `/amr/navigator/navigate_to_pose/status`
-
-## MQTT -> MQTT Modeled Viz Topics
-
-For `amr_viz`, this package also emits browser-friendly JSON topics:
-
-- `amr/viz/telemetry/robot_pose`
-- `amr/viz/telemetry/global_path`
-- `amr/viz/telemetry/local_path`
-- `amr/viz/telemetry/map`
-- `amr/viz/telemetry/global_costmap`
-- `amr/viz/telemetry/local_costmap`
-- `amr/viz/telemetry/motion_status`
-- `amr/viz/telemetry/obstacle_report`
-- `amr/viz/telemetry/scan`
-- `amr/viz/telemetry/tf`
-- `amr/viz/telemetry/tf_static`
-
-## ROS -> MQTT Emission
-
-VBox-side ROS inputs forwarded back into MQTT:
-
-- `/cmd_vel` -> `amr/robot/turtlebot3/command/cmd_vel`
-- `/amr/localization/initial_pose` -> `amr/command/set_initial_pose`
-- `/amr/rviz/goal` -> `amr/command/navigate_to_pose`
-
-## Command Ownership
-
-- service/action execution ownership is on the robot side in
-  `amr_mqtt_robot_plugin`
-- this package mirrors telemetry and emits commands
-- MQTT ACK responses remain MQTT-side topics rather than full ROS result replay
-
-## Transport Notes
-
-- raw mirrored topics use ROS serialized binary payloads
-- `map`, `costmap`, `tf_static`, and `robot_description` need late-subscriber
-  durability on the VBox ROS side
-- RViz should be configured with matching durability for latched-style topics
+Commands:
+- `amr/command/navigate_to_pose`
+- `amr/command/cancel_navigate_to_pose`
+- `amr/command/set_initial_pose`
 
 ## Launch
 
 ```bash
-ros2 launch amr_mqtt_bridge amr_mqtt_bridge.launch.py
+ros2 launch amr_mqtt_bridge amr_mqtt_bridge.launch.py params_file:=/path/to/amr.yaml
 ```
-
-## Notes
-
-- this package is VBox/server-side only
-- robot-side mirroring belongs in `amr_mqtt_robot_plugin`
-- topic names and ROS interface names should be tuned through `amr.yaml`
-- source layout is split by responsibility:
-  - `src/amr_mqtt_bridge/node.c`
-  - `src/amr_mqtt_bridge/mqtt.c`
-  - `include/amr_mqtt_bridge/node.h`
-  - `include/amr_mqtt_bridge/mqtt.h`

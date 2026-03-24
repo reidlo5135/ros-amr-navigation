@@ -21,7 +21,6 @@ type SceneViewportProps = {
     paths: boolean;
     scan: boolean;
     tf: boolean;
-    obstacle: boolean;
   };
   goalMarker?: {
     x: number;
@@ -967,7 +966,6 @@ export function SceneViewport({
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const globalPathRef = useRef<THREE.Group | null>(null);
   const localPathRef = useRef<THREE.Group | null>(null);
-  const obstacleRef = useRef<THREE.Group | null>(null);
   const goalMarkerRef = useRef<THREE.Group | null>(null);
   const previewMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
@@ -1070,39 +1068,6 @@ export function SceneViewport({
 
     const robot = new THREE.Group();
     scene.add(robot);
-
-    const obstacle = new THREE.Group();
-    const obstacleInflation = new THREE.Mesh(
-      new THREE.CircleGeometry(0.24, 32),
-      new THREE.MeshBasicMaterial({
-        color: "#cf4562",
-        transparent: true,
-        opacity: 0.18,
-        side: THREE.DoubleSide,
-        depthTest: false,
-        depthWrite: false,
-      }),
-    );
-    obstacleInflation.rotation.x = -Math.PI / 2;
-    obstacleInflation.position.y = 0.03;
-    obstacleInflation.renderOrder = 26;
-    const obstaclePoints = new THREE.Points(
-      new THREE.BufferGeometry(),
-      new THREE.PointsMaterial({
-        color: "#1dd14d",
-        size: 0.09,
-        transparent: true,
-        opacity: 1,
-        sizeAttenuation: true,
-        depthTest: false,
-        depthWrite: false,
-      }),
-    );
-    obstaclePoints.position.y = 0.034;
-    obstaclePoints.renderOrder = 27;
-    obstacle.add(obstacleInflation, obstaclePoints);
-    obstacle.visible = false;
-    scene.add(obstacle);
 
     const renderScene = () => {
       controls.update();
@@ -1216,7 +1181,6 @@ export function SceneViewport({
     cameraRef.current = camera;
     controlsRef.current = controls;
     robotRef.current = robot;
-    obstacleRef.current = obstacle;
 
     return () => {
       clearPreview();
@@ -1235,7 +1199,6 @@ export function SceneViewport({
       disposeObject(localCostmapMeshRef.current);
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
-      disposeObject(obstacle);
       disposeObject(goalMarkerRef.current);
       disposeObject(robot);
       renderer.dispose();
@@ -1247,8 +1210,7 @@ export function SceneViewport({
   useEffect(() => {
     const scene = sceneRef.current;
     const robot = robotRef.current;
-    const obstacle = obstacleRef.current;
-    if (!scene || !robot || !obstacle) {
+    if (!scene || !robot) {
       return;
     }
 
@@ -1361,36 +1323,6 @@ export function SceneViewport({
     if (tfGroupRef.current) {
       tfGroupRef.current.visible = layerVisibility.tf;
       scene.add(tfGroupRef.current);
-    }
-
-    const obstacleReport = state.obstacle_report;
-    if (obstacleReport?.active && layerVisibility.obstacle) {
-      obstacle.visible = true;
-      obstacle.position.set(
-        obstacleReport.obstacle_point.x,
-        0.0,
-        -obstacleReport.obstacle_point.y,
-      );
-      const inflationRadius = 0.18 + (obstacleReport.severity * 0.03);
-      const obstacleInflation = obstacle.children[0] as THREE.Mesh;
-      obstacleInflation.scale.setScalar(inflationRadius / 0.24);
-      const obstaclePoints = obstacle.children[1] as THREE.Points;
-      const pointPositions = new Float32Array([
-        0.00, 0.0, 0.00,
-        0.03, 0.0, 0.00,
-        -0.03, 0.0, 0.00,
-        0.00, 0.0, 0.03,
-        0.00, 0.0, -0.03,
-        0.02, 0.0, 0.02,
-        -0.02, 0.0, 0.02,
-        0.02, 0.0, -0.02,
-        -0.02, 0.0, -0.02,
-      ]);
-      obstaclePoints.geometry.dispose();
-      obstaclePoints.geometry = new THREE.BufferGeometry();
-      obstaclePoints.geometry.setAttribute("position", new THREE.BufferAttribute(pointPositions, 3));
-    } else {
-      obstacle.visible = false;
     }
 
     if (state.map && cameraRef.current) {

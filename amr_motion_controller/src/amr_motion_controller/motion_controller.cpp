@@ -1,11 +1,5 @@
 #include "amr_motion_controller/motion_controller.hpp"
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cctype>
-#include <limits>
-
 namespace amr_motion_controller
 {
 
