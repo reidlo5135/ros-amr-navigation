@@ -144,7 +144,8 @@
   ros__parameters:
     topics:
       map: "/amr/map/data"
-      obstacle_report: "/amr/obstacle/report"
+      pose: "/amr/localization/pose"
+      scan: "/scan"
       global: "/amr/costmap/global"
       local: "/amr/costmap/local"
     footprint:
@@ -164,6 +165,10 @@
       local:
         radius: 0.22
         cost: 90
+    dynamic:
+      max_distance: 1.8
+      forward_angle_deg: 100.0
+      static_clearance_cells: 4
 
 /amr/navigation_manager:
   ros__parameters:
@@ -206,7 +211,6 @@
       command: "/amr/motion/command"
       pose: "/amr/localization/pose"
       costmap: "/amr/costmap/local"
-      obstacle_report: "/amr/obstacle/report"
       plan: "/amr/planner/local"
     services:
       local_escape: "/amr/local_planner/plan_local_escape"
@@ -278,7 +282,6 @@
       pose: "/amr/localization/pose"
       command: "/amr/motion/command"
       status: "/amr/motion/status"
-      obstacle_report: "/amr/obstacle/report"
     services:
       local_escape: "/amr/local_planner/plan_local_escape"
       segment: "/amr/global_planner/plan_segment"

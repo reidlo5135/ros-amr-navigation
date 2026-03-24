@@ -11,13 +11,15 @@ namespace
 {
 
 constexpr int kUnknownCellValue = -1;
+constexpr double kPi = 3.14159265358979323846;
 
 }  // namespace
 
 CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("costmap_server", options),
   map_topic_(""),
-  obstacle_report_topic_(""),
+  pose_topic_(""),
+  scan_topic_(""),
   global_costmap_topic_(""),
   local_costmap_topic_(""),
   obstacle_threshold_(50),
@@ -25,15 +27,20 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   global_inflation_cost_(80),
   local_dynamic_inflation_radius_(0.30),
   local_dynamic_cost_(100),
+  dynamic_max_distance_(1.8),
+  dynamic_forward_angle_deg_(100.0),
+  dynamic_static_clearance_cells_(4),
   footprint_polygon_(),
   footprint_padding_(0.02),
   footprint_circumscribed_radius_(0.0),
   map_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_map_(false),
-  has_obstacle_report_(false)
+  has_pose_(false),
+  has_scan_(false)
 {
   this->declare_parameter("topics.map", this->map_topic_);
-  this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
+  this->declare_parameter("topics.pose", this->pose_topic_);
+  this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.global", this->global_costmap_topic_);
   this->declare_parameter("topics.local", this->local_costmap_topic_);
   this->declare_parameter("inflation.obstacle_threshold", this->obstacle_threshold_);
@@ -41,6 +48,9 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("inflation.global.cost", this->global_inflation_cost_);
   this->declare_parameter("inflation.local.radius", this->local_dynamic_inflation_radius_);
   this->declare_parameter("inflation.local.cost", this->local_dynamic_cost_);
+  this->declare_parameter("dynamic.max_distance", this->dynamic_max_distance_);
+  this->declare_parameter("dynamic.forward_angle_deg", this->dynamic_forward_angle_deg_);
+  this->declare_parameter("dynamic.static_clearance_cells", this->dynamic_static_clearance_cells_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_);
   this->declare_parameter("footprint.padding", this->footprint_padding_);
 }
@@ -50,7 +60,8 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 {
   (void)state;
   this->get_parameter("topics.map", this->map_topic_);
-  this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
+  this->get_parameter("topics.pose", this->pose_topic_);
+  this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.global", this->global_costmap_topic_);
   this->get_parameter("topics.local", this->local_costmap_topic_);
   this->get_parameter("inflation.obstacle_threshold", this->obstacle_threshold_);
@@ -58,19 +69,23 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   this->get_parameter("inflation.global.cost", this->global_inflation_cost_);
   this->get_parameter("inflation.local.radius", this->local_dynamic_inflation_radius_);
   this->get_parameter("inflation.local.cost", this->local_dynamic_cost_);
+  this->get_parameter("dynamic.max_distance", this->dynamic_max_distance_);
+  this->get_parameter("dynamic.forward_angle_deg", this->dynamic_forward_angle_deg_);
+  this->get_parameter("dynamic.static_clearance_cells", this->dynamic_static_clearance_cells_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_);
   this->get_parameter("footprint.padding", this->footprint_padding_);
   this->update_footprint_metrics();
 
   if (
-    this->map_topic_.empty() || this->obstacle_report_topic_.empty() ||
+    this->map_topic_.empty() || this->pose_topic_.empty() || this->scan_topic_.empty() ||
     this->global_costmap_topic_.empty() || this->local_costmap_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Costmap topics must not be empty: map='%s' obstacle_report='%s' global='%s' local='%s'",
+      "Costmap topics must not be empty: map='%s' pose='%s' scan='%s' global='%s' local='%s'",
       this->map_topic_.c_str(),
-      this->obstacle_report_topic_.c_str(),
+      this->pose_topic_.c_str(),
+      this->scan_topic_.c_str(),
       this->global_costmap_topic_.c_str(),
       this->local_costmap_topic_.c_str());
     return CallbackReturn::FAILURE;
@@ -82,10 +97,15 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       this->handle_map(message);
     });
-  this->obstacle_report_subscription_ = this->create_subscription<amr_msgs::msg::ObstacleReport>(
-    this->obstacle_report_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const amr_msgs::msg::ObstacleReport::SharedPtr message) {
-      this->handle_obstacle_report(message);
+  this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+    this->pose_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
+      this->handle_current_pose(message);
+    });
+  this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    this->scan_topic_, rclcpp::SensorDataQoS(),
+    [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
+      this->handle_scan(message);
     });
   this->global_costmap_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
     this->global_costmap_topic_,
@@ -96,9 +116,10 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured costmap server with map='%s', report='%s', global='%s', local='%s', footprint_radius=%.3f m padding=%.3f m",
+    "Configured costmap server with map='%s', pose='%s', scan='%s', global='%s', local='%s', footprint_radius=%.3f m padding=%.3f m",
     this->map_topic_.c_str(),
-    this->obstacle_report_topic_.c_str(),
+    this->pose_topic_.c_str(),
+    this->scan_topic_.c_str(),
     this->global_costmap_topic_.c_str(),
     this->local_costmap_topic_.c_str(),
     this->footprint_circumscribed_radius_,
@@ -139,15 +160,18 @@ CostmapServer::CallbackReturn CostmapServer::on_cleanup(
 {
   (void)state;
   this->map_subscription_.reset();
-  this->obstacle_report_subscription_.reset();
+  this->current_pose_subscription_.reset();
+  this->scan_subscription_.reset();
   this->global_costmap_publisher_.reset();
   this->local_costmap_publisher_.reset();
   this->map_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->global_costmap_ = nav_msgs::msg::OccupancyGrid();
   this->local_costmap_ = nav_msgs::msg::OccupancyGrid();
-  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
+  this->latest_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->has_map_ = false;
-  this->has_obstacle_report_ = false;
+  this->has_pose_ = false;
+  this->has_scan_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -165,11 +189,18 @@ void CostmapServer::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mes
   this->publish_costmaps();
 }
 
-void CostmapServer::handle_obstacle_report(
-  const amr_msgs::msg::ObstacleReport::SharedPtr message)
+void CostmapServer::handle_current_pose(
+  const geometry_msgs::msg::PoseStamped::SharedPtr message)
 {
-  this->latest_obstacle_report_ = *message;
-  this->has_obstacle_report_ = true;
+  this->latest_pose_ = *message;
+  this->has_pose_ = true;
+}
+
+void CostmapServer::handle_scan(
+  const sensor_msgs::msg::LaserScan::SharedPtr message)
+{
+  this->latest_scan_ = *message;
+  this->has_scan_ = true;
   this->rebuild_costmaps();
   this->publish_costmaps();
 }
@@ -234,8 +265,7 @@ void CostmapServer::rebuild_costmaps()
 
   this->local_costmap_ = this->global_costmap_;
 
-  if (!this->has_obstacle_report_ || !this->latest_obstacle_report_.active ||
-    !this->latest_obstacle_report_.is_dynamic)
+  if (!this->has_pose_ || !this->has_scan_)
   {
     return;
   }
@@ -246,36 +276,115 @@ void CostmapServer::rebuild_costmaps()
   const int dynamic_radius_cells = std::max(
     1,
     static_cast<int>(std::ceil(local_effective_radius / resolution)));
-  const int grid_x = static_cast<int>(std::floor(
-      (this->latest_obstacle_report_.obstacle_point.x -
-      this->local_costmap_.info.origin.position.x) / resolution));
-  const int grid_y = static_cast<int>(std::floor(
-      (this->latest_obstacle_report_.obstacle_point.y -
-      this->local_costmap_.info.origin.position.y) / resolution));
 
-  for (int dy = -dynamic_radius_cells; dy <= dynamic_radius_cells; ++dy) {
-    for (int dx = -dynamic_radius_cells; dx <= dynamic_radius_cells; ++dx) {
+  const double robot_yaw = std::atan2(
+    2.0 * (
+      this->latest_pose_.pose.orientation.w * this->latest_pose_.pose.orientation.z +
+      this->latest_pose_.pose.orientation.x * this->latest_pose_.pose.orientation.y),
+    1.0 - 2.0 * (
+      this->latest_pose_.pose.orientation.y * this->latest_pose_.pose.orientation.y +
+      this->latest_pose_.pose.orientation.z * this->latest_pose_.pose.orientation.z));
+  const double half_angle = 0.5 * this->dynamic_forward_angle_deg_ * kPi / 180.0;
+
+  for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
+    const double range = this->latest_scan_.ranges[index];
+    if (
+      !std::isfinite(range) || range < this->latest_scan_.range_min ||
+      range > std::min(this->dynamic_max_distance_, static_cast<double>(this->latest_scan_.range_max)))
+    {
+      continue;
+    }
+
+    const double bearing =
+      this->latest_scan_.angle_min + (static_cast<double>(index) * this->latest_scan_.angle_increment);
+    if (std::abs(bearing) > half_angle) {
+      continue;
+    }
+
+    const double world_x =
+      this->latest_pose_.pose.position.x + (range * std::cos(robot_yaw + bearing));
+    const double world_y =
+      this->latest_pose_.pose.position.y + (range * std::sin(robot_yaw + bearing));
+
+    int grid_x = 0;
+    int grid_y = 0;
+    if (!this->world_to_grid(world_x, world_y, grid_x, grid_y)) {
+      continue;
+    }
+
+    if (this->has_static_obstacle_near(grid_x, grid_y, this->dynamic_static_clearance_cells_)) {
+      continue;
+    }
+
+    for (int dy = -dynamic_radius_cells; dy <= dynamic_radius_cells; ++dy) {
+      for (int dx = -dynamic_radius_cells; dx <= dynamic_radius_cells; ++dx) {
+        const int nx = grid_x + dx;
+        const int ny = grid_y + dy;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+          continue;
+        }
+
+        const double distance = std::sqrt(static_cast<double>((dx * dx) + (dy * dy)));
+        if (distance > static_cast<double>(dynamic_radius_cells)) {
+          continue;
+        }
+
+        const int index_2d = ny * width + nx;
+        const int8_t current_value = this->local_costmap_.data[static_cast<std::size_t>(index_2d)];
+        if (current_value == kUnknownCellValue) {
+          continue;
+        }
+
+        this->local_costmap_.data[static_cast<std::size_t>(index_2d)] =
+          static_cast<int8_t>(std::max<int>(current_value, this->local_dynamic_cost_));
+      }
+    }
+  }
+}
+
+bool CostmapServer::world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const
+{
+  if (!this->map_) {
+    return false;
+  }
+
+  const double resolution = static_cast<double>(this->map_->info.resolution);
+  if (resolution <= 0.0) {
+    return false;
+  }
+
+  grid_x = static_cast<int>(std::floor((world_x - this->map_->info.origin.position.x) / resolution));
+  grid_y = static_cast<int>(std::floor((world_y - this->map_->info.origin.position.y) / resolution));
+
+  return
+    grid_x >= 0 && grid_x < static_cast<int>(this->map_->info.width) &&
+    grid_y >= 0 && grid_y < static_cast<int>(this->map_->info.height);
+}
+
+bool CostmapServer::has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const
+{
+  if (!this->map_ || this->map_->data.empty()) {
+    return false;
+  }
+
+  const int width = static_cast<int>(this->map_->info.width);
+  const int height = static_cast<int>(this->map_->info.height);
+  for (int dy = -clearance_cells; dy <= clearance_cells; ++dy) {
+    for (int dx = -clearance_cells; dx <= clearance_cells; ++dx) {
       const int nx = grid_x + dx;
       const int ny = grid_y + dy;
       if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
         continue;
       }
-
-      const double distance = std::sqrt(static_cast<double>((dx * dx) + (dy * dy)));
-      if (distance > static_cast<double>(dynamic_radius_cells)) {
-        continue;
-      }
-
       const int index = ny * width + nx;
-      const int8_t current_value = this->local_costmap_.data[static_cast<std::size_t>(index)];
-      if (current_value == kUnknownCellValue) {
-        continue;
+      const int8_t cell_value = this->map_->data[static_cast<std::size_t>(index)];
+      if (cell_value >= this->obstacle_threshold_) {
+        return true;
       }
-
-      this->local_costmap_.data[static_cast<std::size_t>(index)] =
-        static_cast<int8_t>(std::max<int>(current_value, this->local_dynamic_cost_));
     }
   }
+
+  return false;
 }
 
 void CostmapServer::publish_costmaps()

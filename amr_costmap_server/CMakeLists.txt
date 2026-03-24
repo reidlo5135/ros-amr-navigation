@@ -15,9 +15,11 @@ include_directories(
 
 find_package(ament_cmake REQUIRED)
 find_package(amr_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_executable(${PROJECT_NAME}
   src/${PROJECT_NAME}/costmap_server.cpp
@@ -26,9 +28,11 @@ add_executable(${PROJECT_NAME}
 
 ament_target_dependencies(${PROJECT_NAME}
   amr_msgs
+  geometry_msgs
   nav_msgs
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
 )
 
 install(TARGETS

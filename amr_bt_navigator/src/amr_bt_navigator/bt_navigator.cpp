@@ -43,7 +43,6 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   command_topic_(""),
   current_pose_topic_(""),
   motion_status_topic_(""),
-  obstacle_report_topic_(""),
   local_escape_service_("/amr/local_planner/plan_local_escape"),
   plan_segment_service_("/amr/global_planner/plan_segment"),
   behavior_tree_xml_path_(""),
@@ -54,15 +53,13 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   recovery_retry_delay_ms_(700),
   next_command_id_(1U),
   has_current_pose_(false),
-  has_motion_status_(false),
-  has_obstacle_report_(false)
+  has_motion_status_(false)
 {
   this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
-  this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->declare_parameter("services.local_escape", this->local_escape_service_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
   this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
@@ -82,7 +79,6 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.status", this->motion_status_topic_);
-  this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->get_parameter("services.local_escape", this->local_escape_service_);
   this->get_parameter("services.segment", this->plan_segment_service_);
   this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
@@ -107,15 +103,14 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->motion_status_topic_.empty() || this->obstacle_report_topic_.empty())
+    this->motion_status_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Navigator topics must not be empty: command='%s' pose='%s' status='%s' obstacle_report='%s'",
+      "Navigator topics must not be empty: command='%s' pose='%s' status='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
-      this->motion_status_topic_.c_str(),
-      this->obstacle_report_topic_.c_str());
+      this->motion_status_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -134,11 +129,6 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->motion_status_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const amr_msgs::msg::MotionStatus::SharedPtr message) {
       this->handle_motion_status(message);
-    });
-  this->obstacle_report_subscription_ = this->create_subscription<amr_msgs::msg::ObstacleReport>(
-    this->obstacle_report_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const amr_msgs::msg::ObstacleReport::SharedPtr message) {
-      this->handle_obstacle_report(message);
     });
   this->action_server_ = rclcpp_action::create_server<NavigateToPose>(
     this->get_node_base_interface(),
@@ -160,12 +150,11 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', obstacle_report='%s', local_escape='%s', planner='%s', bt_xml='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', local_escape='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->motion_status_topic_.c_str(),
-    this->obstacle_report_topic_.c_str(),
     this->local_escape_service_.c_str(),
     this->plan_segment_service_.c_str(),
     this->behavior_tree_xml_path_.c_str());
@@ -201,15 +190,12 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
-  this->obstacle_report_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
-  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->has_current_pose_ = false;
   this->has_motion_status_ = false;
-  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -221,15 +207,12 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
-  this->obstacle_report_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
-  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->has_current_pose_ = false;
   this->has_motion_status_ = false;
-  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -405,8 +388,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
-      const auto obstacle = navigator->get_obstacle_report_copy();
-      if (status.obstacle_detected || (obstacle.active && obstacle.blocks_path)) {
+      if (status.obstacle_detected) {
         return BT::NodeStatus::SUCCESS;
       }
       return BT::NodeStatus::FAILURE;
@@ -618,13 +600,6 @@ void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::Shared
   this->has_motion_status_ = true;
 }
 
-void Btnavigator::handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message)
-{
-  std::scoped_lock lock(this->navigator_mutex_);
-  this->latest_obstacle_report_ = *message;
-  this->has_obstacle_report_ = true;
-}
-
 geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
@@ -635,12 +610,6 @@ amr_msgs::msg::MotionStatus Btnavigator::get_motion_status_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
   return this->latest_motion_status_;
-}
-
-amr_msgs::msg::ObstacleReport Btnavigator::get_obstacle_report_copy() const
-{
-  std::scoped_lock lock(this->navigator_mutex_);
-  return this->latest_obstacle_report_;
 }
 
 bool Btnavigator::is_navigator_ready(std::string & error_message) const

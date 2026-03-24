@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "amr_msgs/msg/motion_command.hpp"
-#include "amr_msgs/msg/obstacle_report.hpp"
 #include "amr_msgs/srv/plan_local_escape.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
@@ -36,7 +35,6 @@ private:
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
-  void handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message);
   void handle_plan_local_escape(
     const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
     std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response);
@@ -91,11 +89,18 @@ private:
   double pose_distance(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal) const;
+  bool find_first_blocked_pose_on_plan(
+    const nav_msgs::msg::Path & plan,
+    geometry_msgs::msg::PoseStamped & blocked_pose) const;
+  double sample_lateral_occupancy(
+    double origin_x,
+    double origin_y,
+    double heading,
+    double lateral_sign) const;
 
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
-  rclcpp::Subscription<amr_msgs::msg::ObstacleReport>::SharedPtr obstacle_report_subscription_;
   rclcpp::Service<amr_msgs::srv::PlanLocalEscape>::SharedPtr local_escape_service_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_plan_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -103,7 +108,6 @@ private:
   std::string command_topic_;
   std::string current_pose_topic_;
   std::string map_topic_;
-  std::string obstacle_report_topic_;
   std::string local_plan_topic_;
   std::string local_escape_service_name_;
   int publish_period_ms_;
@@ -126,11 +130,9 @@ private:
   nav_msgs::msg::OccupancyGrid::SharedPtr map_occupancy_grid_;
   nav_msgs::msg::OccupancyGrid inflated_map_;
   nav_msgs::msg::OccupancyGrid working_costmap_;
-  amr_msgs::msg::ObstacleReport latest_obstacle_report_;
   bool has_command_;
   bool has_current_pose_;
   bool has_map_;
-  bool has_obstacle_report_;
 };
 
 }  // namespace amr_local_planner

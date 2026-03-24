@@ -291,7 +291,6 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   command_topic_(""),
   current_pose_topic_(""),
   map_topic_(""),
-  obstacle_report_topic_(""),
   local_plan_topic_(""),
   local_escape_service_name_("/amr/local_planner/plan_local_escape"),
   publish_period_ms_(100),
@@ -312,13 +311,11 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_command_(false),
   has_current_pose_(false),
-  has_map_(false),
-  has_obstacle_report_(false)
+  has_map_(false)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.costmap", this->map_topic_);
-  this->declare_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
   this->declare_parameter("services.local_escape", this->local_escape_service_name_);
   this->declare_parameter("planner.publish_period_ms", this->publish_period_ms_);
@@ -346,7 +343,6 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.costmap", this->map_topic_);
-  this->get_parameter("topics.obstacle_report", this->obstacle_report_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
   this->get_parameter("services.local_escape", this->local_escape_service_name_);
   this->get_parameter("planner.publish_period_ms", this->publish_period_ms_);
@@ -370,16 +366,14 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->map_topic_.empty() || this->obstacle_report_topic_.empty() ||
-    this->local_plan_topic_.empty())
+    this->map_topic_.empty() || this->local_plan_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Local planner topics must not be empty: command='%s' pose='%s' costmap='%s' obstacle_report='%s' local_plan='%s'",
+      "Local planner topics must not be empty: command='%s' pose='%s' costmap='%s' local_plan='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
       this->map_topic_.c_str(),
-      this->obstacle_report_topic_.c_str(),
       this->local_plan_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
@@ -400,11 +394,6 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       this->handle_map(message);
     });
-  this->obstacle_report_subscription_ = this->create_subscription<amr_msgs::msg::ObstacleReport>(
-    this->obstacle_report_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const amr_msgs::msg::ObstacleReport::SharedPtr message) {
-      this->handle_obstacle_report(message);
-    });
   this->local_escape_service_ = this->create_service<amr_msgs::srv::PlanLocalEscape>(
     this->local_escape_service_name_,
     [this](
@@ -422,11 +411,10 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured local planner with command='%s', pose='%s', costmap='%s', obstacle_report='%s', plan='%s', lookahead=%.2f",
+    "Configured local planner with command='%s', pose='%s', costmap='%s', plan='%s', lookahead=%.2f",
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->map_topic_.c_str(),
-    this->obstacle_report_topic_.c_str(),
     this->local_plan_topic_.c_str(),
     this->lookahead_distance_);
 
@@ -461,7 +449,6 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->motion_command_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
-  this->obstacle_report_subscription_.reset();
   this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
   this->timer_.reset();
@@ -470,13 +457,11 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
-  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->last_command_id_ = 0U;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
   this->has_map_ = false;
-  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -486,7 +471,6 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->motion_command_subscription_.reset();
   this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
-  this->obstacle_report_subscription_.reset();
   this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
   this->timer_.reset();
@@ -495,13 +479,11 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
-  this->latest_obstacle_report_ = amr_msgs::msg::ObstacleReport();
   this->last_command_id_ = 0U;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
   this->has_map_ = false;
-  this->has_obstacle_report_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -540,13 +522,6 @@ void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     message->info.width,
     message->info.height,
     message->info.resolution);
-}
-
-void LocalPlanner::handle_obstacle_report(
-  const amr_msgs::msg::ObstacleReport::SharedPtr message)
-{
-  this->latest_obstacle_report_ = *message;
-  this->has_obstacle_report_ = true;
 }
 
 void LocalPlanner::handle_plan_local_escape(
@@ -635,11 +610,15 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
   const auto closest_index =
     this->find_closest_pose_index(source_plan, current_pose, this->last_progress_index_);
   this->last_progress_index_ = closest_index;
+  geometry_msgs::msg::PoseStamped blocked_pose;
+  const auto sliced_plan = this->build_sliced_local_plan_with_lookahead(
+    source_plan,
+    current_pose,
+    closest_index,
+    std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_));
   const bool obstacle_active =
-    this->dynamic_obstacle_enabled_ && this->has_obstacle_report_ &&
-    this->latest_obstacle_report_.active &&
-    this->latest_obstacle_report_.is_dynamic &&
-    this->latest_obstacle_report_.blocks_path;
+    this->dynamic_obstacle_enabled_ &&
+    this->find_first_blocked_pose_on_plan(sliced_plan, blocked_pose);
   const double replan_lookahead_distance = obstacle_active ?
     std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_) :
     this->lookahead_distance_;
@@ -661,11 +640,15 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
       "Inflated local replanning failed; falling back to sliced local plan");
   }
 
-  return this->build_sliced_local_plan_with_lookahead(
-    source_plan,
-    current_pose,
-    closest_index,
-    replan_lookahead_distance);
+  if (!obstacle_active) {
+    return this->build_sliced_local_plan_with_lookahead(
+      source_plan,
+      current_pose,
+      closest_index,
+      replan_lookahead_distance);
+  }
+
+  return sliced_plan;
 }
 
 nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
@@ -683,11 +666,12 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
     return sliced_plan;
   }
 
-  if (
-    !this->dynamic_obstacle_enabled_ || !this->has_obstacle_report_ ||
-    !this->latest_obstacle_report_.active || !this->latest_obstacle_report_.is_dynamic ||
-    !this->latest_obstacle_report_.blocks_path)
-  {
+  geometry_msgs::msg::PoseStamped blocked_pose;
+  const bool blocked =
+    this->dynamic_obstacle_enabled_ &&
+    this->find_first_blocked_pose_on_plan(sliced_plan, blocked_pose);
+
+  if (!blocked) {
     this->working_costmap_ = this->inflated_map_;
     return sliced_plan;
   }
@@ -743,11 +727,7 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
     };
 
   std::vector<GridCell> best_grid_path;
-  if (
-    this->latest_obstacle_report_.active &&
-    this->latest_obstacle_report_.is_dynamic &&
-    this->latest_obstacle_report_.blocks_path)
-  {
+  if (blocked) {
     const auto & rejoin_pose = sliced_plan.poses.back();
     int rejoin_x = 0;
     int rejoin_y = 0;
@@ -783,15 +763,12 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
       }
       const double forward_distance = std::max(
         this->dynamic_obstacle_escape_forward_distance_,
-        this->latest_obstacle_report_.distance + 0.20);
-      const double obstacle_heading = current_yaw + this->latest_obstacle_report_.bearing;
-      const double path_forward_x = std::cos(path_heading);
-      const double path_forward_y = std::sin(path_heading);
-      const double obstacle_vector_x = std::cos(obstacle_heading);
-      const double obstacle_vector_y = std::sin(obstacle_heading);
-      const double obstacle_side =
-        (path_forward_x * obstacle_vector_y) - (path_forward_y * obstacle_vector_x);
-      const double preferred_sign = obstacle_side >= 0.0 ? -1.0 : 1.0;
+        this->pose_distance(current_pose, blocked_pose) + 0.15);
+      const double left_occupancy = this->sample_lateral_occupancy(
+        current_pose.pose.position.x, current_pose.pose.position.y, path_heading, 1.0);
+      const double right_occupancy = this->sample_lateral_occupancy(
+        current_pose.pose.position.x, current_pose.pose.position.y, path_heading, -1.0);
+      const double preferred_sign = left_occupancy <= right_occupancy ? 1.0 : -1.0;
       const std::vector<double> escape_signs{preferred_sign, -preferred_sign};
       double best_score = std::numeric_limits<double>::max();
 
@@ -875,6 +852,84 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   }
 
   return local_plan;
+}
+
+bool LocalPlanner::find_first_blocked_pose_on_plan(
+  const nav_msgs::msg::Path & plan,
+  geometry_msgs::msg::PoseStamped & blocked_pose) const
+{
+  if (!this->has_map_ || this->inflated_map_.data.empty() || plan.poses.size() < 2U) {
+    return false;
+  }
+
+  for (std::size_t index = 1; index < plan.poses.size(); ++index) {
+    int grid_x = 0;
+    int grid_y = 0;
+    if (!this->world_to_grid(plan.poses[index].pose.position, grid_x, grid_y)) {
+      continue;
+    }
+    if (this->is_occupied_cell(
+        this->inflated_map_.data,
+        static_cast<int>(this->inflated_map_.info.width),
+        static_cast<int>(this->inflated_map_.info.height),
+        grid_x,
+        grid_y))
+    {
+      blocked_pose = plan.poses[index];
+      return true;
+    }
+  }
+
+  return false;
+}
+
+double LocalPlanner::sample_lateral_occupancy(
+  double origin_x,
+  double origin_y,
+  double heading,
+  double lateral_sign) const
+{
+  if (!this->has_map_ || this->inflated_map_.data.empty()) {
+    return 0.0;
+  }
+
+  const auto & map = this->inflated_map_;
+  const int width = static_cast<int>(map.info.width);
+  const int height = static_cast<int>(map.info.height);
+  double score = 0.0;
+
+  for (double forward = 0.10; forward <= this->dynamic_obstacle_escape_forward_distance_; forward += 0.10) {
+    for (double lateral = 0.05; lateral <= this->dynamic_obstacle_escape_lateral_distance_; lateral += 0.05) {
+      geometry_msgs::msg::Point sample;
+      sample.x =
+        origin_x +
+        (std::cos(heading) * forward) -
+        (std::sin(heading) * lateral_sign * lateral);
+      sample.y =
+        origin_y +
+        (std::sin(heading) * forward) +
+        (std::cos(heading) * lateral_sign * lateral);
+      int grid_x = 0;
+      int grid_y = 0;
+      if (!this->world_to_grid(sample, grid_x, grid_y)) {
+        score += 5.0;
+        continue;
+      }
+      const int index = (grid_y * width) + grid_x;
+      if (index < 0 || index >= width * height) {
+        score += 5.0;
+        continue;
+      }
+      const int8_t cell_value = map.data[static_cast<std::size_t>(index)];
+      if (cell_value == kUnknownCellValue) {
+        score += 1.0;
+      } else {
+        score += static_cast<double>(std::max(0, static_cast<int>(cell_value))) / 100.0;
+      }
+    }
+  }
+
+  return score;
 }
 
 nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan(
