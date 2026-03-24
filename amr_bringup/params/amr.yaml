@@ -146,6 +146,15 @@
       obstacle_report: "/amr/obstacle/report"
       global: "/amr/costmap/global"
       local: "/amr/costmap/local"
+    footprint:
+      polygon:
+        [
+          -0.10, -0.09,
+           0.10, -0.09,
+           0.10,  0.09,
+          -0.10,  0.09
+        ]
+      padding: 0.02
     inflation:
       obstacle_threshold: 50
       global:

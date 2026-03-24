@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 namespace amr_costmap_server
 {
@@ -24,6 +25,9 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   global_inflation_cost_(80),
   local_dynamic_inflation_radius_(0.30),
   local_dynamic_cost_(100),
+  footprint_polygon_(),
+  footprint_padding_(0.02),
+  footprint_circumscribed_radius_(0.0),
   map_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_map_(false),
   has_obstacle_report_(false)
@@ -37,6 +41,8 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("inflation.global.cost", this->global_inflation_cost_);
   this->declare_parameter("inflation.local.radius", this->local_dynamic_inflation_radius_);
   this->declare_parameter("inflation.local.cost", this->local_dynamic_cost_);
+  this->declare_parameter("footprint.polygon", this->footprint_polygon_);
+  this->declare_parameter("footprint.padding", this->footprint_padding_);
 }
 
 CostmapServer::CallbackReturn CostmapServer::on_configure(
@@ -52,6 +58,9 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   this->get_parameter("inflation.global.cost", this->global_inflation_cost_);
   this->get_parameter("inflation.local.radius", this->local_dynamic_inflation_radius_);
   this->get_parameter("inflation.local.cost", this->local_dynamic_cost_);
+  this->get_parameter("footprint.polygon", this->footprint_polygon_);
+  this->get_parameter("footprint.padding", this->footprint_padding_);
+  this->update_footprint_metrics();
 
   if (
     this->map_topic_.empty() || this->obstacle_report_topic_.empty() ||
@@ -87,11 +96,13 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured costmap server with map='%s', report='%s', global='%s', local='%s'",
+    "Configured costmap server with map='%s', report='%s', global='%s', local='%s', footprint_radius=%.3f m padding=%.3f m",
     this->map_topic_.c_str(),
     this->obstacle_report_topic_.c_str(),
     this->global_costmap_topic_.c_str(),
-    this->local_costmap_topic_.c_str());
+    this->local_costmap_topic_.c_str(),
+    this->footprint_circumscribed_radius_,
+    this->footprint_padding_);
   return CallbackReturn::SUCCESS;
 }
 
@@ -177,10 +188,12 @@ void CostmapServer::rebuild_costmaps()
   }
 
   const auto original = this->global_costmap_.data;
+  const double global_effective_radius =
+    this->global_inflation_radius_ + this->footprint_circumscribed_radius_ + this->footprint_padding_;
   const int global_radius_cells = std::max(
     0,
     static_cast<int>(std::ceil(
-      this->global_inflation_radius_ / this->global_costmap_.info.resolution)));
+      global_effective_radius / this->global_costmap_.info.resolution)));
 
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
@@ -226,9 +239,12 @@ void CostmapServer::rebuild_costmaps()
   }
 
   const double resolution = static_cast<double>(this->local_costmap_.info.resolution);
+  const double local_effective_radius =
+    this->local_dynamic_inflation_radius_ + this->footprint_circumscribed_radius_ +
+    this->footprint_padding_;
   const int dynamic_radius_cells = std::max(
     1,
-    static_cast<int>(std::ceil(this->local_dynamic_inflation_radius_ / resolution)));
+    static_cast<int>(std::ceil(local_effective_radius / resolution)));
   const int grid_x = static_cast<int>(std::floor(
       (this->latest_obstacle_report_.obstacle_point.x -
       this->local_costmap_.info.origin.position.x) / resolution));
@@ -271,6 +287,35 @@ void CostmapServer::publish_costmaps()
   }
   if (this->local_costmap_publisher_ && this->local_costmap_publisher_->is_activated()) {
     this->local_costmap_publisher_->publish(this->local_costmap_);
+  }
+}
+
+void CostmapServer::update_footprint_metrics()
+{
+  this->footprint_circumscribed_radius_ = 0.0;
+
+  if (this->footprint_polygon_.size() < 6U || (this->footprint_polygon_.size() % 2U) != 0U) {
+    if (!this->footprint_polygon_.empty()) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Ignoring footprint polygon: expected an even-length [x1, y1, ...] array with at least 3 points, got %zu entries",
+        this->footprint_polygon_.size());
+    }
+    return;
+  }
+
+  for (std::size_t index = 0; index < this->footprint_polygon_.size(); index += 2U) {
+    const double x = this->footprint_polygon_[index];
+    const double y = this->footprint_polygon_[index + 1U];
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+      RCLCPP_WARN(this->get_logger(), "Ignoring non-finite footprint vertex at index %zu", index / 2U);
+      this->footprint_circumscribed_radius_ = 0.0;
+      return;
+    }
+
+    this->footprint_circumscribed_radius_ = std::max(
+      this->footprint_circumscribed_radius_,
+      std::hypot(x, y));
   }
 }
 

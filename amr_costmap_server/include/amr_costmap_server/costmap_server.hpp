@@ -2,6 +2,7 @@
 #define AMR_COSTMAP_SERVER__COSTMAP_SERVER_HPP_
 
 #include <string>
+#include <vector>
 
 #include "amr_msgs/msg/obstacle_report.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
@@ -30,6 +31,7 @@ private:
   void handle_obstacle_report(const amr_msgs::msg::ObstacleReport::SharedPtr message);
   void rebuild_costmaps();
   void publish_costmaps();
+  void update_footprint_metrics();
 
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
   rclcpp::Subscription<amr_msgs::msg::ObstacleReport>::SharedPtr obstacle_report_subscription_;
@@ -45,6 +47,9 @@ private:
   int global_inflation_cost_;
   double local_dynamic_inflation_radius_;
   int local_dynamic_cost_;
+  std::vector<double> footprint_polygon_;
+  double footprint_padding_;
+  double footprint_circumscribed_radius_;
   nav_msgs::msg::OccupancyGrid::SharedPtr map_;
   nav_msgs::msg::OccupancyGrid global_costmap_;
   nav_msgs::msg::OccupancyGrid local_costmap_;
