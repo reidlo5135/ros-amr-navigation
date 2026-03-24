@@ -363,9 +363,17 @@ void MotionController::publish_control()
       this->current_pose_, this->latest_command_.goal_pose);
     debug_remaining_distance = std::max(local_plan_remaining_distance, goal_distance);
     const auto current_yaw = this->quaternion_yaw(this->current_pose_.pose.orientation);
-    const auto target_heading = std::atan2(
-      tracking_target.pose.position.y - this->current_pose_.pose.position.y,
-      tracking_target.pose.position.x - this->current_pose_.pose.position.x);
+    const auto goal_yaw = this->quaternion_yaw(this->latest_command_.goal_pose.pose.orientation);
+    const auto target_dx =
+      tracking_target.pose.position.x - this->current_pose_.pose.position.x;
+    const auto target_dy =
+      tracking_target.pose.position.y - this->current_pose_.pose.position.y;
+    double target_heading = goal_yaw;
+    if (goal_distance > this->rotate_in_place_goal_distance_) {
+      if ((target_dx * target_dx) + (target_dy * target_dy) > 1e-6) {
+        target_heading = std::atan2(target_dy, target_dx);
+      }
+    }
     const auto heading_error = this->normalize_angle(target_heading - current_yaw);
     const auto abs_heading_error = std::abs(heading_error);
 
