@@ -1,5 +1,9 @@
 # 2026-03-24
 
+- `amr_costmap_server` footprint polygon 고도화
+  - 현재는 footprint polygon을 circumscribed radius로 환산해 inflation에 반영하는 1차 구조
+  - polygon 자체를 orientation-aware collision check에 직접 반영하도록 확장 필요
+  - `global/local planner`가 동일한 footprint 해석을 공유하도록 책임 경계 정리
 - local escaping replan 명확화
   - 현재는 dynamic obstacle을 미리 보고 replan은 하지만 좌/우 oscillation이 심함
   - escape 진입 조건, 유지 조건, 종료 조건을 명확히 나눌 필요 있음

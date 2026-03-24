@@ -1,6 +1,43 @@
 Changelog
 =========
 
+2026-03-24
+----------
+
+- Started the ``0.8.0`` planning-safety refinement branch:
+
+  - introduced ``footprint.polygon`` and ``footprint.padding`` parameters in ``amr_costmap_server``
+  - compute a circumscribed footprint radius from the configured polygon
+  - apply the effective robot size to global and local obstacle inflation as a first step toward explicit footprint-aware planning
+
+2026-03-23
+----------
+
+- Reworked ``amr_viz`` into a direct robot-topic MQTT web client:
+
+  - converted ``amr_viz`` into a standalone React/Vite app with versioned web packaging
+  - switched the web client to subscribe directly to ``amr/robot/turtlebot3/viz/*``
+  - updated ``amr_mqtt_robot_plugin`` to emit web-friendly JSON visualization topics alongside raw ROS telemetry
+
+- Expanded AMR web visualization and interaction:
+
+  - added direct goal / initial-pose controls with map interaction and goal markers
+  - added layer toggles, denser path rendering, stronger scan rendering, and richer TF visualization
+  - added URDF-driven robot-model parsing with material-color application and proxy geometry rendering
+  - improved sidebar layout and responsive control grouping for the operator panel
+
+- Improved MQTT reliability and browser-side connection behavior:
+
+  - lengthened keepalive and improved reconnect handling for both the robot plugin and the web client
+  - added WebSocket endpoint fallback handling in ``amr_viz`` MQTT transport
+  - reduced browser-side visualization lag by batching latest telemetry per animation frame
+  - throttled high-rate robot visualization topics so the Raspberry Pi no longer over-publishes web telemetry
+
+- Updated project planning docs:
+
+  - refreshed the roadmap/TODO after the MQTT-first visualization transition
+  - moved the BT navigator and local escaping work items into the next-day queue
+
 2026-03-20
 ----------
 
