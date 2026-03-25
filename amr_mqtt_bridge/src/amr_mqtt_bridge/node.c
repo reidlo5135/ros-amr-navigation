@@ -1135,8 +1135,14 @@ static char * amr_mqtt_bridge_serialize_battery_state(const void * message)
   const sensor_msgs__msg__BatteryState * battery_state =
     (const sensor_msgs__msg__BatteryState *)message;
   amr_mqtt_bridge_string_builder_t builder = {0};
-  const double percentage =
-    isfinite(battery_state->percentage) ? (battery_state->percentage * 100.0) : -1.0;
+  double percentage = -1.0;
+
+  if (isfinite(battery_state->percentage)) {
+    percentage = battery_state->percentage;
+    if (percentage <= 1.0) {
+      percentage *= 100.0;
+    }
+  }
 
   if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
     !amr_mqtt_bridge_builder_append(&builder, "{") ||
