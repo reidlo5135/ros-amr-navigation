@@ -267,6 +267,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   blackboard->set("goal_pose", goal->goal_pose);
   blackboard->set("planned_path", nav_msgs::msg::Path());
   blackboard->set("active_command", amr_msgs::msg::MotionCommand());
+  blackboard->set("active_command_dispatch_ns", static_cast<int64_t>(0));
   blackboard->set("status_message", std::string("Behavior tree is running."));
   blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
   blackboard->set("recovery_attempts", 0);
@@ -355,6 +356,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
         command.command_id,
         plan.poses.size());
       blackboard->set("active_command", command);
+      blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
       blackboard->set("recovery_attempts", 0);
       blackboard->set("status_message", std::string("Motion command dispatched."));
       return BT::NodeStatus::SUCCESS;
@@ -385,6 +387,19 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
+      const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
+      const auto dispatch_ns = blackboard->get<int64_t>("active_command_dispatch_ns");
+      const auto settle_ns =
+        static_cast<int64_t>(std::max(250, navigator->feedback_period_ms_ * 5)) * 1000000LL;
+
+      if (status.command_id != command.command_id || !status.active) {
+        return BT::NodeStatus::FAILURE;
+      }
+
+      if (dispatch_ns > 0 && (navigator->now().nanoseconds() - dispatch_ns) < settle_ns) {
+        return BT::NodeStatus::FAILURE;
+      }
+
       if (status.blocked || status.stalled || !status.local_plan_valid) {
         if (!status.local_plan_valid) {
           blackboard->set(
@@ -500,6 +515,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       auto command = navigator->build_motion_command(goal_request, replanned_path);
       navigator->publish_motion_command(command);
       blackboard->set("active_command", command);
+      blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
       blackboard->set("planned_path", replanned_path);
       blackboard->set(
         "status_message",
