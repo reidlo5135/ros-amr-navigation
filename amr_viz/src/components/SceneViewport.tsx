@@ -19,6 +19,7 @@ type SceneViewportProps = {
     localCostmap: boolean;
     footprint: boolean;
     blockedDebug: boolean;
+    collisionDebug: boolean;
     robot: boolean;
     paths: boolean;
     scan: boolean;
@@ -448,6 +449,51 @@ function buildFootprintOverlay(
   group.add(fill, outline);
   group.position.set(robotPose.position.x, 0, -robotPose.position.y);
   group.rotation.y = -robotPose.orientation.yaw;
+  return group;
+}
+
+function buildBlockedLinkOverlay(
+  robotPose: Pose | undefined,
+  blockedPose: Pose | undefined,
+): THREE.Group | null {
+  if (!robotPose || !blockedPose) {
+    return null;
+  }
+
+  const start = new THREE.Vector3(robotPose.position.x, 0.07, -robotPose.position.y);
+  const end = new THREE.Vector3(blockedPose.position.x, 0.07, -blockedPose.position.y);
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([start, end]),
+    new THREE.LineDashedMaterial({
+      color: "#ff7b72",
+      transparent: true,
+      opacity: 0.95,
+      dashSize: 0.08,
+      gapSize: 0.05,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  line.computeLineDistances();
+  line.renderOrder = 23;
+
+  const marker = new THREE.Mesh(
+    new THREE.CircleGeometry(0.05, 20),
+    new THREE.MeshBasicMaterial({
+      color: "#ff7b72",
+      transparent: true,
+      opacity: 0.28,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.copy(end);
+  marker.position.y = 0.065;
+  marker.renderOrder = 23;
+
+  const group = new THREE.Group();
+  group.add(line, marker);
   return group;
 }
 
@@ -1042,6 +1088,7 @@ export function SceneViewport({
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const footprintRef = useRef<THREE.Group | null>(null);
   const blockedFootprintRef = useRef<THREE.Group | null>(null);
+  const blockedLinkRef = useRef<THREE.Group | null>(null);
   const scanRef = useRef<THREE.Points | null>(null);
   const tfGroupRef = useRef<THREE.Group | null>(null);
   const lastCenteredMapSignatureRef = useRef<string>("");
@@ -1270,6 +1317,7 @@ export function SceneViewport({
       disposeObject(localCostmapMeshRef.current);
       disposeObject(footprintRef.current);
       disposeObject(blockedFootprintRef.current);
+      disposeObject(blockedLinkRef.current);
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
       disposeObject(goalMarkerRef.current);
@@ -1374,6 +1422,15 @@ export function SceneViewport({
     footprintRef.current = buildFootprintOverlay(
       state.robot_description?.footprint_polygon,
       state.robot_pose,
+      state.motion_status?.costmap_blocked || state.motion_status?.safety_gate_blocked
+        ? {
+            fillColor: state.motion_status?.safety_gate_blocked ? "#ff5f52" : "#ffb020",
+            outlineColor: state.motion_status?.safety_gate_blocked ? "#b3261e" : "#8a5a00",
+            fillOpacity: 0.22,
+            yOffset: 0.044,
+            renderOrder: 19,
+          }
+        : undefined,
     );
     if (footprintRef.current) {
       footprintRef.current.visible = layerVisibility.footprint;
@@ -1401,6 +1458,22 @@ export function SceneViewport({
     if (blockedFootprintRef.current) {
       blockedFootprintRef.current.visible = layerVisibility.blockedDebug;
       scene.add(blockedFootprintRef.current);
+    }
+
+    if (blockedLinkRef.current) {
+      scene.remove(blockedLinkRef.current);
+      disposeObject(blockedLinkRef.current);
+      blockedLinkRef.current = null;
+    }
+    if (state.motion_status?.has_blocked_pose) {
+      blockedLinkRef.current = buildBlockedLinkOverlay(
+        state.robot_pose,
+        state.motion_status.blocked_pose,
+      );
+    }
+    if (blockedLinkRef.current) {
+      blockedLinkRef.current.visible = layerVisibility.collisionDebug;
+      scene.add(blockedLinkRef.current);
     }
 
     if (scanRef.current) {

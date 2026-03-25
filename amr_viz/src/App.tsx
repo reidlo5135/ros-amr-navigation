@@ -76,6 +76,7 @@ type LayerVisibility = {
   localCostmap: boolean;
   footprint: boolean;
   blockedDebug: boolean;
+  collisionDebug: boolean;
   robot: boolean;
   paths: boolean;
   scan: boolean;
@@ -115,6 +116,7 @@ export default function App() {
     localCostmap: true,
     footprint: true,
     blockedDebug: true,
+    collisionDebug: true,
     robot: true,
     paths: true,
     scan: true,
@@ -416,6 +418,7 @@ export default function App() {
                 ["localCostmap", "Local Costmap"],
                 ["footprint", "Exact Footprint"],
                 ["blockedDebug", "Blocked Footprint"],
+                ["collisionDebug", "Collision Debug"],
                 ["robot", "Robot"],
                 ["paths", "Plans"],
                 ["scan", "LaserScan"],
