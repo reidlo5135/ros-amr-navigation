@@ -36,6 +36,7 @@ private:
     nav_msgs::msg::Path plan;
     bool local_plan_valid{false};
     bool recovery_required{false};
+    uint8_t decision{amr_msgs::msg::LocalPlanStatus::DECISION_OK};
     bool has_blocked_pose{false};
     geometry_msgs::msg::PoseStamped blocked_pose;
     double blocked_distance{0.0};

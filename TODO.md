@@ -190,11 +190,13 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - 진행: local costmap authority 강화
   - controller 직접 authority 부여 시 straight case를 해쳐 일단 revert
   - 대신 `amr_local_planner -> LocalPlanStatus -> amr_bt_navigator` 경로로 1차 반영
+  - 다음 우선순위는 `LocalPlanStatus`를 decision semantics 중심으로 확장해 planner가 recovery rationale을 먼저 말하게 만드는 것
   - 남은 과제는 recovery 진입 기준을 더 다듬고, corridor에서 false blocked를 줄이는 것
 - 진행: recovery / final approach 안정화
   - stale status 기반 recovery 오진입 방지
   - goal 근처 local plan empty로 인한 false recover/abort 완화
   - `amr_viz` Goal 상태를 `Running / Recovering / Aborted / Reached` 등으로 세분화
+  - 다만 이 항목의 추가 튜닝은 BT 하드코딩보다 planner decision semantics 확장 이후에 진행
   - 남은 과제는 final approach oscillation과 recovery primitive 튜닝 정리
 
 ## 2026-03-24

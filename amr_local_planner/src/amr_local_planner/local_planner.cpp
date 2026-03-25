@@ -666,6 +666,7 @@ void LocalPlanner::publish_local_plan()
   status.active = this->has_command_;
   status.local_plan_valid = build_result.local_plan_valid;
   status.recovery_required = build_result.recovery_required;
+  status.decision = build_result.decision;
   status.has_blocked_pose = build_result.has_blocked_pose;
   status.blocked_pose = build_result.blocked_pose;
   status.blocked_distance = build_result.blocked_distance;
@@ -694,6 +695,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   result.plan.header.stamp = this->now();
 
   if (source_plan.poses.empty()) {
+    result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
     return result;
   }
 
@@ -702,6 +704,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
     this->last_progress_index_ = source_plan.poses.size() - 1U;
     result.plan.poses.push_back(goal_pose);
     result.local_plan_valid = true;
+    result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
     return result;
   }
 
@@ -732,13 +735,17 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
       geometry_msgs::msg::PoseStamped final_blocked_pose;
       if (this->find_first_blocked_pose_on_plan(result.plan, final_blocked_pose)) {
         result.recovery_required = true;
+        result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
         result.has_blocked_pose = true;
         result.blocked_pose = final_blocked_pose;
         result.blocked_distance = this->pose_distance(current_pose, final_blocked_pose);
       } else if (obstacle_active) {
+        result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
         result.has_blocked_pose = true;
         result.blocked_pose = blocked_pose;
         result.blocked_distance = this->pose_distance(current_pose, blocked_pose);
+      } else {
+        result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
       }
       return result;
     }
@@ -757,12 +764,19 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
       closest_index,
       replan_lookahead_distance);
     result.local_plan_valid = !result.plan.poses.empty();
+    result.decision = result.local_plan_valid ?
+      amr_msgs::msg::LocalPlanStatus::DECISION_OK :
+      amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
     return result;
   }
 
   result.plan = sliced_plan;
   result.local_plan_valid = !result.plan.poses.empty();
   result.recovery_required = true;
+  result.decision =
+    goal_distance <= this->dynamic_obstacle_goal_proximity_disable_distance_ ?
+    amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED :
+    amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
   result.has_blocked_pose = true;
   result.blocked_pose = blocked_pose;
   result.blocked_distance = this->pose_distance(current_pose, blocked_pose);

@@ -3,6 +3,11 @@ uint32 command_id
 bool active
 bool local_plan_valid
 bool recovery_required
+uint8 DECISION_OK=0
+uint8 DECISION_GOAL_PROXIMITY_BLOCKED=1
+uint8 DECISION_GLOBAL_REPLAN_REQUIRED=2
+uint8 DECISION_HARD_BLOCKED=3
+uint8 decision
 bool has_blocked_pose
 geometry_msgs/PoseStamped blocked_pose
 float64 blocked_distance

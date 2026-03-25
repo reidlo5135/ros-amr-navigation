@@ -470,13 +470,39 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
 
       if (recovery_needed) {
         if (planner_recovery_needed) {
+          switch (local_plan_status.decision) {
+            case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+              blackboard->set(
+                "status_message",
+                std::string(
+                  "Recovery requested because the planner reports a near-goal blocked approach."));
+              break;
+            case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+              blackboard->set(
+                "status_message",
+                std::string(
+                  "Recovery requested because the planner recommends a global replan."));
+              break;
+            case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+              blackboard->set(
+                "status_message",
+                std::string(
+                  "Recovery requested because the planner reports a hard blocked corridor."));
+              break;
+            default:
+              blackboard->set(
+                "status_message",
+                std::string("Recovery requested because the local planner reported a blocked path."));
+              break;
+          }
+        } else if (status.blocked) {
           blackboard->set(
             "status_message",
-            std::string("Recovery requested because the local planner reported a blocked path."));
-        } else if (!status.local_plan_valid) {
+            std::string("Recovery requested because the motion controller reported a blocked path."));
+        } else if (status.stalled) {
           blackboard->set(
             "status_message",
-            std::string("Recovery requested because the local plan is invalid."));
+            std::string("Recovery requested because the motion controller reported stalled progress."));
         }
         return BT::NodeStatus::SUCCESS;
       }
@@ -489,6 +515,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
+      const auto local_plan_status = navigator->get_local_plan_status_copy();
       auto attempts = blackboard->get<int>("recovery_attempts");
       std::string error_message;
       amr_msgs::msg::MotionCommand recovery_command;
@@ -507,6 +534,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       }
 
       const int attempt_index = attempts % 3;
+      const uint8_t planner_decision = local_plan_status.decision;
       if (!navigator->clear_local_costmap(error_message)) {
         RCLCPP_WARN(
           navigator->get_logger(),
@@ -514,7 +542,45 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
           error_message.c_str());
       }
 
-      if (attempt_index == 0) {
+      if (planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED) {
+        nav_msgs::msg::Path replanned_path;
+        if (!navigator->wait_for_planner_service(error_message) ||
+          !navigator->request_global_plan(current_pose, goal_pose, replanned_path, error_message))
+        {
+          blackboard->set("status_message", error_message);
+        } else {
+          NavigateToPose::Goal goal_request;
+          goal_request.goal_pose = goal_pose;
+          auto command = navigator->build_motion_command(goal_request, replanned_path);
+          navigator->publish_motion_command(command);
+          blackboard->set("active_command", command);
+          blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+          blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+          blackboard->set("planned_path", replanned_path);
+          blackboard->set(
+            "status_message",
+            std::string("Planner requested global replanning. Motion command re-dispatched."));
+          return BT::NodeStatus::SUCCESS;
+        }
+      } else if (
+        planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED &&
+        attempt_index < 2)
+      {
+        if (!navigator->request_recovery_command(
+            "wait", current_pose, goal_pose, recovery_command, error_message))
+        {
+          blackboard->set("status_message", error_message);
+        } else {
+          navigator->publish_motion_command(recovery_command);
+          if (!navigator->wait_for_command_completion(
+              recovery_command.command_id,
+              std::max(navigator->feedback_period_ms_ * 10, navigator->recovery_retry_delay_ms_),
+              error_message))
+          {
+            blackboard->set("status_message", error_message);
+          }
+        }
+      } else if (attempt_index == 0) {
         if (!navigator->request_recovery_command(
             "wait", current_pose, goal_pose, recovery_command, error_message))
         {
