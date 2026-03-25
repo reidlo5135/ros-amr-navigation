@@ -1,0 +1,8 @@
+std_msgs/Header header
+uint32 command_id
+bool active
+bool local_plan_valid
+bool recovery_required
+bool has_blocked_pose
+geometry_msgs/PoseStamped blocked_pose
+float64 blocked_distance

@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotionCommand.msg"
   "msg/ObstacleReport.msg"
   "msg/MotionStatus.msg"
+  "msg/LocalPlanStatus.msg"
   "srv/ClearCostmap.srv"
   "srv/PlanLocalEscape.srv"
   "srv/PlanRecovery.srv"

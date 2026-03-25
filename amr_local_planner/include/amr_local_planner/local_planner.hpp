@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "amr_geometry/footprint.hpp"
+#include "amr_msgs/msg/local_plan_status.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/srv/plan_local_escape.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -30,6 +31,16 @@ public:
   explicit LocalPlanner(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
+  struct LocalPlanBuildResult
+  {
+    nav_msgs::msg::Path plan;
+    bool local_plan_valid{false};
+    bool recovery_required{false};
+    bool has_blocked_pose{false};
+    geometry_msgs::msg::PoseStamped blocked_pose;
+    double blocked_distance{0.0};
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -46,7 +57,7 @@ private:
     const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
     std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response);
   void publish_local_plan();
-  nav_msgs::msg::Path build_local_plan(
+  LocalPlanBuildResult build_local_plan(
     const amr_msgs::msg::MotionCommand & command,
     const geometry_msgs::msg::PoseStamped & current_pose);
   nav_msgs::msg::Path build_inflated_local_plan(
@@ -118,12 +129,14 @@ private:
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
   rclcpp::Service<amr_msgs::srv::PlanLocalEscape>::SharedPtr local_escape_service_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_plan_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::LocalPlanStatus>::SharedPtr local_plan_status_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   std::string command_topic_;
   std::string current_pose_topic_;
   std::string map_topic_;
   std::string local_plan_topic_;
+  std::string local_plan_status_topic_;
   std::string local_escape_service_name_;
   int publish_period_ms_;
   double lookahead_distance_;

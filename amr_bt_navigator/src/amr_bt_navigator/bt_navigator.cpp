@@ -32,6 +32,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   command_topic_(""),
   current_pose_topic_(""),
   motion_status_topic_(""),
+  local_plan_status_topic_(""),
   plan_recovery_service_("/amr/recovery_server/plan_recovery"),
   clear_costmap_service_("/amr/costmap_server/clear_costmap"),
   plan_segment_service_("/amr/global_planner/plan_segment"),
@@ -43,13 +44,15 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   recovery_retry_delay_ms_(700),
   next_command_id_(1U),
   has_current_pose_(false),
-  has_motion_status_(false)
+  has_motion_status_(false),
+  has_local_plan_status_(false)
 {
   this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
+  this->declare_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_);
   this->declare_parameter("services.clear_costmap", this->clear_costmap_service_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
@@ -70,6 +73,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.status", this->motion_status_topic_);
+  this->get_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->get_parameter("services.plan_recovery", this->plan_recovery_service_);
   this->get_parameter("services.clear_costmap", this->clear_costmap_service_);
   this->get_parameter("services.segment", this->plan_segment_service_);
@@ -95,14 +99,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->motion_status_topic_.empty())
+    this->motion_status_topic_.empty() || this->local_plan_status_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Navigator topics must not be empty: command='%s' pose='%s' status='%s'",
+      "Navigator topics must not be empty: command='%s' pose='%s' status='%s' local_plan_status='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
-      this->motion_status_topic_.c_str());
+      this->motion_status_topic_.c_str(),
+      this->local_plan_status_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -124,6 +129,11 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     [this](const amr_msgs::msg::MotionStatus::SharedPtr message) {
       this->handle_motion_status(message);
     });
+  this->local_plan_status_subscription_ = this->create_subscription<amr_msgs::msg::LocalPlanStatus>(
+    this->local_plan_status_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const amr_msgs::msg::LocalPlanStatus::SharedPtr message) {
+      this->handle_local_plan_status(message);
+    });
   this->action_server_ = rclcpp_action::create_server<NavigateToPose>(
     this->get_node_base_interface(),
     this->get_node_clock_interface(),
@@ -144,11 +154,12 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', recovery='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', local_plan_status='%s', recovery='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->motion_status_topic_.c_str(),
+    this->local_plan_status_topic_.c_str(),
     this->plan_recovery_service_.c_str(),
     this->clear_costmap_service_.c_str(),
     this->plan_segment_service_.c_str(),
@@ -186,12 +197,15 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
+  this->local_plan_status_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
+  this->latest_local_plan_status_ = amr_msgs::msg::LocalPlanStatus();
   this->has_current_pose_ = false;
   this->has_motion_status_ = false;
+  this->has_local_plan_status_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -204,12 +218,15 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
+  this->local_plan_status_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
+  this->latest_local_plan_status_ = amr_msgs::msg::LocalPlanStatus();
   this->has_current_pose_ = false;
   this->has_motion_status_ = false;
+  this->has_local_plan_status_ = false;
   return CallbackReturn::SUCCESS;
 }
 
@@ -412,6 +429,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
+      const auto local_plan_status = navigator->get_local_plan_status_copy();
       const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
       const auto dispatch_ns = blackboard->get<int64_t>("active_command_dispatch_ns");
       auto recovery_condition_since_ns = blackboard->get<int64_t>("recovery_condition_since_ns");
@@ -430,7 +448,11 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
         return BT::NodeStatus::FAILURE;
       }
 
-      const bool recovery_needed = status.blocked || status.stalled || !status.local_plan_valid;
+      const bool planner_recovery_needed =
+        local_plan_status.command_id == command.command_id &&
+        local_plan_status.active &&
+        local_plan_status.recovery_required;
+      const bool recovery_needed = status.blocked || status.stalled || planner_recovery_needed;
       if (!recovery_needed) {
         blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
         return BT::NodeStatus::FAILURE;
@@ -447,7 +469,11 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       }
 
       if (recovery_needed) {
-        if (!status.local_plan_valid) {
+        if (planner_recovery_needed) {
+          blackboard->set(
+            "status_message",
+            std::string("Recovery requested because the local planner reported a blocked path."));
+        } else if (!status.local_plan_valid) {
           blackboard->set(
             "status_message",
             std::string("Recovery requested because the local plan is invalid."));
@@ -696,6 +722,14 @@ void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::Shared
   this->has_motion_status_ = true;
 }
 
+void Btnavigator::handle_local_plan_status(
+  const amr_msgs::msg::LocalPlanStatus::SharedPtr message)
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  this->latest_local_plan_status_ = *message;
+  this->has_local_plan_status_ = true;
+}
+
 geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
@@ -706,6 +740,12 @@ amr_msgs::msg::MotionStatus Btnavigator::get_motion_status_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
   return this->latest_motion_status_;
+}
+
+amr_msgs::msg::LocalPlanStatus Btnavigator::get_local_plan_status_copy() const
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  return this->latest_local_plan_status_;
 }
 
 bool Btnavigator::is_navigator_ready(std::string & error_message) const

@@ -209,6 +209,7 @@
       pose: "/amr/localization/pose"
       costmap: "/amr/costmap/local"
       plan: "/amr/planner/local"
+      status: "/amr/planner/local_status"
     services:
       local_escape: "/amr/local_planner/plan_local_escape"
     planner:
@@ -281,6 +282,7 @@
       pose: "/amr/localization/pose"
       command: "/amr/motion/command"
       status: "/amr/motion/status"
+      local_plan_status: "/amr/planner/local_status"
     services:
       segment: "/amr/global_planner/plan_segment"
       plan_recovery: "/amr/recovery_server/plan_recovery"

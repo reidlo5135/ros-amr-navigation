@@ -348,6 +348,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   current_pose_topic_(""),
   map_topic_(""),
   local_plan_topic_(""),
+  local_plan_status_topic_(""),
   local_escape_service_name_("/amr/local_planner/plan_local_escape"),
   publish_period_ms_(100),
   lookahead_distance_(0.8),
@@ -374,6 +375,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.costmap", this->map_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
+  this->declare_parameter("topics.status", this->local_plan_status_topic_);
   this->declare_parameter("services.local_escape", this->local_escape_service_name_);
   this->declare_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->declare_parameter("planner.lookahead_distance", this->lookahead_distance_);
@@ -405,6 +407,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.costmap", this->map_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
+  this->get_parameter("topics.status", this->local_plan_status_topic_);
   this->get_parameter("services.local_escape", this->local_escape_service_name_);
   this->get_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->get_parameter("planner.lookahead_distance", this->lookahead_distance_);
@@ -431,15 +434,17 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->map_topic_.empty() || this->local_plan_topic_.empty())
+    this->map_topic_.empty() || this->local_plan_topic_.empty() ||
+    this->local_plan_status_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Local planner topics must not be empty: command='%s' pose='%s' costmap='%s' local_plan='%s'",
+      "Local planner topics must not be empty: command='%s' pose='%s' costmap='%s' local_plan='%s' local_plan_status='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
       this->map_topic_.c_str(),
-      this->local_plan_topic_.c_str());
+      this->local_plan_topic_.c_str(),
+      this->local_plan_status_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -471,6 +476,8 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     });
   this->local_plan_publisher_ = this->create_publisher<nav_msgs::msg::Path>(
     this->local_plan_topic_, rclcpp::SystemDefaultsQoS());
+  this->local_plan_status_publisher_ = this->create_publisher<amr_msgs::msg::LocalPlanStatus>(
+    this->local_plan_status_topic_, rclcpp::SystemDefaultsQoS());
   this->timer_ = this->create_wall_timer(
     std::chrono::milliseconds(this->publish_period_ms_),
     [this]() { this->publish_local_plan(); });
@@ -478,11 +485,12 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured local planner with command='%s', pose='%s', costmap='%s', plan='%s', lookahead=%.2f",
+    "Configured local planner with command='%s', pose='%s', costmap='%s', plan='%s', status='%s', lookahead=%.2f",
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
     this->map_topic_.c_str(),
     this->local_plan_topic_.c_str(),
+    this->local_plan_status_topic_.c_str(),
     this->lookahead_distance_);
 
   return CallbackReturn::SUCCESS;
@@ -492,6 +500,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_activate(const rclcpp_lifecycle::S
 {
   (void)state;
   this->local_plan_publisher_->on_activate();
+  this->local_plan_status_publisher_->on_activate();
   this->timer_->reset();
   RCLCPP_INFO(this->get_logger(), "Activated local planner");
   return CallbackReturn::SUCCESS;
@@ -506,6 +515,9 @@ LocalPlanner::CallbackReturn LocalPlanner::on_deactivate(const rclcpp_lifecycle:
   if (this->local_plan_publisher_) {
     this->local_plan_publisher_->on_deactivate();
   }
+  if (this->local_plan_status_publisher_) {
+    this->local_plan_status_publisher_->on_deactivate();
+  }
   RCLCPP_INFO(this->get_logger(), "Deactivated local planner");
   return CallbackReturn::SUCCESS;
 }
@@ -518,6 +530,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->map_subscription_.reset();
   this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
+  this->local_plan_status_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
@@ -540,6 +553,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->map_subscription_.reset();
   this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
+  this->local_plan_status_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
@@ -634,13 +648,28 @@ void LocalPlanner::publish_local_plan()
 {
   if (
     !this->local_plan_publisher_ || !this->local_plan_publisher_->is_activated() ||
+    !this->local_plan_status_publisher_ || !this->local_plan_status_publisher_->is_activated() ||
     !this->has_command_ || !this->has_current_pose_)
   {
     return;
   }
 
-  const auto local_plan = this->build_local_plan(this->latest_command_, this->current_pose_);
-  this->local_plan_publisher_->publish(local_plan);
+  const auto build_result = this->build_local_plan(this->latest_command_, this->current_pose_);
+  this->local_plan_publisher_->publish(build_result.plan);
+
+  amr_msgs::msg::LocalPlanStatus status;
+  status.header.stamp = this->now();
+  status.header.frame_id =
+    build_result.plan.header.frame_id.empty() ? this->current_pose_.header.frame_id :
+    build_result.plan.header.frame_id;
+  status.command_id = this->latest_command_.command_id;
+  status.active = this->has_command_;
+  status.local_plan_valid = build_result.local_plan_valid;
+  status.recovery_required = build_result.recovery_required;
+  status.has_blocked_pose = build_result.has_blocked_pose;
+  status.blocked_pose = build_result.blocked_pose;
+  status.blocked_distance = build_result.blocked_distance;
+  this->local_plan_status_publisher_->publish(status);
 
   RCLCPP_INFO_THROTTLE(
     this->get_logger(),
@@ -649,30 +678,31 @@ void LocalPlanner::publish_local_plan()
     "Publishing local plan for command %u from progress index %zu with %zu poses",
     this->latest_command_.command_id,
     this->last_progress_index_,
-    local_plan.poses.size());
+    build_result.plan.poses.size());
 }
 
-nav_msgs::msg::Path LocalPlanner::build_local_plan(
+LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   const amr_msgs::msg::MotionCommand & command,
   const geometry_msgs::msg::PoseStamped & current_pose)
 {
+  LocalPlanBuildResult result;
   const auto source_plan = this->build_source_plan(command);
-  nav_msgs::msg::Path local_plan;
-  local_plan.header = source_plan.header;
-  if (local_plan.header.frame_id.empty()) {
-    local_plan.header.frame_id = current_pose.header.frame_id;
+  result.plan.header = source_plan.header;
+  if (result.plan.header.frame_id.empty()) {
+    result.plan.header.frame_id = current_pose.header.frame_id;
   }
-  local_plan.header.stamp = this->now();
+  result.plan.header.stamp = this->now();
 
   if (source_plan.poses.empty()) {
-    return local_plan;
+    return result;
   }
 
   const auto & goal_pose = source_plan.poses.back();
   if (this->pose_distance(current_pose, goal_pose) <= this->goal_tolerance_) {
     this->last_progress_index_ = source_plan.poses.size() - 1U;
-    local_plan.poses.push_back(goal_pose);
-    return local_plan;
+    result.plan.poses.push_back(goal_pose);
+    result.local_plan_valid = true;
+    return result;
   }
 
   const auto closest_index =
@@ -692,13 +722,25 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
     this->lookahead_distance_;
 
   if (this->has_map_ && !this->inflated_map_.data.empty()) {
-    local_plan = this->build_inflated_local_plan(
+    result.plan = this->build_inflated_local_plan(
       source_plan,
       current_pose,
       closest_index,
       replan_lookahead_distance);
-    if (!local_plan.poses.empty()) {
-      return local_plan;
+    if (!result.plan.poses.empty()) {
+      result.local_plan_valid = true;
+      geometry_msgs::msg::PoseStamped final_blocked_pose;
+      if (this->find_first_blocked_pose_on_plan(result.plan, final_blocked_pose)) {
+        result.recovery_required = true;
+        result.has_blocked_pose = true;
+        result.blocked_pose = final_blocked_pose;
+        result.blocked_distance = this->pose_distance(current_pose, final_blocked_pose);
+      } else if (obstacle_active) {
+        result.has_blocked_pose = true;
+        result.blocked_pose = blocked_pose;
+        result.blocked_distance = this->pose_distance(current_pose, blocked_pose);
+      }
+      return result;
     }
 
     RCLCPP_WARN_THROTTLE(
@@ -709,14 +751,22 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
   }
 
   if (!obstacle_active) {
-    return this->build_sliced_local_plan_with_lookahead(
+    result.plan = this->build_sliced_local_plan_with_lookahead(
       source_plan,
       current_pose,
       closest_index,
       replan_lookahead_distance);
+    result.local_plan_valid = !result.plan.poses.empty();
+    return result;
   }
 
-  return sliced_plan;
+  result.plan = sliced_plan;
+  result.local_plan_valid = !result.plan.poses.empty();
+  result.recovery_required = true;
+  result.has_blocked_pose = true;
+  result.blocked_pose = blocked_pose;
+  result.blocked_distance = this->pose_distance(current_pose, blocked_pose);
+  return result;
 }
 
 nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
