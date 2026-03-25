@@ -224,6 +224,8 @@
     dynamic_obstacle:
       enabled: true
       replan_lookahead_distance: 2.0
+      replan_engage_distance: 0.80
+      replan_approach_margin: 0.20
       escape_forward_distance: 0.75
       escape_lateral_distance: 0.30
       goal_proximity_disable_distance: 0.45

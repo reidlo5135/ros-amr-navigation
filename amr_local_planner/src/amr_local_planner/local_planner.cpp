@@ -359,6 +359,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   turn_penalty_(0.5),
   dynamic_obstacle_enabled_(true),
   dynamic_obstacle_replan_lookahead_distance_(1.4),
+  dynamic_obstacle_replan_engage_distance_(0.80),
+  dynamic_obstacle_replan_approach_margin_(0.20),
   dynamic_obstacle_escape_forward_distance_(1.2),
   dynamic_obstacle_escape_lateral_distance_(0.55),
   dynamic_obstacle_goal_proximity_disable_distance_(0.45),
@@ -389,6 +391,10 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->declare_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
+  this->declare_parameter(
+    "dynamic_obstacle.replan_engage_distance", this->dynamic_obstacle_replan_engage_distance_);
+  this->declare_parameter(
+    "dynamic_obstacle.replan_approach_margin", this->dynamic_obstacle_replan_approach_margin_);
   this->declare_parameter(
     "dynamic_obstacle.escape_forward_distance", this->dynamic_obstacle_escape_forward_distance_);
   this->declare_parameter(
@@ -421,6 +427,10 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->get_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
+  this->get_parameter(
+    "dynamic_obstacle.replan_engage_distance", this->dynamic_obstacle_replan_engage_distance_);
+  this->get_parameter(
+    "dynamic_obstacle.replan_approach_margin", this->dynamic_obstacle_replan_approach_margin_);
   this->get_parameter(
     "dynamic_obstacle.escape_forward_distance", this->dynamic_obstacle_escape_forward_distance_);
   this->get_parameter(
@@ -686,7 +696,12 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
   const bool obstacle_active =
     this->dynamic_obstacle_enabled_ &&
     this->find_first_blocked_pose_on_plan(sliced_plan, blocked_pose);
-  const double replan_lookahead_distance = obstacle_active ?
+  const double blocked_distance = obstacle_active ?
+    this->pose_distance(current_pose, blocked_pose) :
+    std::numeric_limits<double>::infinity();
+  const bool replan_engaged =
+    obstacle_active && blocked_distance <= this->dynamic_obstacle_replan_engage_distance_;
+  const double replan_lookahead_distance = replan_engaged ?
     std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_) :
     this->lookahead_distance_;
 
@@ -715,6 +730,14 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
       replan_lookahead_distance);
   }
 
+  if (!replan_engaged) {
+    return this->build_approach_plan_before_blocked_pose(
+      source_plan,
+      current_pose,
+      closest_index,
+      blocked_pose);
+  }
+
   return sliced_plan;
 }
 
@@ -741,6 +764,16 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   if (!blocked) {
     this->working_costmap_ = this->inflated_map_;
     return sliced_plan;
+  }
+
+  const double blocked_distance = this->pose_distance(current_pose, blocked_pose);
+  if (blocked_distance > this->dynamic_obstacle_replan_engage_distance_) {
+    this->working_costmap_ = this->inflated_map_;
+    return this->build_approach_plan_before_blocked_pose(
+      source_plan,
+      current_pose,
+      closest_index,
+      blocked_pose);
   }
 
   const double goal_distance = this->pose_distance(current_pose, sliced_plan.poses.back());
@@ -1073,6 +1106,23 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
   }
 
   return local_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::build_approach_plan_before_blocked_pose(
+  const nav_msgs::msg::Path & source_plan,
+  const geometry_msgs::msg::PoseStamped & current_pose,
+  const std::size_t closest_index,
+  const geometry_msgs::msg::PoseStamped & blocked_pose) const
+{
+  const double blocked_distance = this->pose_distance(current_pose, blocked_pose);
+  const double limited_lookahead = std::max(
+    0.15,
+    blocked_distance - this->dynamic_obstacle_replan_approach_margin_);
+  return this->build_sliced_local_plan_with_lookahead(
+    source_plan,
+    current_pose,
+    closest_index,
+    std::min(this->lookahead_distance_, limited_lookahead));
 }
 
 nav_msgs::msg::Path LocalPlanner::build_source_plan(const amr_msgs::msg::MotionCommand & command) const

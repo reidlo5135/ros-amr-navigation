@@ -63,6 +63,11 @@ private:
     const geometry_msgs::msg::PoseStamped & current_pose,
     std::size_t closest_index,
     double lookahead_distance) const;
+  nav_msgs::msg::Path build_approach_plan_before_blocked_pose(
+    const nav_msgs::msg::Path & source_plan,
+    const geometry_msgs::msg::PoseStamped & current_pose,
+    std::size_t closest_index,
+    const geometry_msgs::msg::PoseStamped & blocked_pose) const;
   nav_msgs::msg::Path build_source_plan(const amr_msgs::msg::MotionCommand & command) const;
   std::size_t find_closest_pose_index(
     const nav_msgs::msg::Path & plan,
@@ -135,6 +140,8 @@ private:
   double turn_penalty_;
   bool dynamic_obstacle_enabled_;
   double dynamic_obstacle_replan_lookahead_distance_;
+  double dynamic_obstacle_replan_engage_distance_;
+  double dynamic_obstacle_replan_approach_margin_;
   double dynamic_obstacle_escape_forward_distance_;
   double dynamic_obstacle_escape_lateral_distance_;
   double dynamic_obstacle_goal_proximity_disable_distance_;
