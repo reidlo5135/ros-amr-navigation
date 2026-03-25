@@ -407,6 +407,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-title">AMR Viz</div>
         <div className="topbar-status">
+          <span className="topbar-chip">Fixed Frame: map</span>
           <span className="topbar-chip">{connectionLabel}</span>
           <span className="topbar-chip">
             Pose{" "}
@@ -430,7 +431,7 @@ export default function App() {
       <section className="workspace">
         <aside className="sidebar sidebar-left">
           <section className="panel-card">
-            <div className="panel-section-title">MQTT</div>
+            <div className="panel-section-title">Global Options</div>
             <label className="field-label">
               <span>Broker WS</span>
               <input value={mqttUrl} onChange={(event) => setMqttUrl(event.target.value)} />
@@ -444,7 +445,7 @@ export default function App() {
           </section>
 
           <section className="panel-card">
-            <div className="panel-section-title">Goal Control</div>
+            <div className="panel-section-title">Tools</div>
             <div className="field-grid field-grid-triple">
               <label className="field-label">
                 <span>X</span>
@@ -495,11 +496,11 @@ export default function App() {
           </section>
 
           <section className="panel-card">
-            <div className="panel-section-title">Layers</div>
+            <div className="panel-section-title">Displays</div>
             <div className="layer-list">
               {[
                 ["grid", "Grid"],
-                ["map", "Raw SLAM Map"],
+                ["map", "Map"],
                 ["globalCostmap", "Global Costmap"],
                 ["localCostmap", "Local Costmap"],
                 ["footprint", "Exact Footprint"],
@@ -528,7 +529,8 @@ export default function App() {
 
         <section className="scene-panel">
           <div className="scene-toolbar">
-            <span className="toolbar-label">3D View</span>
+            <span className="toolbar-label">Scene</span>
+            <span className="toolbar-value">Background: 228; 228; 228</span>
             <span className="toolbar-value">
               Map {bridgeState.map ? `${bridgeState.map.info.width}x${bridgeState.map.info.height}` : "--"}
             </span>
@@ -557,7 +559,7 @@ export default function App() {
 
         <aside className="sidebar sidebar-right">
           <section className="panel-card">
-            <div className="panel-section-title">Navigation</div>
+            <div className="panel-section-title">Navigation Status</div>
             <div className="metric-list">
               <div className="metric-row">
                 <span>Motion</span>
@@ -591,7 +593,7 @@ export default function App() {
           </section>
 
           <section className="panel-card">
-            <div className="panel-section-title">Events</div>
+            <div className="panel-section-title">Events / Feedback</div>
             <div className="event-log">
               {events.map((event) => (
                 <div key={event} className="event-item">

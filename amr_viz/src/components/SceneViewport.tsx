@@ -325,8 +325,8 @@ function buildPathLine(
 function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: "goal" | "initial_pose" }): THREE.Group {
   const group = new THREE.Group();
   const isGoal = goalMarker.kind === "goal";
-  const baseColor = isGoal ? "#ff7a21" : "#1d9fa1";
-  const accentColor = isGoal ? "#ffd08a" : "#b9fff1";
+  const baseColor = isGoal ? "#f28c18" : "#2297a0";
+  const accentColor = isGoal ? "#ffd89b" : "#d8ffff";
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.14, 0.2, 36),
@@ -401,7 +401,7 @@ function buildFootprintOverlay(
   }
 
   const fillColor = options?.fillColor ?? "#2b7cff";
-  const outlineColor = options?.outlineColor ?? "#1555e5";
+  const outlineColor = options?.outlineColor ?? "#134ed0";
   const fillOpacity = options?.fillOpacity ?? 0.14;
   const yOffset = options?.yOffset ?? 0.042;
   const renderOrder = options?.renderOrder ?? 18;
@@ -465,7 +465,7 @@ function buildBlockedLinkOverlay(
   const line = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([start, end]),
     new THREE.LineDashedMaterial({
-      color: "#ff7b72",
+      color: "#1e1e1e",
       transparent: true,
       opacity: 0.95,
       dashSize: 0.08,
@@ -480,9 +480,9 @@ function buildBlockedLinkOverlay(
   const marker = new THREE.Mesh(
     new THREE.CircleGeometry(0.05, 20),
     new THREE.MeshBasicMaterial({
-      color: "#ff7b72",
+      color: "#2aff53",
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.22,
       depthTest: false,
       depthWrite: false,
     }),
@@ -510,9 +510,9 @@ function createScanSpriteTexture(): THREE.CanvasTexture {
 
   context.clearRect(0, 0, canvas.width, canvas.height);
   const gradient = context.createRadialGradient(16, 16, 1, 16, 16, 14);
-  gradient.addColorStop(0, "rgba(12,120,30,1)");
-  gradient.addColorStop(0.5, "rgba(22,180,54,0.95)");
-  gradient.addColorStop(1, "rgba(22,180,54,0)");
+  gradient.addColorStop(0, "rgba(29,156,44,1)");
+  gradient.addColorStop(0.55, "rgba(53,205,74,0.92)");
+  gradient.addColorStop(1, "rgba(53,205,74,0)");
   context.fillStyle = gradient;
   context.beginPath();
   context.arc(16, 16, 14, 0, Math.PI * 2);
@@ -557,9 +557,9 @@ function buildOccupancyTexture(
 
       if (palette === "map") {
         if (value < 0) {
-          red = 186;
-          green = 186;
-          blue = 186;
+          red = 201;
+          green = 201;
+          blue = 201;
           alpha = 255;
         } else if (value >= 50) {
           red = 36;
@@ -776,7 +776,7 @@ function buildScanPoints(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
   const material = new THREE.PointsMaterial({
-    color: "#12762d",
+    color: "#25d038",
     size: 0.18,
     map: createScanSpriteTexture(),
     transparent: true,
@@ -1139,7 +1139,7 @@ export function SceneViewport({
     }
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#303030");
+    scene.background = new THREE.Color("#dddddd");
 
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
@@ -1182,19 +1182,19 @@ export function SceneViewport({
     keyLight.position.set(12, 22, 10);
     scene.add(ambientLight, keyLight);
 
-    const grid = new THREE.GridHelper(60, 60, "#7b7b7b", "#a8a8a8");
+    const grid = new THREE.GridHelper(60, 60, "#9e9e9e", "#c9c9c9");
     grid.position.y = 0.045;
     grid.renderOrder = 10;
     grid.material.depthTest = false;
     grid.material.transparent = true;
-    grid.material.opacity = 0.45;
+    grid.material.opacity = 0.58;
     scene.add(grid);
     gridRef.current = grid;
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(64, 64),
       new THREE.MeshStandardMaterial({
-        color: "#343434",
+        color: "#d8d8d8",
         metalness: 0.02,
         roughness: 1,
       }),
@@ -1398,8 +1398,8 @@ export function SceneViewport({
       y: pose.position.y,
     })) ?? [];
 
-    globalPathRef.current = buildPathLine(globalPath, "#4ce3d4", 0.06);
-    localPathRef.current = buildPathLine(localPath, "#ff9850", 0.08);
+    globalPathRef.current = buildPathLine(globalPath, "#23d9ff", 0.06);
+    localPathRef.current = buildPathLine(localPath, "#95dd00", 0.08);
     if (globalPathRef.current) {
       globalPathRef.current.visible = layerVisibility.paths;
       scene.add(globalPathRef.current);
@@ -1444,9 +1444,9 @@ export function SceneViewport({
       state.robot_pose,
       state.motion_status?.costmap_blocked || state.motion_status?.safety_gate_blocked
         ? {
-            fillColor: state.motion_status?.safety_gate_blocked ? "#ff5f52" : "#ffb020",
-            outlineColor: state.motion_status?.safety_gate_blocked ? "#b3261e" : "#8a5a00",
-            fillOpacity: 0.22,
+            fillColor: state.motion_status?.safety_gate_blocked ? "#ff4b4b" : "#3f7dff",
+            outlineColor: state.motion_status?.safety_gate_blocked ? "#9b1818" : "#1a3d96",
+            fillOpacity: 0.16,
             yOffset: 0.044,
             renderOrder: 19,
           }
@@ -1467,9 +1467,9 @@ export function SceneViewport({
         state.robot_description?.footprint_polygon,
         state.motion_status.blocked_pose,
         {
-          fillColor: "#ff5f52",
-          outlineColor: "#b3261e",
-          fillOpacity: 0.18,
+          fillColor: "#4cff63",
+          outlineColor: "#0e8d22",
+          fillOpacity: 0.1,
           yOffset: 0.052,
           renderOrder: 22,
         },
