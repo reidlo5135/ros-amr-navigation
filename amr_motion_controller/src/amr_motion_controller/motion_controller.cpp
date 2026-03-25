@@ -8,7 +8,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   command_topic_(""),
   local_plan_topic_(""),
   current_pose_topic_(""),
-  local_costmap_topic_(""),
+  local_costmap_topic_("/amr/costmap/local"),
   scan_topic_(""),
   status_topic_(""),
   cmd_vel_topic_(""),
@@ -116,6 +116,13 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("topics.plan", this->local_plan_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.costmap", this->local_costmap_topic_);
+  if (this->local_costmap_topic_.empty()) {
+    this->local_costmap_topic_ = "/amr/costmap/local";
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Parameter 'topics.costmap' is empty; falling back to '%s'",
+      this->local_costmap_topic_.c_str());
+  }
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.status", this->status_topic_);
   this->get_parameter("topics.velocity", this->cmd_vel_topic_);
