@@ -795,20 +795,30 @@ static char * amr_mqtt_bridge_serialize_motion_status(const void * message)
 {
   const amr_msgs__msg__MotionStatus * status = (const amr_msgs__msg__MotionStatus *)message;
   amr_mqtt_bridge_string_builder_t builder = {0};
-  if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
+  if (!amr_mqtt_bridge_builder_init(&builder, 768U) ||
     !amr_mqtt_bridge_builder_append(&builder, "{") ||
     !amr_mqtt_bridge_append_header(&builder, &status->header) ||
     !amr_mqtt_bridge_builder_appendf(
       &builder,
       ",\"command_id\":%u,\"active\":%s,\"goal_reached\":%s,\"obstacle_detected\":%s,"
+      "\"blocked\":%s,\"stalled\":%s,\"local_plan_valid\":%s,\"costmap_blocked\":%s,"
+      "\"safety_gate_blocked\":%s,\"has_blocked_pose\":%s,"
       "\"remaining_distance\":%.6f,\"heading_error\":%.6f,\"current_pose\":",
       status->command_id,
       status->active ? "true" : "false",
       status->goal_reached ? "true" : "false",
       status->obstacle_detected ? "true" : "false",
+      status->blocked ? "true" : "false",
+      status->stalled ? "true" : "false",
+      status->local_plan_valid ? "true" : "false",
+      status->costmap_blocked ? "true" : "false",
+      status->safety_gate_blocked ? "true" : "false",
+      status->has_blocked_pose ? "true" : "false",
       status->remaining_distance,
       status->heading_error) ||
     !amr_mqtt_bridge_append_pose_stamped(&builder, &status->current_pose) ||
+    !amr_mqtt_bridge_builder_append(&builder, ",\"blocked_pose\":") ||
+    !amr_mqtt_bridge_append_pose_stamped(&builder, &status->blocked_pose) ||
     !amr_mqtt_bridge_builder_append(&builder, "}"))
   {
     amr_mqtt_bridge_builder_fini(&builder);

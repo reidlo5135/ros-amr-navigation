@@ -18,6 +18,7 @@ type SceneViewportProps = {
     globalCostmap: boolean;
     localCostmap: boolean;
     footprint: boolean;
+    blockedDebug: boolean;
     robot: boolean;
     paths: boolean;
     scan: boolean;
@@ -386,10 +387,23 @@ function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: 
 function buildFootprintOverlay(
   footprintPolygon: number[] | undefined,
   robotPose: Pose | undefined,
+  options?: {
+    fillColor?: string;
+    outlineColor?: string;
+    fillOpacity?: number;
+    yOffset?: number;
+    renderOrder?: number;
+  },
 ): THREE.Group | null {
   if (!robotPose || !footprintPolygon || footprintPolygon.length < 6 || footprintPolygon.length % 2 !== 0) {
     return null;
   }
+
+  const fillColor = options?.fillColor ?? "#2b7cff";
+  const outlineColor = options?.outlineColor ?? "#1555e5";
+  const fillOpacity = options?.fillOpacity ?? 0.14;
+  const yOffset = options?.yOffset ?? 0.042;
+  const renderOrder = options?.renderOrder ?? 18;
 
   const shape = new THREE.Shape();
   shape.moveTo(footprintPolygon[0], -footprintPolygon[1]);
@@ -401,17 +415,17 @@ function buildFootprintOverlay(
   const fill = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
     new THREE.MeshBasicMaterial({
-      color: "#2b7cff",
+      color: fillColor,
       transparent: true,
-      opacity: 0.14,
+      opacity: fillOpacity,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
     }),
   );
   fill.rotation.x = -Math.PI / 2;
-  fill.position.y = 0.042;
-  fill.renderOrder = 18;
+  fill.position.y = yOffset;
+  fill.renderOrder = renderOrder;
 
   const outlinePoints: THREE.Vector3[] = [];
   for (let index = 0; index < footprintPolygon.length; index += 2) {
@@ -421,14 +435,14 @@ function buildFootprintOverlay(
   const outline = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(outlinePoints),
     new THREE.LineBasicMaterial({
-      color: "#1555e5",
+      color: outlineColor,
       transparent: true,
       opacity: 0.85,
       depthTest: false,
       depthWrite: false,
     }),
   );
-  outline.renderOrder = 19;
+  outline.renderOrder = renderOrder + 1;
 
   const group = new THREE.Group();
   group.add(fill, outline);
@@ -1027,6 +1041,7 @@ export function SceneViewport({
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const footprintRef = useRef<THREE.Group | null>(null);
+  const blockedFootprintRef = useRef<THREE.Group | null>(null);
   const scanRef = useRef<THREE.Points | null>(null);
   const tfGroupRef = useRef<THREE.Group | null>(null);
   const lastCenteredMapSignatureRef = useRef<string>("");
@@ -1254,6 +1269,7 @@ export function SceneViewport({
       disposeObject(globalCostmapMeshRef.current);
       disposeObject(localCostmapMeshRef.current);
       disposeObject(footprintRef.current);
+      disposeObject(blockedFootprintRef.current);
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
       disposeObject(goalMarkerRef.current);
@@ -1362,6 +1378,29 @@ export function SceneViewport({
     if (footprintRef.current) {
       footprintRef.current.visible = layerVisibility.footprint;
       scene.add(footprintRef.current);
+    }
+
+    if (blockedFootprintRef.current) {
+      scene.remove(blockedFootprintRef.current);
+      disposeObject(blockedFootprintRef.current);
+      blockedFootprintRef.current = null;
+    }
+    if (state.motion_status?.has_blocked_pose) {
+      blockedFootprintRef.current = buildFootprintOverlay(
+        state.robot_description?.footprint_polygon,
+        state.motion_status.blocked_pose,
+        {
+          fillColor: "#ff5f52",
+          outlineColor: "#b3261e",
+          fillOpacity: 0.18,
+          yOffset: 0.052,
+          renderOrder: 22,
+        },
+      );
+    }
+    if (blockedFootprintRef.current) {
+      blockedFootprintRef.current.visible = layerVisibility.blockedDebug;
+      scene.add(blockedFootprintRef.current);
     }
 
     if (scanRef.current) {

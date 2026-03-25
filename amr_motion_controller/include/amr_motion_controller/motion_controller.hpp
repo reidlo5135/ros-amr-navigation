@@ -50,6 +50,14 @@ private:
     bool first_update{true};
   };
 
+  struct LocalBlockingResult
+  {
+    bool local_plan_valid{false};
+    bool blocked{false};
+    bool has_blocked_pose{false};
+    geometry_msgs::msg::PoseStamped blocked_pose{};
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -84,7 +92,7 @@ private:
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
-  bool is_local_costmap_blocked() const;
+  LocalBlockingResult evaluate_local_costmap_blocking() const;
   bool is_pose_in_local_costmap_collision(const geometry_msgs::msg::PoseStamped & pose) const;
   bool is_safety_gate_triggered() const;
   void ensure_recovery_reference_initialized();

@@ -55,7 +55,14 @@ export type MotionStatusMessage = {
   active: boolean;
   goal_reached: boolean;
   obstacle_detected: boolean;
+  blocked: boolean;
+  stalled: boolean;
+  local_plan_valid: boolean;
+  costmap_blocked: boolean;
+  safety_gate_blocked: boolean;
+  has_blocked_pose: boolean;
   current_pose: Pose;
+  blocked_pose: Pose;
   remaining_distance: number;
   heading_error: number;
 };

@@ -385,7 +385,12 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
-      if (status.blocked || status.stalled) {
+      if (status.blocked || status.stalled || !status.local_plan_valid) {
+        if (!status.local_plan_valid) {
+          blackboard->set(
+            "status_message",
+            std::string("Recovery requested because the local plan is invalid."));
+        }
         return BT::NodeStatus::SUCCESS;
       }
       return BT::NodeStatus::FAILURE;

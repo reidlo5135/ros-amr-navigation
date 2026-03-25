@@ -75,6 +75,7 @@ type LayerVisibility = {
   globalCostmap: boolean;
   localCostmap: boolean;
   footprint: boolean;
+  blockedDebug: boolean;
   robot: boolean;
   paths: boolean;
   scan: boolean;
@@ -113,6 +114,7 @@ export default function App() {
     globalCostmap: true,
     localCostmap: true,
     footprint: true,
+    blockedDebug: true,
     robot: true,
     paths: true,
     scan: true,
@@ -413,6 +415,7 @@ export default function App() {
                 ["globalCostmap", "Global Costmap"],
                 ["localCostmap", "Local Costmap"],
                 ["footprint", "Exact Footprint"],
+                ["blockedDebug", "Blocked Footprint"],
                 ["robot", "Robot"],
                 ["paths", "Plans"],
                 ["scan", "LaserScan"],
@@ -486,6 +489,14 @@ export default function App() {
               <div className="metric-row">
                 <span>Goal</span>
                 <strong>{bridgeState.motion_status?.goal_reached ? "Reached" : "Running"}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Blocked Source</span>
+                <strong>
+                  {bridgeState.motion_status?.costmap_blocked ? "Costmap" :
+                    bridgeState.motion_status?.safety_gate_blocked ? "Safety Gate" :
+                    bridgeState.motion_status?.blocked ? "Blocked" : "Clear"}
+                </strong>
               </div>
             </div>
           </section>

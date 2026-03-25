@@ -424,6 +424,11 @@ void MotionController::publish_control()
   status.obstacle_detected = false;
   status.blocked = false;
   status.stalled = false;
+  status.local_plan_valid = false;
+  status.costmap_blocked = false;
+  status.safety_gate_blocked = false;
+  status.has_blocked_pose = false;
+  status.blocked_pose = geometry_msgs::msg::PoseStamped();
   status.remaining_distance = 0.0;
   status.heading_error = 0.0;
 
@@ -456,10 +461,16 @@ void MotionController::publish_control()
       const auto heading_error = this->normalize_angle(target_heading - current_yaw);
       const auto abs_heading_error = std::abs(heading_error);
 
-      const bool costmap_blocked = this->is_local_costmap_blocked();
+      const auto blocking_result = this->evaluate_local_costmap_blocking();
+      const bool costmap_blocked = blocking_result.blocked;
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
+      status.local_plan_valid = blocking_result.local_plan_valid;
+      status.costmap_blocked = costmap_blocked;
+      status.safety_gate_blocked = safety_gate_blocked;
       status.obstacle_detected = costmap_blocked || safety_gate_blocked;
       status.blocked = status.obstacle_detected;
+      status.has_blocked_pose = blocking_result.has_blocked_pose;
+      status.blocked_pose = blocking_result.blocked_pose;
       status.goal_reached =
         goal_distance <= this->distance_tolerance_ &&
         abs_heading_error <= this->goal_reach_heading_tolerance_;
@@ -855,14 +866,20 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target() const
   return this->latest_local_plan_.poses.back();
 }
 
-bool MotionController::is_local_costmap_blocked() const
+MotionController::LocalBlockingResult MotionController::evaluate_local_costmap_blocking() const
 {
+  LocalBlockingResult result;
   if (
     !this->has_local_costmap_ || !this->has_current_pose_ || !this->has_local_plan_ ||
     this->latest_command_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE ||
     this->footprint_polygon_.size() < 6U)
   {
-    return false;
+    return result;
+  }
+
+  result.local_plan_valid = !this->latest_local_plan_.poses.empty();
+  if (!result.local_plan_valid) {
+    return result;
   }
 
   std::size_t nearest_index = 0U;
@@ -888,7 +905,10 @@ bool MotionController::is_local_costmap_blocked() const
     }
     if (!has_sample || this->pose_distance(previous_sample, pose) >= this->blocking_sample_step_) {
       if (this->is_pose_in_local_costmap_collision(pose)) {
-        return true;
+        result.blocked = true;
+        result.has_blocked_pose = true;
+        result.blocked_pose = pose;
+        return result;
       }
       previous_sample = pose;
       has_sample = true;
@@ -896,10 +916,16 @@ bool MotionController::is_local_costmap_blocked() const
   }
 
   if (!has_sample) {
-    return this->is_pose_in_local_costmap_collision(this->select_tracking_target());
+    const auto tracking_target = this->select_tracking_target();
+    if (this->is_pose_in_local_costmap_collision(tracking_target)) {
+      result.blocked = true;
+      result.has_blocked_pose = true;
+      result.blocked_pose = tracking_target;
+      return result;
+    }
   }
 
-  return false;
+  return result;
 }
 
 bool MotionController::is_pose_in_local_costmap_collision(

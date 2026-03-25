@@ -7,6 +7,11 @@ bool goal_reached
 bool obstacle_detected
 bool blocked
 bool stalled
+bool local_plan_valid
+bool costmap_blocked
+bool safety_gate_blocked
+bool has_blocked_pose
 geometry_msgs/PoseStamped current_pose
+geometry_msgs/PoseStamped blocked_pose
 float64 remaining_distance
 float64 heading_error
