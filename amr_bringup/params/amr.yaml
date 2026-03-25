@@ -215,7 +215,7 @@
       publish_period_ms: 100
       lookahead_distance: 0.8
       goal_tolerance: 0.15
-      obstacle_threshold: 50
+      obstacle_threshold: 100
       connectivity: 8
       allow_unknown: false
       prevent_corner_cutting: true
@@ -257,7 +257,7 @@
     blocking:
       lookahead_distance: 0.45
       sample_step: 0.05
-      obstacle_threshold: 50
+      obstacle_threshold: 100
     safety_gate:
       enabled: true
       allow_rotate_in_place: true
