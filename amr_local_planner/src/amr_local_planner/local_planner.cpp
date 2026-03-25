@@ -671,6 +671,7 @@ nav_msgs::msg::Path LocalPlanner::build_local_plan(
   const auto & goal_pose = source_plan.poses.back();
   if (this->pose_distance(current_pose, goal_pose) <= this->goal_tolerance_) {
     this->last_progress_index_ = source_plan.poses.size() - 1U;
+    local_plan.poses.push_back(goal_pose);
     return local_plan;
   }
 
