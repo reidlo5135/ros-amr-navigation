@@ -8,6 +8,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   command_topic_(""),
   local_plan_topic_(""),
   current_pose_topic_(""),
+  local_costmap_topic_(""),
   scan_topic_(""),
   status_topic_(""),
   cmd_vel_topic_(""),
@@ -28,6 +29,9 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   max_angular_accel_(0.8),
   progress_required_movement_radius_(0.05),
   progress_time_allowance_sec_(2.0),
+  blocking_lookahead_distance_(0.45),
+  blocking_sample_step_(0.05),
+  blocking_obstacle_threshold_(50),
   safety_gate_enabled_(true),
   safety_gate_allow_rotate_in_place_(true),
   safety_gate_stop_distance_(3.0),
@@ -38,6 +42,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   recovery_start_yaw_(0.0),
   has_command_(false),
   has_local_plan_(false),
+  has_local_costmap_(false),
   has_current_pose_(false),
   has_latest_scan_(false),
   has_progress_reference_(false),
@@ -46,6 +51,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.costmap", this->local_costmap_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.status", this->status_topic_);
   this->declare_parameter("topics.velocity", this->cmd_vel_topic_);
@@ -72,6 +78,9 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
     "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
   this->declare_parameter(
     "progress_checker.time_allowance_sec", this->progress_time_allowance_sec_);
+  this->declare_parameter("blocking.lookahead_distance", this->blocking_lookahead_distance_);
+  this->declare_parameter("blocking.sample_step", this->blocking_sample_step_);
+  this->declare_parameter("blocking.obstacle_threshold", this->blocking_obstacle_threshold_);
 
   this->declare_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->declare_parameter(
@@ -96,6 +105,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   this->declare_parameter("velocity_controller.angular.integral_limit", 0.30);
   this->declare_parameter("velocity_controller.max_linear_accel", this->max_linear_accel_);
   this->declare_parameter("velocity_controller.max_angular_accel", this->max_angular_accel_);
+  this->declare_parameter("footprint.polygon", this->footprint_polygon_);
 }
 
 MotionController::CallbackReturn MotionController::on_configure(
@@ -105,6 +115,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.costmap", this->local_costmap_topic_);
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.status", this->status_topic_);
   this->get_parameter("topics.velocity", this->cmd_vel_topic_);
@@ -131,6 +142,10 @@ MotionController::CallbackReturn MotionController::on_configure(
     "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
   this->get_parameter(
     "progress_checker.time_allowance_sec", this->progress_time_allowance_sec_);
+  this->get_parameter("blocking.lookahead_distance", this->blocking_lookahead_distance_);
+  this->get_parameter("blocking.sample_step", this->blocking_sample_step_);
+  this->get_parameter("blocking.obstacle_threshold", this->blocking_obstacle_threshold_);
+  this->get_parameter("footprint.polygon", this->footprint_polygon_);
 
   this->get_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->get_parameter(
@@ -169,16 +184,18 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   if (
     this->command_topic_.empty() || this->local_plan_topic_.empty() ||
-    this->current_pose_topic_.empty() || this->scan_topic_.empty() ||
+    this->current_pose_topic_.empty() || this->local_costmap_topic_.empty() ||
+    this->scan_topic_.empty() ||
     this->status_topic_.empty() ||
     this->cmd_vel_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' scan='%s' status='%s' cmd_vel='%s'",
+      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' costmap='%s' scan='%s' status='%s' cmd_vel='%s'",
       this->command_topic_.c_str(),
       this->local_plan_topic_.c_str(),
       this->current_pose_topic_.c_str(),
+      this->local_costmap_topic_.c_str(),
       this->scan_topic_.c_str(),
       this->status_topic_.c_str(),
       this->cmd_vel_topic_.c_str());
@@ -202,6 +219,11 @@ MotionController::CallbackReturn MotionController::on_configure(
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
     });
+  this->local_costmap_subscription_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+    this->local_costmap_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
+      this->handle_local_costmap(message);
+    });
   this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     this->scan_topic_, rclcpp::SensorDataQoS(),
     [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
@@ -222,10 +244,11 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured motion controller with command='%s', plan='%s', pose='%s', cmd_vel='%s', mode='%s'",
+    "Configured motion controller with command='%s', plan='%s', pose='%s', costmap='%s', cmd_vel='%s', mode='%s'",
     this->command_topic_.c_str(),
     this->local_plan_topic_.c_str(),
     this->current_pose_topic_.c_str(),
+    this->local_costmap_topic_.c_str(),
     this->cmd_vel_topic_.c_str(),
     velocity_control_mode.c_str());
 
@@ -269,17 +292,20 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->local_costmap_subscription_.reset();
   this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
+  this->latest_local_costmap_ = nav_msgs::msg::OccupancyGrid();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
+  this->has_local_costmap_ = false;
   this->has_current_pose_ = false;
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
@@ -295,17 +321,20 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->local_costmap_subscription_.reset();
   this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
+  this->latest_local_costmap_ = nav_msgs::msg::OccupancyGrid();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
+  this->has_local_costmap_ = false;
   this->has_current_pose_ = false;
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
@@ -348,6 +377,12 @@ void MotionController::handle_current_pose(const geometry_msgs::msg::PoseStamped
 {
   this->current_pose_ = *message;
   this->has_current_pose_ = true;
+}
+
+void MotionController::handle_local_costmap(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
+{
+  this->latest_local_costmap_ = *message;
+  this->has_local_costmap_ = true;
 }
 
 void MotionController::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message)
@@ -414,7 +449,9 @@ void MotionController::publish_control()
       const auto heading_error = this->normalize_angle(target_heading - current_yaw);
       const auto abs_heading_error = std::abs(heading_error);
 
-      status.obstacle_detected = this->is_safety_gate_triggered();
+      const bool costmap_blocked = this->is_local_costmap_blocked();
+      const bool safety_gate_blocked = this->is_safety_gate_triggered();
+      status.obstacle_detected = costmap_blocked || safety_gate_blocked;
       status.blocked = status.obstacle_detected;
       status.goal_reached =
         goal_distance <= this->distance_tolerance_ &&
@@ -467,9 +504,11 @@ void MotionController::publish_control()
           this->get_logger(),
           *this->get_clock(),
           1000,
-          "Navigation hold: blocked=%s stalled=%s",
+          "Navigation hold: blocked=%s stalled=%s (costmap=%s safety_gate=%s)",
           status.blocked ? "true" : "false",
-          status.stalled ? "true" : "false");
+          status.stalled ? "true" : "false",
+          costmap_blocked ? "true" : "false",
+          safety_gate_blocked ? "true" : "false");
       } else {
         desired_twist.angular.z = this->clamp(
           this->angular_gain_ * heading_error,
@@ -807,6 +846,78 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target() const
   }
 
   return this->latest_local_plan_.poses.back();
+}
+
+bool MotionController::is_local_costmap_blocked() const
+{
+  if (
+    !this->has_local_costmap_ || !this->has_current_pose_ || !this->has_local_plan_ ||
+    this->latest_command_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE ||
+    this->footprint_polygon_.size() < 6U)
+  {
+    return false;
+  }
+
+  std::size_t nearest_index = 0U;
+  double nearest_distance = std::numeric_limits<double>::max();
+  for (std::size_t index = 0; index < this->latest_local_plan_.poses.size(); ++index) {
+    const double distance = this->pose_distance(this->current_pose_, this->latest_local_plan_.poses[index]);
+    if (distance < nearest_distance) {
+      nearest_distance = distance;
+      nearest_index = index;
+    }
+  }
+
+  bool has_sample = false;
+  geometry_msgs::msg::PoseStamped previous_sample;
+  for (std::size_t index = nearest_index; index < this->latest_local_plan_.poses.size(); ++index) {
+    const auto & pose = this->latest_local_plan_.poses[index];
+    const double distance_from_robot = this->pose_distance(this->current_pose_, pose);
+    if (distance_from_robot < 0.05) {
+      continue;
+    }
+    if (distance_from_robot > this->blocking_lookahead_distance_) {
+      break;
+    }
+    if (!has_sample || this->pose_distance(previous_sample, pose) >= this->blocking_sample_step_) {
+      if (this->is_pose_in_local_costmap_collision(pose)) {
+        return true;
+      }
+      previous_sample = pose;
+      has_sample = true;
+    }
+  }
+
+  if (!has_sample) {
+    return this->is_pose_in_local_costmap_collision(this->select_tracking_target());
+  }
+
+  return false;
+}
+
+bool MotionController::is_pose_in_local_costmap_collision(
+  const geometry_msgs::msg::PoseStamped & pose) const
+{
+  if (
+    !this->has_local_costmap_ || this->latest_local_costmap_.data.empty() ||
+    this->footprint_polygon_.size() < 6U)
+  {
+    return false;
+  }
+
+  return amr_geometry::footprint_pose_collides(
+    this->latest_local_costmap_.data,
+    static_cast<int>(this->latest_local_costmap_.info.width),
+    static_cast<int>(this->latest_local_costmap_.info.height),
+    static_cast<double>(this->latest_local_costmap_.info.resolution),
+    this->latest_local_costmap_.info.origin.position.x,
+    this->latest_local_costmap_.info.origin.position.y,
+    amr_geometry::make_footprint_polygon(this->footprint_polygon_),
+    pose.pose.position.x,
+    pose.pose.position.y,
+    this->quaternion_yaw(pose.pose.orientation),
+    this->blocking_obstacle_threshold_,
+    false);
 }
 
 bool MotionController::is_safety_gate_triggered() const

@@ -8,10 +8,12 @@
 #include <limits>
 #include <string>
 
+#include "amr_geometry/footprint.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -60,6 +62,7 @@ private:
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
   void handle_local_plan(const nav_msgs::msg::Path::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
+  void handle_local_costmap(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void publish_control();
   void reset_velocity_controller_state();
@@ -81,6 +84,8 @@ private:
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
+  bool is_local_costmap_blocked() const;
+  bool is_pose_in_local_costmap_collision(const geometry_msgs::msg::PoseStamped & pose) const;
   bool is_safety_gate_triggered() const;
   void ensure_recovery_reference_initialized();
   double pose_distance(
@@ -90,6 +95,7 @@ private:
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_plan_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr local_costmap_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_publisher_;
@@ -98,6 +104,7 @@ private:
   std::string command_topic_;
   std::string local_plan_topic_;
   std::string current_pose_topic_;
+  std::string local_costmap_topic_;
   std::string scan_topic_;
   std::string status_topic_;
   std::string cmd_vel_topic_;
@@ -118,12 +125,16 @@ private:
   double max_angular_accel_;
   double progress_required_movement_radius_;
   double progress_time_allowance_sec_;
+  double blocking_lookahead_distance_;
+  double blocking_sample_step_;
+  int blocking_obstacle_threshold_;
   bool safety_gate_enabled_;
   bool safety_gate_allow_rotate_in_place_;
   double safety_gate_stop_distance_;
   double safety_gate_forward_angle_deg_;
   double safety_gate_rotate_heading_threshold_;
   int safety_gate_min_points_;
+  std::vector<double> footprint_polygon_;
   VelocityControlMode velocity_control_mode_;
   AxisControllerConfig linear_controller_config_;
   AxisControllerConfig angular_controller_config_;
@@ -132,6 +143,7 @@ private:
   geometry_msgs::msg::Twist current_twist_;
   amr_msgs::msg::MotionCommand latest_command_;
   nav_msgs::msg::Path latest_local_plan_;
+  nav_msgs::msg::OccupancyGrid latest_local_costmap_;
   geometry_msgs::msg::PoseStamped current_pose_;
   geometry_msgs::msg::PoseStamped progress_reference_pose_;
   geometry_msgs::msg::PoseStamped recovery_reference_pose_;
@@ -141,6 +153,7 @@ private:
   double recovery_start_yaw_;
   bool has_command_;
   bool has_local_plan_;
+  bool has_local_costmap_;
   bool has_current_pose_;
   bool has_latest_scan_;
   bool has_progress_reference_;

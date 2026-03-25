@@ -234,6 +234,7 @@
       command: "/amr/motion/command"
       plan: "/amr/planner/local"
       pose: "/amr/localization/pose"
+      costmap: "/amr/costmap/local"
       scan: "/scan"
       status: "/amr/motion/status"
       velocity: "/cmd_vel"
@@ -251,6 +252,10 @@
       rotate_in_place_goal_distance: 0.18
       heading_slowdown_threshold: 0.2
       min_heading_motion_scale: 0.15
+    blocking:
+      lookahead_distance: 0.45
+      sample_step: 0.05
+      obstacle_threshold: 50
     safety_gate:
       enabled: true
       allow_rotate_in_place: true
@@ -258,6 +263,14 @@
       forward_angle_deg: 30.0
       rotate_heading_threshold: 0.20
       minimum_points: 3
+    footprint:
+      polygon:
+        [
+          -0.10, -0.09,
+           0.10, -0.09,
+           0.10,  0.09,
+          -0.10,  0.09
+        ]
     velocity_controller:
       mode: "pid"
       linear:
