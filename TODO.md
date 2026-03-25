@@ -175,7 +175,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
-| `2026-03-25` | exact footprint collision 설계/적용, local costmap authority 강화, recovery/final approach 안정화 |
+| `2026-03-25` | exact footprint collision 완료, local costmap authority 1차 반영, recovery/final approach 1차 안정화 |
 | `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
 | `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
 | `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
@@ -183,18 +183,19 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 ## 2026-03-25
 
-- exact footprint collision 고도화
-  - 현재 footprint-aware inflation 단계에서 `exact polygon collision` 단계로 설계 구체화
-  - `amr_costmap_server`, `amr_global_planner`, `amr_local_planner`, `amr_motion_controller`가 동일한 footprint 해석을 공유하도록 기준 정리
-  - inflated obstacle 회피와 footprint 직접 충돌검사의 책임 경계를 나누고, corridor 통과 가능 여부를 더 정확하게 판단할 수 있게 만들기
-- local costmap authority 강화
-  - dynamic obstacle 판단의 최종 기준을 `local costmap`으로 수렴시키기
-  - scan 기반 local layer와 planner/controller blocked 판단의 연결을 더 명확히 정리
-  - global costmap은 static world, local costmap은 current local world라는 역할 분리를 코드와 파라미터에서 더 분명히 고정
-- recovery / final approach 안정화
-  - goal 근처에서 unnecessary escape / detour / spin이 반복되지 않도록 BT와 local planner 경계 재점검
-  - `wait / backup / spin / replan / abort` 흐름이 운영자 입장에서 설명 가능하도록 상태 semantics 정리
-  - final approach에서 heading alignment와 reached 판정이 corridor 주행 품질을 해치지 않도록 threshold와 mode 전환 조건 재정리
+- 완료: exact footprint collision 1차 적용
+  - `amr_geometry` 공용 geometry 유틸 분리
+  - `amr_global_planner`, `amr_local_planner`에 exact polygon collision 반영
+  - `amr_viz`에 exact footprint overlay / collision debug layer 추가
+- 진행: local costmap authority 강화
+  - controller 직접 authority 부여 시 straight case를 해쳐 일단 revert
+  - 대신 `amr_local_planner -> LocalPlanStatus -> amr_bt_navigator` 경로로 1차 반영
+  - 남은 과제는 recovery 진입 기준을 더 다듬고, corridor에서 false blocked를 줄이는 것
+- 진행: recovery / final approach 안정화
+  - stale status 기반 recovery 오진입 방지
+  - goal 근처 local plan empty로 인한 false recover/abort 완화
+  - `amr_viz` Goal 상태를 `Running / Recovering / Aborted / Reached` 등으로 세분화
+  - 남은 과제는 final approach oscillation과 recovery primitive 튜닝 정리
 
 ## 2026-03-24
 
