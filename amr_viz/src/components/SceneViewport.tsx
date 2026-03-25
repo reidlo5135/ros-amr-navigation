@@ -523,6 +523,10 @@ function createScanSpriteTexture(): THREE.CanvasTexture {
   return texture;
 }
 
+function interpolateChannel(start: number, end: number, ratio: number) {
+  return Math.round(start + ((end - start) * ratio));
+}
+
 function buildOccupancyTexture(
   grid: OccupancyGridMessage,
   palette: "map" | "global_costmap" | "local_costmap",
@@ -553,14 +557,14 @@ function buildOccupancyTexture(
 
       if (palette === "map") {
         if (value < 0) {
-          red = 176;
-          green = 176;
-          blue = 176;
+          red = 186;
+          green = 186;
+          blue = 186;
           alpha = 255;
         } else if (value >= 50) {
-          red = 0;
-          green = 0;
-          blue = 0;
+          red = 36;
+          green = 22;
+          blue = 48;
           alpha = 255;
         } else {
           red = 255;
@@ -571,15 +575,31 @@ function buildOccupancyTexture(
       } else {
         if (value > 0) {
           const normalized = Math.max(0, Math.min(1, value / 100));
-          alpha = Math.max(28, Math.round((palette === "global_costmap" ? 104 : 146) * normalized));
+          alpha = Math.max(36, Math.round((palette === "global_costmap" ? 156 : 168) * normalized));
           if (palette === "global_costmap") {
-            red = Math.round(226 + (18 * normalized));
-            green = Math.round(170 + (10 * normalized));
-            blue = Math.round(216 + (18 * normalized));
+            if (normalized < 0.45) {
+              const ratio = normalized / 0.45;
+              red = interpolateChannel(214, 118, ratio);
+              green = interpolateChannel(250, 235, ratio);
+              blue = interpolateChannel(244, 233, ratio);
+            } else {
+              const ratio = (normalized - 0.45) / 0.55;
+              red = interpolateChannel(118, 76, ratio);
+              green = interpolateChannel(235, 185, ratio);
+              blue = interpolateChannel(233, 206, ratio);
+            }
           } else {
-            red = Math.round(164 + (26 * normalized));
-            green = Math.round(44 + (10 * normalized));
-            blue = Math.round(92 + (18 * normalized));
+            if (normalized < 0.45) {
+              const ratio = normalized / 0.45;
+              red = interpolateChannel(255, 232, ratio);
+              green = interpolateChannel(214, 112, ratio);
+              blue = interpolateChannel(226, 182, ratio);
+            } else {
+              const ratio = (normalized - 0.45) / 0.55;
+              red = interpolateChannel(232, 138, ratio);
+              green = interpolateChannel(112, 30, ratio);
+              blue = interpolateChannel(182, 122, ratio);
+            }
           }
         }
       }
