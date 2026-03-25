@@ -1139,7 +1139,8 @@ static char * amr_mqtt_bridge_serialize_battery_state(const void * message)
     isfinite(battery_state->percentage) ? (battery_state->percentage * 100.0) : -1.0;
 
   if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
-    !amr_mqtt_bridge_builder_append_header(&builder, &battery_state->header) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{") ||
+    !amr_mqtt_bridge_append_header(&builder, &battery_state->header) ||
     !amr_mqtt_bridge_builder_appendf(&builder, ",\"voltage\":%.3f", battery_state->voltage) ||
     !amr_mqtt_bridge_builder_appendf(&builder, ",\"current\":%.3f", battery_state->current) ||
     !amr_mqtt_bridge_builder_appendf(&builder, ",\"percentage\":%.2f", percentage) ||
