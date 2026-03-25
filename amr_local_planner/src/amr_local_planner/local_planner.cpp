@@ -700,6 +700,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   }
 
   const auto & goal_pose = source_plan.poses.back();
+  const double goal_distance = this->pose_distance(current_pose, goal_pose);
   if (this->pose_distance(current_pose, goal_pose) <= this->goal_tolerance_) {
     this->last_progress_index_ = source_plan.poses.size() - 1U;
     result.plan.poses.push_back(goal_pose);
