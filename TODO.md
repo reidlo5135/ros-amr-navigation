@@ -175,11 +175,69 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
-| `2026-03-25` | exact footprint collision 완료, local costmap authority 1차 반영, recovery/final approach 1차 안정화 |
+| `2026-03-26` | kidnapped 대응용 global localization 설계, offline/disconnect 재초기화 흐름 검토 |
+| `2026-03-25` | exact footprint collision 완료, local planner decision semantics 반영, recovery/final approach 1차 안정화, viz 운영성 강화 |
 | `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
 | `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
 | `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
+
+## 2026-03-26
+
+- kidnapped 대응용 global localization 도입 검토
+  - local tracking만으로는 복구되지 않는 위치 이탈 상황을 위한 global particle reset 흐름 설계
+  - map 전역 또는 넓은 후보 영역에 particle을 뿌리고 scan-map likelihood로 재수렴시키는 구조 검토
+  - `kidnapped` 판단 기준과 `manual relocalize` / `automatic relocalize` 트리거 조건 정리
+  - 검토 관점
+    - `global localization`은 평상시 tracking 대체가 아니라 `lost pose recovery mode`로 다루기
+    - normal tracking / weak confidence / kidnapped suspected / global search / relocalized / failed 상태를 나누는 편이 적절한지 검토
+    - `manual initial pose`와 `automatic global relocalize`를 같은 리셋 경로로 합칠지 검토
+- offline / disconnect 환경에서도 동작 가능한 onboard 재초기화 설계
+  - ACS, 외부 서버, operator UI 연결이 없어도 robot-side에서 스스로 global relocalization 수행 가능해야 함
+  - MQTT 단절 시에도 localization runtime 자체는 독립적으로 동작하도록 경계 명확화
+  - `lost localization -> stop -> relocalize -> resume or abort` 흐름을 onboard 기준으로 설계
+  - 검토 관점
+    - relocalization 수행 중 MQTT, ACS, viz는 optional observer이고 핵심 제어 흐름은 robot 내부에서 닫혀 있어야 함
+    - BT / planner / controller는 localization confidence가 무너지면 주행보다 정지를 우선하고 relocalize 결과를 기다리게 할지 검토
+    - reconnect 이후 operator에게는 결과만 동기화하면 되는 구조가 적절한지 검토
+- 기존 localization과의 책임 분리 검토
+  - 현재 localization에 global relocalization mode를 넣을지, 별도 mode/state machine으로 분리할지 결정
+  - local tracking / global search / kidnapped recovery를 명시적 상태로 나눌지 검토
+  - `map -> odom` 품질 유지와 재초기화 시간의 trade-off 정리
+  - 검토 관점
+    - 하나의 localization node 내부 mode 전환으로 갈지, `tracking filter`와 `global relocalizer`를 분리할지 비교
+    - tracking 중에는 odom / imu prior를 강하게 쓰고, global relocalization 중에는 scan-map likelihood 비중을 올리는 구조 검토
+    - relocalization 성공 시 `map -> odom`를 순간 점프시킬지, 점진적으로 재정렬할지 비교
+- 구현 전 확인할 기술 포인트
+  - particle count / spread / convergence 기준
+  - odom / imu prior를 global relocalization 중 어디까지 신뢰할지
+  - relocalization 중 planner / controller / bt_navigator 정지 정책
+  - relocalize 성공/실패를 operator에게 어떤 상태로 보여줄지
+  - 세부 설계 메모
+    - kidnapped 진입 조건 후보
+      - scan-map score 급락
+      - TF jump 또는 odom 대비 map pose 불연속 증가
+      - progress 없음 + localization confidence 저하 동시 발생
+    - relocalize 성공 조건 후보
+      - top particle cluster 안정화
+      - scan-map score가 일정 시간 이상 유지
+      - pose covariance / confidence가 threshold 이상 회복
+    - relocalize 실패 조건 후보
+      - timeout
+      - candidate cluster 다중성 유지
+      - 정지 상태에서도 score 회복 실패
+    - 운영 표시 후보
+      - `Localizing`
+      - `Kidnapped Suspected`
+      - `Global Search`
+      - `Relocalized`
+      - `Localization Failed`
+    - 구현 순서 제안
+      1. kidnapped detection 신호 정의
+      2. global particle reset mode 추가
+      3. relocalization success/fail criteria 정의
+      4. BT와 motion stop policy 연동
+      5. viz/operator 상태 노출
 
 ## 2026-03-25
 
@@ -190,7 +248,8 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - 진행: local costmap authority 강화
   - controller 직접 authority 부여 시 straight case를 해쳐 일단 revert
   - 대신 `amr_local_planner -> LocalPlanStatus -> amr_bt_navigator` 경로로 1차 반영
-  - 다음 우선순위는 `LocalPlanStatus`를 decision semantics 중심으로 확장해 planner가 recovery rationale을 먼저 말하게 만드는 것
+  - `LocalPlanStatus`를 decision semantics 중심으로 확장해 planner가 recovery rationale을 먼저 말하도록 2차 반영 완료
+  - 현재 `DECISION_OK`, `DECISION_GOAL_PROXIMITY_BLOCKED`, `DECISION_GLOBAL_REPLAN_REQUIRED`, `DECISION_HARD_BLOCKED` 기준으로 BT가 recovery 절차를 선택
   - 남은 과제는 recovery 진입 기준을 더 다듬고, corridor에서 false blocked를 줄이는 것
 - 진행: recovery / final approach 안정화
   - stale status 기반 recovery 오진입 방지
@@ -198,6 +257,16 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - `amr_viz` Goal 상태를 `Running / Recovering / Aborted / Reached` 등으로 세분화
   - 다만 이 항목의 추가 튜닝은 BT 하드코딩보다 planner decision semantics 확장 이후에 진행
   - 남은 과제는 final approach oscillation과 recovery primitive 튜닝 정리
+- 완료: 운영성 중심 `amr_viz` 개선
+  - Goal lifecycle을 request 단위로 동기화해 이전 goal의 `Rejected / Reached / Aborted`가 새 goal 상태를 덮지 않도록 수정
+  - `amr/command/ping` / `amr/response/ping` 기반 MQTT RTT 표시 추가
+  - 배터리 상태 API 및 topbar 표시 추가
+  - 배터리 잔량 색상 단계화
+  - Displays 메뉴를 `Global Plan / Local Plan` 분리, 반응형 패널 레이아웃 및 이벤트 패널 스크롤 구조 정리
+  - Goal radius marker를 현재 도착 거리 tolerance와 동기화
+- 완료: 시각화 데이터 정합 보강
+  - `viz/scan` JSON 직렬화에서 `nan`을 `null`로 내보내 LaserScan 표시 복구
+  - RViz2 톤에 맞춘 map/costmap/path/marker palette 정리
 
 ## 2026-03-24
 
