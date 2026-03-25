@@ -107,6 +107,8 @@ private:
   bool has_current_pose_;
   bool has_motion_status_;
   mutable std::mutex navigator_mutex_;
+  mutable std::mutex active_goal_mutex_;
+  std::weak_ptr<GoalHandleNavigateToPose> active_goal_handle_;
 };
 
 }  // namespace amr_bt_navigator

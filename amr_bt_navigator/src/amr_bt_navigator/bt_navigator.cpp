@@ -218,6 +218,17 @@ rclcpp_action::GoalResponse Btnavigator::handle_goal(
   std::shared_ptr<const NavigateToPose::Goal> goal)
 {
   (void)uuid;
+  {
+    std::scoped_lock active_goal_lock(this->active_goal_mutex_);
+    const auto active_goal = this->active_goal_handle_.lock();
+    if (active_goal && active_goal->is_active()) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "Rejecting goal while another navigate goal is still active");
+      return rclcpp_action::GoalResponse::REJECT;
+    }
+  }
+
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
     RCLCPP_WARN(this->get_logger(), "Rejecting goal while navigator is inactive");
     return rclcpp_action::GoalResponse::REJECT;
@@ -248,11 +259,23 @@ rclcpp_action::CancelResponse Btnavigator::handle_cancel(
 
 void Btnavigator::handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
+  {
+    std::scoped_lock active_goal_lock(this->active_goal_mutex_);
+    this->active_goal_handle_ = goal_handle;
+  }
   std::thread([this, goal_handle]() { this->execute(goal_handle); }).detach();
 }
 
 void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
+  const auto clear_active_goal = [this, &goal_handle]() {
+    std::scoped_lock active_goal_lock(this->active_goal_mutex_);
+    const auto active_goal = this->active_goal_handle_.lock();
+    if (active_goal == goal_handle) {
+      this->active_goal_handle_.reset();
+    }
+  };
+
   const auto goal = goal_handle->get_goal();
   RCLCPP_INFO(
     this->get_logger(),
@@ -594,6 +617,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     result->success = false;
     result->message = std::string("Failed to initialize behavior tree: ") + error.what();
     goal_handle->abort(result);
+    clear_active_goal();
     return;
   }
 
@@ -602,6 +626,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     result->success = false;
     result->message = blackboard->get<std::string>("status_message");
     goal_handle->abort(result);
+    clear_active_goal();
     return;
   }
 
@@ -627,6 +652,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       result->success = true;
       result->message = message;
       goal_handle->succeed(result);
+      clear_active_goal();
       return;
     }
     if (outcome == BtOutcome::kCanceled) {
@@ -635,6 +661,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       result->success = false;
       result->message = message;
       goal_handle->canceled(result);
+      clear_active_goal();
       return;
     }
     if (outcome == BtOutcome::kStopped) {
@@ -643,6 +670,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       result->success = false;
       result->message = message;
       goal_handle->abort(result);
+      clear_active_goal();
       return;
     }
   }
@@ -651,6 +679,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   result->success = false;
   result->message = "Navigator stopped because ROS is shutting down.";
   goal_handle->abort(result);
+  clear_active_goal();
 }
 
 void Btnavigator::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)

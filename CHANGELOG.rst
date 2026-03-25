@@ -4,6 +4,12 @@ Changelog
 2026-03-25
 ----------
 
+- Started the ``0.12.1`` patch branch:
+  - guarded ``amr_bt_navigator`` against overlapping active goals so stale recovery state does not leak into a new navigate request
+
+2026-03-25
+----------
+
 - Started the ``0.12.0`` exact-footprint branch:
 
   - added exact footprint collision helpers in ``amr_geometry``
