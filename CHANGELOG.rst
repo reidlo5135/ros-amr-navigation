@@ -4,6 +4,13 @@ Changelog
 2026-03-25
 ----------
 
+- Started the ``0.12.2`` patch branch:
+  - Routed local-costmap authority through ``amr_local_planner`` status reporting.
+  - Kept controller-side blocking conservative to avoid breaking baseline straight driving.
+
+2026-03-25
+----------
+
 - Started the ``0.12.1`` patch branch:
   - guarded ``amr_bt_navigator`` against overlapping active goals so stale recovery state does not leak into a new navigate request
 
