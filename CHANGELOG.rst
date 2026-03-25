@@ -4,6 +4,13 @@ Changelog
 2026-03-25
 ----------
 
+- Started the ``0.12.3`` patch branch:
+  - Next step is to move recovery branching from BT heuristics toward local-planner decision semantics.
+  - Aim to reduce hard-coded near-goal handling and make planner output the recovery rationale.
+
+2026-03-25
+----------
+
 - Started the ``0.12.2`` patch branch:
   - Routed local-costmap authority through ``amr_local_planner`` status reporting.
   - Kept controller-side blocking conservative to avoid breaking baseline straight driving.
