@@ -99,6 +99,17 @@ export type RobotDescriptionMessage = {
   footprint_polygon?: number[];
 };
 
+export type BatteryStateMessage = {
+  header: Header;
+  voltage: number;
+  current: number;
+  percentage: number;
+  power_supply_status: number;
+  power_supply_health: number;
+  power_supply_technology: number;
+  present: boolean;
+};
+
 export type BridgeState = {
   robot_pose?: Pose;
   global_path?: PathMessage;
@@ -111,6 +122,7 @@ export type BridgeState = {
   tf?: TfMessage;
   tf_static?: TfMessage;
   robot_description?: RobotDescriptionMessage;
+  battery_state?: BatteryStateMessage;
 };
 
 export type BridgeEnvelope =

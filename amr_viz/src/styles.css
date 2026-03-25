@@ -77,6 +77,54 @@ input {
   white-space: nowrap;
 }
 
+.battery-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #dfe5e9;
+}
+
+.battery-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 30px;
+  height: 14px;
+  padding: 2px;
+  border: 1px solid rgba(223, 229, 233, 0.82);
+  border-radius: 3px;
+  background: transparent;
+}
+
+.battery-fill {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: rgba(223, 229, 233, 0.92);
+  transition: width 160ms ease;
+}
+
+.battery-fill.low {
+  background: rgba(223, 229, 233, 0.64);
+}
+
+.battery-tip {
+  position: absolute;
+  top: 3px;
+  right: -4px;
+  width: 2px;
+  height: 6px;
+  border-radius: 0 1px 1px 0;
+  background: rgba(223, 229, 233, 0.82);
+}
+
+.battery-label {
+  color: #dfe5e9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
 input {
   width: 100%;
   border: 1px solid var(--line-strong);

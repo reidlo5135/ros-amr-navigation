@@ -39,6 +39,7 @@ const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/tf": "tf",
   "amr/robot/turtlebot3/viz/tf_static": "tf_static",
   "amr/robot/turtlebot3/viz/robot_description": "robot_description",
+  "amr/robot/turtlebot3/viz/battery_state": "battery_state",
 };
 
 const topicSubscriptions = [
@@ -393,6 +394,14 @@ export default function App() {
     return goalLifecycle;
   })();
 
+  const batteryPercentage = (() => {
+    const percentage = bridgeState.battery_state?.percentage;
+    if (typeof percentage !== "number" || !Number.isFinite(percentage) || percentage < 0) {
+      return null;
+    }
+    return Math.max(0, Math.min(100, percentage));
+  })();
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -404,6 +413,16 @@ export default function App() {
             {bridgeState.robot_pose
               ? `${bridgeState.robot_pose.position.x.toFixed(2)}, ${bridgeState.robot_pose.position.y.toFixed(2)}`
               : "--"}
+          </span>
+          <span className="topbar-chip battery-chip" aria-label="Battery status">
+            <span className="battery-shell">
+              <span
+                className={`battery-fill${batteryPercentage !== null && batteryPercentage <= 20 ? " low" : ""}`}
+                style={{ width: `${batteryPercentage ?? 0}%` }}
+              />
+              <span className="battery-tip" />
+            </span>
+            <span className="battery-label">{batteryPercentage !== null ? `${Math.round(batteryPercentage)}%` : "--%"}</span>
           </span>
         </div>
       </header>
