@@ -1114,14 +1114,25 @@ nav_msgs::msg::Path LocalPlanner::build_approach_plan_before_blocked_pose(
   const std::size_t closest_index,
   const geometry_msgs::msg::PoseStamped & blocked_pose) const
 {
+  if (source_plan.poses.empty()) {
+    nav_msgs::msg::Path empty_plan;
+    empty_plan.header = source_plan.header;
+    empty_plan.header.stamp = this->now();
+    empty_plan.poses.push_back(current_pose);
+    return empty_plan;
+  }
+
   const double blocked_distance = this->pose_distance(current_pose, blocked_pose);
   const double limited_lookahead = std::max(
     0.15,
     blocked_distance - this->dynamic_obstacle_replan_approach_margin_);
+  const std::size_t approach_start_index = std::min(
+    closest_index + 1U,
+    source_plan.poses.size() - 1U);
   return this->build_sliced_local_plan_with_lookahead(
     source_plan,
     current_pose,
-    closest_index,
+    approach_start_index,
     std::min(this->lookahead_distance_, limited_lookahead));
 }
 
