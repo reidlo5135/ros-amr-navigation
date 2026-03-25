@@ -326,7 +326,15 @@ function buildPathLine(
 function buildArrowPoseMarker(
   goalMarker: { x: number; y: number; yaw: number },
   colors: { primary: string; accent: string },
+  options?: {
+    originFillRadius?: number;
+    originRingInnerRadius?: number;
+    originRingOuterRadius?: number;
+  },
 ): THREE.Group {
+  const originFillRadius = options?.originFillRadius ?? 0.055;
+  const originRingInnerRadius = options?.originRingInnerRadius ?? 0.05;
+  const originRingOuterRadius = options?.originRingOuterRadius ?? 0.065;
   const group = new THREE.Group();
 
   const tail = new THREE.Mesh(
@@ -356,7 +364,7 @@ function buildArrowPoseMarker(
   head.renderOrder = 25;
 
   const origin = new THREE.Mesh(
-    new THREE.CircleGeometry(0.055, 24),
+    new THREE.CircleGeometry(originFillRadius, 24),
     new THREE.MeshBasicMaterial({
       color: colors.accent,
       depthTest: false,
@@ -368,7 +376,7 @@ function buildArrowPoseMarker(
   origin.renderOrder = 26;
 
   const originOutline = new THREE.Mesh(
-    new THREE.RingGeometry(0.05, 0.065, 28),
+    new THREE.RingGeometry(originRingInnerRadius, originRingOuterRadius, 28),
     new THREE.MeshBasicMaterial({
       color: colors.primary,
       side: THREE.DoubleSide,
@@ -400,6 +408,11 @@ function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: 
   return buildArrowPoseMarker(goalMarker, {
     primary: "#d62828",
     accent: "#ffe3e3",
+  }, {
+    // Matches the current motion_controller distance_tolerance of 0.1 m.
+    originFillRadius: 0.032,
+    originRingInnerRadius: 0.085,
+    originRingOuterRadius: 0.1,
   });
 }
 

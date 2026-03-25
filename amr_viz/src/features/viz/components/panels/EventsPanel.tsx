@@ -4,7 +4,7 @@ type EventsPanelProps = {
 
 export function EventsPanel({ events }: EventsPanelProps) {
   return (
-    <section className="panel-card">
+    <section className="panel-card panel-card-fill">
       <div className="panel-section-title">Events / Feedback</div>
       <div className="event-log">
         {events.map((event) => (
