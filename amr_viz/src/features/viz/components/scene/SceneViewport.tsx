@@ -322,67 +322,84 @@ function buildPathLine(
   return group;
 }
 
-function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: "goal" | "initial_pose" }): THREE.Group {
+function buildArrowPoseMarker(
+  goalMarker: { x: number; y: number; yaw: number },
+  colors: { primary: string; accent: string },
+): THREE.Group {
   const group = new THREE.Group();
-  const isGoal = goalMarker.kind === "goal";
-  const baseColor = isGoal ? "#f28c18" : "#2297a0";
-  const accentColor = isGoal ? "#ffd89b" : "#d8ffff";
 
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.14, 0.2, 36),
+  const tail = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.28, 0.036),
     new THREE.MeshBasicMaterial({
-      color: baseColor,
+      color: colors.primary,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
     }),
   );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.05;
-  ring.renderOrder = 24;
+  tail.rotation.x = -Math.PI / 2;
+  tail.position.set(0.16, 0.06, 0);
+  tail.renderOrder = 24;
 
-  const core = new THREE.Mesh(
-    new THREE.CircleGeometry(0.06, 28),
+  const head = new THREE.Mesh(
+    new THREE.ConeGeometry(0.07, 0.16, 3),
     new THREE.MeshBasicMaterial({
-      color: accentColor,
+      color: colors.primary,
       depthTest: false,
       depthWrite: false,
     }),
   );
-  core.rotation.x = -Math.PI / 2;
-  core.position.y = 0.052;
-  core.renderOrder = 25;
+  head.rotation.x = Math.PI / 2;
+  head.rotation.z = -Math.PI / 2;
+  head.position.set(0.36, 0.062, 0);
+  head.renderOrder = 25;
 
-  const shaft = new THREE.Mesh(
-    new THREE.PlaneGeometry(isGoal ? 0.22 : 0.18, 0.026),
+  const origin = new THREE.Mesh(
+    new THREE.CircleGeometry(0.055, 24),
     new THREE.MeshBasicMaterial({
-      color: baseColor,
+      color: colors.accent,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  origin.rotation.x = -Math.PI / 2;
+  origin.position.set(0, 0.054, 0);
+  origin.renderOrder = 26;
+
+  const originOutline = new THREE.Mesh(
+    new THREE.RingGeometry(0.05, 0.065, 28),
+    new THREE.MeshBasicMaterial({
+      color: colors.primary,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
     }),
   );
-  shaft.rotation.x = -Math.PI / 2;
-  shaft.position.set(isGoal ? 0.22 : 0.2, 0.056, 0);
-  shaft.renderOrder = 25;
+  originOutline.rotation.x = -Math.PI / 2;
+  originOutline.position.set(0, 0.058, 0);
+  originOutline.renderOrder = 27;
 
-  const heading = new THREE.Mesh(
-    new THREE.ConeGeometry(isGoal ? 0.05 : 0.04, isGoal ? 0.12 : 0.1, 3),
-    new THREE.MeshBasicMaterial({
-      color: baseColor,
-      depthTest: false,
-      depthWrite: false,
-    }),
-  );
-  heading.rotation.x = Math.PI / 2;
-  heading.rotation.z = -Math.PI / 2;
-  heading.position.set(isGoal ? 0.34 : 0.3, 0.058, 0);
-  heading.renderOrder = 26;
-
-  group.add(ring, core, shaft, heading);
+  group.add(tail, head, origin, originOutline);
   group.position.set(goalMarker.x, 0, -goalMarker.y);
   group.rotation.y = -goalMarker.yaw;
   return group;
+}
+
+function buildInitialPoseMarker(goalMarker: { x: number; y: number; yaw: number }): THREE.Group {
+  return buildArrowPoseMarker(goalMarker, {
+    primary: "#2aa84a",
+    accent: "#d9f7df",
+  });
+}
+
+function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: "goal" | "initial_pose" }): THREE.Group {
+  if (goalMarker.kind === "initial_pose") {
+    return buildInitialPoseMarker(goalMarker);
+  }
+  return buildArrowPoseMarker(goalMarker, {
+    primary: "#d62828",
+    accent: "#ffe3e3",
+  });
 }
 
 function buildFootprintOverlay(
