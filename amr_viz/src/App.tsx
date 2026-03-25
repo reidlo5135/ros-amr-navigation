@@ -91,6 +91,16 @@ type GoalMarker = {
 };
 
 type InteractionMode = "idle" | "goal" | "initial_pose";
+type GoalLifecycleState =
+  | "Idle"
+  | "Pending"
+  | "Running"
+  | "Recovering"
+  | "Canceling"
+  | "Canceled"
+  | "Aborted"
+  | "Reached"
+  | "Rejected";
 
 export default function App() {
   const clientRef = useRef(new VizMqttClient());
@@ -108,6 +118,7 @@ export default function App() {
   const [goalY, setGoalY] = useState("0.0");
   const [goalYaw, setGoalYaw] = useState("0.0");
   const [goalMarker, setGoalMarker] = useState<GoalMarker | null>(null);
+  const [goalLifecycle, setGoalLifecycle] = useState<GoalLifecycleState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("idle");
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
     grid: true,
@@ -192,6 +203,27 @@ export default function App() {
       if (message.topic.startsWith("amr/response/") && isObjectPayload(message.json)) {
         const success = message.json.success === true ? "OK" : "FAIL";
         const detail = typeof message.json.message === "string" ? message.json.message : "ack";
+        if (message.topic === "amr/response/navigate_to_pose") {
+          const accepted = message.json.accepted === true;
+          const completed = message.json.completed === true;
+          const succeeded = message.json.success === true;
+          const responseMessage =
+            typeof message.json.message === "string" ? message.json.message.toLowerCase() : "";
+
+          if (accepted && !completed) {
+            setGoalLifecycle("Running");
+          } else if (completed) {
+            if (succeeded) {
+              setGoalLifecycle("Reached");
+            } else if (responseMessage.includes("cancel")) {
+              setGoalLifecycle("Canceled");
+            } else {
+              setGoalLifecycle("Aborted");
+            }
+          } else if (!succeeded) {
+            setGoalLifecycle("Rejected");
+          }
+        }
         setEvents((current) => [`${message.topic}: ${success} ${detail}`, ...current].slice(0, 10));
         return;
       }
@@ -248,6 +280,7 @@ export default function App() {
   const sendGoal = (x: number, y: number, yaw: number) => {
     setInteractionMode("idle");
     setGoalMarker({ x, y, yaw, kind: "goal" });
+    setGoalLifecycle("Pending");
     setGoalX(x.toFixed(2));
     setGoalY(y.toFixed(2));
     setGoalYaw(yaw.toFixed(2));
@@ -327,6 +360,39 @@ export default function App() {
     setInteractionMode("initial_pose");
   };
 
+  const resolvedGoalLifecycle: GoalLifecycleState = (() => {
+    if (
+      goalLifecycle === "Aborted" ||
+      goalLifecycle === "Canceled" ||
+      goalLifecycle === "Reached" ||
+      goalLifecycle === "Rejected")
+    {
+      return goalLifecycle;
+    }
+
+    const motionStatus = bridgeState.motion_status;
+    if (!motionStatus) {
+      return goalLifecycle;
+    }
+
+    if (motionStatus.goal_reached) {
+      return "Reached";
+    }
+
+    if (goalLifecycle === "Canceling") {
+      return "Canceling";
+    }
+
+    if (motionStatus.active) {
+      if (motionStatus.blocked || motionStatus.stalled || !motionStatus.local_plan_valid) {
+        return "Recovering";
+      }
+      return "Running";
+    }
+
+    return goalLifecycle;
+  })();
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -386,6 +452,7 @@ export default function App() {
                 onClick={() => {
                   setInteractionMode("idle");
                   setGoalMarker(null);
+                  setGoalLifecycle("Canceling");
                   publishJson("amr/command/cancel_navigate_to_pose", {
                     request_id: createCommandId(),
                   });
@@ -491,7 +558,7 @@ export default function App() {
               </div>
               <div className="metric-row">
                 <span>Goal</span>
-                <strong>{bridgeState.motion_status?.goal_reached ? "Reached" : "Running"}</strong>
+                <strong>{resolvedGoalLifecycle}</strong>
               </div>
               <div className="metric-row">
                 <span>Blocked Source</span>
