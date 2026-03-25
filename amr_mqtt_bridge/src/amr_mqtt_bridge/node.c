@@ -865,6 +865,13 @@ static char * amr_mqtt_bridge_serialize_scan(const void * message)
       amr_mqtt_bridge_builder_fini(&builder);
       return NULL;
     }
+    if (!isfinite(scan->ranges.data[index])) {
+      if (!amr_mqtt_bridge_builder_append(&builder, "null")) {
+        amr_mqtt_bridge_builder_fini(&builder);
+        return NULL;
+      }
+      continue;
+    }
     if (!amr_mqtt_bridge_builder_appendf(&builder, "%.6f", scan->ranges.data[index])) {
       amr_mqtt_bridge_builder_fini(&builder);
       return NULL;
