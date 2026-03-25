@@ -89,6 +89,7 @@ export type TfMessage = {
 
 export type RobotDescriptionMessage = {
   data: string;
+  footprint_polygon?: number[];
 };
 
 export type BridgeState = {

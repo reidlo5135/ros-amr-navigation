@@ -8,6 +8,13 @@ namespace
 
 constexpr int kUnknownCellValue = -1;
 
+double yaw_from_quaternion(const geometry_msgs::msg::Quaternion & quaternion)
+{
+  return std::atan2(
+    2.0 * ((quaternion.w * quaternion.z) + (quaternion.x * quaternion.y)),
+    1.0 - 2.0 * ((quaternion.y * quaternion.y) + (quaternion.z * quaternion.z)));
+}
+
 struct GridCell
 {
   int x;
@@ -55,10 +62,34 @@ int to_index(const GridCell & cell, int width)
 bool is_occupied(
   const std::vector<int8_t> & occupancy_grid,
   int width,
+  int height,
   const GridCell & cell,
   int obstacle_threshold,
-  bool allow_unknown)
+  bool allow_unknown,
+  const amr_geometry::FootprintPolygon & footprint_polygon,
+  double resolution,
+  double origin_x,
+  double origin_y,
+  double yaw)
 {
+  if (!footprint_polygon.empty() && resolution > 0.0 && height > 0) {
+    const double pose_x = origin_x + (static_cast<double>(cell.x) + 0.5) * resolution;
+    const double pose_y = origin_y + (static_cast<double>(cell.y) + 0.5) * resolution;
+    return amr_geometry::footprint_pose_collides(
+      occupancy_grid,
+      width,
+      height,
+      resolution,
+      origin_x,
+      origin_y,
+      footprint_polygon,
+      pose_x,
+      pose_y,
+      yaw,
+      obstacle_threshold,
+      allow_unknown);
+  }
+
   const int cell_value = occupancy_grid[static_cast<std::size_t>(to_index(cell, width))];
   if (cell_value == kUnknownCellValue) {
     return !allow_unknown;
@@ -74,7 +105,11 @@ bool is_diagonal_move_blocked(
   const GridCell & next,
   int obstacle_threshold,
   bool allow_unknown,
-  bool prevent_corner_cutting)
+  bool prevent_corner_cutting,
+  const amr_geometry::FootprintPolygon & footprint_polygon,
+  double resolution,
+  double origin_x,
+  double origin_y)
 {
   if (!prevent_corner_cutting) {
     return false;
@@ -91,8 +126,12 @@ bool is_diagonal_move_blocked(
   }
 
   return
-    is_occupied(occupancy_grid, width, horizontal, obstacle_threshold, allow_unknown) ||
-    is_occupied(occupancy_grid, width, vertical, obstacle_threshold, allow_unknown);
+    is_occupied(
+    occupancy_grid, width, height, horizontal, obstacle_threshold, allow_unknown,
+    footprint_polygon, resolution, origin_x, origin_y, 0.0) ||
+    is_occupied(
+    occupancy_grid, width, height, vertical, obstacle_threshold, allow_unknown,
+    footprint_polygon, resolution, origin_x, origin_y, 0.0);
 }
 
 double heuristic(const GridCell & from, const GridCell & to, int connectivity)
@@ -169,6 +208,10 @@ bool plan_on_grid(
   int connectivity,
   bool prevent_corner_cutting,
   double penalty,
+  const amr_geometry::FootprintPolygon & footprint_polygon,
+  double resolution,
+  double origin_x,
+  double origin_y,
   std::vector<GridCell> & path)
 {
   path.clear();
@@ -183,8 +226,12 @@ bool plan_on_grid(
     return false;
   }
   if (
-    is_occupied(occupancy_grid, width, start, obstacle_threshold, allow_unknown) ||
-    is_occupied(occupancy_grid, width, goal, obstacle_threshold, allow_unknown))
+    is_occupied(
+      occupancy_grid, width, height, start, obstacle_threshold, allow_unknown,
+      footprint_polygon, resolution, origin_x, origin_y, 0.0) ||
+    is_occupied(
+      occupancy_grid, width, height, goal, obstacle_threshold, allow_unknown,
+      footprint_polygon, resolution, origin_x, origin_y, 0.0))
   {
     return false;
   }
@@ -230,7 +277,20 @@ bool plan_on_grid(
     for (const auto & neighbor : get_neighbors(current_cell, connectivity)) {
       if (
         !is_within_bounds(neighbor, width, height) ||
-        is_occupied(occupancy_grid, width, neighbor, obstacle_threshold, allow_unknown) ||
+        is_occupied(
+          occupancy_grid,
+          width,
+          height,
+          neighbor,
+          obstacle_threshold,
+          allow_unknown,
+          footprint_polygon,
+          resolution,
+          origin_x,
+          origin_y,
+          std::atan2(
+            static_cast<double>(neighbor.y - current_cell.y),
+            static_cast<double>(neighbor.x - current_cell.x))) ||
         is_diagonal_move_blocked(
           occupancy_grid,
           width,
@@ -239,7 +299,11 @@ bool plan_on_grid(
           neighbor,
           obstacle_threshold,
           allow_unknown,
-          prevent_corner_cutting))
+          prevent_corner_cutting,
+          footprint_polygon,
+          resolution,
+          origin_x,
+          origin_y))
       {
         continue;
       }
@@ -321,6 +385,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions & options)
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->declare_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
@@ -352,6 +417,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("planner.turn_penalty", this->turn_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->get_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
@@ -376,6 +442,8 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
       this->local_plan_topic_.c_str());
     return CallbackReturn::FAILURE;
   }
+
+  this->footprint_polygon_ = amr_geometry::make_footprint_polygon(this->footprint_polygon_param_);
 
   this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS(),
@@ -693,7 +761,8 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   }
   if (!this->find_nearest_free_cell(
       working_map.data, width, height, start_x, start_y,
-      this->nearest_free_search_radius_cells_))
+      this->nearest_free_search_radius_cells_,
+      yaw_from_quaternion(current_pose.pose.orientation)))
   {
     return sliced_plan;
   }
@@ -712,6 +781,10 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
         this->connectivity_,
         this->prevent_corner_cutting_,
         this->turn_penalty_,
+        this->footprint_polygon_,
+        working_map.info.resolution,
+        working_map.info.origin.position.x,
+        working_map.info.origin.position.y,
         grid_path);
     };
 
@@ -724,7 +797,8 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
       }
       if (!this->find_nearest_free_cell(
           working_map.data, width, height, goal_x, goal_y,
-          this->nearest_free_search_radius_cells_))
+          this->nearest_free_search_radius_cells_,
+          yaw_from_quaternion(goal_pose.pose.orientation)))
       {
         return false;
       }
@@ -740,7 +814,8 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
       this->world_to_grid(rejoin_pose.pose.position, rejoin_x, rejoin_y) &&
       this->find_nearest_free_cell(
         working_map.data, width, height, rejoin_x, rejoin_y,
-        this->nearest_free_search_radius_cells_))
+        this->nearest_free_search_radius_cells_,
+        yaw_from_quaternion(rejoin_pose.pose.orientation)))
     {
       const double current_yaw = std::atan2(
         2.0 * (
@@ -805,7 +880,8 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
         }
         if (!this->find_nearest_free_cell(
             working_map.data, width, height, escape_x, escape_y,
-            this->nearest_free_search_radius_cells_))
+            this->nearest_free_search_radius_cells_,
+            path_heading))
         {
           continue;
         }
@@ -880,12 +956,13 @@ bool LocalPlanner::find_first_blocked_pose_on_plan(
     if (!this->world_to_grid(plan.poses[index].pose.position, grid_x, grid_y)) {
       continue;
     }
-    if (this->is_occupied_cell(
+    if (this->is_grid_pose_collision(
         this->inflated_map_.data,
         static_cast<int>(this->inflated_map_.info.width),
         static_cast<int>(this->inflated_map_.info.height),
         grid_x,
-        grid_y))
+        grid_y,
+        yaw_from_quaternion(plan.poses[index].pose.orientation)))
     {
       blocked_pose = plan.poses[index];
       return true;
@@ -1092,15 +1169,48 @@ bool LocalPlanner::is_occupied_cell(
   return value >= this->obstacle_threshold_;
 }
 
+bool LocalPlanner::is_grid_pose_collision(
+  const std::vector<int8_t> & occupancy_grid,
+  const int width,
+  const int height,
+  const int grid_x,
+  const int grid_y,
+  const double yaw) const
+{
+  if (this->footprint_polygon_.empty() || !this->has_map_ || !this->map_occupancy_grid_) {
+    return this->is_occupied_cell(occupancy_grid, width, height, grid_x, grid_y);
+  }
+
+  const double resolution = this->map_occupancy_grid_->info.resolution;
+  const double pose_x =
+    this->map_occupancy_grid_->info.origin.position.x + ((static_cast<double>(grid_x) + 0.5) * resolution);
+  const double pose_y =
+    this->map_occupancy_grid_->info.origin.position.y + ((static_cast<double>(grid_y) + 0.5) * resolution);
+  return amr_geometry::footprint_pose_collides(
+    occupancy_grid,
+    width,
+    height,
+    resolution,
+    this->map_occupancy_grid_->info.origin.position.x,
+    this->map_occupancy_grid_->info.origin.position.y,
+    this->footprint_polygon_,
+    pose_x,
+    pose_y,
+    yaw,
+    this->obstacle_threshold_,
+    this->allow_unknown_);
+}
+
 bool LocalPlanner::find_nearest_free_cell(
   const std::vector<int8_t> & occupancy_grid,
   const int width,
   const int height,
   int & grid_x,
   int & grid_y,
-  const int max_radius) const
+  const int max_radius,
+  const double yaw) const
 {
-  if (!this->is_occupied_cell(occupancy_grid, width, height, grid_x, grid_y)) {
+  if (!this->is_grid_pose_collision(occupancy_grid, width, height, grid_x, grid_y, yaw)) {
     return true;
   }
 
@@ -1122,8 +1232,8 @@ bool LocalPlanner::find_nearest_free_cell(
 
         const int candidate_x = original_x + dx;
         const int candidate_y = original_y + dy;
-        if (this->is_occupied_cell(
-            occupancy_grid, width, height, candidate_x, candidate_y))
+        if (this->is_grid_pose_collision(
+            occupancy_grid, width, height, candidate_x, candidate_y, yaw))
         {
           continue;
         }

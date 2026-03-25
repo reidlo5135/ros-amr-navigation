@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "amr_geometry/footprint.hpp"
+
 namespace amr_global_planner::planner
 {
 
@@ -50,12 +52,20 @@ public:
 
   ~AStarPlanner();
 
+  void set_collision_model(
+    amr_geometry::FootprintPolygon footprint,
+    double resolution,
+    double origin_x,
+    double origin_y);
+
   AStarPlanResult plan(
     const std::vector<int8_t> & occupancy_grid,
     int width,
     int height,
     const GridCell & start,
-    const GridCell & goal) const;
+    const GridCell & goal,
+    double start_yaw = 0.0,
+    double goal_yaw = 0.0) const;
 
 private:
   struct Node
@@ -70,8 +80,10 @@ private:
   bool is_within_bounds(const GridCell & cell, int width, int height) const;
   bool is_occupied(
     const std::vector<int8_t> & occupancy_grid,
+    int height,
     int width,
-    const GridCell & cell) const;
+    const GridCell & cell,
+    double yaw) const;
   bool is_diagonal_move_blocked(
     const std::vector<int8_t> & occupancy_grid,
     int width,
@@ -91,6 +103,10 @@ private:
   double turn_penalty_;
   AStarConnectivity connectivity_;
   bool prevent_corner_cutting_;
+  amr_geometry::FootprintPolygon footprint_;
+  double map_resolution_;
+  double map_origin_x_;
+  double map_origin_y_;
 };
 
 }  // namespace amr_global_planner::planner

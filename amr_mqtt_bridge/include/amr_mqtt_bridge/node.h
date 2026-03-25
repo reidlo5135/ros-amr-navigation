@@ -93,6 +93,7 @@
 #define AMR_MQTT_BRIDGE_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_BRIDGE_MAX_STRING_LENGTH 512
 #define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 14
+#define AMR_MQTT_BRIDGE_MAX_FOOTPRINT_POLYGON_VALUES 32
 
 typedef char * (* amr_mqtt_bridge_serializer_fn_t)(const void * message);
 
@@ -191,6 +192,8 @@ typedef struct amr_mqtt_bridge_config_s
   amr_mqtt_bridge_broker_config_t broker;
   amr_mqtt_bridge_mqtt_topics_t mqtt;
   amr_mqtt_bridge_ros_interfaces_t ros;
+  double footprint_polygon[AMR_MQTT_BRIDGE_MAX_FOOTPRINT_POLYGON_VALUES];
+  size_t footprint_polygon_size;
 } amr_mqtt_bridge_config_t;
 
 typedef struct amr_mqtt_bridge_telemetry_endpoint_s

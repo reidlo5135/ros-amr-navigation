@@ -295,6 +295,7 @@ static void amr_mqtt_bridge_set_default_config(void)
     g_amr_mqtt_bridge_config.ros.action_navigate_to_pose,
     sizeof(g_amr_mqtt_bridge_config.ros.action_navigate_to_pose),
     "/amr/navigator/navigate_to_pose");
+  g_amr_mqtt_bridge_config.footprint_polygon_size = 0U;
 }
 
 static const rcl_node_params_t * amr_mqtt_bridge_find_node_params(
@@ -379,6 +380,45 @@ static void amr_mqtt_bridge_read_bool_param(
   *destination = *variant->bool_value;
 }
 
+static void amr_mqtt_bridge_read_double_array_param(
+  const rcl_node_params_t * node_params,
+  const char * parameter_name,
+  double * destination,
+  size_t destination_capacity,
+  size_t * destination_size)
+{
+  const rcl_variant_t * variant =
+    amr_mqtt_bridge_find_param_variant(node_params, parameter_name);
+  size_t value_count = 0U;
+
+  if (destination == NULL || destination_size == NULL || destination_capacity == 0U || variant == NULL) {
+    return;
+  }
+
+  if (variant->double_array_value != NULL) {
+    value_count = variant->double_array_value->size;
+    if (value_count > destination_capacity) {
+      value_count = destination_capacity;
+    }
+    for (size_t index = 0; index < value_count; ++index) {
+      destination[index] = variant->double_array_value->values[index];
+    }
+    *destination_size = value_count;
+    return;
+  }
+
+  if (variant->integer_array_value != NULL) {
+    value_count = variant->integer_array_value->size;
+    if (value_count > destination_capacity) {
+      value_count = destination_capacity;
+    }
+    for (size_t index = 0; index < value_count; ++index) {
+      destination[index] = (double)variant->integer_array_value->values[index];
+    }
+    *destination_size = value_count;
+  }
+}
+
 static void amr_mqtt_bridge_load_parameter_overrides(void)
 {
   rcl_params_t * parameter_overrides = NULL;
@@ -455,6 +495,12 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "ros.services.plan_segment", g_amr_mqtt_bridge_config.ros.service_plan_segment, sizeof(g_amr_mqtt_bridge_config.ros.service_plan_segment));
     amr_mqtt_bridge_read_string_param(node_params, "ros.services.plan_route", g_amr_mqtt_bridge_config.ros.service_plan_route, sizeof(g_amr_mqtt_bridge_config.ros.service_plan_route));
     amr_mqtt_bridge_read_string_param(node_params, "ros.actions.navigate_to_pose", g_amr_mqtt_bridge_config.ros.action_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.ros.action_navigate_to_pose));
+    amr_mqtt_bridge_read_double_array_param(
+      node_params,
+      "footprint.polygon",
+      g_amr_mqtt_bridge_config.footprint_polygon,
+      AMR_MQTT_BRIDGE_MAX_FOOTPRINT_POLYGON_VALUES,
+      &g_amr_mqtt_bridge_config.footprint_polygon_size);
   }
 
   rcl_yaml_node_struct_fini(parameter_overrides);
@@ -1038,8 +1084,24 @@ static char * amr_mqtt_bridge_serialize_string_message(const void * message)
 
   if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
     !amr_mqtt_bridge_builder_append(&builder, "{\"data\":") ||
-    !amr_mqtt_bridge_builder_append_json_string(&builder, string_message->data.data) ||
-    !amr_mqtt_bridge_builder_append(&builder, "}"))
+    !amr_mqtt_bridge_builder_append_json_string(&builder, string_message->data.data))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  if (g_amr_mqtt_bridge_config.footprint_polygon_size > 0U &&
+    (!amr_mqtt_bridge_builder_append(&builder, ",\"footprint_polygon\":") ||
+    !amr_mqtt_bridge_builder_append_double_array(
+      &builder,
+      g_amr_mqtt_bridge_config.footprint_polygon,
+      g_amr_mqtt_bridge_config.footprint_polygon_size)))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  if (!amr_mqtt_bridge_builder_append(&builder, "}"))
   {
     amr_mqtt_bridge_builder_fini(&builder);
     return NULL;

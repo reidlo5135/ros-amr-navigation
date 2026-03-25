@@ -17,6 +17,7 @@ type SceneViewportProps = {
     map: boolean;
     globalCostmap: boolean;
     localCostmap: boolean;
+    footprint: boolean;
     robot: boolean;
     paths: boolean;
     scan: boolean;
@@ -379,6 +380,60 @@ function buildGoalMarker(goalMarker: { x: number; y: number; yaw: number; kind: 
   group.add(ring, core, shaft, heading);
   group.position.set(goalMarker.x, 0, -goalMarker.y);
   group.rotation.y = -goalMarker.yaw;
+  return group;
+}
+
+function buildFootprintOverlay(
+  footprintPolygon: number[] | undefined,
+  robotPose: Pose | undefined,
+): THREE.Group | null {
+  if (!robotPose || !footprintPolygon || footprintPolygon.length < 6 || footprintPolygon.length % 2 !== 0) {
+    return null;
+  }
+
+  const shape = new THREE.Shape();
+  shape.moveTo(footprintPolygon[0], -footprintPolygon[1]);
+  for (let index = 2; index < footprintPolygon.length; index += 2) {
+    shape.lineTo(footprintPolygon[index], -footprintPolygon[index + 1]);
+  }
+  shape.closePath();
+
+  const fill = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape),
+    new THREE.MeshBasicMaterial({
+      color: "#2b7cff",
+      transparent: true,
+      opacity: 0.14,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  fill.rotation.x = -Math.PI / 2;
+  fill.position.y = 0.042;
+  fill.renderOrder = 18;
+
+  const outlinePoints: THREE.Vector3[] = [];
+  for (let index = 0; index < footprintPolygon.length; index += 2) {
+    outlinePoints.push(new THREE.Vector3(footprintPolygon[index], 0.048, -footprintPolygon[index + 1]));
+  }
+  outlinePoints.push(new THREE.Vector3(footprintPolygon[0], 0.048, -footprintPolygon[1]));
+  const outline = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(outlinePoints),
+    new THREE.LineBasicMaterial({
+      color: "#1555e5",
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  outline.renderOrder = 19;
+
+  const group = new THREE.Group();
+  group.add(fill, outline);
+  group.position.set(robotPose.position.x, 0, -robotPose.position.y);
+  group.rotation.y = -robotPose.orientation.yaw;
   return group;
 }
 
@@ -971,6 +1026,7 @@ export function SceneViewport({
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
+  const footprintRef = useRef<THREE.Group | null>(null);
   const scanRef = useRef<THREE.Points | null>(null);
   const tfGroupRef = useRef<THREE.Group | null>(null);
   const lastCenteredMapSignatureRef = useRef<string>("");
@@ -1197,6 +1253,7 @@ export function SceneViewport({
       disposeObject(mapMeshRef.current);
       disposeObject(globalCostmapMeshRef.current);
       disposeObject(localCostmapMeshRef.current);
+      disposeObject(footprintRef.current);
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
       disposeObject(goalMarkerRef.current);
@@ -1291,6 +1348,20 @@ export function SceneViewport({
           layerVisibility.localCostmap;
         scene.add(ref.current);
       }
+    }
+
+    if (footprintRef.current) {
+      scene.remove(footprintRef.current);
+      disposeObject(footprintRef.current);
+      footprintRef.current = null;
+    }
+    footprintRef.current = buildFootprintOverlay(
+      state.robot_description?.footprint_polygon,
+      state.robot_pose,
+    );
+    if (footprintRef.current) {
+      footprintRef.current.visible = layerVisibility.footprint;
+      scene.add(footprintRef.current);
     }
 
     if (scanRef.current) {

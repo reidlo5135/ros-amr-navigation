@@ -8,6 +8,13 @@ namespace
 
 constexpr int kUnknownCellValue = -1;
 
+double yaw_from_quaternion(const geometry_msgs::msg::Quaternion & quaternion)
+{
+  return std::atan2(
+    2.0 * ((quaternion.w * quaternion.z) + (quaternion.x * quaternion.y)),
+    1.0 - (2.0 * ((quaternion.y * quaternion.y) + (quaternion.z * quaternion.z))));
+}
+
 }  // namespace
 
 PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
@@ -36,6 +43,7 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
 
 PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle::State & state)
@@ -54,6 +62,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   this->get_parameter("planner.turn_penalty", this->turn_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
 
   if (
     this->costmap_topic_.empty() || this->computed_plan_topic_.empty())
@@ -76,6 +85,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
     connectivity,
     this->turn_penalty_,
     this->prevent_corner_cutting_);
+  this->footprint_polygon_ = amr_geometry::make_footprint_polygon(this->footprint_polygon_param_);
 
   this->global_costmap_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->planned_path_ = nav_msgs::msg::Path();
@@ -250,24 +260,34 @@ bool PlannerServer::compute_plan_between_poses(
 
   const int width = static_cast<int>(this->global_costmap_->info.width);
   const int height = static_cast<int>(this->global_costmap_->info.height);
+  const double start_yaw = yaw_from_quaternion(start.pose.orientation);
+  const double goal_yaw = yaw_from_quaternion(goal.pose.orientation);
   if (
     !this->find_nearest_free_cell(
       this->global_costmap_->data, width, height, start_cell,
-      this->nearest_free_search_radius_cells_) ||
+      this->nearest_free_search_radius_cells_, start_yaw) ||
     !this->find_nearest_free_cell(
       this->global_costmap_->data, width, height, goal_cell,
-      this->nearest_free_search_radius_cells_))
+      this->nearest_free_search_radius_cells_, goal_yaw))
   {
     message = "Start or goal cell is occupied in inflated global costmap";
     return false;
   }
+
+  this->a_star_planner_->set_collision_model(
+    this->footprint_polygon_,
+    this->global_costmap_->info.resolution,
+    this->global_costmap_->info.origin.position.x,
+    this->global_costmap_->info.origin.position.y);
 
   const auto result = this->a_star_planner_->plan(
     this->global_costmap_->data,
     width,
     height,
     start_cell,
-    goal_cell);
+    goal_cell,
+    start_yaw,
+    goal_yaw);
 
   message = result.message;
   if (!result.success) {
@@ -342,9 +362,10 @@ bool PlannerServer::find_nearest_free_cell(
   const int width,
   const int height,
   planner::GridCell & cell,
-  const int max_radius) const
+  const int max_radius,
+  const double yaw) const
 {
-  if (!this->is_occupied_cell(occupancy_grid, width, height, cell)) {
+  if (!this->is_cell_collision(occupancy_grid, width, height, cell, yaw)) {
     return true;
   }
 
@@ -352,7 +373,7 @@ bool PlannerServer::find_nearest_free_cell(
     for (int dy = -radius; dy <= radius; ++dy) {
       for (int dx = -radius; dx <= radius; ++dx) {
         const planner::GridCell candidate{cell.x + dx, cell.y + dy};
-        if (!this->is_occupied_cell(occupancy_grid, width, height, candidate)) {
+        if (!this->is_cell_collision(occupancy_grid, width, height, candidate, yaw)) {
           cell = candidate;
           return true;
         }
@@ -361,6 +382,33 @@ bool PlannerServer::find_nearest_free_cell(
   }
 
   return false;
+}
+
+bool PlannerServer::is_cell_collision(
+  const std::vector<int8_t> & occupancy_grid,
+  const int width,
+  const int height,
+  const planner::GridCell & cell,
+  const double yaw) const
+{
+  if (this->footprint_polygon_.empty() || !this->global_costmap_) {
+    return this->is_occupied_cell(occupancy_grid, width, height, cell);
+  }
+
+  const auto pose = this->grid_to_world(cell);
+  return amr_geometry::footprint_pose_collides(
+    occupancy_grid,
+    width,
+    height,
+    this->global_costmap_->info.resolution,
+    this->global_costmap_->info.origin.position.x,
+    this->global_costmap_->info.origin.position.y,
+    this->footprint_polygon_,
+    pose.pose.position.x,
+    pose.pose.position.y,
+    yaw,
+    this->obstacle_threshold_,
+    this->allow_unknown_);
 }
 
 std::vector<planner::GridCell> PlannerServer::simplify_grid_path(

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "amr_geometry/footprint.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/srv/plan_local_escape.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -81,13 +82,21 @@ private:
     int height,
     int grid_x,
     int grid_y) const;
+  bool is_grid_pose_collision(
+    const std::vector<int8_t> & occupancy_grid,
+    int width,
+    int height,
+    int grid_x,
+    int grid_y,
+    double yaw) const;
   bool find_nearest_free_cell(
     const std::vector<int8_t> & occupancy_grid,
     int width,
     int height,
     int & grid_x,
     int & grid_y,
-    int max_radius) const;
+    int max_radius,
+    double yaw) const;
   geometry_msgs::msg::PoseStamped interpolate_pose(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
@@ -130,6 +139,8 @@ private:
   double dynamic_obstacle_escape_lateral_distance_;
   double dynamic_obstacle_goal_proximity_disable_distance_;
   int nearest_free_search_radius_cells_;
+  std::vector<double> footprint_polygon_param_;
+  amr_geometry::FootprintPolygon footprint_polygon_;
   uint32_t last_command_id_;
   std::size_t last_progress_index_;
   amr_msgs::msg::MotionCommand latest_command_;

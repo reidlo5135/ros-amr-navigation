@@ -171,6 +171,14 @@
 
 /amr/global_planner:
   ros__parameters:
+    footprint:
+      polygon:
+        [
+          -0.10, -0.09,
+           0.10, -0.09,
+           0.10,  0.09,
+          -0.10,  0.09
+        ]
     topics:
       costmap: "/amr/costmap/global"
       plan: "/amr/planner/global"
@@ -188,6 +196,14 @@
 
 /amr/local_planner:
   ros__parameters:
+    footprint:
+      polygon:
+        [
+          -0.10, -0.09,
+           0.10, -0.09,
+           0.10,  0.09,
+          -0.10,  0.09
+        ]
     topics:
       command: "/amr/motion/command"
       pose: "/amr/localization/pose"
@@ -294,6 +310,14 @@
 
 /amr/mqtt_bridge:
   ros__parameters:
+    footprint:
+      polygon:
+        [
+          -0.10, -0.09,
+           0.10, -0.09,
+           0.10,  0.09,
+          -0.10,  0.09
+        ]
     broker:
       host: "192.168.61.35"
       port: 1883

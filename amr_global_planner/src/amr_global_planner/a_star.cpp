@@ -39,18 +39,35 @@ AStarPlanner::AStarPlanner(
   allow_unknown_(allow_unknown),
   turn_penalty_(turn_penalty),
   connectivity_(connectivity),
-  prevent_corner_cutting_(prevent_corner_cutting)
+  prevent_corner_cutting_(prevent_corner_cutting),
+  map_resolution_(0.0),
+  map_origin_x_(0.0),
+  map_origin_y_(0.0)
 {
 }
 
 AStarPlanner::~AStarPlanner() = default;
+
+void AStarPlanner::set_collision_model(
+  amr_geometry::FootprintPolygon footprint,
+  const double resolution,
+  const double origin_x,
+  const double origin_y)
+{
+  footprint_ = std::move(footprint);
+  map_resolution_ = resolution;
+  map_origin_x_ = origin_x;
+  map_origin_y_ = origin_y;
+}
 
 AStarPlanResult AStarPlanner::plan(
   const std::vector<int8_t> & occupancy_grid,
   const int width,
   const int height,
   const GridCell & start,
-  const GridCell & goal) const
+  const GridCell & goal,
+  const double start_yaw,
+  const double goal_yaw) const
 {
   if (width <= 0 || height <= 0) {
     return {false, {}, "Map size must be positive"};
@@ -67,11 +84,11 @@ AStarPlanResult AStarPlanner::plan(
     return {false, {}, "Start or goal is outside map bounds"};
   }
 
-  if (this->is_occupied(occupancy_grid, width, start)) {
+  if (this->is_occupied(occupancy_grid, height, width, start, start_yaw)) {
     return {false, {}, "Start cell is occupied"};
   }
 
-  if (this->is_occupied(occupancy_grid, width, goal)) {
+  if (this->is_occupied(occupancy_grid, height, width, goal, goal_yaw)) {
     return {false, {}, "Goal cell is occupied"};
   }
 
@@ -123,7 +140,14 @@ AStarPlanResult AStarPlanner::plan(
     for (const auto & neighbor : this->get_neighbors(current_cell)) {
       if (
         !this->is_within_bounds(neighbor, width, height) ||
-        this->is_occupied(occupancy_grid, width, neighbor) ||
+        this->is_occupied(
+          occupancy_grid,
+          height,
+          width,
+          neighbor,
+          std::atan2(
+            static_cast<double>(neighbor.y - current_cell.y),
+            static_cast<double>(neighbor.x - current_cell.x))) ||
         this->is_diagonal_move_blocked(occupancy_grid, width, height, current_cell, neighbor))
       {
         continue;
@@ -168,9 +192,29 @@ bool AStarPlanner::is_within_bounds(const GridCell & cell, const int width, cons
 
 bool AStarPlanner::is_occupied(
   const std::vector<int8_t> & occupancy_grid,
+  const int height,
   const int width,
-  const GridCell & cell) const
+  const GridCell & cell,
+  const double yaw) const
 {
+  if (!footprint_.empty() && map_resolution_ > 0.0 && height > 0) {
+    const double pose_x = map_origin_x_ + (static_cast<double>(cell.x) + 0.5) * map_resolution_;
+    const double pose_y = map_origin_y_ + (static_cast<double>(cell.y) + 0.5) * map_resolution_;
+    return amr_geometry::footprint_pose_collides(
+      occupancy_grid,
+      width,
+      height,
+      map_resolution_,
+      map_origin_x_,
+      map_origin_y_,
+      footprint_,
+      pose_x,
+      pose_y,
+      yaw,
+      obstacle_threshold_,
+      allow_unknown_);
+  }
+
   const int cell_value = occupancy_grid[static_cast<std::size_t>(this->to_index(cell, width))];
   if (cell_value == kUnknownCellValue) {
     return !this->allow_unknown_;
@@ -206,8 +250,8 @@ bool AStarPlanner::is_diagonal_move_blocked(
   }
 
   return
-    this->is_occupied(occupancy_grid, width, horizontal_neighbor) ||
-    this->is_occupied(occupancy_grid, width, vertical_neighbor);
+    this->is_occupied(occupancy_grid, height, width, horizontal_neighbor, 0.0) ||
+    this->is_occupied(occupancy_grid, height, width, vertical_neighbor, 0.0);
 }
 
 int AStarPlanner::to_index(const GridCell & cell, const int width) const

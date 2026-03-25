@@ -74,6 +74,7 @@ type LayerVisibility = {
   map: boolean;
   globalCostmap: boolean;
   localCostmap: boolean;
+  footprint: boolean;
   robot: boolean;
   paths: boolean;
   scan: boolean;
@@ -111,6 +112,7 @@ export default function App() {
     map: true,
     globalCostmap: true,
     localCostmap: true,
+    footprint: true,
     robot: true,
     paths: true,
     scan: true,
@@ -410,6 +412,7 @@ export default function App() {
                 ["map", "Raw SLAM Map"],
                 ["globalCostmap", "Global Costmap"],
                 ["localCostmap", "Local Costmap"],
+                ["footprint", "Exact Footprint"],
                 ["robot", "Robot"],
                 ["paths", "Plans"],
                 ["scan", "LaserScan"],

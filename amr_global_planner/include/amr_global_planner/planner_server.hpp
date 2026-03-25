@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "amr_geometry/footprint.hpp"
 #include "amr_global_planner/a_star.hpp"
 #include "amr_msgs/srv/plan_route.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
@@ -54,12 +55,19 @@ private:
     int width,
     int height,
     const planner::GridCell & cell) const;
+  bool is_cell_collision(
+    const std::vector<int8_t> & occupancy_grid,
+    int width,
+    int height,
+    const planner::GridCell & cell,
+    double yaw) const;
   bool find_nearest_free_cell(
     const std::vector<int8_t> & occupancy_grid,
     int width,
     int height,
     planner::GridCell & cell,
-    int max_radius) const;
+    int max_radius,
+    double yaw) const;
   std::vector<planner::GridCell> simplify_grid_path(
     const std::vector<planner::GridCell> & grid_path) const;
   nav_msgs::msg::Path create_path_message(
@@ -85,6 +93,8 @@ private:
   bool prevent_corner_cutting_;
   double turn_penalty_;
   int nearest_free_search_radius_cells_;
+  std::vector<double> footprint_polygon_param_;
+  amr_geometry::FootprintPolygon footprint_polygon_;
 };
 
 }  // namespace amr_global_planner
