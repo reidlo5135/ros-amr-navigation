@@ -317,6 +317,12 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
 {
   this->latest_command_ = *message;
   this->has_command_ = true;
+  if (message->mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE) {
+    // Drop the previous command's plan immediately. A stale empty plan can otherwise
+    // make the new command look invalid before the local planner republishes.
+    this->latest_local_plan_ = nav_msgs::msg::Path();
+    this->has_local_plan_ = false;
+  }
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();

@@ -268,6 +268,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   blackboard->set("planned_path", nav_msgs::msg::Path());
   blackboard->set("active_command", amr_msgs::msg::MotionCommand());
   blackboard->set("active_command_dispatch_ns", static_cast<int64_t>(0));
+  blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
   blackboard->set("status_message", std::string("Behavior tree is running."));
   blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
   blackboard->set("recovery_attempts", 0);
@@ -357,6 +358,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
         plan.poses.size());
       blackboard->set("active_command", command);
       blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+      blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
       blackboard->set("recovery_attempts", 0);
       blackboard->set("status_message", std::string("Motion command dispatched."));
       return BT::NodeStatus::SUCCESS;
@@ -389,18 +391,39 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       const auto status = navigator->get_motion_status_copy();
       const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
       const auto dispatch_ns = blackboard->get<int64_t>("active_command_dispatch_ns");
+      auto recovery_condition_since_ns = blackboard->get<int64_t>("recovery_condition_since_ns");
       const auto settle_ns =
         static_cast<int64_t>(std::max(250, navigator->feedback_period_ms_ * 5)) * 1000000LL;
+      const auto debounce_ns =
+        static_cast<int64_t>(std::max(300, navigator->feedback_period_ms_ * 3)) * 1000000LL;
 
       if (status.command_id != command.command_id || !status.active) {
+        blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
         return BT::NodeStatus::FAILURE;
       }
 
       if (dispatch_ns > 0 && (navigator->now().nanoseconds() - dispatch_ns) < settle_ns) {
+        blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
         return BT::NodeStatus::FAILURE;
       }
 
-      if (status.blocked || status.stalled || !status.local_plan_valid) {
+      const bool recovery_needed = status.blocked || status.stalled || !status.local_plan_valid;
+      if (!recovery_needed) {
+        blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+        return BT::NodeStatus::FAILURE;
+      }
+
+      const auto now_ns = navigator->now().nanoseconds();
+      if (recovery_condition_since_ns == 0) {
+        blackboard->set("recovery_condition_since_ns", now_ns);
+        return BT::NodeStatus::FAILURE;
+      }
+
+      if ((now_ns - recovery_condition_since_ns) < debounce_ns) {
+        return BT::NodeStatus::FAILURE;
+      }
+
+      if (recovery_needed) {
         if (!status.local_plan_valid) {
           blackboard->set(
             "status_message",
@@ -516,6 +539,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
       navigator->publish_motion_command(command);
       blackboard->set("active_command", command);
       blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+      blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
       blackboard->set("planned_path", replanned_path);
       blackboard->set(
         "status_message",
