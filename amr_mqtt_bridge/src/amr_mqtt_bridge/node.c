@@ -183,6 +183,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     sizeof(g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose),
     "amr/command/cancel_navigate_to_pose");
   amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.command_ping,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.command_ping),
+    "amr/command/ping");
+  amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose,
     sizeof(g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose),
     "amr/feedback/navigate_to_pose");
@@ -198,6 +202,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
     sizeof(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose),
     "amr/response/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.response_ping,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.response_ping),
+    "amr/response/ping");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.mqtt.request_plan_segment,
     sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_segment),
@@ -474,10 +482,12 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.cancel_navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.ping", g_amr_mqtt_bridge_config.mqtt.command_ping, sizeof(g_amr_mqtt_bridge_config.mqtt.command_ping));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.feedback.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.feedback_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.status.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.ping", g_amr_mqtt_bridge_config.mqtt.response_ping, sizeof(g_amr_mqtt_bridge_config.mqtt.response_ping));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.request.plan_segment", g_amr_mqtt_bridge_config.mqtt.request_plan_segment, sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_segment));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.request.plan_route", g_amr_mqtt_bridge_config.mqtt.request_plan_route, sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_route));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.plan_segment", g_amr_mqtt_bridge_config.mqtt.response_plan_segment, sizeof(g_amr_mqtt_bridge_config.mqtt.response_plan_segment));
@@ -2304,6 +2314,33 @@ static char * amr_mqtt_bridge_serialize_simple_response(
   return amr_mqtt_bridge_builder_take(&builder);
 }
 
+static char * amr_mqtt_bridge_serialize_ping_response(
+  const char * request_id,
+  bool success,
+  double sent_at_ms,
+  uint64_t bridge_time_ms,
+  const char * message)
+{
+  amr_mqtt_bridge_string_builder_t builder = {0};
+  if (!amr_mqtt_bridge_builder_init(&builder, 320U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{\"request_id\":") ||
+    !amr_mqtt_bridge_builder_append_json_string(&builder, request_id) ||
+    !amr_mqtt_bridge_builder_appendf(
+      &builder,
+      ",\"success\":%s,\"sent_at_ms\":%.3f,\"bridge_time_ms\":%llu,\"message\":",
+      success ? "true" : "false",
+      sent_at_ms,
+      (unsigned long long)bridge_time_ms) ||
+    !amr_mqtt_bridge_builder_append_json_string(&builder, message) ||
+    !amr_mqtt_bridge_builder_append(&builder, "}"))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
 static char * amr_mqtt_bridge_serialize_navigate_response(
   const char * request_id,
   bool success,
@@ -2371,6 +2408,29 @@ static void amr_mqtt_bridge_publish_navigate_response(
   }
   (void)amr_mqtt_bridge_publish_payload(
     g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
+    payload,
+    g_amr_mqtt_bridge_config.mqtt.service_qos,
+    false);
+  free(payload);
+}
+
+static void amr_mqtt_bridge_publish_ping_response(
+  const char * request_id,
+  bool success,
+  double sent_at_ms,
+  const char * message)
+{
+  char * payload = amr_mqtt_bridge_serialize_ping_response(
+    request_id,
+    success,
+    sent_at_ms,
+    amr_mqtt_bridge_now_ms(),
+    message);
+  if (payload == NULL) {
+    return;
+  }
+  (void)amr_mqtt_bridge_publish_payload(
+    g_amr_mqtt_bridge_config.mqtt.response_ping,
     payload,
     g_amr_mqtt_bridge_config.mqtt.service_qos,
     false);
@@ -2843,6 +2903,27 @@ static void amr_mqtt_bridge_handle_navigate_cancel_command(const char * payload)
     "goal cancel dispatched");
 }
 
+static void amr_mqtt_bridge_handle_ping_command(const char * payload)
+{
+  char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  double sent_at_ms = 0.0;
+
+  if (!amr_mqtt_bridge_extract_json_string_in_range(
+      payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id)))
+  {
+    return;
+  }
+
+  (void)amr_mqtt_bridge_extract_json_double_in_range(
+    payload, payload + strlen(payload), "sent_at_ms", &sent_at_ms);
+
+  amr_mqtt_bridge_publish_ping_response(
+    request_id,
+    true,
+    sent_at_ms,
+    "pong");
+}
+
 static void amr_mqtt_bridge_poll_navigate_action(void)
 {
   rcl_ret_t rc;
@@ -3075,6 +3156,13 @@ static void amr_mqtt_bridge_poll_mqtt(void)
       if (payload_text != NULL) {
         memcpy(payload_text, message->payload, (size_t)message->payloadlen);
         amr_mqtt_bridge_handle_navigate_cancel_command(payload_text);
+        free(payload_text);
+      }
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_ping) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_ping_command(payload_text);
         free(payload_text);
       }
     } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.request_plan_segment) == 0) {

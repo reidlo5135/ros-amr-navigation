@@ -356,6 +356,7 @@
           set_initial_pose: "amr/command/set_initial_pose"
           navigate_to_pose: "amr/command/navigate_to_pose"
           cancel_navigate_to_pose: "amr/command/cancel_navigate_to_pose"
+          ping: "amr/command/ping"
         feedback:
           navigate_to_pose: "amr/feedback/navigate_to_pose"
         status:
@@ -363,6 +364,7 @@
         response:
           set_initial_pose: "amr/response/set_initial_pose"
           navigate_to_pose: "amr/response/navigate_to_pose"
+          ping: "amr/response/ping"
           plan_segment: "amr/response/plan_segment"
           plan_route: "amr/response/plan_route"
         request:

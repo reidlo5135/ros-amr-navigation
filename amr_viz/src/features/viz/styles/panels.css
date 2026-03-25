@@ -158,9 +158,7 @@ button.danger {
   color: #a34f77;
 }
 
-.layer-icon-footprint,
-.layer-icon-blocked,
-.layer-icon-collision {
+.layer-icon-footprint {
   color: #5579b0;
 }
 
@@ -168,8 +166,12 @@ button.danger {
   color: #4f4f4f;
 }
 
-.layer-icon-path {
-  color: #4d9fa2;
+.layer-icon-path-global {
+  color: #23d9ff;
+}
+
+.layer-icon-path-local {
+  color: #95dd00;
 }
 
 .layer-icon-scan {

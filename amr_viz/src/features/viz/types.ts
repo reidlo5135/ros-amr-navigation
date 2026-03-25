@@ -4,10 +4,9 @@ export type LayerVisibility = {
   globalCostmap: boolean;
   localCostmap: boolean;
   footprint: boolean;
-  blockedDebug: boolean;
-  collisionDebug: boolean;
   robot: boolean;
-  paths: boolean;
+  globalPlan: boolean;
+  localPlan: boolean;
   scan: boolean;
   tf: boolean;
 };

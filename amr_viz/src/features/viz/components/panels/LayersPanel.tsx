@@ -17,10 +17,9 @@ const layerEntries: LayerEntry[] = [
   { key: "globalCostmap", label: "Global Costmap", icon: "costmap-global" },
   { key: "localCostmap", label: "Local Costmap", icon: "costmap-local" },
   { key: "footprint", label: "Exact Footprint", icon: "footprint" },
-  { key: "blockedDebug", label: "Blocked Footprint", icon: "blocked" },
-  { key: "collisionDebug", label: "Collision Debug", icon: "collision" },
   { key: "robot", label: "Robot", icon: "robot" },
-  { key: "paths", label: "Plans", icon: "path" },
+  { key: "globalPlan", label: "Global Plan", icon: "path-global" },
+  { key: "localPlan", label: "Local Plan", icon: "path-local" },
   { key: "scan", label: "LaserScan", icon: "scan" },
   { key: "tf", label: "TF", icon: "tf" },
 ];
@@ -55,25 +54,13 @@ function LayerIcon({ kind }: { kind: string }) {
           <path d="M3 5.5 7.2 3.5 13 5.3 11.2 12.5 4.2 11.2z" />
         </svg>
       )}
-      {kind === "blocked" && (
-        <svg viewBox="0 0 16 16">
-          <path d="M3 5.5 7.2 3.5 13 5.3 11.2 12.5 4.2 11.2z" />
-          <path d="M4 4 12 12" />
-        </svg>
-      )}
-      {kind === "collision" && (
-        <svg viewBox="0 0 16 16">
-          <circle cx="5" cy="8" r="2.6" />
-          <circle cx="11" cy="8" r="2.6" />
-        </svg>
-      )}
       {kind === "robot" && (
         <svg viewBox="0 0 16 16">
           <rect x="4" y="4.5" width="8" height="7" rx="1" />
           <path d="M6 13v2M10 13v2M3 7H1M15 7h-2M6 2h4" />
         </svg>
       )}
-      {kind === "path" && (
+      {(kind === "path-global" || kind === "path-local") && (
         <svg viewBox="0 0 16 16">
           <circle cx="3" cy="12" r="1.2" />
           <circle cx="13" cy="4" r="1.2" />

@@ -38,6 +38,42 @@
   color: #222;
 }
 
+.signal-chip {
+  display: inline-flex;
+  align-items: end;
+  gap: 8px;
+  color: #222;
+}
+
+.signal-bars {
+  display: inline-flex;
+  align-items: end;
+  gap: 2px;
+  height: 14px;
+}
+
+.signal-bar {
+  width: 4px;
+  border-radius: 1px 1px 0 0;
+  background: rgba(44, 44, 44, 0.22);
+}
+
+.signal-bar:nth-child(1) { height: 5px; }
+.signal-bar:nth-child(2) { height: 8px; }
+.signal-bar:nth-child(3) { height: 11px; }
+.signal-bar:nth-child(4) { height: 14px; }
+
+.signal-bar.active {
+  background: rgba(44, 44, 44, 0.88);
+}
+
+.signal-label {
+  color: #222;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
 .battery-shell {
   position: relative;
   display: inline-flex;
@@ -58,8 +94,16 @@
   transition: width 160ms ease;
 }
 
+.battery-fill.high {
+  background: #33a852;
+}
+
+.battery-fill.medium {
+  background: #e0b422;
+}
+
 .battery-fill.low {
-  background: rgba(44, 44, 44, 0.48);
+  background: #d64545;
 }
 
 .battery-tip {

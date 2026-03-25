@@ -6,7 +6,8 @@ static int amr_mqtt_bridge_subscribe_command_topics(void)
     g_amr_mqtt_bridge_config.mqtt.command_cmd_vel,
     g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose,
     g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose,
-    g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose
+    g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose,
+    g_amr_mqtt_bridge_config.mqtt.command_ping
   };
   const char * request_topics[] = {
     g_amr_mqtt_bridge_config.mqtt.request_plan_segment,

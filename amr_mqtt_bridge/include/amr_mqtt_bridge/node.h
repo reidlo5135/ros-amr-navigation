@@ -156,10 +156,12 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_cancel_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char command_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char feedback_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char status_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char response_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char request_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char request_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];

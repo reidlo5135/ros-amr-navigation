@@ -9,6 +9,7 @@ import type {
   Pose,
   TfMessage,
 } from "../../../../lib/protocol";
+import type { GoalLifecycleState } from "../../types";
 
 type SceneViewportProps = {
   state: BridgeState;
@@ -18,10 +19,9 @@ type SceneViewportProps = {
     globalCostmap: boolean;
     localCostmap: boolean;
     footprint: boolean;
-    blockedDebug: boolean;
-    collisionDebug: boolean;
     robot: boolean;
-    paths: boolean;
+    globalPlan: boolean;
+    localPlan: boolean;
     scan: boolean;
     tf: boolean;
   };
@@ -31,6 +31,7 @@ type SceneViewportProps = {
     yaw: number;
     kind: "goal" | "initial_pose";
   } | null;
+  goalLifecycle?: GoalLifecycleState;
   interactionMode?: "idle" | "goal" | "initial_pose";
   onPoseSelection?: (x: number, y: number, yaw: number) => void;
   onPosePlacement?: (mode: "goal" | "initial_pose", x: number, y: number, yaw: number) => void;
@@ -1105,6 +1106,7 @@ export function SceneViewport({
   state,
   layerVisibility,
   goalMarker,
+  goalLifecycle = "Idle",
   interactionMode = "idle",
   onPoseSelection,
   onPosePlacement,
@@ -1406,24 +1408,31 @@ export function SceneViewport({
       goalMarkerRef.current = null;
     }
 
-    const globalPath = state.global_path?.poses.map((pose) => ({
-      x: pose.position.x,
-      y: pose.position.y,
-    })) ?? [];
-    const localPath = state.local_path?.poses.map((pose) => ({
-      x: pose.position.x,
-      y: pose.position.y,
-    })) ?? [];
+    const showLivePlans =
+      goalLifecycle === "Running" ||
+      goalLifecycle === "Recovering" ||
+      goalLifecycle === "Canceling";
 
-    globalPathRef.current = buildPathLine(globalPath, "#23d9ff", 0.06);
-    localPathRef.current = buildPathLine(localPath, "#95dd00", 0.08);
-    if (globalPathRef.current) {
-      globalPathRef.current.visible = layerVisibility.paths;
-      scene.add(globalPathRef.current);
-    }
-    if (localPathRef.current) {
-      localPathRef.current.visible = layerVisibility.paths;
-      scene.add(localPathRef.current);
+    if (showLivePlans) {
+      const globalPath = state.global_path?.poses.map((pose) => ({
+        x: pose.position.x,
+        y: pose.position.y,
+      })) ?? [];
+      const localPath = state.local_path?.poses.map((pose) => ({
+        x: pose.position.x,
+        y: pose.position.y,
+      })) ?? [];
+
+      globalPathRef.current = buildPathLine(globalPath, "#23d9ff", 0.06);
+      localPathRef.current = buildPathLine(localPath, "#95dd00", 0.08);
+      if (globalPathRef.current) {
+        globalPathRef.current.visible = layerVisibility.globalPlan;
+        scene.add(globalPathRef.current);
+      }
+      if (localPathRef.current) {
+        localPathRef.current.visible = layerVisibility.localPlan;
+        scene.add(localPathRef.current);
+      }
     }
     if (goalMarker) {
       goalMarkerRef.current = buildGoalMarker(goalMarker);
@@ -1493,7 +1502,7 @@ export function SceneViewport({
       );
     }
     if (blockedFootprintRef.current) {
-      blockedFootprintRef.current.visible = layerVisibility.blockedDebug;
+      blockedFootprintRef.current.visible = true;
       scene.add(blockedFootprintRef.current);
     }
 
@@ -1509,7 +1518,7 @@ export function SceneViewport({
       );
     }
     if (blockedLinkRef.current) {
-      blockedLinkRef.current.visible = layerVisibility.collisionDebug;
+      blockedLinkRef.current.visible = true;
       scene.add(blockedLinkRef.current);
     }
 
@@ -1580,7 +1589,7 @@ export function SceneViewport({
     }
 
     renderRef.current?.();
-  }, [state, layerVisibility, goalMarker]);
+  }, [state, layerVisibility, goalMarker, goalLifecycle]);
 
   return <div className="scene-viewport" ref={viewportRef} />;
 }

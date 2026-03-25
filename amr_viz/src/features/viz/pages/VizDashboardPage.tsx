@@ -22,6 +22,8 @@ export function VizDashboardPage() {
       <Topbar
         connectionLabel={dashboard.connectionLabel}
         poseLabel={poseLabel}
+        signalBars={dashboard.signalBars}
+        signalRttMs={dashboard.signalRttMs}
         batteryPercentage={dashboard.batteryPercentage}
       />
 
@@ -75,6 +77,7 @@ export function VizDashboardPage() {
             state={dashboard.bridgeState}
             layerVisibility={dashboard.layerVisibility}
             goalMarker={dashboard.goalMarker}
+            goalLifecycle={dashboard.resolvedGoalLifecycle}
             interactionMode={dashboard.interactionMode}
             onPoseSelection={dashboard.handleScenePoseSelection}
             onPosePlacement={dashboard.handleScenePosePlacement}

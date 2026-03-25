@@ -29,10 +29,9 @@ export const initialLayerVisibility: LayerVisibility = {
   globalCostmap: true,
   localCostmap: true,
   footprint: true,
-  blockedDebug: true,
-  collisionDebug: true,
   robot: true,
-  paths: true,
+  globalPlan: true,
+  localPlan: true,
   scan: true,
   tf: true,
 };
