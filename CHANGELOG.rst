@@ -1,6 +1,16 @@
 Changelog
 =========
 
+2026-03-25
+----------
+
+- Started the ``0.12.0`` exact-footprint branch:
+
+  - added exact footprint collision helpers in ``amr_geometry``
+  - applied polygon-based collision checks in ``amr_global_planner`` and ``amr_local_planner``
+  - published footprint metadata through ``amr_mqtt_bridge`` for operator visualization
+  - added an ``Exact Footprint`` overlay layer to ``amr_viz``
+
 2026-03-24
 ----------
 
