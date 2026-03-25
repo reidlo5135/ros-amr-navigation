@@ -1,0 +1,94 @@
+import { SceneViewport } from "../components/scene/SceneViewport";
+import { Topbar } from "../components/layout/Topbar";
+import { EventsPanel } from "../components/panels/EventsPanel";
+import { GoalControlPanel } from "../components/panels/GoalControlPanel";
+import { LayersPanel } from "../components/panels/LayersPanel";
+import { MqttPanel } from "../components/panels/MqttPanel";
+import { NavigationStatusPanel } from "../components/panels/NavigationStatusPanel";
+import { useVizDashboard } from "../hooks/useVizDashboard";
+
+import "../styles/dashboard.css";
+import "../styles/panels.css";
+import "../styles/topbar.css";
+
+export function VizDashboardPage() {
+  const dashboard = useVizDashboard();
+  const poseLabel = dashboard.bridgeState.robot_pose
+    ? `${dashboard.bridgeState.robot_pose.position.x.toFixed(2)}, ${dashboard.bridgeState.robot_pose.position.y.toFixed(2)}`
+    : "--";
+
+  return (
+    <main className="app-shell">
+      <Topbar
+        connectionLabel={dashboard.connectionLabel}
+        poseLabel={poseLabel}
+        batteryPercentage={dashboard.batteryPercentage}
+      />
+
+      <section className="workspace">
+        <aside className="sidebar sidebar-left">
+          <MqttPanel
+            mqttUrl={dashboard.mqttUrl}
+            onMqttUrlChange={dashboard.setMqttUrl}
+            onConnect={dashboard.connect}
+            onDisconnect={dashboard.disconnect}
+          />
+          <GoalControlPanel
+            goalX={dashboard.goalX}
+            goalY={dashboard.goalY}
+            goalYaw={dashboard.goalYaw}
+            interactionMode={dashboard.interactionMode}
+            onGoalXChange={dashboard.setGoalX}
+            onGoalYChange={dashboard.setGoalY}
+            onGoalYawChange={dashboard.setGoalYaw}
+            onToggleGoalMode={dashboard.toggleGoalMode}
+            onToggleInitialPoseMode={dashboard.toggleInitialPoseMode}
+            onCancelGoal={dashboard.cancelGoal}
+          />
+          <LayersPanel
+            layerVisibility={dashboard.layerVisibility}
+            onToggleLayer={dashboard.toggleLayer}
+          />
+        </aside>
+
+        <section className="scene-panel">
+          <div className="scene-toolbar">
+            <span className="toolbar-label">Scene</span>
+            <span className="toolbar-value">Background: 228; 228; 228</span>
+            <span className="toolbar-value">
+              Map {dashboard.bridgeState.map ? `${dashboard.bridgeState.map.info.width}x${dashboard.bridgeState.map.info.height}` : "--"}
+            </span>
+            <span className="toolbar-value">
+              Global {dashboard.bridgeState.global_path?.poses.length ?? 0} pts
+            </span>
+            <span className="toolbar-value">
+              Local {dashboard.bridgeState.local_path?.poses.length ?? 0} pts
+            </span>
+            <span className="toolbar-value">
+              Scan {dashboard.bridgeState.scan?.ranges.length ?? 0} rays
+            </span>
+            <span className="toolbar-value">
+              TF {(dashboard.bridgeState.tf?.transforms.length ?? 0) + (dashboard.bridgeState.tf_static?.transforms.length ?? 0)} frames
+            </span>
+          </div>
+          <SceneViewport
+            state={dashboard.bridgeState}
+            layerVisibility={dashboard.layerVisibility}
+            goalMarker={dashboard.goalMarker}
+            interactionMode={dashboard.interactionMode}
+            onPoseSelection={dashboard.handleScenePoseSelection}
+            onPosePlacement={dashboard.handleScenePosePlacement}
+          />
+        </section>
+
+        <aside className="sidebar sidebar-right">
+          <NavigationStatusPanel
+            motionStatus={dashboard.bridgeState.motion_status}
+            goalLifecycle={dashboard.resolvedGoalLifecycle}
+          />
+          <EventsPanel events={dashboard.events} />
+        </aside>
+      </section>
+    </main>
+  );
+}

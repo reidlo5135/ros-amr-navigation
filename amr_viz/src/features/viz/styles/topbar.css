@@ -1,0 +1,80 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+}
+
+.topbar-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topbar-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  background: #fdfdfd;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.battery-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #222;
+}
+
+.battery-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 30px;
+  height: 14px;
+  padding: 2px;
+  border: 1px solid rgba(44, 44, 44, 0.82);
+  border-radius: 3px;
+  background: transparent;
+}
+
+.battery-fill {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: rgba(44, 44, 44, 0.92);
+  transition: width 160ms ease;
+}
+
+.battery-fill.low {
+  background: rgba(44, 44, 44, 0.48);
+}
+
+.battery-tip {
+  position: absolute;
+  top: 3px;
+  right: -4px;
+  width: 2px;
+  height: 6px;
+  border-radius: 0 1px 1px 0;
+  background: rgba(44, 44, 44, 0.82);
+}
+
+.battery-label {
+  color: #222;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}

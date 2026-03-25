@@ -4,6 +4,15 @@ Changelog
 2026-03-25
 ----------
 
+- Started the ``0.12.4`` patch branch:
+  - reorganized ``amr_viz`` into an app/features-based React structure
+  - split the operator UI into page, hook, layout, and panel components
+  - moved shared constants and dashboard state handling out of the root ``App.tsx``
+  - split global and feature CSS so the web client matches a more standard frontend layout
+
+2026-03-25
+----------
+
 - Started the ``0.12.3`` patch branch:
   - Next step is to move recovery branching from BT heuristics toward local-planner decision semantics.
   - Aim to reduce hard-coded near-goal handling and make planner output the recovery rationale.
