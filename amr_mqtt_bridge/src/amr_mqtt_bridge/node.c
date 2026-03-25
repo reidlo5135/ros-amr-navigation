@@ -1140,19 +1140,19 @@ static char * amr_mqtt_bridge_serialize_battery_state(const void * message)
 
   if (!amr_mqtt_bridge_builder_init(&builder, 512U) ||
     !amr_mqtt_bridge_builder_append_header(&builder, &battery_state->header) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"voltage\":%.3f", battery_state->voltage) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"current\":%.3f", battery_state->current) ||
-    !amr_mqtt_bridge_builder_append(&builder, ",\"percentage\":%.2f", percentage) ||
-    !amr_mqtt_bridge_builder_append(
+    !amr_mqtt_bridge_builder_appendf(&builder, ",\"voltage\":%.3f", battery_state->voltage) ||
+    !amr_mqtt_bridge_builder_appendf(&builder, ",\"current\":%.3f", battery_state->current) ||
+    !amr_mqtt_bridge_builder_appendf(&builder, ",\"percentage\":%.2f", percentage) ||
+    !amr_mqtt_bridge_builder_appendf(
       &builder, ",\"power_supply_status\":%u",
       (unsigned int)battery_state->power_supply_status) ||
-    !amr_mqtt_bridge_builder_append(
+    !amr_mqtt_bridge_builder_appendf(
       &builder, ",\"power_supply_health\":%u",
       (unsigned int)battery_state->power_supply_health) ||
-    !amr_mqtt_bridge_builder_append(
+    !amr_mqtt_bridge_builder_appendf(
       &builder, ",\"power_supply_technology\":%u",
       (unsigned int)battery_state->power_supply_technology) ||
-    !amr_mqtt_bridge_builder_append(
+    !amr_mqtt_bridge_builder_appendf(
       &builder, ",\"present\":%s",
       battery_state->present ? "true" : "false") ||
     !amr_mqtt_bridge_builder_append(&builder, "}"))
