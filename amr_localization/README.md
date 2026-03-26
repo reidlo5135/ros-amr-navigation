@@ -71,8 +71,8 @@ flowchart LR
   - `global_relocalization`
     - start with passive global relocalization over the static map
   - `active_relocalization`
-    - reserved startup policy for future probing behaviors
-    - currently falls back to passive global relocalization
+    - startup relocalization plus probing motions coordinated by `amr_bt_navigator`
+    - localization keeps ownership of pose confidence and convergence
   - `fixed_start_pose`
     - seed particles from the configured `start_pose`
 - startup no longer needs to force a fixed `0,0` seed just to make the stack runnable

@@ -2,6 +2,7 @@ uint8 MODE_NAVIGATE=0
 uint8 MODE_BACKUP=1
 uint8 MODE_SPIN=2
 uint8 MODE_WAIT=3
+uint8 MODE_PROBE=4
 std_msgs/Header header
 uint32 command_id
 uint8 mode

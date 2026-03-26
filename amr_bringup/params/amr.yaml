@@ -302,6 +302,8 @@
 
 /amr/navigator:
   ros__parameters:
+    startup:
+      localization_mode: "global_relocalization"
     behavior_tree:
       xml_path: ""
     topics:
@@ -314,6 +316,7 @@
       segment: "/amr/global_planner/plan_segment"
       plan_recovery: "/amr/recovery_server/plan_recovery"
       clear_costmap: "/amr/costmap_server/clear_costmap"
+      trigger_global_localization: "/amr/localization/trigger_global_localization"
     actions:
       navigate_to_pose: "/amr/navigator/navigate_to_pose"
     defaults:
@@ -324,6 +327,10 @@
     recovery:
       max_retries: 4
       retry_delay_ms: 1000
+    arl:
+      check_period_ms: 250
+      command_timeout_ms: 4000
+      retrigger_interval_ms: 1500
 
 /amr/recovery_server:
   ros__parameters:
@@ -336,6 +343,11 @@
       backup_distance: 0.20
       backup_speed: 0.06
       spin_angle_rad: 1.5707963267948966
+    arl:
+      wait_duration_sec: 0.5
+      spin_angle_rad: 0.7853981633974483
+      probe_distance: 0.12
+      probe_speed: 0.04
 
 /amr/mqtt_bridge:
   ros__parameters:

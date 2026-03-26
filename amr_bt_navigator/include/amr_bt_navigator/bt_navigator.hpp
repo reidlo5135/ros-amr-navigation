@@ -19,6 +19,7 @@
 #include "amr_msgs/srv/clear_costmap.hpp"
 #include "amr_msgs/srv/plan_recovery.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
+#include "amr_msgs/srv/trigger_global_localization.hpp"
 #include "behaviortree_cpp_v3/bt_factory.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
@@ -76,6 +77,7 @@ private:
     const geometry_msgs::msg::PoseStamped & goal_pose,
     amr_msgs::msg::MotionCommand & command,
     std::string & error_message);
+  bool trigger_global_localization(const std::string & reason, std::string & error_message);
   bool clear_local_costmap(std::string & error_message);
   bool wait_for_command_completion(
     uint32_t command_id,
@@ -86,16 +88,20 @@ private:
     const nav_msgs::msg::Path & plan);
   void publish_motion_command(const amr_msgs::msg::MotionCommand & command);
   void publish_stop_command();
+  void run_active_relocalization_supervisor();
+  bool has_active_goal() const;
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
   rclcpp::Client<amr_msgs::srv::PlanRecovery>::SharedPtr plan_recovery_client_;
   rclcpp::Client<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_client_;
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
+  rclcpp::Client<amr_msgs::srv::TriggerGlobalLocalization>::SharedPtr trigger_global_localization_client_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
   rclcpp::Subscription<amr_msgs::msg::LocalPlanStatus>::SharedPtr local_plan_status_subscription_;
   rclcpp::Subscription<amr_msgs::msg::LocalizationStatus>::SharedPtr localization_status_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_publisher_;
+  rclcpp::TimerBase::SharedPtr active_relocalization_timer_;
   std::string navigate_action_name_;
   std::string command_topic_;
   std::string current_pose_topic_;
@@ -105,12 +111,17 @@ private:
   std::string plan_recovery_service_;
   std::string clear_costmap_service_;
   std::string plan_segment_service_;
+  std::string trigger_global_localization_service_;
+  std::string startup_localization_mode_;
   std::string behavior_tree_xml_path_;
   std::string default_node_id_;
   int planner_wait_timeout_ms_;
   int feedback_period_ms_;
   int recovery_max_retries_;
   int recovery_retry_delay_ms_;
+  int arl_check_period_ms_;
+  int arl_command_timeout_ms_;
+  int arl_retrigger_interval_ms_;
   uint32_t next_command_id_;
   geometry_msgs::msg::PoseStamped current_pose_;
   amr_msgs::msg::MotionStatus latest_motion_status_;
@@ -122,7 +133,14 @@ private:
   bool has_localization_status_;
   mutable std::mutex navigator_mutex_;
   mutable std::mutex active_goal_mutex_;
+  mutable std::mutex command_mutex_;
+  std::mutex active_relocalization_mutex_;
   std::weak_ptr<GoalHandleNavigateToPose> active_goal_handle_;
+  bool active_relocalization_command_active_;
+  uint32_t active_relocalization_command_id_;
+  std::size_t active_relocalization_phase_index_;
+  int64_t active_relocalization_command_started_ns_;
+  int64_t active_relocalization_last_trigger_ns_;
 };
 
 }  // namespace amr_bt_navigator

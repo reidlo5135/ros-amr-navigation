@@ -2,6 +2,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 
 
@@ -12,6 +14,18 @@ def bringup_params_file() -> str:
 
 def generate_launch_description() -> LaunchDescription:
     ld = LaunchDescription()
+    startup_localization_mode = LaunchConfiguration("startup_localization_mode")
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "startup_localization_mode",
+            default_value="global_relocalization",
+            description=(
+                "Startup localization policy: "
+                "manual_set_initial_pose | global_relocalization | active_relocalization | fixed_start_pose"
+            ),
+        )
+    )
 
     local_planner = LifecycleNode(
         package="amr_local_planner",
@@ -43,7 +57,10 @@ def generate_launch_description() -> LaunchDescription:
         name="navigator",
         namespace="amr",
         output="screen",
-        parameters=[bringup_params_file()],
+        parameters=[
+            bringup_params_file(),
+            {"startup.localization_mode": startup_localization_mode},
+        ],
     )
     navigation_manager = Node(
         package="amr_lifecycle_manager",

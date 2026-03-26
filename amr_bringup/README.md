@@ -55,6 +55,7 @@ Supported startup localization policies:
 - `manual_set_initial_pose`
 - `global_relocalization`
 - `active_relocalization`
+  - navigator-supervised spin / wait / probe startup relocalization
 - `fixed_start_pose`
 
 Mapping mode:

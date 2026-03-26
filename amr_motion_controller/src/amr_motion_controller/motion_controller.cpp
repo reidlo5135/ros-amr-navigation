@@ -537,6 +537,21 @@ void MotionController::publish_control()
           desired_twist.linear.x =
             -std::max(this->latest_command_.recovery_speed, this->min_linear_speed_);
         }
+      } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_PROBE) {
+        const double traveled = this->pose_distance(this->current_pose_, this->recovery_reference_pose_);
+        const double remaining = std::max(0.0, this->latest_command_.recovery_distance - traveled);
+        status.remaining_distance = remaining;
+        debug_remaining_distance = remaining;
+        if (
+          remaining <= this->distance_tolerance_ ||
+          (this->latest_command_.recovery_duration > 0.0 &&
+          elapsed_sec >= this->latest_command_.recovery_duration))
+        {
+          status.command_completed = true;
+        } else {
+          desired_twist.linear.x =
+            std::max(this->latest_command_.recovery_speed, this->min_linear_speed_);
+        }
       } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_SPIN) {
         const double target_yaw = this->recovery_start_yaw_ + this->latest_command_.recovery_angle;
         const double heading_error = this->normalize_angle(target_yaw - current_yaw);

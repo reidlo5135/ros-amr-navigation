@@ -38,6 +38,12 @@ private:
     const geometry_msgs::msg::PoseStamped & current_pose) const;
   amr_msgs::msg::MotionCommand build_wait_command(
     const geometry_msgs::msg::PoseStamped & current_pose) const;
+  amr_msgs::msg::MotionCommand build_arl_spin_command(
+    const geometry_msgs::msg::PoseStamped & current_pose) const;
+  amr_msgs::msg::MotionCommand build_arl_wait_command(
+    const geometry_msgs::msg::PoseStamped & current_pose) const;
+  amr_msgs::msg::MotionCommand build_probe_forward_command(
+    const geometry_msgs::msg::PoseStamped & current_pose) const;
   static double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation);
   static geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw);
 
@@ -48,6 +54,10 @@ private:
   double backup_distance_;
   double backup_speed_;
   double spin_angle_rad_;
+  double arl_wait_duration_sec_;
+  double arl_spin_angle_rad_;
+  double arl_probe_distance_;
+  double arl_probe_speed_;
 };
 
 }  // namespace amr_recovery_server

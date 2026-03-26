@@ -248,12 +248,6 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->startup_localization_mode_ = "global_relocalization";
   }
 
-  if (this->startup_mode_is_active_relocalization()) {
-    RCLCPP_WARN(
-      this->get_logger(),
-      "startup.localization_mode='active_relocalization' is reserved for future probing behaviors; using passive global relocalization for now.");
-  }
-
   this->kidnapped_start_with_global_localization_ =
     this->startup_mode_is_global_relocalization() ||
     this->startup_mode_is_active_relocalization();

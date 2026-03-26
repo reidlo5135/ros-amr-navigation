@@ -48,6 +48,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(bringup_launch_file("navigation.launch.py")),
+        launch_arguments={"startup_localization_mode": startup_localization_mode}.items(),
         condition=UnlessCondition(mapping_mode),
     )
 

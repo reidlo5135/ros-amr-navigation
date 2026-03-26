@@ -17,7 +17,11 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
   wait_duration_sec_(1.0),
   backup_distance_(0.20),
   backup_speed_(0.06),
-  spin_angle_rad_(1.5707963267948966)
+  spin_angle_rad_(1.5707963267948966),
+  arl_wait_duration_sec_(0.5),
+  arl_spin_angle_rad_(0.7853981633974483),
+  arl_probe_distance_(0.12),
+  arl_probe_speed_(0.04)
 {
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_name_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
@@ -25,6 +29,10 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("recovery.backup_distance", this->backup_distance_);
   this->declare_parameter("recovery.backup_speed", this->backup_speed_);
   this->declare_parameter("recovery.spin_angle_rad", this->spin_angle_rad_);
+  this->declare_parameter("arl.wait_duration_sec", this->arl_wait_duration_sec_);
+  this->declare_parameter("arl.spin_angle_rad", this->arl_spin_angle_rad_);
+  this->declare_parameter("arl.probe_distance", this->arl_probe_distance_);
+  this->declare_parameter("arl.probe_speed", this->arl_probe_speed_);
 }
 
 RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecycle::State & state)
@@ -36,6 +44,10 @@ RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecyc
   this->get_parameter("recovery.backup_distance", this->backup_distance_);
   this->get_parameter("recovery.backup_speed", this->backup_speed_);
   this->get_parameter("recovery.spin_angle_rad", this->spin_angle_rad_);
+  this->get_parameter("arl.wait_duration_sec", this->arl_wait_duration_sec_);
+  this->get_parameter("arl.spin_angle_rad", this->arl_spin_angle_rad_);
+  this->get_parameter("arl.probe_distance", this->arl_probe_distance_);
+  this->get_parameter("arl.probe_speed", this->arl_probe_speed_);
 
   if (this->plan_recovery_service_name_.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Recovery server service name must not be empty");
@@ -105,6 +117,24 @@ void RecoveryServer::handle_plan_recovery(
     response->message = "Planned spin recovery.";
     return;
   }
+  if (request->behavior == "arl_spin") {
+    response->command = this->build_arl_spin_command(request->current_pose);
+    response->success = true;
+    response->message = "Planned active relocalization spin.";
+    return;
+  }
+  if (request->behavior == "arl_wait") {
+    response->command = this->build_arl_wait_command(request->current_pose);
+    response->success = true;
+    response->message = "Planned active relocalization wait.";
+    return;
+  }
+  if (request->behavior == "probe_forward") {
+    response->command = this->build_probe_forward_command(request->current_pose);
+    response->success = true;
+    response->message = "Planned active relocalization forward probe.";
+    return;
+  }
 
   response->success = false;
   response->message = "Unknown recovery behavior: " + request->behavior;
@@ -161,6 +191,45 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_wait_command(
   command.goal_pose = current_pose;
   command.align_heading_at_goal = false;
   command.recovery_duration = std::max(0.0, this->wait_duration_sec_);
+  return command;
+}
+
+amr_msgs::msg::MotionCommand RecoveryServer::build_arl_spin_command(
+  const geometry_msgs::msg::PoseStamped & current_pose) const
+{
+  amr_msgs::msg::MotionCommand command = this->build_spin_command(current_pose);
+  command.route_id = "arl_spin";
+  const double current_yaw = quaternion_yaw(current_pose.pose.orientation);
+  command.goal_pose.pose.orientation = yaw_to_quaternion(current_yaw + this->arl_spin_angle_rad_);
+  command.recovery_angle = this->arl_spin_angle_rad_;
+  return command;
+}
+
+amr_msgs::msg::MotionCommand RecoveryServer::build_arl_wait_command(
+  const geometry_msgs::msg::PoseStamped & current_pose) const
+{
+  amr_msgs::msg::MotionCommand command = this->build_wait_command(current_pose);
+  command.route_id = "arl_wait";
+  command.recovery_duration = std::max(0.0, this->arl_wait_duration_sec_);
+  return command;
+}
+
+amr_msgs::msg::MotionCommand RecoveryServer::build_probe_forward_command(
+  const geometry_msgs::msg::PoseStamped & current_pose) const
+{
+  amr_msgs::msg::MotionCommand command;
+  command.header.stamp = this->now();
+  command.header.frame_id =
+    current_pose.header.frame_id.empty() ? std::string("map") : current_pose.header.frame_id;
+  command.mode = amr_msgs::msg::MotionCommand::MODE_PROBE;
+  command.route_id = "arl_probe_forward";
+  command.node_id = this->default_node_id_;
+  command.goal_pose = current_pose;
+  command.align_heading_at_goal = false;
+  command.recovery_distance = std::max(0.0, this->arl_probe_distance_);
+  command.recovery_speed = std::max(0.01, this->arl_probe_speed_);
+  command.recovery_duration =
+    command.recovery_speed > 1e-6 ? command.recovery_distance / command.recovery_speed : 0.0;
   return command;
 }
 
