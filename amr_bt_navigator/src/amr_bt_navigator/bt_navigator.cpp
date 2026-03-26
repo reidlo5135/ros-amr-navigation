@@ -1458,17 +1458,21 @@ void Btnavigator::run_active_relocalization_supervisor()
   }
 
   static constexpr const char * kArlBehaviors[] = {
+    "probe_forward_long",
     "probe_forward",
     "probe_forward",
     "arl_spin",
+    "probe_forward_long",
     "probe_forward",
     "arl_spin"
   };
+  static constexpr std::size_t kArlBehaviorCount =
+    sizeof(kArlBehaviors) / sizeof(kArlBehaviors[0]);
 
   std::size_t behavior_index = 0U;
   {
     std::scoped_lock arl_lock(this->active_relocalization_mutex_);
-    behavior_index = this->active_relocalization_phase_index_ % 5U;
+    behavior_index = this->active_relocalization_phase_index_ % kArlBehaviorCount;
     this->active_relocalization_request_pending_ = true;
     this->active_relocalization_request_started_ns_ = this->now().nanoseconds();
     this->active_relocalization_pending_behavior_ = kArlBehaviors[behavior_index];

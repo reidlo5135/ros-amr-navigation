@@ -63,6 +63,11 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_max_candidates_(4),
   relocalization_candidate_match_distance_(0.8),
   relocalization_candidate_match_yaw_(0.9),
+  relocalization_candidate_refine_distance_(0.45),
+  relocalization_candidate_refine_yaw_(1.0),
+  relocalization_candidate_refine_xy_steps_(5),
+  relocalization_candidate_refine_yaw_steps_(5),
+  relocalization_candidate_min_score_ratio_(0.90),
   kidnapped_detection_enabled_(true),
   kidnapped_start_with_global_localization_(false),
   kidnapped_auto_trigger_enabled_(false),
@@ -174,6 +179,21 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "amcl.relocalization_candidate_match_yaw",
     this->relocalization_candidate_match_yaw_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_refine_distance",
+    this->relocalization_candidate_refine_distance_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_refine_yaw",
+    this->relocalization_candidate_refine_yaw_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_refine_xy_steps",
+    this->relocalization_candidate_refine_xy_steps_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_refine_yaw_steps",
+    this->relocalization_candidate_refine_yaw_steps_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_min_score_ratio",
+    this->relocalization_candidate_min_score_ratio_);
   this->declare_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->declare_parameter(
     "kidnapped.start_with_global_localization",
@@ -274,6 +294,21 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter(
     "amcl.relocalization_candidate_match_yaw",
     this->relocalization_candidate_match_yaw_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_refine_distance",
+    this->relocalization_candidate_refine_distance_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_refine_yaw",
+    this->relocalization_candidate_refine_yaw_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_refine_xy_steps",
+    this->relocalization_candidate_refine_xy_steps_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_refine_yaw_steps",
+    this->relocalization_candidate_refine_yaw_steps_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_min_score_ratio",
+    this->relocalization_candidate_min_score_ratio_);
   this->get_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->get_parameter(
     "kidnapped.start_with_global_localization",
@@ -849,6 +884,64 @@ void Localization::update_relocalization_candidate_lock()
   this->relocalization_candidate_locked_ = true;
 }
 
+Localization::CandidateCluster Localization::refine_candidate_cluster_scan_first(
+  const CandidateCluster & seed_cluster) const
+{
+  CandidateCluster refined_cluster = seed_cluster;
+  if (!this->has_latest_scan_ || this->latest_scan_.ranges.empty()) {
+    return refined_cluster;
+  }
+
+  Particle best_particle{};
+  best_particle.x = seed_cluster.x;
+  best_particle.y = seed_cluster.y;
+  best_particle.yaw = seed_cluster.yaw;
+  best_particle.weight = this->compute_particle_likelihood(best_particle, this->latest_scan_);
+  double best_score = best_particle.weight;
+
+  const int xy_steps = std::max(1, this->relocalization_candidate_refine_xy_steps_);
+  const int yaw_steps = std::max(1, this->relocalization_candidate_refine_yaw_steps_);
+  const double refine_distance = std::max(0.0, this->relocalization_candidate_refine_distance_);
+  const double refine_yaw = std::max(0.0, this->relocalization_candidate_refine_yaw_);
+
+  for (int step_y = -xy_steps; step_y <= xy_steps; ++step_y) {
+    const double dy = refine_distance * static_cast<double>(step_y) / static_cast<double>(xy_steps);
+    for (int step_x = -xy_steps; step_x <= xy_steps; ++step_x) {
+      const double dx =
+        refine_distance * static_cast<double>(step_x) / static_cast<double>(xy_steps);
+      const double sample_x = seed_cluster.x + dx;
+      const double sample_y = seed_cluster.y + dy;
+      int grid_x = 0;
+      int grid_y = 0;
+      if (!this->world_to_grid(sample_x, sample_y, grid_x, grid_y) || !this->is_free_cell(grid_x, grid_y)) {
+        continue;
+      }
+
+      for (int step_yaw = -yaw_steps; step_yaw <= yaw_steps; ++step_yaw) {
+        const double yaw_delta =
+          refine_yaw * static_cast<double>(step_yaw) / static_cast<double>(yaw_steps);
+        Particle candidate{};
+        candidate.x = sample_x;
+        candidate.y = sample_y;
+        candidate.yaw = this->normalize_angle(seed_cluster.yaw + yaw_delta);
+        candidate.weight = this->compute_particle_likelihood(candidate, this->latest_scan_);
+        if (candidate.weight <= best_score) {
+          continue;
+        }
+
+        best_particle = candidate;
+        best_score = candidate.weight;
+      }
+    }
+  }
+
+  refined_cluster.x = best_particle.x;
+  refined_cluster.y = best_particle.y;
+  refined_cluster.yaw = best_particle.yaw;
+  refined_cluster.score = best_score;
+  return refined_cluster;
+}
+
 std::vector<Localization::CandidateCluster> Localization::extract_candidate_clusters() const
 {
   std::vector<CandidateCluster> clusters;
@@ -865,6 +958,83 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
 
   const double cluster_distance_sq =
     this->estimate_cluster_distance_ * this->estimate_cluster_distance_;
+
+  auto aggregate_cluster =
+    [this, cluster_distance_sq](const double seed_x, const double seed_y, const double seed_yaw)
+    {
+      CandidateCluster cluster{};
+      double weighted_x = 0.0;
+      double weighted_y = 0.0;
+      double weighted_sin_yaw = 0.0;
+      double weighted_cos_yaw = 0.0;
+      double total_weight = 0.0;
+      double max_particle_weight = 0.0;
+      double position_variance_accumulator = 0.0;
+      double yaw_variance_accumulator = 0.0;
+      double secondary_weight = 0.0;
+
+      for (const auto & particle : this->particles_) {
+        const double dx = particle.x - seed_x;
+        const double dy = particle.y - seed_y;
+        const double yaw_delta = this->normalize_angle(particle.yaw - seed_yaw);
+        if (
+          ((dx * dx) + (dy * dy)) > cluster_distance_sq ||
+          std::fabs(yaw_delta) > this->estimate_cluster_yaw_)
+        {
+          secondary_weight = std::max(secondary_weight, particle.weight);
+          continue;
+        }
+
+        weighted_x += particle.x * particle.weight;
+        weighted_y += particle.y * particle.weight;
+        weighted_sin_yaw += std::sin(particle.yaw) * particle.weight;
+        weighted_cos_yaw += std::cos(particle.yaw) * particle.weight;
+        total_weight += particle.weight;
+        max_particle_weight = std::max(max_particle_weight, particle.weight);
+      }
+
+      if (total_weight <= 0.0) {
+        return cluster;
+      }
+
+      cluster.x = weighted_x / total_weight;
+      cluster.y = weighted_y / total_weight;
+      cluster.yaw = std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight);
+      cluster.cluster_weight = total_weight;
+      cluster.dominance_ratio = total_weight / std::max(secondary_weight, 1e-6);
+
+      for (const auto & particle : this->particles_) {
+        const double dx = particle.x - seed_x;
+        const double dy = particle.y - seed_y;
+        const double yaw_delta = this->normalize_angle(particle.yaw - seed_yaw);
+        if (
+          ((dx * dx) + (dy * dy)) > cluster_distance_sq ||
+          std::fabs(yaw_delta) > this->estimate_cluster_yaw_)
+        {
+          continue;
+        }
+
+        const double centered_dx = particle.x - cluster.x;
+        const double centered_dy = particle.y - cluster.y;
+        const double centered_yaw = this->normalize_angle(particle.yaw - cluster.yaw);
+        position_variance_accumulator +=
+          ((centered_dx * centered_dx) + (centered_dy * centered_dy)) * particle.weight;
+        yaw_variance_accumulator += (centered_yaw * centered_yaw) * particle.weight;
+      }
+
+      Particle refined_particle{};
+      refined_particle.x = cluster.x;
+      refined_particle.y = cluster.y;
+      refined_particle.yaw = cluster.yaw;
+      refined_particle.weight =
+        this->has_latest_scan_ ? this->compute_particle_likelihood(refined_particle, this->latest_scan_) :
+        max_particle_weight;
+      cluster.score = refined_particle.weight + (0.10 * cluster.cluster_weight);
+      cluster.position_std =
+        std::sqrt(std::max(0.0, position_variance_accumulator / total_weight));
+      cluster.yaw_std = std::sqrt(std::max(0.0, yaw_variance_accumulator / total_weight));
+      return cluster;
+    };
 
   for (const auto & seed_particle : sorted_particles) {
     bool overlaps_existing_cluster = false;
@@ -884,74 +1054,56 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
       continue;
     }
 
-    CandidateCluster cluster{};
-    double weighted_x = 0.0;
-    double weighted_y = 0.0;
-    double weighted_sin_yaw = 0.0;
-    double weighted_cos_yaw = 0.0;
-    double total_weight = 0.0;
-    double max_score = 0.0;
-    double position_variance_accumulator = 0.0;
-    double yaw_variance_accumulator = 0.0;
-    double secondary_weight = 0.0;
-
-    for (const auto & particle : this->particles_) {
-      const double dx = particle.x - seed_particle.x;
-      const double dy = particle.y - seed_particle.y;
-      const double yaw_delta = this->normalize_angle(particle.yaw - seed_particle.yaw);
-      if (
-        ((dx * dx) + (dy * dy)) > cluster_distance_sq ||
-        std::fabs(yaw_delta) > this->estimate_cluster_yaw_)
-      {
-        secondary_weight = std::max(secondary_weight, particle.weight);
-        continue;
-      }
-
-      weighted_x += particle.x * particle.weight;
-      weighted_y += particle.y * particle.weight;
-      weighted_sin_yaw += std::sin(particle.yaw) * particle.weight;
-      weighted_cos_yaw += std::cos(particle.yaw) * particle.weight;
-      total_weight += particle.weight;
-      max_score = std::max(max_score, particle.weight);
-    }
-
-    if (total_weight <= 0.0) {
+    CandidateCluster cluster = aggregate_cluster(
+      seed_particle.x, seed_particle.y, seed_particle.yaw);
+    if (cluster.cluster_weight <= 0.0) {
       continue;
     }
 
-    cluster.x = weighted_x / total_weight;
-    cluster.y = weighted_y / total_weight;
-    cluster.yaw = std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight);
-    cluster.score = max_score;
-    cluster.cluster_weight = total_weight;
-    cluster.dominance_ratio = total_weight / std::max(secondary_weight, 1e-6);
+    cluster = this->refine_candidate_cluster_scan_first(cluster);
+    cluster = aggregate_cluster(cluster.x, cluster.y, cluster.yaw);
+    if (cluster.cluster_weight <= 0.0) {
+      continue;
+    }
 
-    for (const auto & particle : this->particles_) {
-      const double dx = particle.x - seed_particle.x;
-      const double dy = particle.y - seed_particle.y;
-      const double yaw_delta = this->normalize_angle(particle.yaw - seed_particle.yaw);
+    for (const auto & previous_track : this->previous_candidate_tracks_) {
+      const double dx = cluster.x - previous_track.x;
+      const double dy = cluster.y - previous_track.y;
+      const double distance = std::sqrt((dx * dx) + (dy * dy));
+      const double yaw_delta = std::fabs(this->normalize_angle(cluster.yaw - previous_track.yaw));
       if (
-        ((dx * dx) + (dy * dy)) > cluster_distance_sq ||
-        std::fabs(yaw_delta) > this->estimate_cluster_yaw_)
+        distance <= this->relocalization_candidate_match_distance_ &&
+        yaw_delta <= this->relocalization_candidate_match_yaw_)
       {
-        continue;
+        cluster.score += 0.05 * std::max(0.0, previous_track.score);
+        break;
       }
-
-      const double centered_dx = particle.x - cluster.x;
-      const double centered_dy = particle.y - cluster.y;
-      const double centered_yaw = this->normalize_angle(particle.yaw - cluster.yaw);
-      position_variance_accumulator +=
-        ((centered_dx * centered_dx) + (centered_dy * centered_dy)) * particle.weight;
-      yaw_variance_accumulator += (centered_yaw * centered_yaw) * particle.weight;
     }
 
-    cluster.position_std = std::sqrt(std::max(0.0, position_variance_accumulator / total_weight));
-    cluster.yaw_std = std::sqrt(std::max(0.0, yaw_variance_accumulator / total_weight));
     clusters.push_back(cluster);
+  }
 
-    if (static_cast<int>(clusters.size()) >= std::max(1, this->relocalization_max_candidates_)) {
-      break;
-    }
+  std::sort(
+    clusters.begin(), clusters.end(),
+    [](const CandidateCluster & lhs, const CandidateCluster & rhs) {
+      return lhs.score > rhs.score;
+    });
+
+  if (!clusters.empty()) {
+    const double min_score =
+      clusters.front().score *
+      std::clamp(this->relocalization_candidate_min_score_ratio_, 0.0, 1.0);
+    clusters.erase(
+      std::remove_if(
+        clusters.begin(), clusters.end(),
+        [min_score](const CandidateCluster & cluster) {
+          return cluster.score < min_score;
+        }),
+      clusters.end());
+  }
+
+  if (static_cast<int>(clusters.size()) > std::max(1, this->relocalization_max_candidates_)) {
+    clusters.resize(static_cast<std::size_t>(std::max(1, this->relocalization_max_candidates_)));
   }
 
   return clusters;

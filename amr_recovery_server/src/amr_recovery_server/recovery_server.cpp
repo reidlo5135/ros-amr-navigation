@@ -21,6 +21,7 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
   arl_wait_duration_sec_(0.5),
   arl_spin_angle_rad_(0.7853981633974483),
   arl_probe_distance_(0.12),
+  arl_probe_long_distance_(0.45),
   arl_probe_speed_(0.04)
 {
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_name_);
@@ -32,6 +33,7 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("arl.wait_duration_sec", this->arl_wait_duration_sec_);
   this->declare_parameter("arl.spin_angle_rad", this->arl_spin_angle_rad_);
   this->declare_parameter("arl.probe_distance", this->arl_probe_distance_);
+  this->declare_parameter("arl.probe_long_distance", this->arl_probe_long_distance_);
   this->declare_parameter("arl.probe_speed", this->arl_probe_speed_);
 }
 
@@ -47,6 +49,7 @@ RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecyc
   this->get_parameter("arl.wait_duration_sec", this->arl_wait_duration_sec_);
   this->get_parameter("arl.spin_angle_rad", this->arl_spin_angle_rad_);
   this->get_parameter("arl.probe_distance", this->arl_probe_distance_);
+  this->get_parameter("arl.probe_long_distance", this->arl_probe_long_distance_);
   this->get_parameter("arl.probe_speed", this->arl_probe_speed_);
 
   if (this->plan_recovery_service_name_.empty()) {
@@ -133,6 +136,12 @@ void RecoveryServer::handle_plan_recovery(
     response->command = this->build_probe_forward_command(request->current_pose);
     response->success = true;
     response->message = "Planned active relocalization forward probe.";
+    return;
+  }
+  if (request->behavior == "probe_forward_long") {
+    response->command = this->build_probe_forward_long_command(request->current_pose);
+    response->success = true;
+    response->message = "Planned active relocalization long forward probe.";
     return;
   }
 
@@ -228,6 +237,17 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_probe_forward_command(
   command.align_heading_at_goal = false;
   command.recovery_distance = std::max(0.0, this->arl_probe_distance_);
   command.recovery_speed = std::max(0.01, this->arl_probe_speed_);
+  command.recovery_duration =
+    command.recovery_speed > 1e-6 ? command.recovery_distance / command.recovery_speed : 0.0;
+  return command;
+}
+
+amr_msgs::msg::MotionCommand RecoveryServer::build_probe_forward_long_command(
+  const geometry_msgs::msg::PoseStamped & current_pose) const
+{
+  auto command = this->build_probe_forward_command(current_pose);
+  command.route_id = "arl_probe_forward_long";
+  command.recovery_distance = std::max(command.recovery_distance, this->arl_probe_long_distance_);
   command.recovery_duration =
     command.recovery_speed > 1e-6 ? command.recovery_distance / command.recovery_speed : 0.0;
   return command;

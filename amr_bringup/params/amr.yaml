@@ -126,6 +126,11 @@
       relocalization_max_candidates: 4
       relocalization_candidate_match_distance: 0.80
       relocalization_candidate_match_yaw: 0.90
+      relocalization_candidate_refine_distance: 0.45
+      relocalization_candidate_refine_yaw: 1.00
+      relocalization_candidate_refine_xy_steps: 5
+      relocalization_candidate_refine_yaw_steps: 5
+      relocalization_candidate_min_score_ratio: 0.90
     kidnapped:
       enabled: true
       start_with_global_localization: true
@@ -356,6 +361,7 @@
       wait_duration_sec: 0.3
       spin_angle_rad: 0.2617993877991494
       probe_distance: 0.30
+      probe_long_distance: 0.48
       probe_speed: 0.06
 
 /amr/mqtt_bridge:

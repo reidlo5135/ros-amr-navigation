@@ -91,6 +91,7 @@ private:
   void apply_measurement_update(const sensor_msgs::msg::LaserScan & scan);
   void resample_particles();
   void update_relocalization_candidate_lock();
+  CandidateCluster refine_candidate_cluster_scan_first(const CandidateCluster & seed_cluster) const;
   std::vector<CandidateCluster> extract_candidate_clusters() const;
   amr_msgs::msg::LocalizationCandidateArray build_candidate_array_message(
     const rclcpp::Time & stamp,
@@ -191,6 +192,11 @@ private:
   int relocalization_max_candidates_;
   double relocalization_candidate_match_distance_;
   double relocalization_candidate_match_yaw_;
+  double relocalization_candidate_refine_distance_;
+  double relocalization_candidate_refine_yaw_;
+  int relocalization_candidate_refine_xy_steps_;
+  int relocalization_candidate_refine_yaw_steps_;
+  double relocalization_candidate_min_score_ratio_;
   bool kidnapped_detection_enabled_;
   bool kidnapped_start_with_global_localization_;
   bool kidnapped_auto_trigger_enabled_;

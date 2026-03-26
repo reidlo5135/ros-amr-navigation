@@ -44,6 +44,8 @@ private:
     const geometry_msgs::msg::PoseStamped & current_pose) const;
   amr_msgs::msg::MotionCommand build_probe_forward_command(
     const geometry_msgs::msg::PoseStamped & current_pose) const;
+  amr_msgs::msg::MotionCommand build_probe_forward_long_command(
+    const geometry_msgs::msg::PoseStamped & current_pose) const;
   static double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation);
   static geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw);
 
@@ -57,6 +59,7 @@ private:
   double arl_wait_duration_sec_;
   double arl_spin_angle_rad_;
   double arl_probe_distance_;
+  double arl_probe_long_distance_;
   double arl_probe_speed_;
 };
 
