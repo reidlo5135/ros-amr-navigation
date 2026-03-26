@@ -8,6 +8,7 @@ Localization node for the AMR stack.
 - estimates the robot pose in `map`
 - owns tracking vs global-relocalization mode for kidnapped recovery
 - can start directly in global relocalization instead of forcing a fixed initial pose
+- supports startup localization policy separation between manual SetIP, relocalization-first, and fixed start-pose seeding
 - publishes `map -> odom`
 - publishes localized pose and odometry topics used by the rest of the stack
 - publishes localization status and exposes a trigger for global relocalization
@@ -63,7 +64,18 @@ flowchart LR
 
 ## Kidnapped Recovery Notes
 
-- startup can begin from global relocalization instead of forcing a fixed `0,0` seed
+- startup localization policies:
+  - `manual_set_initial_pose`
+    - wait for an external initial-pose message
+    - do not seed from `0,0`
+  - `global_relocalization`
+    - start with passive global relocalization over the static map
+  - `active_relocalization`
+    - reserved startup policy for future probing behaviors
+    - currently falls back to passive global relocalization
+  - `fixed_start_pose`
+    - seed particles from the configured `start_pose`
+- startup no longer needs to force a fixed `0,0` seed just to make the stack runnable
 - manual `initial_pose` still overrides the particle set and returns the node to `TRACKING`
 - `LocalizationStatus` is the public contract used by the navigator:
   - `MODE_TRACKING`

@@ -11,6 +11,7 @@ Changelog
   - wired ``amr_bt_navigator`` to hold navigation during relocalization and resume with a fresh global plan after recovery
   - added kidnapped/global relocalization parameters to ``amr_bringup/params/amr.yaml``
   - switched startup localization away from forced ``0,0`` initial pose toward startup global relocalization
+  - split startup localization policy between ``manual_set_initial_pose``, relocalization-first startup, and optional fixed-start-pose seeding
 
 2026-03-25
 ----------

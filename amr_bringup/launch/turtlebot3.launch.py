@@ -33,10 +33,14 @@ def generate_launch_description() -> LaunchDescription:
     mapping_mode = LaunchConfiguration("mapping_mode")
     robot_bringup_delay_sec = LaunchConfiguration("robot_bringup_delay_sec")
     navigation_start_delay_sec = LaunchConfiguration("navigation_start_delay_sec")
+    startup_localization_mode = LaunchConfiguration("startup_localization_mode")
 
     localization_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(bringup_launch_file("localization.launch.py")),
-        launch_arguments={"mapping_mode": mapping_mode}.items(),
+        launch_arguments={
+            "mapping_mode": mapping_mode,
+            "startup_localization_mode": startup_localization_mode,
+        }.items(),
     )
     mqtt_bridge = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(mqtt_bridge_launch),
@@ -63,6 +67,14 @@ def generate_launch_description() -> LaunchDescription:
                 "navigation_start_delay_sec",
                 default_value="3.0",
                 description="Additional delay before navigation starts after localization bringup.",
+            ),
+            DeclareLaunchArgument(
+                "startup_localization_mode",
+                default_value="global_relocalization",
+                description=(
+                    "Startup localization policy: "
+                    "manual_set_initial_pose | global_relocalization | active_relocalization | fixed_start_pose"
+                ),
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(turtlebot3_robot_launch),

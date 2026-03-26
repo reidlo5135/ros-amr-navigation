@@ -21,6 +21,7 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   estimated_odom_topic_(""),
   localization_status_topic_(""),
   trigger_global_localization_service_name_("/amr/localization/trigger_global_localization"),
+  startup_localization_mode_("global_relocalization"),
   map_frame_("map"),
   odom_frame_("odom"),
   base_frame_("base_link"),
@@ -94,6 +95,7 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "services.trigger_global_localization",
     this->trigger_global_localization_service_name_);
+  this->declare_parameter("startup.localization_mode", this->startup_localization_mode_);
   this->declare_parameter("frames.map", this->map_frame_);
   this->declare_parameter("frames.odom", this->odom_frame_);
   this->declare_parameter("frames.base", this->base_frame_);
@@ -170,6 +172,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter(
     "services.trigger_global_localization",
     this->trigger_global_localization_service_name_);
+  this->get_parameter("startup.localization_mode", this->startup_localization_mode_);
   this->get_parameter("frames.map", this->map_frame_);
   this->get_parameter("frames.odom", this->odom_frame_);
   this->get_parameter("frames.base", this->base_frame_);
@@ -233,6 +236,33 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("kidnapped.relocalization_timeout_sec", this->relocalization_timeout_sec_);
 
   if (
+    !this->startup_mode_is_manual_set_initial_pose() &&
+    !this->startup_mode_is_global_relocalization() &&
+    !this->startup_mode_is_active_relocalization() &&
+    !this->startup_mode_is_fixed_start_pose())
+  {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Unknown startup.localization_mode '%s'; falling back to 'global_relocalization'",
+      this->startup_localization_mode_.c_str());
+    this->startup_localization_mode_ = "global_relocalization";
+  }
+
+  if (this->startup_mode_is_active_relocalization()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "startup.localization_mode='active_relocalization' is reserved for future probing behaviors; using passive global relocalization for now.");
+  }
+
+  this->kidnapped_start_with_global_localization_ =
+    this->startup_mode_is_global_relocalization() ||
+    this->startup_mode_is_active_relocalization();
+
+  if (!this->startup_mode_is_fixed_start_pose()) {
+    this->auto_initial_pose_enabled_ = false;
+  }
+
+  if (
     this->odom_topic_.empty() || this->scan_topic_.empty() || this->map_topic_.empty() ||
     this->initial_pose_topic_.empty() || this->estimated_pose_topic_.empty() ||
     this->estimated_odom_topic_.empty() || this->localization_status_topic_.empty() ||
@@ -259,7 +289,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->initial_map_pose_.pose.position.y = this->initial_y_;
   this->initial_map_pose_.pose.position.z = 0.0;
   this->update_pose_orientation(this->initial_map_pose_, this->initial_yaw_);
-  if (!this->kidnapped_start_with_global_localization_) {
+  if (this->startup_mode_is_fixed_start_pose()) {
     this->has_initial_pose_ = true;
     this->initialize_particles(this->initial_map_pose_);
   }
@@ -309,13 +339,14 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, status='%s', trigger='%s', startup_global=%s'",
+    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, status='%s', trigger='%s', startup_mode='%s', startup_global=%s'",
     this->odom_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->map_topic_.c_str(),
     this->particle_count_,
     this->localization_status_topic_.c_str(),
     this->trigger_global_localization_service_name_.c_str(),
+    this->startup_localization_mode_.c_str(),
     this->kidnapped_start_with_global_localization_ ? "true" : "false");
   return CallbackReturn::SUCCESS;
 }
@@ -458,7 +489,7 @@ void Localization::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     message->info.resolution);
 
   if (
-    this->kidnapped_start_with_global_localization_ &&
+    (this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) &&
     !this->particles_initialized_ &&
     this->localization_mode_ == LocalizationMode::kTracking)
   {
@@ -1274,6 +1305,26 @@ void Localization::handle_trigger_global_localization(
   response->message = response->accepted ?
     std::string("Global relocalization started.") :
     std::string("Failed to start global relocalization.");
+}
+
+bool Localization::startup_mode_is_manual_set_initial_pose() const
+{
+  return this->startup_localization_mode_ == "manual_set_initial_pose";
+}
+
+bool Localization::startup_mode_is_global_relocalization() const
+{
+  return this->startup_localization_mode_ == "global_relocalization";
+}
+
+bool Localization::startup_mode_is_active_relocalization() const
+{
+  return this->startup_localization_mode_ == "active_relocalization";
+}
+
+bool Localization::startup_mode_is_fixed_start_pose() const
+{
+  return this->startup_localization_mode_ == "fixed_start_pose";
 }
 
 double Localization::sample_normal(const double stddev)

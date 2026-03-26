@@ -10,6 +10,7 @@ Current `0.13.0` direction:
   - `amr_bt_navigator` decides
   - planner / controller / recovery packages execute
 - `amr_localization` now owns tracking vs global-relocalization state so kidnapped recovery stays robot-side.
+- startup localization policy can now be selected between manual SetIP, relocalization-first, and fixed start-pose seeding.
 
 ## Architecture
 
@@ -97,6 +98,12 @@ TB3 full runtime:
 
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py
+```
+
+Manual SetIP startup:
+
+```bash
+ros2 launch amr_bringup turtlebot3.launch.py startup_localization_mode:=manual_set_initial_pose
 ```
 
 Web viz:

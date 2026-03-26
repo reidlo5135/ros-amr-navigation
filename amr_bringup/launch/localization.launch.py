@@ -16,12 +16,23 @@ def bringup_params_file() -> str:
 def generate_launch_description() -> LaunchDescription:
     ld = LaunchDescription()
     mapping_mode = LaunchConfiguration("mapping_mode")
+    startup_localization_mode = LaunchConfiguration("startup_localization_mode")
 
     ld.add_action(
         DeclareLaunchArgument(
             "mapping_mode",
             default_value="false",
             description="Run amr_map_server in live mapping mode and skip localization/global planner bringup.",
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
+            "startup_localization_mode",
+            default_value="global_relocalization",
+            description=(
+                "Startup localization policy: "
+                "manual_set_initial_pose | global_relocalization | active_relocalization | fixed_start_pose"
+            ),
         )
     )
 
@@ -39,7 +50,10 @@ def generate_launch_description() -> LaunchDescription:
         name="localization",
         namespace="amr",
         output="screen",
-        parameters=[bringup_params_file()],
+        parameters=[
+            bringup_params_file(),
+            {"startup.localization_mode": startup_localization_mode},
+        ],
         condition=UnlessCondition(mapping_mode),
     )
     global_planner = LifecycleNode(
@@ -75,7 +89,8 @@ def generate_launch_description() -> LaunchDescription:
                     "/amr/localization",
                     "/amr/costmap_server",
                     "/amr/global_planner",
-                ]
+                ],
+                "startup.localization_mode": startup_localization_mode,
             },
         ],
         condition=UnlessCondition(mapping_mode),
@@ -92,6 +107,7 @@ def generate_launch_description() -> LaunchDescription:
                 "managed_nodes": [
                     "/amr/map_server",
                 ],
+                "startup.localization_mode": startup_localization_mode,
                 "initial_pose.enabled": False,
             },
         ],

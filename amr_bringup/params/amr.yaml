@@ -68,6 +68,8 @@
 
 /amr/localization:
   ros__parameters:
+    startup:
+      localization_mode: "global_relocalization"
     topics:
       odom: "/odom"
       scan: "/scan"
@@ -130,6 +132,8 @@
     autostart: true
     service_timeout_ms: 5000
     state_poll_interval_ms: 200
+    startup:
+      localization_mode: "global_relocalization"
     initial_pose:
       enabled: false
       topic: "/amr/localization/initial_pose"
