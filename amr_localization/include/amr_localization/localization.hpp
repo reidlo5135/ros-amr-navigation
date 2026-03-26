@@ -68,6 +68,7 @@ private:
     const geometry_msgs::msg::PoseStamped & current_odom_pose);
   void apply_measurement_update(const sensor_msgs::msg::LaserScan & scan);
   void resample_particles();
+  void update_relocalization_candidate_lock();
   void update_estimated_pose_from_particles(const rclcpp::Time & stamp);
   void publish_outputs(const rclcpp::Time & stamp);
   void publish_localization_status(const rclcpp::Time & stamp);
@@ -153,6 +154,11 @@ private:
   double relocalization_min_cluster_dominance_ratio_;
   double estimate_cluster_distance_;
   double estimate_cluster_yaw_;
+  double relocalization_candidate_lock_confidence_threshold_;
+  double relocalization_candidate_lock_cluster_weight_threshold_;
+  double relocalization_candidate_lock_distance_;
+  double relocalization_candidate_lock_yaw_;
+  int relocalization_candidate_lock_min_updates_;
   bool kidnapped_detection_enabled_;
   bool kidnapped_start_with_global_localization_;
   bool kidnapped_auto_trigger_enabled_;
@@ -182,7 +188,10 @@ private:
   double localization_yaw_std_;
   int low_confidence_update_count_;
   int relocalization_success_count_;
+  int relocalization_observation_count_;
   rclcpp::Time relocalization_started_at_;
+  bool relocalization_candidate_locked_;
+  geometry_msgs::msg::PoseStamped relocalization_candidate_pose_;
   bool has_latest_odom_;
   bool has_latest_scan_;
   bool has_map_;

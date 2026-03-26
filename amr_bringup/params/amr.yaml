@@ -117,6 +117,11 @@
       relocalization_min_cluster_dominance_ratio: 2.2
       estimate_cluster_distance: 0.30
       estimate_cluster_yaw: 0.60
+      relocalization_candidate_lock_confidence_threshold: 0.12
+      relocalization_candidate_lock_cluster_weight_threshold: 0.14
+      relocalization_candidate_lock_distance: 0.90
+      relocalization_candidate_lock_yaw: 1.00
+      relocalization_candidate_lock_min_updates: 2
     kidnapped:
       enabled: true
       start_with_global_localization: true
@@ -345,9 +350,9 @@
       spin_angle_rad: 1.5707963267948966
     arl:
       wait_duration_sec: 0.3
-      spin_angle_rad: 0.39269908169872414
-      probe_distance: 0.18
-      probe_speed: 0.05
+      spin_angle_rad: 0.2617993877991494
+      probe_distance: 0.30
+      probe_speed: 0.06
 
 /amr/mqtt_bridge:
   ros__parameters:

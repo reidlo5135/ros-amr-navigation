@@ -54,6 +54,11 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_min_cluster_dominance_ratio_(1.8),
   estimate_cluster_distance_(0.35),
   estimate_cluster_yaw_(0.75),
+  relocalization_candidate_lock_confidence_threshold_(0.12),
+  relocalization_candidate_lock_cluster_weight_threshold_(0.14),
+  relocalization_candidate_lock_distance_(1.0),
+  relocalization_candidate_lock_yaw_(1.2),
+  relocalization_candidate_lock_min_updates_(2),
   kidnapped_detection_enabled_(true),
   kidnapped_start_with_global_localization_(false),
   kidnapped_auto_trigger_enabled_(false),
@@ -76,7 +81,9 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   localization_yaw_std_(std::numeric_limits<double>::infinity()),
   low_confidence_update_count_(0),
   relocalization_success_count_(0),
+  relocalization_observation_count_(0),
   relocalization_started_at_(0, 0, RCL_ROS_TIME),
+  relocalization_candidate_locked_(false),
   has_latest_odom_(false),
   has_latest_scan_(false),
   has_map_(false),
@@ -139,6 +146,21 @@ Localization::Localization(const rclcpp::NodeOptions & options)
     this->relocalization_min_cluster_dominance_ratio_);
   this->declare_parameter("amcl.estimate_cluster_distance", this->estimate_cluster_distance_);
   this->declare_parameter("amcl.estimate_cluster_yaw", this->estimate_cluster_yaw_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_lock_confidence_threshold",
+    this->relocalization_candidate_lock_confidence_threshold_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_lock_cluster_weight_threshold",
+    this->relocalization_candidate_lock_cluster_weight_threshold_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_lock_distance",
+    this->relocalization_candidate_lock_distance_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_lock_yaw",
+    this->relocalization_candidate_lock_yaw_);
+  this->declare_parameter(
+    "amcl.relocalization_candidate_lock_min_updates",
+    this->relocalization_candidate_lock_min_updates_);
   this->declare_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->declare_parameter(
     "kidnapped.start_with_global_localization",
@@ -216,6 +238,21 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->relocalization_min_cluster_dominance_ratio_);
   this->get_parameter("amcl.estimate_cluster_distance", this->estimate_cluster_distance_);
   this->get_parameter("amcl.estimate_cluster_yaw", this->estimate_cluster_yaw_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_lock_confidence_threshold",
+    this->relocalization_candidate_lock_confidence_threshold_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_lock_cluster_weight_threshold",
+    this->relocalization_candidate_lock_cluster_weight_threshold_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_lock_distance",
+    this->relocalization_candidate_lock_distance_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_lock_yaw",
+    this->relocalization_candidate_lock_yaw_);
+  this->get_parameter(
+    "amcl.relocalization_candidate_lock_min_updates",
+    this->relocalization_candidate_lock_min_updates_);
   this->get_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->get_parameter(
     "kidnapped.start_with_global_localization",
@@ -593,6 +630,7 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & 
   this->localization_cluster_dominance_ratio_ = 0.0;
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
+  this->relocalization_candidate_locked_ = false;
 }
 
 bool Localization::initialize_particles_global()
@@ -623,6 +661,7 @@ bool Localization::initialize_particles_global()
   this->localization_cluster_dominance_ratio_ = 0.0;
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
+  this->relocalization_candidate_locked_ = false;
   return true;
 }
 
@@ -721,10 +760,56 @@ void Localization::resample_particles()
       particle.y += this->sample_normal(this->global_resample_position_noise_);
       particle.yaw = this->normalize_angle(
         particle.yaw + this->sample_normal(this->global_resample_yaw_noise_));
+
+      if (this->relocalization_candidate_locked_) {
+        const double dx = particle.x - this->relocalization_candidate_pose_.pose.position.x;
+        const double dy = particle.y - this->relocalization_candidate_pose_.pose.position.y;
+        const double distance = std::sqrt((dx * dx) + (dy * dy));
+        const double candidate_yaw =
+          this->quaternion_yaw(this->relocalization_candidate_pose_.pose.orientation);
+        const double yaw_delta = std::fabs(this->normalize_angle(particle.yaw - candidate_yaw));
+        if (
+          distance > this->relocalization_candidate_lock_distance_ ||
+          yaw_delta > this->relocalization_candidate_lock_yaw_)
+        {
+          particle.x =
+            this->relocalization_candidate_pose_.pose.position.x +
+            this->sample_normal(std::max(0.05, this->relocalization_candidate_lock_distance_ * 0.35));
+          particle.y =
+            this->relocalization_candidate_pose_.pose.position.y +
+            this->sample_normal(std::max(0.05, this->relocalization_candidate_lock_distance_ * 0.35));
+          particle.yaw = this->normalize_angle(
+            candidate_yaw +
+            this->sample_normal(std::max(0.10, this->relocalization_candidate_lock_yaw_ * 0.35)));
+        }
+      }
     }
   }
 
   this->particles_ = std::move(resampled_particles);
+}
+
+void Localization::update_relocalization_candidate_lock()
+{
+  if (this->localization_mode_ != LocalizationMode::kGlobalRelocalizing) {
+    this->relocalization_candidate_locked_ = false;
+    return;
+  }
+
+  if (this->relocalization_observation_count_ < this->relocalization_candidate_lock_min_updates_) {
+    return;
+  }
+
+  const bool should_lock =
+    this->last_measurement_confidence_ >= this->relocalization_candidate_lock_confidence_threshold_ &&
+    this->localization_cluster_weight_ >= this->relocalization_candidate_lock_cluster_weight_threshold_;
+
+  if (!should_lock) {
+    return;
+  }
+
+  this->relocalization_candidate_pose_ = this->estimated_pose_;
+  this->relocalization_candidate_locked_ = true;
 }
 
 void Localization::update_estimated_pose_from_particles(const rclcpp::Time & stamp)
@@ -1188,7 +1273,9 @@ void Localization::start_global_relocalization(const std::string & reason)
   this->relocalization_started_at_ = this->now();
   this->low_confidence_update_count_ = 0;
   this->relocalization_success_count_ = 0;
+  this->relocalization_observation_count_ = 0;
   this->last_measurement_confidence_ = 0.0;
+  this->relocalization_candidate_locked_ = false;
 
   RCLCPP_WARN(
     this->get_logger(),
@@ -1226,6 +1313,8 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
   }
 
   if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
+    this->relocalization_observation_count_ += 1;
+    this->update_relocalization_candidate_lock();
     const bool relocalization_converged =
       confidence >= this->relocalization_success_confidence_threshold_ &&
       this->localization_cluster_weight_ >= this->relocalization_min_cluster_weight_ &&
@@ -1382,7 +1471,10 @@ void Localization::reset_state()
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   this->low_confidence_update_count_ = 0;
   this->relocalization_success_count_ = 0;
+  this->relocalization_observation_count_ = 0;
   this->relocalization_started_at_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
+  this->relocalization_candidate_locked_ = false;
+  this->relocalization_candidate_pose_ = geometry_msgs::msg::PoseStamped();
   this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;
   this->has_map_ = false;

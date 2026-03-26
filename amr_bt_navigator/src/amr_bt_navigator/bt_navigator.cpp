@@ -1418,7 +1418,7 @@ void Btnavigator::run_active_relocalization_supervisor()
         this->active_relocalization_command_id_ = 0U;
         this->active_relocalization_command_started_ns_ = 0;
         this->active_relocalization_phase_index_ =
-          (this->active_relocalization_phase_index_ + 1U) % 4U;
+          (this->active_relocalization_phase_index_ + 1U) % 5U;
         return;
       }
 
@@ -1437,7 +1437,7 @@ void Btnavigator::run_active_relocalization_supervisor()
         this->active_relocalization_command_id_ = 0U;
         this->active_relocalization_command_started_ns_ = 0;
         this->active_relocalization_phase_index_ =
-          (this->active_relocalization_phase_index_ + 1U) % 4U;
+          (this->active_relocalization_phase_index_ + 1U) % 5U;
       }
       return;
     }
@@ -1459,15 +1459,16 @@ void Btnavigator::run_active_relocalization_supervisor()
 
   static constexpr const char * kArlBehaviors[] = {
     "probe_forward",
-    "arl_spin",
     "probe_forward",
     "arl_spin",
+    "probe_forward",
+    "arl_spin"
   };
 
   std::size_t behavior_index = 0U;
   {
     std::scoped_lock arl_lock(this->active_relocalization_mutex_);
-    behavior_index = this->active_relocalization_phase_index_ % 4U;
+    behavior_index = this->active_relocalization_phase_index_ % 5U;
     this->active_relocalization_request_pending_ = true;
     this->active_relocalization_request_started_ns_ = this->now().nanoseconds();
     this->active_relocalization_pending_behavior_ = kArlBehaviors[behavior_index];
