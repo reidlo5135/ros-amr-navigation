@@ -1,0 +1,7 @@
+uint32 candidate_id
+geometry_msgs/PoseStamped pose
+float64 score
+float64 cluster_weight
+float64 dominance_ratio
+float64 position_std
+float64 yaw_std

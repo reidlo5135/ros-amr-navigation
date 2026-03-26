@@ -20,6 +20,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotionStatus.msg"
   "msg/LocalPlanStatus.msg"
   "msg/LocalizationStatus.msg"
+  "msg/LocalizationCandidate.msg"
+  "msg/LocalizationCandidateArray.msg"
   "srv/ClearCostmap.srv"
   "srv/PlanLocalEscape.srv"
   "srv/PlanRecovery.srv"

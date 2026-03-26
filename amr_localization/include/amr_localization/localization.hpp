@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "amr_msgs/msg/localization_candidate_array.hpp"
 #include "amr_msgs/msg/localization_status.hpp"
 #include "amr_msgs/srv/trigger_global_localization.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -38,6 +39,27 @@ private:
     double y;
     double yaw;
     double weight;
+  };
+
+  struct CandidateCluster
+  {
+    double x;
+    double y;
+    double yaw;
+    double score;
+    double cluster_weight;
+    double dominance_ratio;
+    double position_std;
+    double yaw_std;
+  };
+
+  struct CandidateTrack
+  {
+    uint32_t id;
+    double x;
+    double y;
+    double yaw;
+    double score;
   };
 
   enum class LocalizationMode : uint8_t
@@ -69,9 +91,14 @@ private:
   void apply_measurement_update(const sensor_msgs::msg::LaserScan & scan);
   void resample_particles();
   void update_relocalization_candidate_lock();
+  std::vector<CandidateCluster> extract_candidate_clusters() const;
+  amr_msgs::msg::LocalizationCandidateArray build_candidate_array_message(
+    const rclcpp::Time & stamp,
+    const std::vector<CandidateCluster> & clusters);
   void update_estimated_pose_from_particles(const rclcpp::Time & stamp);
   void publish_outputs(const rclcpp::Time & stamp);
   void publish_localization_status(const rclcpp::Time & stamp);
+  void publish_localization_candidates(const rclcpp::Time & stamp);
   geometry_msgs::msg::TransformStamped build_map_to_odom_transform(const rclcpp::Time & stamp) const;
   geometry_msgs::msg::PoseStamped odometry_pose_to_pose_stamped(
     const nav_msgs::msg::Odometry & odometry) const;
@@ -108,6 +135,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr estimated_pose_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr estimated_odometry_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::LocalizationStatus>::SharedPtr localization_status_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::LocalizationCandidateArray>::SharedPtr localization_candidates_publisher_;
   rclcpp::Service<amr_msgs::srv::TriggerGlobalLocalization>::SharedPtr trigger_global_localization_service_;
   rclcpp::TimerBase::SharedPtr auto_initial_pose_timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> transform_broadcaster_;
@@ -119,6 +147,7 @@ private:
   std::string estimated_pose_topic_;
   std::string estimated_odom_topic_;
   std::string localization_status_topic_;
+  std::string localization_candidates_topic_;
   std::string trigger_global_localization_service_name_;
   std::string startup_localization_mode_;
   std::string map_frame_;
@@ -159,6 +188,9 @@ private:
   double relocalization_candidate_lock_distance_;
   double relocalization_candidate_lock_yaw_;
   int relocalization_candidate_lock_min_updates_;
+  int relocalization_max_candidates_;
+  double relocalization_candidate_match_distance_;
+  double relocalization_candidate_match_yaw_;
   bool kidnapped_detection_enabled_;
   bool kidnapped_start_with_global_localization_;
   bool kidnapped_auto_trigger_enabled_;
@@ -192,6 +224,8 @@ private:
   rclcpp::Time relocalization_started_at_;
   bool relocalization_candidate_locked_;
   geometry_msgs::msg::PoseStamped relocalization_candidate_pose_;
+  std::vector<CandidateTrack> previous_candidate_tracks_;
+  uint32_t next_candidate_id_;
   bool has_latest_odom_;
   bool has_latest_scan_;
   bool has_map_;

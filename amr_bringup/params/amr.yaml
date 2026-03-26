@@ -78,6 +78,7 @@
       estimated_pose: "/amr/localization/pose"
       estimated_odometry: "/amr/localization/odometry"
       status: "/amr/localization/status"
+      candidates: "/amr/localization/candidates"
     services:
       trigger_global_localization: "/amr/localization/trigger_global_localization"
     frames:
@@ -122,6 +123,9 @@
       relocalization_candidate_lock_distance: 0.90
       relocalization_candidate_lock_yaw: 1.00
       relocalization_candidate_lock_min_updates: 2
+      relocalization_max_candidates: 4
+      relocalization_candidate_match_distance: 0.80
+      relocalization_candidate_match_yaw: 0.90
     kidnapped:
       enabled: true
       start_with_global_localization: true
