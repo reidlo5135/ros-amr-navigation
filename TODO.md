@@ -175,12 +175,49 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
+| `2026-03-27` | ARL probing 강화, scan-first GL 후보군 안정화, temp local submap 기반 pose 정합 검토 |
 | `2026-03-26` | kidnapped 대응용 global localization 설계, offline/disconnect 재초기화 흐름 검토 |
 | `2026-03-25` | exact footprint collision 완료, local planner decision semantics 반영, recovery/final approach 1차 안정화, viz 운영성 강화 |
 | `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
 | `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
 | `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
+
+## 2026-03-27
+
+- ARL probing 동작 강화
+  - startup `active_relocalization`이 현재보다 더 적극적으로 병진 probing을 수행하도록 step policy 재설계
+  - 단순 제자리 회전 위주가 아니라 `short forward probe -> reobserve -> short spin -> reobserve` 비중을 높이는 방향 검토
+  - `MODE_PROBE`는 미지 환경 기반 probing이므로 전방 `LiDAR safety gate`를 유지한 상태에서 직진 범위를 더 의미 있게 쓰는 방향 검토
+  - 검토 관점
+    - probing은 일반 navigation이 아니라 `controlled probing motion`으로 분리 유지
+    - 한 번의 긴 주행보다 짧은 step 반복과 step 사이 재평가가 더 적절한지 검토
+    - obstacle near일 때 즉시 stop하고 다음 ARL behavior를 고르는 구조 유지
+
+- scan-first GL 후보군 안정화
+  - 현재 global localization 후보군이 posterior cluster 기준으로 전국구를 널뛰는 문제를 줄이기 위해, `현재 scan` 자체를 더 직접 반영하는 후보군 선정 방식 고도화
+  - `top-k stable candidates`를 명시적 객체로 유지하고, frame 간 동일 후보를 persistence 있게 추적하는 방향 검토
+  - 단일 best cluster를 빨리 확정하기보다, 비슷한 후보군을 일정 시간 유지하면서 연속 관측으로 pruning 하는 흐름 검토
+  - 검토 관점
+    - `particle filter`는 최종 보정 레이어로 두고, 1차 후보군 추출은 scan-driven semantics를 더 강화하는 편이 적절한지 검토
+    - 후보군 선정 시 `score`, `cluster_weight`, `dominance_ratio` 외에 `scan patch consistency` 같은 추가 기준이 필요한지 검토
+    - `TF / scan / robot_pose`가 같이 움직이는 현재 viz 표현은 추정 가설 종속이므로, 검증 지표와 표시 semantics를 분리할 필요가 있는지 검토
+
+- temp local submap 기반 pose 정합 검토
+  - ARL 동안 누적한 scan으로 휘발성 `temporary local submap` 또는 `scan accumulation patch`를 만들고, 이를 기존 static SLAM map과 정합해 initial pose를 확정하는 hybrid 구조 검토
+  - 단일 scan matching보다 짧은 probing 궤적에서 만들어진 local geometry를 활용해 corridor alias를 줄이는 방향 검토
+  - 검토 관점
+    - `particle-based coarse search + local submap refine`의 2-stage hybrid가 적절한지 검토
+    - local submap을 map-wide brute force로 정합할지, coarse 후보군 주변만 refine 할지 비교
+    - 정합 성공 시점은 `best score`, `second-best gap`, `patch coverage`, `alignment consistency`를 같이 보는 편이 적절한지 검토
+
+- GL 후보군 / 정합 상태의 운영 시각화 개선
+  - `amr_viz`에서 현재 후보군을 그리는 것에 더해, primary candidate가 왜 선택됐는지 이해 가능한 디버그 신호를 추가할지 검토
+  - scan shape와 candidate pose의 관계를 operator가 오해하지 않도록, 현재 pose 종속 scan overlay와 후보 정합 상태를 구분해서 표시하는 방향 검토
+  - 검토 관점
+    - `TRACKING / GLOBAL_RELOCALIZING / FAILED` 상태와 candidate score를 함께 보여줄지 검토
+    - candidate별 `score / dominance / std`를 panel에 노출할지 검토
+    - 향후 local submap refine가 들어가면 정합 score를 같이 표출할지 검토
 
 ## 2026-03-26
 
