@@ -1458,10 +1458,10 @@ void Btnavigator::run_active_relocalization_supervisor()
   }
 
   static constexpr const char * kArlBehaviors[] = {
-    "arl_spin",
-    "arl_wait",
     "probe_forward",
-    "arl_wait",
+    "arl_spin",
+    "probe_forward",
+    "arl_spin",
   };
 
   std::size_t behavior_index = 0U;

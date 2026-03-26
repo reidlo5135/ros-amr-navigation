@@ -540,9 +540,14 @@ void MotionController::publish_control()
       } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_PROBE) {
         const double traveled = this->pose_distance(this->current_pose_, this->recovery_reference_pose_);
         const double remaining = std::max(0.0, this->latest_command_.recovery_distance - traveled);
+        const bool probe_safety_gate_blocked = this->is_safety_gate_triggered();
         status.remaining_distance = remaining;
         debug_remaining_distance = remaining;
+        status.safety_gate_blocked = probe_safety_gate_blocked;
+        status.obstacle_detected = probe_safety_gate_blocked;
+        status.blocked = probe_safety_gate_blocked;
         if (
+          probe_safety_gate_blocked ||
           remaining <= this->distance_tolerance_ ||
           (this->latest_command_.recovery_duration > 0.0 &&
           elapsed_sec >= this->latest_command_.recovery_duration))

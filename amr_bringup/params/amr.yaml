@@ -329,7 +329,7 @@
       retry_delay_ms: 1000
     arl:
       check_period_ms: 250
-      command_timeout_ms: 4000
+      command_timeout_ms: 3000
       retrigger_interval_ms: 1500
 
 /amr/recovery_server:
@@ -344,10 +344,10 @@
       backup_speed: 0.06
       spin_angle_rad: 1.5707963267948966
     arl:
-      wait_duration_sec: 0.5
-      spin_angle_rad: 0.7853981633974483
-      probe_distance: 0.12
-      probe_speed: 0.04
+      wait_duration_sec: 0.3
+      spin_angle_rad: 0.39269908169872414
+      probe_distance: 0.18
+      probe_speed: 0.05
 
 /amr/mqtt_bridge:
   ros__parameters:
