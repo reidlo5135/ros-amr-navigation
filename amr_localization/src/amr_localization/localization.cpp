@@ -43,6 +43,14 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   max_beams_(24),
   max_beam_range_(6.0),
   occupied_threshold_(50),
+  global_particle_count_(800),
+  global_particle_sample_attempts_(1000),
+  global_resample_position_noise_(0.03),
+  global_resample_yaw_noise_(0.08),
+  relocalization_max_position_std_(0.25),
+  relocalization_max_yaw_std_(0.45),
+  estimate_cluster_distance_(0.35),
+  estimate_cluster_yaw_(0.75),
   kidnapped_detection_enabled_(true),
   kidnapped_start_with_global_localization_(false),
   kidnapped_auto_trigger_enabled_(false),
@@ -59,6 +67,8 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_count_(0U),
   localization_confidence_(0.0),
   last_measurement_confidence_(0.0),
+  localization_position_std_(std::numeric_limits<double>::infinity()),
+  localization_yaw_std_(std::numeric_limits<double>::infinity()),
   low_confidence_update_count_(0),
   relocalization_success_count_(0),
   relocalization_started_at_(0, 0, RCL_ROS_TIME),
@@ -106,6 +116,18 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter("amcl.max_beams", this->max_beams_);
   this->declare_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->declare_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->declare_parameter("amcl.global_particle_count", this->global_particle_count_);
+  this->declare_parameter(
+    "amcl.global_particle_sample_attempts", this->global_particle_sample_attempts_);
+  this->declare_parameter(
+    "amcl.global_resample_position_noise", this->global_resample_position_noise_);
+  this->declare_parameter("amcl.global_resample_yaw_noise", this->global_resample_yaw_noise_);
+  this->declare_parameter(
+    "amcl.relocalization_max_position_std", this->relocalization_max_position_std_);
+  this->declare_parameter(
+    "amcl.relocalization_max_yaw_std", this->relocalization_max_yaw_std_);
+  this->declare_parameter("amcl.estimate_cluster_distance", this->estimate_cluster_distance_);
+  this->declare_parameter("amcl.estimate_cluster_yaw", this->estimate_cluster_yaw_);
   this->declare_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->declare_parameter(
     "kidnapped.start_with_global_localization",
@@ -165,6 +187,18 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("amcl.max_beams", this->max_beams_);
   this->get_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->get_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->get_parameter("amcl.global_particle_count", this->global_particle_count_);
+  this->get_parameter(
+    "amcl.global_particle_sample_attempts", this->global_particle_sample_attempts_);
+  this->get_parameter(
+    "amcl.global_resample_position_noise", this->global_resample_position_noise_);
+  this->get_parameter("amcl.global_resample_yaw_noise", this->global_resample_yaw_noise_);
+  this->get_parameter(
+    "amcl.relocalization_max_position_std", this->relocalization_max_position_std_);
+  this->get_parameter(
+    "amcl.relocalization_max_yaw_std", this->relocalization_max_yaw_std_);
+  this->get_parameter("amcl.estimate_cluster_distance", this->estimate_cluster_distance_);
+  this->get_parameter("amcl.estimate_cluster_yaw", this->estimate_cluster_yaw_);
   this->get_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->get_parameter(
     "kidnapped.start_with_global_localization",
@@ -516,6 +550,8 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & 
 
   this->particles_initialized_ = true;
   this->localization_confidence_ = 0.0;
+  this->localization_position_std_ = std::numeric_limits<double>::infinity();
+  this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
 }
 
 bool Localization::initialize_particles_global()
@@ -525,9 +561,9 @@ bool Localization::initialize_particles_global()
   }
 
   this->particles_.clear();
-  this->particles_.reserve(static_cast<std::size_t>(std::max(1, this->particle_count_)));
+  this->particles_.reserve(static_cast<std::size_t>(std::max(1, this->global_particle_count_)));
 
-  const auto particle_count = std::max(1, this->particle_count_);
+  const auto particle_count = std::max(1, this->global_particle_count_);
   const double uniform_weight = 1.0 / static_cast<double>(particle_count);
 
   for (int index = 0; index < particle_count; ++index) {
@@ -542,6 +578,8 @@ bool Localization::initialize_particles_global()
 
   this->particles_initialized_ = true;
   this->localization_confidence_ = 0.0;
+  this->localization_position_std_ = std::numeric_limits<double>::infinity();
+  this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   return true;
 }
 
@@ -634,6 +672,15 @@ void Localization::resample_particles()
     target += step;
   }
 
+  if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
+    for (auto & particle : resampled_particles) {
+      particle.x += this->sample_normal(this->global_resample_position_noise_);
+      particle.y += this->sample_normal(this->global_resample_position_noise_);
+      particle.yaw = this->normalize_angle(
+        particle.yaw + this->sample_normal(this->global_resample_yaw_noise_));
+    }
+  }
+
   this->particles_ = std::move(resampled_particles);
 }
 
@@ -646,13 +693,31 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
     return;
   }
 
+  const auto best_particle_it = std::max_element(
+    this->particles_.begin(), this->particles_.end(),
+    [](const Particle & lhs, const Particle & rhs) {
+      return lhs.weight < rhs.weight;
+    });
+  const Particle & best_particle = *best_particle_it;
+  const double cluster_distance_sq = this->estimate_cluster_distance_ * this->estimate_cluster_distance_;
+
   double weighted_x = 0.0;
   double weighted_y = 0.0;
   double weighted_sin_yaw = 0.0;
   double weighted_cos_yaw = 0.0;
   double total_weight = 0.0;
+  double position_variance_accumulator = 0.0;
+  double yaw_variance_accumulator = 0.0;
 
   for (const auto & particle : this->particles_) {
+    const double dx = particle.x - best_particle.x;
+    const double dy = particle.y - best_particle.y;
+    const double distance_sq = (dx * dx) + (dy * dy);
+    const double yaw_delta = this->normalize_angle(particle.yaw - best_particle.yaw);
+    if (distance_sq > cluster_distance_sq || std::fabs(yaw_delta) > this->estimate_cluster_yaw_) {
+      continue;
+    }
+
     weighted_x += particle.x * particle.weight;
     weighted_y += particle.y * particle.weight;
     weighted_sin_yaw += std::sin(particle.yaw) * particle.weight;
@@ -661,17 +726,43 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
   }
 
   if (total_weight <= 0.0) {
+    weighted_x = best_particle.x;
+    weighted_y = best_particle.y;
+    weighted_sin_yaw = std::sin(best_particle.yaw);
+    weighted_cos_yaw = std::cos(best_particle.yaw);
     total_weight = 1.0;
   }
 
+  const double mean_x = weighted_x / total_weight;
+  const double mean_y = weighted_y / total_weight;
+  const double mean_yaw = std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight);
+
+  for (const auto & particle : this->particles_) {
+    const double dx = particle.x - best_particle.x;
+    const double dy = particle.y - best_particle.y;
+    const double distance_sq = (dx * dx) + (dy * dy);
+    const double yaw_delta = this->normalize_angle(particle.yaw - best_particle.yaw);
+    if (distance_sq > cluster_distance_sq || std::fabs(yaw_delta) > this->estimate_cluster_yaw_) {
+      continue;
+    }
+
+    const double centered_dx = particle.x - mean_x;
+    const double centered_dy = particle.y - mean_y;
+    const double centered_yaw = this->normalize_angle(particle.yaw - mean_yaw);
+    position_variance_accumulator +=
+      ((centered_dx * centered_dx) + (centered_dy * centered_dy)) * particle.weight;
+    yaw_variance_accumulator += (centered_yaw * centered_yaw) * particle.weight;
+  }
+
+  this->localization_position_std_ = std::sqrt(std::max(0.0, position_variance_accumulator / total_weight));
+  this->localization_yaw_std_ = std::sqrt(std::max(0.0, yaw_variance_accumulator / total_weight));
+
   this->estimated_pose_.header.stamp = stamp;
   this->estimated_pose_.header.frame_id = this->map_frame_;
-  this->estimated_pose_.pose.position.x = weighted_x / total_weight;
-  this->estimated_pose_.pose.position.y = weighted_y / total_weight;
+  this->estimated_pose_.pose.position.x = mean_x;
+  this->estimated_pose_.pose.position.y = mean_y;
   this->estimated_pose_.pose.position.z = 0.0;
-  this->update_pose_orientation(
-    this->estimated_pose_,
-    std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight));
+  this->update_pose_orientation(this->estimated_pose_, mean_yaw);
 }
 
 void Localization::publish_outputs(const rclcpp::Time & stamp)
@@ -870,7 +961,7 @@ bool Localization::sample_random_free_pose(Particle & particle)
   std::uniform_int_distribution<int> y_distribution(0, height - 1);
   std::uniform_real_distribution<double> yaw_distribution(-kPi, kPi);
 
-  for (int attempt = 0; attempt < 500; ++attempt) {
+  for (int attempt = 0; attempt < std::max(1, this->global_particle_sample_attempts_); ++attempt) {
     const int grid_x = x_distribution(this->random_engine_);
     const int grid_y = y_distribution(this->random_engine_);
     if (!this->is_free_cell(grid_x, grid_y)) {
@@ -890,6 +981,38 @@ bool Localization::sample_random_free_pose(Particle & particle)
   }
 
   return false;
+}
+
+double Localization::raycast_obstacle_range(
+  const double world_x,
+  const double world_y,
+  const double angle,
+  const double max_range) const
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return max_range;
+  }
+
+  const double step = std::max(
+    0.01,
+    static_cast<double>(this->map_occupancy_grid_->info.resolution) * 0.5);
+  double traveled = 0.0;
+
+  while (traveled <= max_range) {
+    const double sample_x = world_x + (traveled * std::cos(angle));
+    const double sample_y = world_y + (traveled * std::sin(angle));
+    int grid_x = 0;
+    int grid_y = 0;
+    if (!this->world_to_grid(sample_x, sample_y, grid_x, grid_y)) {
+      return std::min(traveled, max_range);
+    }
+    if (this->is_occupied_cell(grid_x, grid_y)) {
+      return traveled;
+    }
+    traveled += step;
+  }
+
+  return max_range;
 }
 
 double Localization::nearest_obstacle_distance(const double world_x, const double world_y) const
@@ -959,10 +1082,10 @@ double Localization::compute_particle_likelihood(
       static_cast<double>(scan.angle_min) +
       (static_cast<double>(beam_index) * static_cast<double>(scan.angle_increment)) +
       particle.yaw;
-    const double endpoint_x = particle.x + (beam_range * std::cos(beam_angle));
-    const double endpoint_y = particle.y + (beam_range * std::sin(beam_angle));
-    const double obstacle_distance = this->nearest_obstacle_distance(endpoint_x, endpoint_y);
-    const double normalized_distance = obstacle_distance / std::max(this->measurement_sigma_, 1e-3);
+    const double expected_range =
+      this->raycast_obstacle_range(particle.x, particle.y, beam_angle, effective_max_range);
+    const double range_error = beam_range - expected_range;
+    const double normalized_distance = range_error / std::max(this->measurement_sigma_, 1e-3);
     const double score = std::exp(-0.5 * normalized_distance * normalized_distance);
 
     accumulated_score += score;
@@ -1037,7 +1160,11 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
   }
 
   if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
-    if (confidence >= this->relocalization_success_confidence_threshold_) {
+    const bool relocalization_converged =
+      confidence >= this->relocalization_success_confidence_threshold_ &&
+      this->localization_position_std_ <= this->relocalization_max_position_std_ &&
+      this->localization_yaw_std_ <= this->relocalization_max_yaw_std_;
+    if (relocalization_converged) {
       this->relocalization_success_count_ += 1;
     } else {
       this->relocalization_success_count_ = 0;
@@ -1051,8 +1178,10 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
       this->relocalization_success_count_ = 0;
       RCLCPP_INFO(
         this->get_logger(),
-        "Global relocalization succeeded with confidence %.3f",
-        confidence);
+        "Global relocalization succeeded with confidence %.3f, position_std %.3f, yaw_std %.3f",
+        confidence,
+        this->localization_position_std_,
+        this->localization_yaw_std_);
       return;
     }
 
@@ -1156,6 +1285,8 @@ void Localization::reset_state()
   this->relocalization_count_ = 0U;
   this->localization_confidence_ = 0.0;
   this->last_measurement_confidence_ = 0.0;
+  this->localization_position_std_ = std::numeric_limits<double>::infinity();
+  this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   this->low_confidence_update_count_ = 0;
   this->relocalization_success_count_ = 0;
   this->relocalization_started_at_ = rclcpp::Time(0, 0, RCL_ROS_TIME);

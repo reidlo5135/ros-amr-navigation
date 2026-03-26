@@ -79,6 +79,7 @@ private:
   bool is_occupied_cell(int grid_x, int grid_y) const;
   bool is_free_cell(int grid_x, int grid_y) const;
   bool sample_random_free_pose(Particle & particle);
+  double raycast_obstacle_range(double world_x, double world_y, double angle, double max_range) const;
   double nearest_obstacle_distance(double world_x, double world_y) const;
   double compute_particle_likelihood(
     const Particle & particle,
@@ -137,6 +138,14 @@ private:
   int max_beams_;
   double max_beam_range_;
   int occupied_threshold_;
+  int global_particle_count_;
+  int global_particle_sample_attempts_;
+  double global_resample_position_noise_;
+  double global_resample_yaw_noise_;
+  double relocalization_max_position_std_;
+  double relocalization_max_yaw_std_;
+  double estimate_cluster_distance_;
+  double estimate_cluster_yaw_;
   bool kidnapped_detection_enabled_;
   bool kidnapped_start_with_global_localization_;
   bool kidnapped_auto_trigger_enabled_;
@@ -160,6 +169,8 @@ private:
   uint32_t relocalization_count_;
   double localization_confidence_;
   double last_measurement_confidence_;
+  double localization_position_std_;
+  double localization_yaw_std_;
   int low_confidence_update_count_;
   int relocalization_success_count_;
   rclcpp::Time relocalization_started_at_;

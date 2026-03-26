@@ -95,6 +95,8 @@
         yaw: 0.06853891945200942
     amcl:
       particle_count: 200
+      global_particle_count: 1200
+      global_particle_sample_attempts: 1200
       initial_particle_std_xy: 0.15
       initial_particle_std_yaw: 0.15
       motion_noise_linear: 0.02
@@ -102,18 +104,24 @@
       motion_noise_angular: 0.05
       measurement_sigma: 0.15
       measurement_search_radius_cells: 4
-      max_beams: 24
+      max_beams: 64
       max_beam_range: 6.0
       occupied_threshold: 50
+      global_resample_position_noise: 0.025
+      global_resample_yaw_noise: 0.06
+      relocalization_max_position_std: 0.18
+      relocalization_max_yaw_std: 0.35
+      estimate_cluster_distance: 0.30
+      estimate_cluster_yaw: 0.60
     kidnapped:
       enabled: true
       start_with_global_localization: true
       auto_trigger: false
       low_confidence_threshold: 0.22
       consecutive_low_confidence_updates: 6
-      relocalization_success_threshold: 0.40
-      relocalization_success_streak: 3
-      relocalization_timeout_sec: 8.0
+      relocalization_success_threshold: 0.55
+      relocalization_success_streak: 4
+      relocalization_timeout_sec: 10.0
 
 /amr/localization_manager:
   ros__parameters:
