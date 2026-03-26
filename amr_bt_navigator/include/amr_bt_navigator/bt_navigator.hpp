@@ -89,6 +89,11 @@ private:
   void publish_motion_command(const amr_msgs::msg::MotionCommand & command);
   void publish_stop_command();
   void run_active_relocalization_supervisor();
+  void request_active_relocalization_behavior_async(
+    const std::string & behavior,
+    const geometry_msgs::msg::PoseStamped & current_pose,
+    std::size_t behavior_index);
+  void trigger_global_localization_async(const std::string & reason);
   bool has_active_goal() const;
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
@@ -141,6 +146,11 @@ private:
   std::size_t active_relocalization_phase_index_;
   int64_t active_relocalization_command_started_ns_;
   int64_t active_relocalization_last_trigger_ns_;
+  bool active_relocalization_request_pending_;
+  int64_t active_relocalization_request_started_ns_;
+  std::string active_relocalization_pending_behavior_;
+  bool active_relocalization_trigger_pending_;
+  int64_t active_relocalization_trigger_started_ns_;
 };
 
 }  // namespace amr_bt_navigator

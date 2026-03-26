@@ -59,7 +59,12 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   active_relocalization_command_id_(0U),
   active_relocalization_phase_index_(0U),
   active_relocalization_command_started_ns_(0),
-  active_relocalization_last_trigger_ns_(0)
+  active_relocalization_last_trigger_ns_(0),
+  active_relocalization_request_pending_(false),
+  active_relocalization_request_started_ns_(0),
+  active_relocalization_pending_behavior_(""),
+  active_relocalization_trigger_pending_(false),
+  active_relocalization_trigger_started_ns_(0)
 {
   this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
@@ -1327,12 +1332,34 @@ void Btnavigator::run_active_relocalization_supervisor()
       this->active_relocalization_command_id_ = 0U;
       this->active_relocalization_phase_index_ = 0U;
       this->active_relocalization_command_started_ns_ = 0;
+      this->active_relocalization_request_pending_ = false;
+      this->active_relocalization_request_started_ns_ = 0;
+      this->active_relocalization_pending_behavior_.clear();
+      this->active_relocalization_trigger_pending_ = false;
+      this->active_relocalization_trigger_started_ns_ = 0;
       return;
     }
   }
 
   if (localization_status.mode == amr_msgs::msg::LocalizationStatus::MODE_FAILED) {
     std::scoped_lock arl_lock(this->active_relocalization_mutex_);
+    if (this->active_relocalization_trigger_pending_) {
+      const auto trigger_elapsed_ns =
+        this->now().nanoseconds() - this->active_relocalization_trigger_started_ns_;
+      if (
+        this->active_relocalization_trigger_started_ns_ > 0 &&
+        trigger_elapsed_ns >
+        static_cast<int64_t>(this->planner_wait_timeout_ms_) * 1000000LL)
+      {
+        this->active_relocalization_trigger_pending_ = false;
+        this->active_relocalization_trigger_started_ns_ = 0;
+        RCLCPP_WARN(
+          this->get_logger(),
+          "ARL: timed out while waiting for global relocalization trigger response");
+      } else {
+        return;
+      }
+    }
     const auto now_ns = this->now().nanoseconds();
     if (
       this->active_relocalization_last_trigger_ns_ > 0 &&
@@ -1342,23 +1369,17 @@ void Btnavigator::run_active_relocalization_supervisor()
       return;
     }
 
-    std::string error_message;
-    if (!this->trigger_global_localization("active_relocalization retry", error_message)) {
-      RCLCPP_WARN_THROTTLE(
-        this->get_logger(),
-        *this->get_clock(),
-        2000,
-        "ARL: failed to retrigger global relocalization: %s",
-        error_message.c_str());
-      return;
-    }
-
     this->active_relocalization_last_trigger_ns_ = now_ns;
     this->active_relocalization_command_active_ = false;
     this->active_relocalization_command_id_ = 0U;
     this->active_relocalization_phase_index_ = 0U;
     this->active_relocalization_command_started_ns_ = 0;
-    RCLCPP_WARN(this->get_logger(), "ARL: retriggered global relocalization after failure");
+    this->active_relocalization_request_pending_ = false;
+    this->active_relocalization_request_started_ns_ = 0;
+    this->active_relocalization_pending_behavior_.clear();
+    this->active_relocalization_trigger_pending_ = true;
+    this->active_relocalization_trigger_started_ns_ = now_ns;
+    this->trigger_global_localization_async("active_relocalization retry");
     return;
   }
 
@@ -1369,7 +1390,26 @@ void Btnavigator::run_active_relocalization_supervisor()
   const auto motion_status = this->get_motion_status_copy();
   {
     std::scoped_lock arl_lock(this->active_relocalization_mutex_);
-    if (this->active_relocalization_command_active_) {
+    if (this->active_relocalization_request_pending_) {
+      const auto request_elapsed_ns =
+        this->now().nanoseconds() - this->active_relocalization_request_started_ns_;
+      if (
+        this->active_relocalization_request_started_ns_ > 0 &&
+        request_elapsed_ns >
+        static_cast<int64_t>(this->planner_wait_timeout_ms_) * 1000000LL)
+      {
+        RCLCPP_WARN(
+          this->get_logger(),
+          "ARL: timed out while planning behavior '%s'",
+          this->active_relocalization_pending_behavior_.c_str());
+        this->active_relocalization_request_pending_ = false;
+        this->active_relocalization_request_started_ns_ = 0;
+        this->active_relocalization_pending_behavior_.clear();
+      } else {
+        return;
+      }
+    }
+      if (this->active_relocalization_command_active_) {
       if (
         motion_status.command_id == this->active_relocalization_command_id_ &&
         motion_status.command_completed)
@@ -1403,20 +1443,17 @@ void Btnavigator::run_active_relocalization_supervisor()
     }
   }
 
-  std::string error_message;
   if (!this->plan_recovery_client_) {
     return;
   }
   if (!this->plan_recovery_client_->wait_for_service(
       std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
   {
-    error_message = "Recovery planner service is not available.";
     RCLCPP_WARN_THROTTLE(
       this->get_logger(),
       *this->get_clock(),
       2000,
-      "ARL: recovery services unavailable: %s",
-      error_message.c_str());
+      "ARL: recovery services unavailable: Recovery planner service is not available.");
     return;
   }
 
@@ -1427,43 +1464,131 @@ void Btnavigator::run_active_relocalization_supervisor()
     "arl_wait",
   };
 
-  amr_msgs::msg::MotionCommand command;
   std::size_t behavior_index = 0U;
   {
     std::scoped_lock arl_lock(this->active_relocalization_mutex_);
     behavior_index = this->active_relocalization_phase_index_ % 4U;
+    this->active_relocalization_request_pending_ = true;
+    this->active_relocalization_request_started_ns_ = this->now().nanoseconds();
+    this->active_relocalization_pending_behavior_ = kArlBehaviors[behavior_index];
   }
 
-  if (!this->request_recovery_command(
-      kArlBehaviors[behavior_index],
-      current_pose,
-      current_pose,
-      command,
-      error_message))
-  {
-    RCLCPP_WARN_THROTTLE(
-      this->get_logger(),
-      *this->get_clock(),
-      2000,
-      "ARL: failed to plan behavior '%s': %s",
-      kArlBehaviors[behavior_index],
-      error_message.c_str());
+  this->request_active_relocalization_behavior_async(
+    kArlBehaviors[behavior_index], current_pose, behavior_index);
+}
+
+void Btnavigator::request_active_relocalization_behavior_async(
+  const std::string & behavior,
+  const geometry_msgs::msg::PoseStamped & current_pose,
+  std::size_t behavior_index)
+{
+  if (!this->plan_recovery_client_) {
     return;
   }
 
-  this->publish_motion_command(command);
-  {
-    std::scoped_lock arl_lock(this->active_relocalization_mutex_);
-    this->active_relocalization_command_active_ = true;
-    this->active_relocalization_command_id_ = command.command_id;
-    this->active_relocalization_command_started_ns_ = this->now().nanoseconds();
+  auto request = std::make_shared<amr_msgs::srv::PlanRecovery::Request>();
+  request->behavior = behavior;
+  request->current_pose = current_pose;
+  request->goal_pose = current_pose;
+
+  this->plan_recovery_client_->async_send_request(
+    request,
+    [this, behavior, behavior_index](
+      rclcpp::Client<amr_msgs::srv::PlanRecovery>::SharedFuture future) {
+      amr_msgs::msg::LocalizationStatus localization_status;
+      {
+        std::scoped_lock arl_lock(this->active_relocalization_mutex_);
+        this->active_relocalization_request_pending_ = false;
+        this->active_relocalization_request_started_ns_ = 0;
+        this->active_relocalization_pending_behavior_.clear();
+      }
+
+      if (
+        this->startup_localization_mode_ != kStartupModeActiveRelocalization ||
+        this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE ||
+        !this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated() ||
+        this->has_active_goal())
+      {
+        return;
+      }
+
+      localization_status = this->get_localization_status_copy();
+      if (
+        !this->has_localization_status_ || !localization_status.active ||
+        localization_status.mode != amr_msgs::msg::LocalizationStatus::MODE_GLOBAL_RELOCALIZING)
+      {
+        return;
+      }
+
+      const auto response = future.get();
+      if (!response->success) {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          2000,
+          "ARL: failed to plan behavior '%s': %s",
+          behavior.c_str(),
+          response->message.c_str());
+        return;
+      }
+
+      auto command = response->command;
+      command.header.stamp = this->now();
+      command.header.frame_id =
+        command.header.frame_id.empty() ? std::string("map") : command.header.frame_id;
+      {
+        std::scoped_lock command_lock(this->command_mutex_);
+        command.command_id = this->next_command_id_++;
+      }
+
+      this->publish_motion_command(command);
+      {
+        std::scoped_lock arl_lock(this->active_relocalization_mutex_);
+        this->active_relocalization_command_active_ = true;
+        this->active_relocalization_command_id_ = command.command_id;
+        this->active_relocalization_command_started_ns_ = this->now().nanoseconds();
+        this->active_relocalization_phase_index_ = behavior_index;
+      }
+
+      RCLCPP_INFO(
+        this->get_logger(),
+        "ARL: dispatched behavior '%s' as command %u",
+        behavior.c_str(),
+        command.command_id);
+    });
+}
+
+void Btnavigator::trigger_global_localization_async(const std::string & reason)
+{
+  if (!this->trigger_global_localization_client_) {
+    return;
   }
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "ARL: dispatched behavior '%s' as command %u",
-    kArlBehaviors[behavior_index],
-    command.command_id);
+  auto request = std::make_shared<amr_msgs::srv::TriggerGlobalLocalization::Request>();
+  request->reason = reason;
+
+  this->trigger_global_localization_client_->async_send_request(
+    request,
+    [this](rclcpp::Client<amr_msgs::srv::TriggerGlobalLocalization>::SharedFuture future) {
+      {
+        std::scoped_lock arl_lock(this->active_relocalization_mutex_);
+        this->active_relocalization_trigger_pending_ = false;
+        this->active_relocalization_trigger_started_ns_ = 0;
+      }
+
+      const auto response = future.get();
+      if (!response->accepted) {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          2000,
+          "ARL: failed to retrigger global relocalization: %s",
+          response->message.c_str());
+        return;
+      }
+
+      RCLCPP_WARN(this->get_logger(), "ARL: retriggered global relocalization after failure");
+    });
 }
 
 }  // namespace amr_bt_navigator
