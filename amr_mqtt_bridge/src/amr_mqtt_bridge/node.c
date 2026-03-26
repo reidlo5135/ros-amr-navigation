@@ -167,6 +167,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_battery_state),
     "amr/robot/turtlebot3/telemetry/battery_state");
   amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.telemetry_localization_candidates,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_localization_candidates),
+    "amr/robot/turtlebot3/telemetry/localization_candidates");
+  amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.mqtt.command_cmd_vel,
     sizeof(g_amr_mqtt_bridge_config.mqtt.command_cmd_vel),
     "amr/robot/turtlebot3/command/cmd_vel");
@@ -283,6 +287,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     g_amr_mqtt_bridge_config.ros.topic_battery_state,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_battery_state),
     "/battery_state");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.topic_localization_candidates,
+    sizeof(g_amr_mqtt_bridge_config.ros.topic_localization_candidates),
+    "/amr/localization/candidates");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.ros.topic_cmd_vel,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_cmd_vel),
@@ -478,6 +486,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.joint_states", g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_joint_states));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.robot_description", g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_robot_description));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.battery_state", g_amr_mqtt_bridge_config.mqtt.telemetry_battery_state, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_battery_state));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.localization_candidates", g_amr_mqtt_bridge_config.mqtt.telemetry_localization_candidates, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_localization_candidates));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.cmd_vel", g_amr_mqtt_bridge_config.mqtt.command_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_cmd_vel));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose));
@@ -508,6 +517,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.joint_states", g_amr_mqtt_bridge_config.ros.topic_joint_states, sizeof(g_amr_mqtt_bridge_config.ros.topic_joint_states));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.robot_description", g_amr_mqtt_bridge_config.ros.topic_robot_description, sizeof(g_amr_mqtt_bridge_config.ros.topic_robot_description));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.battery_state", g_amr_mqtt_bridge_config.ros.topic_battery_state, sizeof(g_amr_mqtt_bridge_config.ros.topic_battery_state));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.topics.localization_candidates", g_amr_mqtt_bridge_config.ros.topic_localization_candidates, sizeof(g_amr_mqtt_bridge_config.ros.topic_localization_candidates));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.cmd_vel", g_amr_mqtt_bridge_config.ros.topic_cmd_vel, sizeof(g_amr_mqtt_bridge_config.ros.topic_cmd_vel));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.initial_pose", g_amr_mqtt_bridge_config.ros.topic_initial_pose, sizeof(g_amr_mqtt_bridge_config.ros.topic_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "ros.topics.navigate_feedback", g_amr_mqtt_bridge_config.ros.topic_navigate_feedback, sizeof(g_amr_mqtt_bridge_config.ros.topic_navigate_feedback));
@@ -1188,6 +1198,57 @@ static char * amr_mqtt_bridge_serialize_battery_state(const void * message)
   return amr_mqtt_bridge_builder_take(&builder);
 }
 
+static char * amr_mqtt_bridge_serialize_localization_candidates(const void * message)
+{
+  const amr_msgs__msg__LocalizationCandidateArray * candidates =
+    (const amr_msgs__msg__LocalizationCandidateArray *)message;
+  amr_mqtt_bridge_string_builder_t builder = {0};
+
+  if (!amr_mqtt_bridge_builder_init(&builder, 2048U) ||
+    !amr_mqtt_bridge_builder_append(&builder, "{") ||
+    !amr_mqtt_bridge_append_header(&builder, &candidates->header) ||
+    !amr_mqtt_bridge_builder_appendf(
+      &builder,
+      ",\"primary_candidate_id\":%u,\"candidates\":[",
+      candidates->primary_candidate_id))
+  {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  for (size_t index = 0; index < candidates->candidates.size; ++index) {
+    const amr_msgs__msg__LocalizationCandidate * candidate = &candidates->candidates.data[index];
+    if (index > 0U && !amr_mqtt_bridge_builder_append(&builder, ",")) {
+      amr_mqtt_bridge_builder_fini(&builder);
+      return NULL;
+    }
+
+    if (!amr_mqtt_bridge_builder_appendf(
+        &builder,
+        "{\"candidate_id\":%u,\"score\":%.6f,\"cluster_weight\":%.6f,"
+        "\"dominance_ratio\":%.6f,\"position_std\":%.6f,\"yaw_std\":%.6f,\"pose\":",
+        candidate->candidate_id,
+        candidate->score,
+        candidate->cluster_weight,
+        candidate->dominance_ratio,
+        candidate->position_std,
+        candidate->yaw_std) ||
+      !amr_mqtt_bridge_append_pose_stamped(&builder, &candidate->pose) ||
+      !amr_mqtt_bridge_builder_append(&builder, "}"))
+    {
+      amr_mqtt_bridge_builder_fini(&builder);
+      return NULL;
+    }
+  }
+
+  if (!amr_mqtt_bridge_builder_append(&builder, "]}")) {
+    amr_mqtt_bridge_builder_fini(&builder);
+    return NULL;
+  }
+
+  return amr_mqtt_bridge_builder_take(&builder);
+}
+
 static bool amr_mqtt_bridge_serialize_message_raw(
   const void * ros_message,
   const rosidl_message_type_support_t * type_support,
@@ -1422,6 +1483,7 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
     !sensor_msgs__msg__JointState__init(&g_amr_mqtt_bridge_ros_state.joint_states_message) ||
     !std_msgs__msg__String__init(&g_amr_mqtt_bridge_ros_state.robot_description_message) ||
     !sensor_msgs__msg__BatteryState__init(&g_amr_mqtt_bridge_ros_state.battery_state_message) ||
+    !amr_msgs__msg__LocalizationCandidateArray__init(&g_amr_mqtt_bridge_ros_state.localization_candidates_message) ||
     !geometry_msgs__msg__Twist__init(&g_amr_mqtt_bridge_ros_state.cmd_vel_message) ||
     !action_msgs__msg__GoalStatusArray__init(&g_amr_mqtt_bridge_ros_state.navigate_status_message))
   {
@@ -1444,6 +1506,7 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
   g_amr_mqtt_bridge_ros_state.joint_states_subscription = rcl_get_zero_initialized_subscription();
   g_amr_mqtt_bridge_ros_state.robot_description_subscription = rcl_get_zero_initialized_subscription();
   g_amr_mqtt_bridge_ros_state.battery_state_subscription = rcl_get_zero_initialized_subscription();
+  g_amr_mqtt_bridge_ros_state.localization_candidates_subscription = rcl_get_zero_initialized_subscription();
   g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count = AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS;
 
   amr_mqtt_bridge_configure_endpoint(
@@ -1701,6 +1764,23 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
     false,
     0U,
     1000U);
+  amr_mqtt_bridge_configure_endpoint(
+    &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[15],
+    "localization_candidates",
+    g_amr_mqtt_bridge_config.ros.topic_localization_candidates,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_localization_candidates,
+    &g_amr_mqtt_bridge_ros_state.localization_candidates_subscription,
+    &g_amr_mqtt_bridge_ros_state.localization_candidates_message,
+    ROSIDL_TYPESUPPORT_INTERFACE__MESSAGE_SYMBOL_NAME(rosidl_typesupport_c, amr_msgs, msg, LocalizationCandidateArray)(),
+    &k_default_qos,
+    g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
+    false,
+    true,
+    amr_mqtt_bridge_serialize_localization_candidates,
+    false,
+    false,
+    0U,
+    250U);
 
   for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index) {
     if (amr_mqtt_bridge_add_subscription(&g_amr_mqtt_bridge_ros_state.telemetry_endpoints[index]) != 0) {
@@ -1897,6 +1977,7 @@ static void amr_mqtt_bridge_fini_ros_interfaces(void)
     sensor_msgs__msg__JointState__fini(&g_amr_mqtt_bridge_ros_state.joint_states_message);
     std_msgs__msg__String__fini(&g_amr_mqtt_bridge_ros_state.robot_description_message);
     sensor_msgs__msg__BatteryState__fini(&g_amr_mqtt_bridge_ros_state.battery_state_message);
+    amr_msgs__msg__LocalizationCandidateArray__fini(&g_amr_mqtt_bridge_ros_state.localization_candidates_message);
     geometry_msgs__msg__Twist__fini(&g_amr_mqtt_bridge_ros_state.cmd_vel_message);
     action_msgs__msg__GoalStatusArray__fini(&g_amr_mqtt_bridge_ros_state.navigate_status_message);
     g_amr_mqtt_bridge_ros_state.messages_initialized = false;

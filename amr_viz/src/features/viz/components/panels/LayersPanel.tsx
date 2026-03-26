@@ -16,6 +16,7 @@ const layerEntries: LayerEntry[] = [
   { key: "map", label: "Map", icon: "map" },
   { key: "globalCostmap", label: "Global Costmap", icon: "costmap-global" },
   { key: "localCostmap", label: "Local Costmap", icon: "costmap-local" },
+  { key: "localizationCandidates", label: "GL Candidates", icon: "candidate" },
   { key: "footprint", label: "Exact Footprint", icon: "footprint" },
   { key: "robot", label: "Robot", icon: "robot" },
   { key: "globalPlan", label: "Global Plan", icon: "path-global" },
@@ -47,6 +48,14 @@ function LayerIcon({ kind }: { kind: string }) {
         <svg viewBox="0 0 16 16">
           <rect x="3" y="3" width="10" height="10" rx="1.2" />
           <circle cx="8" cy="8" r="2.4" />
+        </svg>
+      )}
+      {kind === "candidate" && (
+        <svg viewBox="0 0 16 16">
+          <circle cx="4.5" cy="11" r="1.2" />
+          <circle cx="11.5" cy="4.5" r="1.2" />
+          <path d="M5.7 10.1 10.2 5.8" />
+          <path d="M11.5 4.5 13 6M11.5 4.5 10 3" />
         </svg>
       )}
       {kind === "footprint" && (

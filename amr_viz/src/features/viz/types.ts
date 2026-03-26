@@ -3,6 +3,7 @@ export type LayerVisibility = {
   map: boolean;
   globalCostmap: boolean;
   localCostmap: boolean;
+  localizationCandidates: boolean;
   footprint: boolean;
   robot: boolean;
   globalPlan: boolean;

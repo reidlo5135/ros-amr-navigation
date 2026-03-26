@@ -5,26 +5,16 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type {
   BridgeState,
   LaserScanMessage,
+  LocalizationCandidateArrayMessage,
   OccupancyGridMessage,
   Pose,
   TfMessage,
 } from "../../../../lib/protocol";
-import type { GoalLifecycleState } from "../../types";
+import type { GoalLifecycleState, LayerVisibility } from "../../types";
 
 type SceneViewportProps = {
   state: BridgeState;
-  layerVisibility: {
-    grid: boolean;
-    map: boolean;
-    globalCostmap: boolean;
-    localCostmap: boolean;
-    footprint: boolean;
-    robot: boolean;
-    globalPlan: boolean;
-    localPlan: boolean;
-    scan: boolean;
-    tf: boolean;
-  };
+  layerVisibility: LayerVisibility;
   goalMarker?: {
     x: number;
     y: number;
@@ -525,6 +515,97 @@ function buildBlockedLinkOverlay(
 
   const group = new THREE.Group();
   group.add(line, marker);
+  return group;
+}
+
+function createTextSprite(
+  label: string,
+  color: string,
+  backgroundColor: string,
+): THREE.Sprite {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = backgroundColor;
+    context.strokeStyle = color;
+    context.lineWidth = 3;
+    context.beginPath();
+    if ("roundRect" in context) {
+      context.roundRect(6, 8, 116, 48, 12);
+    } else {
+      context.rect(6, 8, 116, 48);
+    }
+    context.fill();
+    context.stroke();
+    context.fillStyle = color;
+    context.font = "700 28px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(label, 64, 33);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.34, 0.17, 1);
+  sprite.renderOrder = 31;
+  return sprite;
+}
+
+function buildLocalizationCandidateMarkers(
+  candidateArray: LocalizationCandidateArrayMessage | undefined,
+): THREE.Group | null {
+  if (!candidateArray || candidateArray.candidates.length === 0) {
+    return null;
+  }
+
+  const group = new THREE.Group();
+
+  for (const candidate of candidateArray.candidates) {
+    const isPrimary = candidate.candidate_id === candidateArray.primary_candidate_id;
+    const marker = buildArrowPoseMarker(
+      {
+        x: candidate.pose.position.x,
+        y: candidate.pose.position.y,
+        yaw: candidate.pose.orientation.yaw,
+      },
+      isPrimary
+        ? { primary: "#ffb000", accent: "#fff2c9" }
+        : { primary: "#6d8cff", accent: "#eef2ff" },
+      {
+        originFillRadius: 0.028,
+        originRingInnerRadius: 0.048,
+        originRingOuterRadius: 0.06,
+      },
+    );
+    marker.scale.setScalar(isPrimary ? 0.75 : 0.58);
+    marker.position.y = isPrimary ? 0.01 : 0.0;
+    marker.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if ("renderOrder" in mesh) {
+        mesh.renderOrder = isPrimary ? 30 : 28;
+      }
+    });
+
+    const label = createTextSprite(
+      `${candidate.candidate_id}`,
+      isPrimary ? "#8a5c00" : "#3f58c8",
+      isPrimary ? "rgba(255, 248, 224, 0.96)" : "rgba(242, 245, 255, 0.96)",
+    );
+    label.position.set(candidate.pose.position.x, isPrimary ? 0.17 : 0.15, -candidate.pose.position.y);
+
+    group.add(marker, label);
+  }
+
   return group;
 }
 
@@ -1134,6 +1215,7 @@ export function SceneViewport({
   const globalPathRef = useRef<THREE.Group | null>(null);
   const localPathRef = useRef<THREE.Group | null>(null);
   const goalMarkerRef = useRef<THREE.Group | null>(null);
+  const localizationCandidatesRef = useRef<THREE.Group | null>(null);
   const previewMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
@@ -1373,6 +1455,7 @@ export function SceneViewport({
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
       disposeObject(goalMarkerRef.current);
+      disposeObject(localizationCandidatesRef.current);
       disposeObject(robot);
       renderer.dispose();
       scene.clear();
@@ -1420,6 +1503,11 @@ export function SceneViewport({
       disposeObject(goalMarkerRef.current);
       goalMarkerRef.current = null;
     }
+    if (localizationCandidatesRef.current) {
+      scene.remove(localizationCandidatesRef.current);
+      disposeObject(localizationCandidatesRef.current);
+      localizationCandidatesRef.current = null;
+    }
 
     const showLivePlans =
       goalLifecycle === "Running" ||
@@ -1451,6 +1539,13 @@ export function SceneViewport({
       goalMarkerRef.current = buildGoalMarker(goalMarker);
       goalMarkerRef.current.visible = true;
       scene.add(goalMarkerRef.current);
+    }
+    localizationCandidatesRef.current = buildLocalizationCandidateMarkers(
+      state.localization_candidates,
+    );
+    if (localizationCandidatesRef.current) {
+      localizationCandidatesRef.current.visible = layerVisibility.localizationCandidates;
+      scene.add(localizationCandidatesRef.current);
     }
 
     for (const [ref, grid, palette, yOffset] of [

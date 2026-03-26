@@ -110,6 +110,22 @@ export type BatteryStateMessage = {
   present: boolean;
 };
 
+export type LocalizationCandidateMessage = {
+  candidate_id: number;
+  pose: Pose;
+  score: number;
+  cluster_weight: number;
+  dominance_ratio: number;
+  position_std: number;
+  yaw_std: number;
+};
+
+export type LocalizationCandidateArrayMessage = {
+  header: Header;
+  primary_candidate_id: number;
+  candidates: LocalizationCandidateMessage[];
+};
+
 export type BridgeState = {
   robot_pose?: Pose;
   global_path?: PathMessage;
@@ -123,6 +139,7 @@ export type BridgeState = {
   tf_static?: TfMessage;
   robot_description?: RobotDescriptionMessage;
   battery_state?: BatteryStateMessage;
+  localization_candidates?: LocalizationCandidateArrayMessage;
 };
 
 export type BridgeEnvelope =

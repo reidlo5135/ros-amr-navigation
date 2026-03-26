@@ -14,6 +14,7 @@ export const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/tf_static": "tf_static",
   "amr/robot/turtlebot3/viz/robot_description": "robot_description",
   "amr/robot/turtlebot3/viz/battery_state": "battery_state",
+  "amr/robot/turtlebot3/viz/localization_candidates": "localization_candidates",
 };
 
 export const topicSubscriptions = [
@@ -28,6 +29,7 @@ export const initialLayerVisibility: LayerVisibility = {
   map: true,
   globalCostmap: true,
   localCostmap: true,
+  localizationCandidates: true,
   footprint: true,
   robot: true,
   globalPlan: true,

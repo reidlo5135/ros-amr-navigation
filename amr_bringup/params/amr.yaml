@@ -399,6 +399,7 @@
           joint_states: "amr/robot/turtlebot3/telemetry/joint_states"
           robot_description: "amr/robot/turtlebot3/telemetry/robot_description"
           battery_state: "amr/robot/turtlebot3/telemetry/battery_state"
+          localization_candidates: "amr/robot/turtlebot3/telemetry/localization_candidates"
         command:
           cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
           set_initial_pose: "amr/command/set_initial_pose"
@@ -435,6 +436,7 @@
         joint_states: "/joint_states"
         robot_description: "/robot_description"
         battery_state: "/battery_state"
+        localization_candidates: "/amr/localization/candidates"
         cmd_vel: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
         navigate_feedback: "/amr/navigator/navigate_to_pose/feedback"
