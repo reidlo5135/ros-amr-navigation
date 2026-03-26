@@ -111,6 +111,8 @@
       global_resample_yaw_noise: 0.06
       relocalization_max_position_std: 0.18
       relocalization_max_yaw_std: 0.35
+      relocalization_min_cluster_weight: 0.22
+      relocalization_min_cluster_dominance_ratio: 2.2
       estimate_cluster_distance: 0.30
       estimate_cluster_yaw: 0.60
     kidnapped:

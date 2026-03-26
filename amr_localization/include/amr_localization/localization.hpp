@@ -144,6 +144,8 @@ private:
   double global_resample_yaw_noise_;
   double relocalization_max_position_std_;
   double relocalization_max_yaw_std_;
+  double relocalization_min_cluster_weight_;
+  double relocalization_min_cluster_dominance_ratio_;
   double estimate_cluster_distance_;
   double estimate_cluster_yaw_;
   bool kidnapped_detection_enabled_;
@@ -169,6 +171,8 @@ private:
   uint32_t relocalization_count_;
   double localization_confidence_;
   double last_measurement_confidence_;
+  double localization_cluster_weight_;
+  double localization_cluster_dominance_ratio_;
   double localization_position_std_;
   double localization_yaw_std_;
   int low_confidence_update_count_;

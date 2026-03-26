@@ -49,6 +49,8 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   global_resample_yaw_noise_(0.08),
   relocalization_max_position_std_(0.25),
   relocalization_max_yaw_std_(0.45),
+  relocalization_min_cluster_weight_(0.18),
+  relocalization_min_cluster_dominance_ratio_(1.8),
   estimate_cluster_distance_(0.35),
   estimate_cluster_yaw_(0.75),
   kidnapped_detection_enabled_(true),
@@ -67,6 +69,8 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_count_(0U),
   localization_confidence_(0.0),
   last_measurement_confidence_(0.0),
+  localization_cluster_weight_(0.0),
+  localization_cluster_dominance_ratio_(0.0),
   localization_position_std_(std::numeric_limits<double>::infinity()),
   localization_yaw_std_(std::numeric_limits<double>::infinity()),
   low_confidence_update_count_(0),
@@ -126,6 +130,11 @@ Localization::Localization(const rclcpp::NodeOptions & options)
     "amcl.relocalization_max_position_std", this->relocalization_max_position_std_);
   this->declare_parameter(
     "amcl.relocalization_max_yaw_std", this->relocalization_max_yaw_std_);
+  this->declare_parameter(
+    "amcl.relocalization_min_cluster_weight", this->relocalization_min_cluster_weight_);
+  this->declare_parameter(
+    "amcl.relocalization_min_cluster_dominance_ratio",
+    this->relocalization_min_cluster_dominance_ratio_);
   this->declare_parameter("amcl.estimate_cluster_distance", this->estimate_cluster_distance_);
   this->declare_parameter("amcl.estimate_cluster_yaw", this->estimate_cluster_yaw_);
   this->declare_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
@@ -197,6 +206,11 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     "amcl.relocalization_max_position_std", this->relocalization_max_position_std_);
   this->get_parameter(
     "amcl.relocalization_max_yaw_std", this->relocalization_max_yaw_std_);
+  this->get_parameter(
+    "amcl.relocalization_min_cluster_weight", this->relocalization_min_cluster_weight_);
+  this->get_parameter(
+    "amcl.relocalization_min_cluster_dominance_ratio",
+    this->relocalization_min_cluster_dominance_ratio_);
   this->get_parameter("amcl.estimate_cluster_distance", this->estimate_cluster_distance_);
   this->get_parameter("amcl.estimate_cluster_yaw", this->estimate_cluster_yaw_);
   this->get_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
@@ -550,6 +564,8 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & 
 
   this->particles_initialized_ = true;
   this->localization_confidence_ = 0.0;
+  this->localization_cluster_weight_ = 0.0;
+  this->localization_cluster_dominance_ratio_ = 0.0;
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
 }
@@ -578,6 +594,8 @@ bool Localization::initialize_particles_global()
 
   this->particles_initialized_ = true;
   this->localization_confidence_ = 0.0;
+  this->localization_cluster_weight_ = 0.0;
+  this->localization_cluster_dominance_ratio_ = 0.0;
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   return true;
@@ -700,6 +718,8 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
     });
   const Particle & best_particle = *best_particle_it;
   const double cluster_distance_sq = this->estimate_cluster_distance_ * this->estimate_cluster_distance_;
+  double secondary_cluster_seed_weight = 0.0;
+  Particle secondary_cluster_seed{};
 
   double weighted_x = 0.0;
   double weighted_y = 0.0;
@@ -715,6 +735,10 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
     const double distance_sq = (dx * dx) + (dy * dy);
     const double yaw_delta = this->normalize_angle(particle.yaw - best_particle.yaw);
     if (distance_sq > cluster_distance_sq || std::fabs(yaw_delta) > this->estimate_cluster_yaw_) {
+      if (particle.weight > secondary_cluster_seed_weight) {
+        secondary_cluster_seed_weight = particle.weight;
+        secondary_cluster_seed = particle;
+      }
       continue;
     }
 
@@ -736,6 +760,20 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
   const double mean_x = weighted_x / total_weight;
   const double mean_y = weighted_y / total_weight;
   const double mean_yaw = std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight);
+  double secondary_cluster_weight = 0.0;
+
+  if (secondary_cluster_seed_weight > 0.0) {
+    for (const auto & particle : this->particles_) {
+      const double dx = particle.x - secondary_cluster_seed.x;
+      const double dy = particle.y - secondary_cluster_seed.y;
+      const double distance_sq = (dx * dx) + (dy * dy);
+      const double yaw_delta = this->normalize_angle(particle.yaw - secondary_cluster_seed.yaw);
+      if (distance_sq > cluster_distance_sq || std::fabs(yaw_delta) > this->estimate_cluster_yaw_) {
+        continue;
+      }
+      secondary_cluster_weight += particle.weight;
+    }
+  }
 
   for (const auto & particle : this->particles_) {
     const double dx = particle.x - best_particle.x;
@@ -754,6 +792,9 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
     yaw_variance_accumulator += (centered_yaw * centered_yaw) * particle.weight;
   }
 
+  this->localization_cluster_weight_ = total_weight;
+  this->localization_cluster_dominance_ratio_ =
+    total_weight / std::max(secondary_cluster_weight, 1e-6);
   this->localization_position_std_ = std::sqrt(std::max(0.0, position_variance_accumulator / total_weight));
   this->localization_yaw_std_ = std::sqrt(std::max(0.0, yaw_variance_accumulator / total_weight));
 
@@ -1162,6 +1203,9 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
   if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
     const bool relocalization_converged =
       confidence >= this->relocalization_success_confidence_threshold_ &&
+      this->localization_cluster_weight_ >= this->relocalization_min_cluster_weight_ &&
+      this->localization_cluster_dominance_ratio_ >=
+      this->relocalization_min_cluster_dominance_ratio_ &&
       this->localization_position_std_ <= this->relocalization_max_position_std_ &&
       this->localization_yaw_std_ <= this->relocalization_max_yaw_std_;
     if (relocalization_converged) {
@@ -1178,8 +1222,10 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
       this->relocalization_success_count_ = 0;
       RCLCPP_INFO(
         this->get_logger(),
-        "Global relocalization succeeded with confidence %.3f, position_std %.3f, yaw_std %.3f",
+        "Global relocalization succeeded with confidence %.3f, cluster_weight %.3f, dominance %.3f, position_std %.3f, yaw_std %.3f",
         confidence,
+        this->localization_cluster_weight_,
+        this->localization_cluster_dominance_ratio_,
         this->localization_position_std_,
         this->localization_yaw_std_);
       return;
@@ -1285,6 +1331,8 @@ void Localization::reset_state()
   this->relocalization_count_ = 0U;
   this->localization_confidence_ = 0.0;
   this->last_measurement_confidence_ = 0.0;
+  this->localization_cluster_weight_ = 0.0;
+  this->localization_cluster_dominance_ratio_ = 0.0;
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   this->low_confidence_update_count_ = 0;
