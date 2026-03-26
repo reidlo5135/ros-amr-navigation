@@ -75,6 +75,9 @@
       initial_pose: "/amr/localization/initial_pose"
       estimated_pose: "/amr/localization/pose"
       estimated_odometry: "/amr/localization/odometry"
+      status: "/amr/localization/status"
+    services:
+      trigger_global_localization: "/amr/localization/trigger_global_localization"
     frames:
       map: "map"
       odom: "odom"
@@ -102,6 +105,15 @@
       max_beams: 24
       max_beam_range: 6.0
       occupied_threshold: 50
+    kidnapped:
+      enabled: true
+      start_with_global_localization: true
+      auto_trigger: false
+      low_confidence_threshold: 0.22
+      consecutive_low_confidence_updates: 6
+      relocalization_success_threshold: 0.40
+      relocalization_success_streak: 3
+      relocalization_timeout_sec: 8.0
 
 /amr/localization_manager:
   ros__parameters:
@@ -109,7 +121,7 @@
     service_timeout_ms: 5000
     state_poll_interval_ms: 200
     initial_pose:
-      enabled: true
+      enabled: false
       topic: "/amr/localization/initial_pose"
       frame_id: "map"
       delay_sec: 0.5
@@ -280,6 +292,7 @@
       xml_path: ""
     topics:
       pose: "/amr/localization/pose"
+      localization_status: "/amr/localization/status"
       command: "/amr/motion/command"
       status: "/amr/motion/status"
       local_plan_status: "/amr/planner/local_status"

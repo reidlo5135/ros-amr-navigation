@@ -19,6 +19,8 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   initial_pose_topic_(""),
   estimated_pose_topic_(""),
   estimated_odom_topic_(""),
+  localization_status_topic_(""),
+  trigger_global_localization_service_name_("/amr/localization/trigger_global_localization"),
   map_frame_("map"),
   odom_frame_("odom"),
   base_frame_("base_link"),
@@ -41,8 +43,25 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   max_beams_(24),
   max_beam_range_(6.0),
   occupied_threshold_(50),
+  kidnapped_detection_enabled_(true),
+  kidnapped_start_with_global_localization_(false),
+  kidnapped_auto_trigger_enabled_(false),
+  kidnapped_low_confidence_threshold_(0.22),
+  kidnapped_low_confidence_updates_(6),
+  relocalization_success_confidence_threshold_(0.40),
+  relocalization_success_updates_(3),
+  relocalization_timeout_sec_(8.0),
   map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   random_engine_(std::random_device{}()),
+  localization_mode_(LocalizationMode::kTracking),
+  kidnapped_suspected_(false),
+  relocalization_requested_(false),
+  relocalization_count_(0U),
+  localization_confidence_(0.0),
+  last_measurement_confidence_(0.0),
+  low_confidence_update_count_(0),
+  relocalization_success_count_(0),
+  relocalization_started_at_(0, 0, RCL_ROS_TIME),
   has_latest_odom_(false),
   has_latest_scan_(false),
   has_map_(false),
@@ -57,6 +76,10 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.initial_pose", this->initial_pose_topic_);
   this->declare_parameter("topics.estimated_pose", this->estimated_pose_topic_);
   this->declare_parameter("topics.estimated_odometry", this->estimated_odom_topic_);
+  this->declare_parameter("topics.status", this->localization_status_topic_);
+  this->declare_parameter(
+    "services.trigger_global_localization",
+    this->trigger_global_localization_service_name_);
   this->declare_parameter("frames.map", this->map_frame_);
   this->declare_parameter("frames.odom", this->odom_frame_);
   this->declare_parameter("frames.base", this->base_frame_);
@@ -83,6 +106,24 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter("amcl.max_beams", this->max_beams_);
   this->declare_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->declare_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->declare_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
+  this->declare_parameter(
+    "kidnapped.start_with_global_localization",
+    this->kidnapped_start_with_global_localization_);
+  this->declare_parameter("kidnapped.auto_trigger", this->kidnapped_auto_trigger_enabled_);
+  this->declare_parameter(
+    "kidnapped.low_confidence_threshold",
+    this->kidnapped_low_confidence_threshold_);
+  this->declare_parameter(
+    "kidnapped.consecutive_low_confidence_updates",
+    this->kidnapped_low_confidence_updates_);
+  this->declare_parameter(
+    "kidnapped.relocalization_success_threshold",
+    this->relocalization_success_confidence_threshold_);
+  this->declare_parameter(
+    "kidnapped.relocalization_success_streak",
+    this->relocalization_success_updates_);
+  this->declare_parameter("kidnapped.relocalization_timeout_sec", this->relocalization_timeout_sec_);
 }
 
 Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::State & state)
@@ -94,6 +135,10 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("topics.initial_pose", this->initial_pose_topic_);
   this->get_parameter("topics.estimated_pose", this->estimated_pose_topic_);
   this->get_parameter("topics.estimated_odometry", this->estimated_odom_topic_);
+  this->get_parameter("topics.status", this->localization_status_topic_);
+  this->get_parameter(
+    "services.trigger_global_localization",
+    this->trigger_global_localization_service_name_);
   this->get_parameter("frames.map", this->map_frame_);
   this->get_parameter("frames.odom", this->odom_frame_);
   this->get_parameter("frames.base", this->base_frame_);
@@ -120,21 +165,42 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("amcl.max_beams", this->max_beams_);
   this->get_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->get_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->get_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
+  this->get_parameter(
+    "kidnapped.start_with_global_localization",
+    this->kidnapped_start_with_global_localization_);
+  this->get_parameter("kidnapped.auto_trigger", this->kidnapped_auto_trigger_enabled_);
+  this->get_parameter(
+    "kidnapped.low_confidence_threshold",
+    this->kidnapped_low_confidence_threshold_);
+  this->get_parameter(
+    "kidnapped.consecutive_low_confidence_updates",
+    this->kidnapped_low_confidence_updates_);
+  this->get_parameter(
+    "kidnapped.relocalization_success_threshold",
+    this->relocalization_success_confidence_threshold_);
+  this->get_parameter(
+    "kidnapped.relocalization_success_streak",
+    this->relocalization_success_updates_);
+  this->get_parameter("kidnapped.relocalization_timeout_sec", this->relocalization_timeout_sec_);
 
   if (
     this->odom_topic_.empty() || this->scan_topic_.empty() || this->map_topic_.empty() ||
     this->initial_pose_topic_.empty() || this->estimated_pose_topic_.empty() ||
-    this->estimated_odom_topic_.empty())
+    this->estimated_odom_topic_.empty() || this->localization_status_topic_.empty() ||
+    this->trigger_global_localization_service_name_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Localization topics must not be empty: odom='%s' scan='%s' map='%s' initial_pose='%s' pose='%s' odometry='%s'",
+      "Localization topics/services must not be empty: odom='%s' scan='%s' map='%s' initial_pose='%s' pose='%s' odometry='%s' status='%s' trigger='%s'",
       this->odom_topic_.c_str(),
       this->scan_topic_.c_str(),
       this->map_topic_.c_str(),
       this->initial_pose_topic_.c_str(),
       this->estimated_pose_topic_.c_str(),
-      this->estimated_odom_topic_.c_str());
+      this->estimated_odom_topic_.c_str(),
+      this->localization_status_topic_.c_str(),
+      this->trigger_global_localization_service_name_.c_str());
     return CallbackReturn::FAILURE;
   }
 
@@ -145,8 +211,10 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->initial_map_pose_.pose.position.y = this->initial_y_;
   this->initial_map_pose_.pose.position.z = 0.0;
   this->update_pose_orientation(this->initial_map_pose_, this->initial_yaw_);
-  this->has_initial_pose_ = true;
-  this->initialize_particles(this->initial_map_pose_);
+  if (!this->kidnapped_start_with_global_localization_) {
+    this->has_initial_pose_ = true;
+    this->initialize_particles(this->initial_map_pose_);
+  }
 
   this->odometry_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
     this->odom_topic_, rclcpp::SystemDefaultsQoS(),
@@ -177,15 +245,30 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->estimated_pose_topic_, rclcpp::SystemDefaultsQoS());
   this->estimated_odometry_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
     this->estimated_odom_topic_, rclcpp::SystemDefaultsQoS());
+  this->localization_status_publisher_ =
+    this->create_publisher<amr_msgs::msg::LocalizationStatus>(
+    this->localization_status_topic_, rclcpp::SystemDefaultsQoS());
+  this->trigger_global_localization_service_ =
+    this->create_service<amr_msgs::srv::TriggerGlobalLocalization>(
+    this->trigger_global_localization_service_name_,
+    [this](
+      const std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Request> request,
+      std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Response> response)
+    {
+      this->handle_trigger_global_localization(request, response);
+    });
   this->transform_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d",
+    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, status='%s', trigger='%s', startup_global=%s'",
     this->odom_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->map_topic_.c_str(),
-    this->particle_count_);
+    this->particle_count_,
+    this->localization_status_topic_.c_str(),
+    this->trigger_global_localization_service_name_.c_str(),
+    this->kidnapped_start_with_global_localization_ ? "true" : "false");
   return CallbackReturn::SUCCESS;
 }
 
@@ -197,6 +280,9 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
   }
   if (this->estimated_odometry_publisher_) {
     this->estimated_odometry_publisher_->on_activate();
+  }
+  if (this->localization_status_publisher_) {
+    this->localization_status_publisher_->on_activate();
   }
 
   if (this->has_initial_pose_) {
@@ -223,6 +309,9 @@ Localization::CallbackReturn Localization::on_deactivate(const rclcpp_lifecycle:
   if (this->estimated_odometry_publisher_) {
     this->estimated_odometry_publisher_->on_deactivate();
   }
+  if (this->localization_status_publisher_) {
+    this->localization_status_publisher_->on_deactivate();
+  }
   if (this->auto_initial_pose_timer_) {
     this->auto_initial_pose_timer_->cancel();
   }
@@ -240,6 +329,8 @@ Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::St
   this->initial_pose_publisher_.reset();
   this->estimated_pose_publisher_.reset();
   this->estimated_odometry_publisher_.reset();
+  this->localization_status_publisher_.reset();
+  this->trigger_global_localization_service_.reset();
   this->auto_initial_pose_timer_.reset();
   this->transform_broadcaster_.reset();
   this->reset_state();
@@ -256,6 +347,8 @@ Localization::CallbackReturn Localization::on_shutdown(const rclcpp_lifecycle::S
   this->initial_pose_publisher_.reset();
   this->estimated_pose_publisher_.reset();
   this->estimated_odometry_publisher_.reset();
+  this->localization_status_publisher_.reset();
+  this->trigger_global_localization_service_.reset();
   this->auto_initial_pose_timer_.reset();
   this->transform_broadcaster_.reset();
   this->reset_state();
@@ -295,11 +388,11 @@ void Localization::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr mess
   }
 
   this->apply_measurement_update(*message);
-  this->resample_particles();
-
   const auto stamp = message->header.stamp.sec == 0 && message->header.stamp.nanosec == 0U ?
     this->now() :
     rclcpp::Time(message->header.stamp);
+  this->update_localization_mode(stamp);
+  this->resample_particles();
   this->update_estimated_pose_from_particles(stamp);
   this->publish_outputs(stamp);
 }
@@ -315,6 +408,14 @@ void Localization::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     message->info.width,
     message->info.height,
     message->info.resolution);
+
+  if (
+    this->kidnapped_start_with_global_localization_ &&
+    !this->particles_initialized_ &&
+    this->localization_mode_ == LocalizationMode::kTracking)
+  {
+    this->start_global_relocalization("startup global localization");
+  }
 }
 
 void Localization::handle_initial_pose(
@@ -331,6 +432,12 @@ void Localization::handle_initial_pose(
   pose.header = this->initial_map_pose_.header;
   pose.pose = this->initial_map_pose_.pose;
   this->initialize_particles(pose);
+  this->localization_mode_ = LocalizationMode::kTracking;
+  this->kidnapped_suspected_ = false;
+  this->relocalization_requested_ = false;
+  this->low_confidence_update_count_ = 0;
+  this->relocalization_success_count_ = 0;
+  this->last_measurement_confidence_ = 0.0;
 
   if (this->has_latest_odom_) {
     this->previous_odom_pose_ = this->odometry_pose_to_pose_stamped(this->latest_odom_);
@@ -408,6 +515,34 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & 
   }
 
   this->particles_initialized_ = true;
+  this->localization_confidence_ = 0.0;
+}
+
+bool Localization::initialize_particles_global()
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return false;
+  }
+
+  this->particles_.clear();
+  this->particles_.reserve(static_cast<std::size_t>(std::max(1, this->particle_count_)));
+
+  const auto particle_count = std::max(1, this->particle_count_);
+  const double uniform_weight = 1.0 / static_cast<double>(particle_count);
+
+  for (int index = 0; index < particle_count; ++index) {
+    Particle particle{};
+    if (!this->sample_random_free_pose(particle)) {
+      this->particles_.clear();
+      return false;
+    }
+    particle.weight = uniform_weight;
+    this->particles_.push_back(particle);
+  }
+
+  this->particles_initialized_ = true;
+  this->localization_confidence_ = 0.0;
+  return true;
 }
 
 void Localization::apply_motion_update(
@@ -448,22 +583,28 @@ void Localization::apply_measurement_update(const sensor_msgs::msg::LaserScan & 
   }
 
   double total_weight = 0.0;
+  double best_weight = 0.0;
   for (auto & particle : this->particles_) {
     particle.weight = std::max(kMinimumWeight, this->compute_particle_likelihood(particle, scan));
     total_weight += particle.weight;
+    best_weight = std::max(best_weight, particle.weight);
   }
+
+  this->last_measurement_confidence_ = best_weight;
 
   if (total_weight <= 0.0) {
     const double uniform_weight = 1.0 / static_cast<double>(this->particles_.size());
     for (auto & particle : this->particles_) {
       particle.weight = uniform_weight;
     }
+    this->localization_confidence_ = 0.0;
     return;
   }
 
   for (auto & particle : this->particles_) {
     particle.weight /= total_weight;
   }
+  this->localization_confidence_ = best_weight;
 }
 
 void Localization::resample_particles()
@@ -535,6 +676,8 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
 
 void Localization::publish_outputs(const rclcpp::Time & stamp)
 {
+  this->publish_localization_status(stamp);
+
   if (
     !this->estimated_pose_publisher_ || !this->estimated_pose_publisher_->is_activated() ||
     !this->estimated_odometry_publisher_ || !this->estimated_odometry_publisher_->is_activated())
@@ -554,6 +697,24 @@ void Localization::publish_outputs(const rclcpp::Time & stamp)
   if (this->transform_broadcaster_ && this->has_latest_odom_) {
     this->transform_broadcaster_->sendTransform(this->build_map_to_odom_transform(stamp));
   }
+}
+
+void Localization::publish_localization_status(const rclcpp::Time & stamp)
+{
+  if (!this->localization_status_publisher_ || !this->localization_status_publisher_->is_activated()) {
+    return;
+  }
+
+  amr_msgs::msg::LocalizationStatus status;
+  status.header.stamp = stamp;
+  status.header.frame_id = this->map_frame_;
+  status.active = this->particles_initialized_;
+  status.mode = static_cast<uint8_t>(this->localization_mode_);
+  status.kidnapped_suspected = this->kidnapped_suspected_;
+  status.relocalization_requested = this->relocalization_requested_;
+  status.relocalization_count = this->relocalization_count_;
+  status.confidence = std::clamp(this->localization_confidence_, 0.0, 1.0);
+  this->localization_status_publisher_->publish(status);
 }
 
 geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
@@ -622,6 +783,39 @@ bool Localization::world_to_grid(double world_x, double world_y, int & grid_x, i
     grid_y < static_cast<int>(info.height);
 }
 
+bool Localization::grid_to_world(
+  const int grid_x,
+  const int grid_y,
+  double & world_x,
+  double & world_y) const
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return false;
+  }
+
+  const auto & info = this->map_occupancy_grid_->info;
+  if (
+    grid_x < 0 || grid_y < 0 ||
+    grid_x >= static_cast<int>(info.width) ||
+    grid_y >= static_cast<int>(info.height))
+  {
+    return false;
+  }
+
+  const double local_x = (static_cast<double>(grid_x) + 0.5) * static_cast<double>(info.resolution);
+  const double local_y = (static_cast<double>(grid_y) + 0.5) * static_cast<double>(info.resolution);
+  const double origin_yaw = this->quaternion_yaw(info.origin.orientation);
+  world_x =
+    info.origin.position.x +
+    (std::cos(origin_yaw) * local_x) -
+    (std::sin(origin_yaw) * local_y);
+  world_y =
+    info.origin.position.y +
+    (std::sin(origin_yaw) * local_x) +
+    (std::cos(origin_yaw) * local_y);
+  return true;
+}
+
 bool Localization::is_occupied_cell(const int grid_x, const int grid_y) const
 {
   if (!this->has_map_ || !this->map_occupancy_grid_) {
@@ -639,6 +833,63 @@ bool Localization::is_occupied_cell(const int grid_x, const int grid_y) const
   const auto index =
     static_cast<std::size_t>((grid_y * static_cast<int>(this->map_occupancy_grid_->info.width)) + grid_x);
   return this->map_occupancy_grid_->data[index] >= this->occupied_threshold_;
+}
+
+bool Localization::is_free_cell(const int grid_x, const int grid_y) const
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return false;
+  }
+  if (
+    grid_x < 0 || grid_y < 0 ||
+    grid_x >= static_cast<int>(this->map_occupancy_grid_->info.width) ||
+    grid_y >= static_cast<int>(this->map_occupancy_grid_->info.height))
+  {
+    return false;
+  }
+
+  const auto index =
+    static_cast<std::size_t>((grid_y * static_cast<int>(this->map_occupancy_grid_->info.width)) + grid_x);
+  const int8_t value = this->map_occupancy_grid_->data[index];
+  return value >= 0 && value < this->occupied_threshold_;
+}
+
+bool Localization::sample_random_free_pose(Particle & particle)
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_) {
+    return false;
+  }
+
+  const auto width = static_cast<int>(this->map_occupancy_grid_->info.width);
+  const auto height = static_cast<int>(this->map_occupancy_grid_->info.height);
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+
+  std::uniform_int_distribution<int> x_distribution(0, width - 1);
+  std::uniform_int_distribution<int> y_distribution(0, height - 1);
+  std::uniform_real_distribution<double> yaw_distribution(-kPi, kPi);
+
+  for (int attempt = 0; attempt < 500; ++attempt) {
+    const int grid_x = x_distribution(this->random_engine_);
+    const int grid_y = y_distribution(this->random_engine_);
+    if (!this->is_free_cell(grid_x, grid_y)) {
+      continue;
+    }
+
+    double world_x = 0.0;
+    double world_y = 0.0;
+    if (!this->grid_to_world(grid_x, grid_y, world_x, world_y)) {
+      continue;
+    }
+
+    particle.x = world_x;
+    particle.y = world_y;
+    particle.yaw = yaw_distribution(this->random_engine_);
+    return true;
+  }
+
+  return false;
 }
 
 double Localization::nearest_obstacle_distance(const double world_x, const double world_y) const
@@ -725,6 +976,131 @@ double Localization::compute_particle_likelihood(
   return std::max(kMinimumWeight, accumulated_score / static_cast<double>(used_beams));
 }
 
+void Localization::start_global_relocalization(const std::string & reason)
+{
+  if (!this->kidnapped_detection_enabled_) {
+    return;
+  }
+
+  if (!this->initialize_particles_global()) {
+    this->localization_mode_ = LocalizationMode::kFailed;
+    this->kidnapped_suspected_ = true;
+    this->relocalization_requested_ = false;
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "Failed to start global relocalization because no free-space particle set could be initialized.");
+    return;
+  }
+
+  this->localization_mode_ = LocalizationMode::kGlobalRelocalizing;
+  this->kidnapped_suspected_ = true;
+  this->relocalization_requested_ = true;
+  this->relocalization_count_ += 1U;
+  this->relocalization_started_at_ = this->now();
+  this->low_confidence_update_count_ = 0;
+  this->relocalization_success_count_ = 0;
+  this->last_measurement_confidence_ = 0.0;
+
+  RCLCPP_WARN(
+    this->get_logger(),
+    "Starting global relocalization attempt %u (%s)",
+    this->relocalization_count_,
+    reason.empty() ? "unspecified" : reason.c_str());
+}
+
+void Localization::update_localization_mode(const rclcpp::Time & stamp)
+{
+  if (!this->kidnapped_detection_enabled_) {
+    this->localization_mode_ = LocalizationMode::kTracking;
+    this->kidnapped_suspected_ = false;
+    this->relocalization_requested_ = false;
+    return;
+  }
+
+  const double confidence = std::clamp(this->last_measurement_confidence_, 0.0, 1.0);
+
+  if (this->localization_mode_ == LocalizationMode::kTracking) {
+    if (confidence < this->kidnapped_low_confidence_threshold_) {
+      this->low_confidence_update_count_ += 1;
+    } else {
+      this->low_confidence_update_count_ = 0;
+      this->kidnapped_suspected_ = false;
+    }
+
+    if (
+      this->kidnapped_auto_trigger_enabled_ &&
+      this->low_confidence_update_count_ >= this->kidnapped_low_confidence_updates_)
+    {
+      this->start_global_relocalization("low measurement confidence");
+    }
+    return;
+  }
+
+  if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
+    if (confidence >= this->relocalization_success_confidence_threshold_) {
+      this->relocalization_success_count_ += 1;
+    } else {
+      this->relocalization_success_count_ = 0;
+    }
+
+    if (this->relocalization_success_count_ >= this->relocalization_success_updates_) {
+      this->localization_mode_ = LocalizationMode::kTracking;
+      this->kidnapped_suspected_ = false;
+      this->relocalization_requested_ = false;
+      this->low_confidence_update_count_ = 0;
+      this->relocalization_success_count_ = 0;
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Global relocalization succeeded with confidence %.3f",
+        confidence);
+      return;
+    }
+
+    if (
+      this->relocalization_started_at_.nanoseconds() > 0 &&
+      (stamp - this->relocalization_started_at_).seconds() >= this->relocalization_timeout_sec_)
+    {
+      this->localization_mode_ = LocalizationMode::kFailed;
+      this->relocalization_requested_ = false;
+      this->relocalization_success_count_ = 0;
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "Global relocalization timed out after %.2f sec",
+        this->relocalization_timeout_sec_);
+    }
+    return;
+  }
+}
+
+void Localization::handle_trigger_global_localization(
+  const std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Request> request,
+  std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Response> response)
+{
+  if (!this->has_map_) {
+    response->accepted = false;
+    response->message = "Map is not available yet.";
+    return;
+  }
+
+  if (!this->kidnapped_detection_enabled_) {
+    response->accepted = false;
+    response->message = "Kidnapped/global relocalization is disabled.";
+    return;
+  }
+
+  if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
+    response->accepted = false;
+    response->message = "Global relocalization is already in progress.";
+    return;
+  }
+
+  this->start_global_relocalization(request->reason);
+  response->accepted = this->localization_mode_ == LocalizationMode::kGlobalRelocalizing;
+  response->message = response->accepted ?
+    std::string("Global relocalization started.") :
+    std::string("Failed to start global relocalization.");
+}
+
 double Localization::sample_normal(const double stddev)
 {
   if (stddev <= 0.0) {
@@ -774,6 +1150,15 @@ void Localization::reset_state()
   this->previous_odom_pose_ = geometry_msgs::msg::PoseStamped();
   this->estimated_pose_ = geometry_msgs::msg::PoseStamped();
   this->particles_.clear();
+  this->localization_mode_ = LocalizationMode::kTracking;
+  this->kidnapped_suspected_ = false;
+  this->relocalization_requested_ = false;
+  this->relocalization_count_ = 0U;
+  this->localization_confidence_ = 0.0;
+  this->last_measurement_confidence_ = 0.0;
+  this->low_confidence_update_count_ = 0;
+  this->relocalization_success_count_ = 0;
+  this->relocalization_started_at_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
   this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;
   this->has_map_ = false;

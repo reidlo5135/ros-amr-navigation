@@ -1,0 +1,10 @@
+std_msgs/Header header
+bool active
+uint8 MODE_TRACKING=0
+uint8 MODE_GLOBAL_RELOCALIZING=1
+uint8 MODE_FAILED=2
+uint8 mode
+bool kidnapped_suspected
+bool relocalization_requested
+uint32 relocalization_count
+float64 confidence

@@ -21,6 +21,14 @@
         <PublishStopCommand />
         <MarkSucceeded />
       </Sequence>
+      <Sequence name="localization_intervention_sequence">
+        <CheckLocalizationInterventionNeeded />
+        <HandleLocalizationIntervention />
+      </Sequence>
+      <Sequence name="localization_resume_sequence">
+        <CheckLocalizationResumeNeeded />
+        <ResumeAfterLocalization />
+      </Sequence>
       <Sequence name="obstacle_recovery_sequence">
         <CheckRecoveryNeeded />
         <HandleRecoveryCycle />

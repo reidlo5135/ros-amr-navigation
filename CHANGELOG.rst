@@ -1,6 +1,17 @@
 Changelog
 =========
 
+2026-03-26
+----------
+
+- Started the ``0.13.0`` kidnapped-relocalization branch:
+
+  - extended ``amr_localization`` with tracking vs global-relocalization modes
+  - added robot-side ``LocalizationStatus`` publishing and ``TriggerGlobalLocalization`` handling
+  - wired ``amr_bt_navigator`` to hold navigation during relocalization and resume with a fresh global plan after recovery
+  - added kidnapped/global relocalization parameters to ``amr_bringup/params/amr.yaml``
+  - switched startup localization away from forced ``0,0`` initial pose toward startup global relocalization
+
 2026-03-25
 ----------
 

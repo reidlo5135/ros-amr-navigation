@@ -31,6 +31,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   navigate_action_name_("/amr/navigator/navigate_to_pose"),
   command_topic_(""),
   current_pose_topic_(""),
+  localization_status_topic_(""),
   motion_status_topic_(""),
   local_plan_status_topic_(""),
   plan_recovery_service_("/amr/recovery_server/plan_recovery"),
@@ -45,12 +46,14 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   next_command_id_(1U),
   has_current_pose_(false),
   has_motion_status_(false),
-  has_local_plan_status_(false)
+  has_local_plan_status_(false),
+  has_localization_status_(false)
 {
   this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.localization_status", this->localization_status_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
   this->declare_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_);
@@ -72,6 +75,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.localization_status", this->localization_status_topic_);
   this->get_parameter("topics.status", this->motion_status_topic_);
   this->get_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->get_parameter("services.plan_recovery", this->plan_recovery_service_);
@@ -99,13 +103,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
+    this->localization_status_topic_.empty() ||
     this->motion_status_topic_.empty() || this->local_plan_status_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Navigator topics must not be empty: command='%s' pose='%s' status='%s' local_plan_status='%s'",
+      "Navigator topics must not be empty: command='%s' pose='%s' localization_status='%s' status='%s' local_plan_status='%s'",
       this->command_topic_.c_str(),
       this->current_pose_topic_.c_str(),
+      this->localization_status_topic_.c_str(),
       this->motion_status_topic_.c_str(),
       this->local_plan_status_topic_.c_str());
     return CallbackReturn::FAILURE;
@@ -123,6 +129,12 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
+    });
+  this->localization_status_subscription_ =
+    this->create_subscription<amr_msgs::msg::LocalizationStatus>(
+    this->localization_status_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const amr_msgs::msg::LocalizationStatus::SharedPtr message) {
+      this->handle_localization_status(message);
     });
   this->motion_status_subscription_ = this->create_subscription<amr_msgs::msg::MotionStatus>(
     this->motion_status_topic_, rclcpp::SystemDefaultsQoS(),
@@ -154,10 +166,11 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', status='%s', local_plan_status='%s', recovery='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', localization_status='%s', status='%s', local_plan_status='%s', recovery='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
+    this->localization_status_topic_.c_str(),
     this->motion_status_topic_.c_str(),
     this->local_plan_status_topic_.c_str(),
     this->plan_recovery_service_.c_str(),
@@ -196,14 +209,17 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   this->clear_costmap_client_.reset();
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
+  this->localization_status_subscription_.reset();
   this->motion_status_subscription_.reset();
   this->local_plan_status_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_localization_status_ = amr_msgs::msg::LocalizationStatus();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
   this->latest_local_plan_status_ = amr_msgs::msg::LocalPlanStatus();
   this->has_current_pose_ = false;
+  this->has_localization_status_ = false;
   this->has_motion_status_ = false;
   this->has_local_plan_status_ = false;
   return CallbackReturn::SUCCESS;
@@ -217,14 +233,17 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   this->clear_costmap_client_.reset();
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
+  this->localization_status_subscription_.reset();
   this->motion_status_subscription_.reset();
   this->local_plan_status_subscription_.reset();
   this->motion_command_publisher_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_localization_status_ = amr_msgs::msg::LocalizationStatus();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
   this->latest_local_plan_status_ = amr_msgs::msg::LocalPlanStatus();
   this->has_current_pose_ = false;
+  this->has_localization_status_ = false;
   this->has_motion_status_ = false;
   this->has_local_plan_status_ = false;
   return CallbackReturn::SUCCESS;
@@ -253,6 +272,18 @@ rclcpp_action::GoalResponse Btnavigator::handle_goal(
 
   if (goal->goal_pose.header.frame_id.empty()) {
     RCLCPP_WARN(this->get_logger(), "Rejecting goal with empty frame_id");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+
+  const auto localization_status = this->get_localization_status_copy();
+  if (
+    this->has_localization_status_ &&
+    localization_status.mode != amr_msgs::msg::LocalizationStatus::MODE_TRACKING)
+  {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Rejecting goal while localization mode=%u is not tracking",
+      static_cast<unsigned int>(localization_status.mode));
     return rclcpp_action::GoalResponse::REJECT;
   }
 
@@ -312,6 +343,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   blackboard->set("status_message", std::string("Behavior tree is running."));
   blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
   blackboard->set("recovery_attempts", 0);
+  blackboard->set("localization_hold_active", false);
 
   factory.registerSimpleCondition(
     "CheckNavigatorReady",
@@ -422,6 +454,108 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
         return BT::NodeStatus::SUCCESS;
       }
       return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleCondition(
+    "CheckLocalizationInterventionNeeded",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto localization_status = navigator->get_localization_status_copy();
+      if (
+        localization_status.active &&
+        localization_status.mode == amr_msgs::msg::LocalizationStatus::MODE_GLOBAL_RELOCALIZING)
+      {
+        return BT::NodeStatus::SUCCESS;
+      }
+      if (
+        localization_status.active &&
+        localization_status.mode == amr_msgs::msg::LocalizationStatus::MODE_FAILED)
+      {
+        return BT::NodeStatus::SUCCESS;
+      }
+      return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleAction(
+    "HandleLocalizationIntervention",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto localization_status = navigator->get_localization_status_copy();
+      const bool hold_active = blackboard->get<bool>("localization_hold_active");
+
+      if (localization_status.mode == amr_msgs::msg::LocalizationStatus::MODE_FAILED) {
+        navigator->publish_stop_command();
+        blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+        blackboard->set(
+          "status_message",
+          std::string("Localization failed during global relocalization. Navigator aborted."));
+        return BT::NodeStatus::SUCCESS;
+      }
+
+      if (!hold_active) {
+        navigator->publish_stop_command();
+        blackboard->set("localization_hold_active", true);
+      }
+
+      blackboard->set(
+        "status_message",
+        std::string("Global relocalization is in progress. Navigation is on hold."));
+      std::this_thread::sleep_for(std::chrono::milliseconds(navigator->feedback_period_ms_));
+      return BT::NodeStatus::SUCCESS;
+    });
+
+  factory.registerSimpleCondition(
+    "CheckLocalizationResumeNeeded",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const bool hold_active = blackboard->get<bool>("localization_hold_active");
+      if (!hold_active) {
+        return BT::NodeStatus::FAILURE;
+      }
+
+      const auto localization_status = navigator->get_localization_status_copy();
+      if (
+        localization_status.active &&
+        localization_status.mode == amr_msgs::msg::LocalizationStatus::MODE_TRACKING)
+      {
+        return BT::NodeStatus::SUCCESS;
+      }
+      return BT::NodeStatus::FAILURE;
+    });
+
+  factory.registerSimpleAction(
+    "ResumeAfterLocalization",
+    [blackboard](BT::TreeNode &) {
+      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
+      const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
+      nav_msgs::msg::Path plan;
+      std::string error_message;
+      if (!navigator->wait_for_planner_service(error_message)) {
+        blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+        blackboard->set("status_message", error_message);
+        return BT::NodeStatus::SUCCESS;
+      }
+      if (!navigator->request_global_plan(current_pose, goal_pose, plan, error_message)) {
+        blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+        blackboard->set("status_message", error_message);
+        return BT::NodeStatus::SUCCESS;
+      }
+
+      NavigateToPose::Goal goal_request;
+      goal_request.goal_pose = goal_pose;
+      auto command = navigator->build_motion_command(goal_request, plan);
+      navigator->publish_motion_command(command);
+      blackboard->set("active_command", command);
+      blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+      blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+      blackboard->set("planned_path", plan);
+      blackboard->set("recovery_attempts", 0);
+      blackboard->set("localization_hold_active", false);
+      blackboard->set(
+        "status_message",
+        std::string("Localization recovered. Global plan regenerated and motion resumed."));
+      return BT::NodeStatus::SUCCESS;
     });
 
   factory.registerSimpleCondition(
@@ -796,6 +930,14 @@ void Btnavigator::handle_local_plan_status(
   this->has_local_plan_status_ = true;
 }
 
+void Btnavigator::handle_localization_status(
+  const amr_msgs::msg::LocalizationStatus::SharedPtr message)
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  this->latest_localization_status_ = *message;
+  this->has_localization_status_ = true;
+}
+
 geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
@@ -812,6 +954,12 @@ amr_msgs::msg::LocalPlanStatus Btnavigator::get_local_plan_status_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
   return this->latest_local_plan_status_;
+}
+
+amr_msgs::msg::LocalizationStatus Btnavigator::get_localization_status_copy() const
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  return this->latest_localization_status_;
 }
 
 bool Btnavigator::is_navigator_ready(std::string & error_message) const

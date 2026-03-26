@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -10,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "amr_msgs/msg/localization_status.hpp"
+#include "amr_msgs/srv/trigger_global_localization.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
@@ -37,6 +40,13 @@ private:
     double weight;
   };
 
+  enum class LocalizationMode : uint8_t
+  {
+    kTracking = amr_msgs::msg::LocalizationStatus::MODE_TRACKING,
+    kGlobalRelocalizing = amr_msgs::msg::LocalizationStatus::MODE_GLOBAL_RELOCALIZING,
+    kFailed = amr_msgs::msg::LocalizationStatus::MODE_FAILED
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -52,6 +62,7 @@ private:
   void handle_initial_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr message);
   void publish_auto_initial_pose();
   void initialize_particles(const geometry_msgs::msg::PoseStamped & pose);
+  bool initialize_particles_global();
   void apply_motion_update(
     const geometry_msgs::msg::PoseStamped & previous_odom_pose,
     const geometry_msgs::msg::PoseStamped & current_odom_pose);
@@ -59,15 +70,24 @@ private:
   void resample_particles();
   void update_estimated_pose_from_particles(const rclcpp::Time & stamp);
   void publish_outputs(const rclcpp::Time & stamp);
+  void publish_localization_status(const rclcpp::Time & stamp);
   geometry_msgs::msg::TransformStamped build_map_to_odom_transform(const rclcpp::Time & stamp) const;
   geometry_msgs::msg::PoseStamped odometry_pose_to_pose_stamped(
     const nav_msgs::msg::Odometry & odometry) const;
   bool world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const;
+  bool grid_to_world(int grid_x, int grid_y, double & world_x, double & world_y) const;
   bool is_occupied_cell(int grid_x, int grid_y) const;
+  bool is_free_cell(int grid_x, int grid_y) const;
+  bool sample_random_free_pose(Particle & particle);
   double nearest_obstacle_distance(double world_x, double world_y) const;
   double compute_particle_likelihood(
     const Particle & particle,
     const sensor_msgs::msg::LaserScan & scan) const;
+  void start_global_relocalization(const std::string & reason);
+  void update_localization_mode(const rclcpp::Time & stamp);
+  void handle_trigger_global_localization(
+    const std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Request> request,
+    std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Response> response);
   double sample_normal(double stddev);
   double normalize_angle(double angle) const;
   double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
@@ -81,6 +101,8 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr estimated_pose_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr estimated_odometry_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::LocalizationStatus>::SharedPtr localization_status_publisher_;
+  rclcpp::Service<amr_msgs::srv::TriggerGlobalLocalization>::SharedPtr trigger_global_localization_service_;
   rclcpp::TimerBase::SharedPtr auto_initial_pose_timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> transform_broadcaster_;
 
@@ -90,6 +112,8 @@ private:
   std::string initial_pose_topic_;
   std::string estimated_pose_topic_;
   std::string estimated_odom_topic_;
+  std::string localization_status_topic_;
+  std::string trigger_global_localization_service_name_;
   std::string map_frame_;
   std::string odom_frame_;
   std::string base_frame_;
@@ -113,6 +137,14 @@ private:
   int max_beams_;
   double max_beam_range_;
   int occupied_threshold_;
+  bool kidnapped_detection_enabled_;
+  bool kidnapped_start_with_global_localization_;
+  bool kidnapped_auto_trigger_enabled_;
+  double kidnapped_low_confidence_threshold_;
+  int kidnapped_low_confidence_updates_;
+  double relocalization_success_confidence_threshold_;
+  int relocalization_success_updates_;
+  double relocalization_timeout_sec_;
 
   nav_msgs::msg::Odometry latest_odom_;
   sensor_msgs::msg::LaserScan latest_scan_;
@@ -122,6 +154,15 @@ private:
   geometry_msgs::msg::PoseStamped estimated_pose_;
   std::vector<Particle> particles_;
   std::mt19937 random_engine_;
+  LocalizationMode localization_mode_;
+  bool kidnapped_suspected_;
+  bool relocalization_requested_;
+  uint32_t relocalization_count_;
+  double localization_confidence_;
+  double last_measurement_confidence_;
+  int low_confidence_update_count_;
+  int relocalization_success_count_;
+  rclcpp::Time relocalization_started_at_;
   bool has_latest_odom_;
   bool has_latest_scan_;
   bool has_map_;

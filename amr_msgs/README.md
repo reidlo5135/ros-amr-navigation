@@ -9,11 +9,13 @@ Custom ROS interfaces used by the AMR stack.
 - messages:
   - `MotionCommand`
   - `MotionStatus`
+  - `LocalizationStatus`
 - services:
   - `PlanSegment`
   - `PlanRoute`
   - `PlanLocalEscape`
   - `PlanRecovery`
   - `ClearCostmap`
+  - `TriggerGlobalLocalization`
 
 These interfaces are shared across bringup, planning, recovery, MQTT, and visualization paths.

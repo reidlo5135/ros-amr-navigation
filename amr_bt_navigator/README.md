@@ -8,6 +8,7 @@ BehaviorTree.CPP v3 based navigation decision server.
 - requests global plans
 - dispatches motion commands
 - monitors progress and blocked states
+- pauses, resumes, or aborts navigation from localization state
 - chooses recovery behaviors through BT flow
 
 ## Current Recovery Direction
@@ -27,6 +28,7 @@ Nav2-style responsibility split:
 ## Inputs
 
 - `/amr/localization/pose`
+- `/amr/localization/status`
 - `/amr/motion/status`
 - `/amr/global_planner/plan_segment`
 - `/amr/recovery_server/plan_recovery`
