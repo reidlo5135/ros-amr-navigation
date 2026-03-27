@@ -14,6 +14,12 @@ constexpr int kTempSubmapScoreClamp = 48;
 constexpr int kTempSubmapOccupiedThreshold = 4;
 constexpr int kTempSubmapFreeThreshold = 3;
 constexpr double kTempSubmapLockScoreThreshold = 0.10;
+constexpr double kPatchRefineDistance = 1.20;
+constexpr double kPatchRefineYaw = 1.40;
+constexpr int kPatchRefineXySteps = 7;
+constexpr int kPatchRefineYawSteps = 7;
+constexpr double kPatchScorePrimaryWeight = 3.0;
+constexpr double kPatchScoreSecondaryWeight = 0.35;
 
 }  // namespace
 
@@ -1202,6 +1208,78 @@ Localization::CandidateCluster Localization::refine_candidate_cluster_scan_first
   return refined_cluster;
 }
 
+Localization::CandidateCluster Localization::refine_candidate_cluster_patch_first(
+  const CandidateCluster & seed_cluster) const
+{
+  CandidateCluster refined_cluster = seed_cluster;
+  const double seed_patch_score = this->score_relocalization_temp_submap_at_pose(
+    seed_cluster.x, seed_cluster.y, seed_cluster.yaw);
+  refined_cluster.temp_submap_score = seed_patch_score;
+
+  if (
+    !this->relocalization_temp_submap_enabled_ ||
+    this->relocalization_temp_submap_known_cells_ == 0U ||
+    !this->has_map_)
+  {
+    return refined_cluster;
+  }
+
+  double best_x = seed_cluster.x;
+  double best_y = seed_cluster.y;
+  double best_yaw = seed_cluster.yaw;
+  double best_patch_score = seed_patch_score;
+
+  for (int step_y = -kPatchRefineXySteps; step_y <= kPatchRefineXySteps; ++step_y) {
+    const double dy =
+      kPatchRefineDistance * static_cast<double>(step_y) / static_cast<double>(kPatchRefineXySteps);
+    for (int step_x = -kPatchRefineXySteps; step_x <= kPatchRefineXySteps; ++step_x) {
+      const double dx =
+        kPatchRefineDistance * static_cast<double>(step_x) / static_cast<double>(kPatchRefineXySteps);
+      const double sample_x = seed_cluster.x + dx;
+      const double sample_y = seed_cluster.y + dy;
+      int grid_x = 0;
+      int grid_y = 0;
+      if (!this->world_to_grid(sample_x, sample_y, grid_x, grid_y) || !this->is_free_cell(grid_x, grid_y)) {
+        continue;
+      }
+
+      for (int step_yaw = -kPatchRefineYawSteps; step_yaw <= kPatchRefineYawSteps; ++step_yaw) {
+        const double yaw_delta =
+          kPatchRefineYaw * static_cast<double>(step_yaw) / static_cast<double>(kPatchRefineYawSteps);
+        const double sample_yaw = this->normalize_angle(seed_cluster.yaw + yaw_delta);
+        const double patch_score =
+          this->score_relocalization_temp_submap_at_pose(sample_x, sample_y, sample_yaw);
+        if (patch_score <= best_patch_score) {
+          continue;
+        }
+
+        best_patch_score = patch_score;
+        best_x = sample_x;
+        best_y = sample_y;
+        best_yaw = sample_yaw;
+      }
+    }
+  }
+
+  refined_cluster.x = best_x;
+  refined_cluster.y = best_y;
+  refined_cluster.yaw = best_yaw;
+  refined_cluster.temp_submap_score = best_patch_score;
+  return refined_cluster;
+}
+
+double Localization::score_relocalization_temp_submap_at_pose(
+  const double x,
+  const double y,
+  const double yaw) const
+{
+  CandidateCluster cluster{};
+  cluster.x = x;
+  cluster.y = y;
+  cluster.yaw = yaw;
+  return this->score_candidate_with_relocalization_temp_submap(cluster);
+}
+
 double Localization::score_candidate_with_relocalization_temp_submap(
   const CandidateCluster & cluster) const
 {
@@ -1426,9 +1504,18 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
       continue;
     }
 
+    cluster = this->refine_candidate_cluster_patch_first(cluster);
+    cluster = aggregate_cluster(cluster.x, cluster.y, cluster.yaw);
+    if (cluster.cluster_weight <= 0.0) {
+      continue;
+    }
+
     const double temp_submap_score = this->score_candidate_with_relocalization_temp_submap(cluster);
     cluster.temp_submap_score = temp_submap_score;
-    cluster.score += this->relocalization_temp_submap_score_weight_ * temp_submap_score;
+    cluster.score =
+      (kPatchScorePrimaryWeight * temp_submap_score) +
+      (kPatchScoreSecondaryWeight * cluster.score) +
+      (this->relocalization_temp_submap_score_weight_ * temp_submap_score);
 
     for (const auto & previous_track : this->previous_candidate_tracks_) {
       const double dx = cluster.x - previous_track.x;
@@ -1461,7 +1548,7 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
       std::remove_if(
         clusters.begin(), clusters.end(),
         [min_score](const CandidateCluster & cluster) {
-          return cluster.score < min_score;
+          return cluster.score < min_score && cluster.temp_submap_score < 0.05;
         }),
       clusters.end());
   }
@@ -1720,6 +1807,12 @@ void Localization::publish_localization_candidates(const rclcpp::Time & stamp)
     this->primary_candidate_pose_.pose.position.z = 0.0;
     this->update_pose_orientation(this->primary_candidate_pose_, clusters.front().yaw);
     this->primary_candidate_temp_submap_score_ = clusters.front().temp_submap_score;
+    if (
+      this->localization_mode_ == LocalizationMode::kGlobalRelocalizing &&
+      clusters.front().temp_submap_score > 0.0)
+    {
+      this->estimated_pose_ = this->primary_candidate_pose_;
+    }
   }
   auto message = this->build_candidate_array_message(stamp, clusters);
   this->localization_candidates_publisher_->publish(message);

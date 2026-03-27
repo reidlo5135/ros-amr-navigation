@@ -100,6 +100,8 @@ private:
   bool local_point_to_submap_index(double local_x, double local_y, std::size_t & index) const;
   void add_relocalization_temp_submap_score(std::size_t index, int delta);
   CandidateCluster refine_candidate_cluster_scan_first(const CandidateCluster & seed_cluster) const;
+  CandidateCluster refine_candidate_cluster_patch_first(const CandidateCluster & seed_cluster) const;
+  double score_relocalization_temp_submap_at_pose(double x, double y, double yaw) const;
   double score_candidate_with_relocalization_temp_submap(const CandidateCluster & cluster) const;
   std::vector<CandidateCluster> extract_candidate_clusters() const;
   amr_msgs::msg::LocalizationCandidateArray build_candidate_array_message(
