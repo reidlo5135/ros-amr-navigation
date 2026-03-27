@@ -1641,6 +1641,40 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
     return;
   }
 
+  if (this->mode_is_nav()) {
+    double weighted_x = 0.0;
+    double weighted_y = 0.0;
+    double weighted_sin_yaw = 0.0;
+    double weighted_cos_yaw = 0.0;
+    double total_weight = 0.0;
+
+    for (const auto & particle : this->particles_) {
+      weighted_x += particle.x * particle.weight;
+      weighted_y += particle.y * particle.weight;
+      weighted_sin_yaw += std::sin(particle.yaw) * particle.weight;
+      weighted_cos_yaw += std::cos(particle.yaw) * particle.weight;
+      total_weight += particle.weight;
+    }
+
+    if (total_weight <= 0.0) {
+      total_weight = 1.0;
+    }
+
+    this->localization_cluster_weight_ = total_weight;
+    this->localization_cluster_dominance_ratio_ = 1.0;
+    this->localization_position_std_ = 0.0;
+    this->localization_yaw_std_ = 0.0;
+    this->estimated_pose_.header.stamp = stamp;
+    this->estimated_pose_.header.frame_id = this->map_frame_;
+    this->estimated_pose_.pose.position.x = weighted_x / total_weight;
+    this->estimated_pose_.pose.position.y = weighted_y / total_weight;
+    this->estimated_pose_.pose.position.z = 0.0;
+    this->update_pose_orientation(
+      this->estimated_pose_,
+      std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight));
+    return;
+  }
+
   const auto best_particle_it = std::max_element(
     this->particles_.begin(), this->particles_.end(),
     [](const Particle & lhs, const Particle & rhs) {
@@ -1786,6 +1820,18 @@ void Localization::publish_localization_candidates(const rclcpp::Time & stamp)
     !this->localization_candidates_publisher_ ||
     !this->localization_candidates_publisher_->is_activated())
   {
+    return;
+  }
+
+  if (this->mode_is_nav()) {
+    amr_msgs::msg::LocalizationCandidateArray message;
+    message.header.stamp = stamp;
+    message.header.frame_id = this->map_frame_;
+    message.primary_candidate_id = 0U;
+    this->primary_candidate_pose_ = geometry_msgs::msg::PoseStamped();
+    this->primary_candidate_temp_submap_score_ = 0.0;
+    this->previous_candidate_tracks_.clear();
+    this->localization_candidates_publisher_->publish(message);
     return;
   }
 
@@ -2173,6 +2219,15 @@ void Localization::start_global_relocalization(const std::string & reason)
 
 void Localization::update_localization_mode(const rclcpp::Time & stamp)
 {
+  if (this->mode_is_nav()) {
+    this->localization_mode_ = LocalizationMode::kTracking;
+    this->kidnapped_suspected_ = false;
+    this->relocalization_requested_ = false;
+    this->relocalization_success_count_ = 0;
+    this->low_confidence_update_count_ = 0;
+    return;
+  }
+
   if (!this->kidnapped_detection_enabled_) {
     this->localization_mode_ = LocalizationMode::kTracking;
     this->kidnapped_suspected_ = false;
