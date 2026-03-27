@@ -299,6 +299,10 @@
       forward_angle_deg: 30.0
       rotate_heading_threshold: 0.20
       minimum_points: 3
+    probe_safety_gate:
+      stop_distance: 0.18
+      forward_angle_deg: 20.0
+      minimum_points: 2
     velocity_controller:
       mode: "pid"
       linear:

@@ -82,6 +82,7 @@ private:
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
   bool is_safety_gate_triggered() const;
+  bool is_probe_safety_gate_triggered() const;
   void ensure_recovery_reference_initialized();
   double pose_distance(
     const geometry_msgs::msg::PoseStamped & start,
@@ -124,6 +125,9 @@ private:
   double safety_gate_forward_angle_deg_;
   double safety_gate_rotate_heading_threshold_;
   int safety_gate_min_points_;
+  double probe_safety_gate_stop_distance_;
+  double probe_safety_gate_forward_angle_deg_;
+  int probe_safety_gate_min_points_;
   VelocityControlMode velocity_control_mode_;
   AxisControllerConfig linear_controller_config_;
   AxisControllerConfig angular_controller_config_;

@@ -34,6 +34,9 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   safety_gate_forward_angle_deg_(25.0),
   safety_gate_rotate_heading_threshold_(0.20),
   safety_gate_min_points_(3),
+  probe_safety_gate_stop_distance_(0.18),
+  probe_safety_gate_forward_angle_deg_(20.0),
+  probe_safety_gate_min_points_(2),
   velocity_control_mode_(VelocityControlMode::PID),
   recovery_start_yaw_(0.0),
   has_command_(false),
@@ -84,6 +87,12 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
     "safety_gate.rotate_heading_threshold", this->safety_gate_rotate_heading_threshold_);
   this->declare_parameter(
     "safety_gate.minimum_points", this->safety_gate_min_points_);
+  this->declare_parameter(
+    "probe_safety_gate.stop_distance", this->probe_safety_gate_stop_distance_);
+  this->declare_parameter(
+    "probe_safety_gate.forward_angle_deg", this->probe_safety_gate_forward_angle_deg_);
+  this->declare_parameter(
+    "probe_safety_gate.minimum_points", this->probe_safety_gate_min_points_);
 
   this->declare_parameter("velocity_controller.mode", std::string("pid"));
   this->declare_parameter("velocity_controller.linear.kp", 0.35);
@@ -143,6 +152,12 @@ MotionController::CallbackReturn MotionController::on_configure(
     "safety_gate.rotate_heading_threshold", this->safety_gate_rotate_heading_threshold_);
   this->get_parameter(
     "safety_gate.minimum_points", this->safety_gate_min_points_);
+  this->get_parameter(
+    "probe_safety_gate.stop_distance", this->probe_safety_gate_stop_distance_);
+  this->get_parameter(
+    "probe_safety_gate.forward_angle_deg", this->probe_safety_gate_forward_angle_deg_);
+  this->get_parameter(
+    "probe_safety_gate.minimum_points", this->probe_safety_gate_min_points_);
 
   this->velocity_control_mode_ = this->parse_velocity_control_mode(
     this->get_parameter("velocity_controller.mode").as_string());
@@ -540,7 +555,7 @@ void MotionController::publish_control()
       } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_PROBE) {
         const double traveled = this->pose_distance(this->current_pose_, this->recovery_reference_pose_);
         const double remaining = std::max(0.0, this->latest_command_.recovery_distance - traveled);
-        const bool probe_safety_gate_blocked = this->is_safety_gate_triggered();
+        const bool probe_safety_gate_blocked = this->is_probe_safety_gate_triggered();
         status.remaining_distance = remaining;
         debug_remaining_distance = remaining;
         status.safety_gate_blocked = probe_safety_gate_blocked;
@@ -557,6 +572,15 @@ void MotionController::publish_control()
           desired_twist.linear.x =
             std::max(this->latest_command_.recovery_speed, this->min_linear_speed_);
         }
+        RCLCPP_INFO_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          1000,
+          "Probe cmd=%u remaining=%.3f blocked=%s target_v=%.3f",
+          status.command_id,
+          remaining,
+          probe_safety_gate_blocked ? "true" : "false",
+          desired_twist.linear.x);
       } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_SPIN) {
         const double target_yaw = this->recovery_start_yaw_ + this->latest_command_.recovery_angle;
         const double heading_error = this->normalize_angle(target_yaw - current_yaw);
@@ -877,6 +901,45 @@ bool MotionController::is_safety_gate_triggered() const
     if (range <= this->safety_gate_stop_distance_) {
       ++hit_count;
       if (hit_count >= this->safety_gate_min_points_) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool MotionController::is_probe_safety_gate_triggered() const
+{
+  if (!this->safety_gate_enabled_ || !this->has_latest_scan_) {
+    return false;
+  }
+
+  const double half_angle_rad =
+    (this->probe_safety_gate_forward_angle_deg_ * 3.14159265358979323846 / 180.0) * 0.5;
+  int hit_count = 0;
+
+  for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index) {
+    const double angle =
+      this->latest_scan_.angle_min +
+      (static_cast<double>(index) * this->latest_scan_.angle_increment);
+    if (std::abs(angle) > half_angle_rad) {
+      continue;
+    }
+
+    const double range = this->latest_scan_.ranges[index];
+    if (!std::isfinite(range)) {
+      continue;
+    }
+    if (
+      range < this->latest_scan_.range_min ||
+      range > this->latest_scan_.range_max)
+    {
+      continue;
+    }
+    if (range <= this->probe_safety_gate_stop_distance_) {
+      ++hit_count;
+      if (hit_count >= this->probe_safety_gate_min_points_) {
         return true;
       }
     }
