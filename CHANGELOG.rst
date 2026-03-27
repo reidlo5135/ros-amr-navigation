@@ -1,6 +1,13 @@
 Changelog
 =========
 
+2026-03-27
+----------
+
+- Started the ``0.13.2`` patch branch:
+
+  - continuing ARL probing and relocalization follow-up work
+
 2026-03-26
 ----------
 
