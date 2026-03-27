@@ -1418,7 +1418,7 @@ void Btnavigator::run_active_relocalization_supervisor()
         this->active_relocalization_command_id_ = 0U;
         this->active_relocalization_command_started_ns_ = 0;
         this->active_relocalization_phase_index_ =
-          (this->active_relocalization_phase_index_ + 1U) % 5U;
+          (this->active_relocalization_phase_index_ + 1U) % 7U;
         return;
       }
 
@@ -1437,7 +1437,7 @@ void Btnavigator::run_active_relocalization_supervisor()
         this->active_relocalization_command_id_ = 0U;
         this->active_relocalization_command_started_ns_ = 0;
         this->active_relocalization_phase_index_ =
-          (this->active_relocalization_phase_index_ + 1U) % 5U;
+          (this->active_relocalization_phase_index_ + 1U) % 7U;
       }
       return;
     }

@@ -1670,6 +1670,15 @@ void Localization::start_global_relocalization(const std::string & reason)
   this->previous_candidate_tracks_.clear();
   this->next_candidate_id_ = 1U;
 
+  if (this->has_latest_odom_) {
+    this->previous_odom_pose_ = this->odometry_pose_to_pose_stamped(this->latest_odom_);
+    this->has_previous_odom_ = true;
+  }
+
+  const auto stamp = this->now();
+  this->update_estimated_pose_from_particles(stamp);
+  this->publish_outputs(stamp);
+
   RCLCPP_WARN(
     this->get_logger(),
     "Starting global relocalization attempt %u (%s)",
