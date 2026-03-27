@@ -157,14 +157,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->trigger_global_localization_client_ =
     this->create_client<amr_msgs::srv::TriggerGlobalLocalization>(
     this->trigger_global_localization_service_);
+  const auto latched_state_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
   this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
+    this->current_pose_topic_, latched_state_qos,
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
     });
   this->localization_status_subscription_ =
     this->create_subscription<amr_msgs::msg::LocalizationStatus>(
-    this->localization_status_topic_, rclcpp::SystemDefaultsQoS(),
+    this->localization_status_topic_, latched_state_qos,
     [this](const amr_msgs::msg::LocalizationStatus::SharedPtr message) {
       this->handle_localization_status(message);
     });

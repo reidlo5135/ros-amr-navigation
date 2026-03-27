@@ -212,8 +212,9 @@ MotionController::CallbackReturn MotionController::on_configure(
     [this](const nav_msgs::msg::Path::SharedPtr message) {
       this->handle_local_plan(message);
     });
+  const auto latched_pose_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
   this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
+    this->current_pose_topic_, latched_pose_qos,
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
     });
