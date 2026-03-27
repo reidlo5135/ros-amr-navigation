@@ -408,16 +408,17 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->initial_pose_publisher_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->initial_pose_topic_, rclcpp::SystemDefaultsQoS());
+  const auto latched_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
   this->estimated_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-    this->estimated_pose_topic_, rclcpp::SystemDefaultsQoS());
+    this->estimated_pose_topic_, latched_qos);
   this->estimated_odometry_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
-    this->estimated_odom_topic_, rclcpp::SystemDefaultsQoS());
+    this->estimated_odom_topic_, latched_qos);
   this->localization_status_publisher_ =
     this->create_publisher<amr_msgs::msg::LocalizationStatus>(
-    this->localization_status_topic_, rclcpp::SystemDefaultsQoS());
+    this->localization_status_topic_, latched_qos);
   this->localization_candidates_publisher_ =
     this->create_publisher<amr_msgs::msg::LocalizationCandidateArray>(
-    this->localization_candidates_topic_, rclcpp::SystemDefaultsQoS());
+    this->localization_candidates_topic_, latched_qos);
   this->trigger_global_localization_service_ =
     this->create_service<amr_msgs::srv::TriggerGlobalLocalization>(
     this->trigger_global_localization_service_name_,
@@ -460,7 +461,7 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
     this->localization_candidates_publisher_->on_activate();
   }
 
-  if (this->has_initial_pose_) {
+  if (this->particles_initialized_) {
     this->update_estimated_pose_from_particles(this->now());
     this->publish_outputs(this->now());
   }
