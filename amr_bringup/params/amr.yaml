@@ -68,8 +68,7 @@
 
 /amr/localization:
   ros__parameters:
-    startup:
-      localization_mode: "global_relocalization"
+    mode: "nav"
     topics:
       odom: "/odom"
       scan: "/scan"
@@ -152,8 +151,7 @@
     autostart: true
     service_timeout_ms: 5000
     state_poll_interval_ms: 200
-    startup:
-      localization_mode: "global_relocalization"
+    mode: "nav"
     initial_pose:
       enabled: false
       topic: "/amr/localization/initial_pose"
@@ -327,8 +325,7 @@
 
 /amr/navigator:
   ros__parameters:
-    startup:
-      localization_mode: "global_relocalization"
+    mode: "nav"
     behavior_tree:
       xml_path: ""
     topics:

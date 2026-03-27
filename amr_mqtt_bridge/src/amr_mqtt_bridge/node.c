@@ -1657,7 +1657,7 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
     g_amr_mqtt_bridge_config.mqtt.telemetry_qos,
     false,
     true,
-    NULL,
+    amr_mqtt_bridge_serialize_odom,
     false,
     false,
     0U,

@@ -16,7 +16,7 @@ def bringup_params_file() -> str:
 def generate_launch_description() -> LaunchDescription:
     ld = LaunchDescription()
     mapping_mode = LaunchConfiguration("mapping_mode")
-    startup_localization_mode = LaunchConfiguration("startup_localization_mode")
+    mode = LaunchConfiguration("mode")
 
     ld.add_action(
         DeclareLaunchArgument(
@@ -27,12 +27,9 @@ def generate_launch_description() -> LaunchDescription:
     )
     ld.add_action(
         DeclareLaunchArgument(
-            "startup_localization_mode",
-            default_value="global_relocalization",
-            description=(
-                "Startup localization policy: "
-                "manual_set_initial_pose | global_relocalization | active_relocalization | fixed_start_pose"
-            ),
+            "mode",
+            default_value="nav",
+            description="Startup mode: nav | arl_gl",
         )
     )
 
@@ -52,7 +49,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[
             bringup_params_file(),
-            {"startup.localization_mode": startup_localization_mode},
+            {"mode": mode},
         ],
         condition=UnlessCondition(mapping_mode),
     )
@@ -90,7 +87,7 @@ def generate_launch_description() -> LaunchDescription:
                     "/amr/costmap_server",
                     "/amr/global_planner",
                 ],
-                "startup.localization_mode": startup_localization_mode,
+                "mode": mode,
             },
         ],
         condition=UnlessCondition(mapping_mode),
@@ -107,7 +104,7 @@ def generate_launch_description() -> LaunchDescription:
                 "managed_nodes": [
                     "/amr/map_server",
                 ],
-                "startup.localization_mode": startup_localization_mode,
+                "mode": mode,
                 "initial_pose.enabled": False,
             },
         ],

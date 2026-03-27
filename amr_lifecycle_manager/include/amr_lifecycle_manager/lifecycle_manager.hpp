@@ -49,7 +49,7 @@ private:
   bool autostart_;
   int service_timeout_ms_;
   int state_poll_interval_ms_;
-  std::string startup_localization_mode_;
+  std::string mode_;
   bool initial_pose_enabled_;
   std::string initial_pose_topic_;
   std::string initial_pose_frame_id_;

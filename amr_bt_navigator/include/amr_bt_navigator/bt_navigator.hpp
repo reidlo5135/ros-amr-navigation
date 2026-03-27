@@ -118,7 +118,7 @@ private:
   std::string clear_costmap_service_;
   std::string plan_segment_service_;
   std::string trigger_global_localization_service_;
-  std::string startup_localization_mode_;
+  std::string mode_;
   std::string behavior_tree_xml_path_;
   std::string default_node_id_;
   int planner_wait_timeout_ms_;

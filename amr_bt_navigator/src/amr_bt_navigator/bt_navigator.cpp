@@ -24,7 +24,7 @@ std::string get_default_behavior_tree_xml_path()
   }
 }
 
-constexpr const char * kStartupModeActiveRelocalization = "active_relocalization";
+constexpr const char * kModeArlGl = "arl_gl";
 
 }  // namespace
 
@@ -40,7 +40,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   clear_costmap_service_("/amr/costmap_server/clear_costmap"),
   plan_segment_service_("/amr/global_planner/plan_segment"),
   trigger_global_localization_service_("/amr/localization/trigger_global_localization"),
-  startup_localization_mode_("global_relocalization"),
+  mode_("nav"),
   behavior_tree_xml_path_(""),
   default_node_id_("start"),
   planner_wait_timeout_ms_(2000),
@@ -79,7 +79,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("services.segment", this->plan_segment_service_);
   this->declare_parameter(
     "services.trigger_global_localization", this->trigger_global_localization_service_);
-  this->declare_parameter("startup.localization_mode", this->startup_localization_mode_);
+  this->declare_parameter("mode", this->mode_);
   this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("behavior_tree_xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
@@ -107,7 +107,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("services.segment", this->plan_segment_service_);
   this->get_parameter(
     "services.trigger_global_localization", this->trigger_global_localization_service_);
-  this->get_parameter("startup.localization_mode", this->startup_localization_mode_);
+  this->get_parameter("mode", this->mode_);
   this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   {
     std::string legacy_behavior_tree_xml_path;
@@ -204,7 +204,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with action='%s', command='%s', pose='%s', localization_status='%s', status='%s', local_plan_status='%s', recovery='%s', clear_costmap='%s', planner='%s', trigger_gl='%s', startup_mode='%s', bt_xml='%s'",
+    "Configured navigator with action='%s', command='%s', pose='%s', localization_status='%s', status='%s', local_plan_status='%s', recovery='%s', clear_costmap='%s', planner='%s', trigger_gl='%s', mode='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->command_topic_.c_str(),
     this->current_pose_topic_.c_str(),
@@ -215,7 +215,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->clear_costmap_service_.c_str(),
     this->plan_segment_service_.c_str(),
     this->trigger_global_localization_service_.c_str(),
-    this->startup_localization_mode_.c_str(),
+    this->mode_.c_str(),
     this->behavior_tree_xml_path_.c_str());
 
   return CallbackReturn::SUCCESS;
@@ -1308,7 +1308,7 @@ bool Btnavigator::has_active_goal() const
 
 void Btnavigator::run_active_relocalization_supervisor()
 {
-  if (this->startup_localization_mode_ != kStartupModeActiveRelocalization) {
+  if (this->mode_ != kModeArlGl) {
     return;
   }
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
@@ -1507,7 +1507,7 @@ void Btnavigator::request_active_relocalization_behavior_async(
       }
 
       if (
-        this->startup_localization_mode_ != kStartupModeActiveRelocalization ||
+        this->mode_ != kModeArlGl ||
         this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE ||
         !this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated() ||
         this->has_active_goal())

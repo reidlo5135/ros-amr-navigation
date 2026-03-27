@@ -20,7 +20,7 @@ export function LocalizationDebugPanel({
       <div className="panel-section-title">Localization Debug</div>
       <div className="metric-list">
         <div className="metric-row">
-          <span>LPose</span>
+          <span>Localization Pose</span>
           <strong className={hasRobotPose ? "metric-status-ok" : "metric-status-missing"}>
             {renderStatusLabel(hasRobotPose)}
           </strong>

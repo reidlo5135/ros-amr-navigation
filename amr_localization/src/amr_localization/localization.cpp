@@ -34,7 +34,7 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   localization_status_topic_(""),
   localization_candidates_topic_(""),
   trigger_global_localization_service_name_("/amr/localization/trigger_global_localization"),
-  startup_localization_mode_("global_relocalization"),
+  mode_("nav"),
   map_frame_("map"),
   odom_frame_("odom"),
   base_frame_("base_link"),
@@ -137,7 +137,7 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "services.trigger_global_localization",
     this->trigger_global_localization_service_name_);
-  this->declare_parameter("startup.localization_mode", this->startup_localization_mode_);
+  this->declare_parameter("mode", this->mode_);
   this->declare_parameter("frames.map", this->map_frame_);
   this->declare_parameter("frames.odom", this->odom_frame_);
   this->declare_parameter("frames.base", this->base_frame_);
@@ -267,7 +267,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter(
     "services.trigger_global_localization",
     this->trigger_global_localization_service_name_);
-  this->get_parameter("startup.localization_mode", this->startup_localization_mode_);
+  this->get_parameter("mode", this->mode_);
   this->get_parameter("frames.map", this->map_frame_);
   this->get_parameter("frames.odom", this->odom_frame_);
   this->get_parameter("frames.base", this->base_frame_);
@@ -382,24 +382,17 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->relocalization_success_updates_);
   this->get_parameter("kidnapped.relocalization_timeout_sec", this->relocalization_timeout_sec_);
 
-  if (
-    !this->startup_mode_is_manual_set_initial_pose() &&
-    !this->startup_mode_is_global_relocalization() &&
-    !this->startup_mode_is_active_relocalization() &&
-    !this->startup_mode_is_fixed_start_pose())
-  {
+  if (!this->mode_is_nav() && !this->mode_is_arl_gl()) {
     RCLCPP_WARN(
       this->get_logger(),
-      "Unknown startup.localization_mode '%s'; falling back to 'global_relocalization'",
-      this->startup_localization_mode_.c_str());
-    this->startup_localization_mode_ = "global_relocalization";
+      "Unknown localization mode '%s'; falling back to 'nav'",
+      this->mode_.c_str());
+    this->mode_ = "nav";
   }
 
-  this->kidnapped_start_with_global_localization_ =
-    this->startup_mode_is_global_relocalization() ||
-    this->startup_mode_is_active_relocalization();
+  this->kidnapped_start_with_global_localization_ = this->mode_is_arl_gl();
 
-  if (!this->startup_mode_is_fixed_start_pose()) {
+  if (!this->mode_is_nav()) {
     this->auto_initial_pose_enabled_ = false;
   }
 
@@ -432,7 +425,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->initial_map_pose_.pose.position.y = this->initial_y_;
   this->initial_map_pose_.pose.position.z = 0.0;
   this->update_pose_orientation(this->initial_map_pose_, this->initial_yaw_);
-  if (this->startup_mode_is_fixed_start_pose()) {
+  if (this->mode_is_nav()) {
     this->has_initial_pose_ = true;
     this->initialize_particles(this->initial_map_pose_);
   }
@@ -486,7 +479,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, status='%s', candidates='%s', trigger='%s', startup_mode='%s', startup_global=%s'",
+    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, status='%s', candidates='%s', trigger='%s', mode='%s', startup_global=%s'",
     this->odom_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->map_topic_.c_str(),
@@ -494,7 +487,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->localization_status_topic_.c_str(),
     this->localization_candidates_topic_.c_str(),
     this->trigger_global_localization_service_name_.c_str(),
-    this->startup_localization_mode_.c_str(),
+    this->mode_.c_str(),
     this->kidnapped_start_with_global_localization_ ? "true" : "false");
   return CallbackReturn::SUCCESS;
 }
@@ -522,7 +515,7 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
 
   if (
     this->startup_global_relocalization_pending_ &&
-    (this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) &&
+    this->mode_is_arl_gl() &&
     !this->particles_initialized_ &&
     this->has_map_ &&
     this->localization_mode_ == LocalizationMode::kTracking)
@@ -536,7 +529,7 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
         }
         if (
           this->startup_global_relocalization_pending_ &&
-          (this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) &&
+          this->mode_is_arl_gl() &&
           !this->particles_initialized_ &&
           this->has_map_ &&
           this->localization_mode_ == LocalizationMode::kTracking)
@@ -684,7 +677,7 @@ void Localization::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     message->info.resolution);
 
   if (
-    (this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) &&
+    this->mode_is_arl_gl() &&
     !this->particles_initialized_ &&
     this->localization_mode_ == LocalizationMode::kTracking)
   {
@@ -700,7 +693,7 @@ void Localization::maybe_start_pending_startup_relocalization()
 {
   if (
     !this->startup_global_relocalization_pending_ ||
-    !(this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) ||
+    !this->mode_is_arl_gl() ||
     this->particles_initialized_ ||
     !this->has_map_ ||
     this->localization_mode_ != LocalizationMode::kTracking ||
@@ -2286,24 +2279,14 @@ void Localization::handle_trigger_global_localization(
     std::string("Failed to start global relocalization.");
 }
 
-bool Localization::startup_mode_is_manual_set_initial_pose() const
+bool Localization::mode_is_nav() const
 {
-  return this->startup_localization_mode_ == "manual_set_initial_pose";
+  return this->mode_ == "nav";
 }
 
-bool Localization::startup_mode_is_global_relocalization() const
+bool Localization::mode_is_arl_gl() const
 {
-  return this->startup_localization_mode_ == "global_relocalization";
-}
-
-bool Localization::startup_mode_is_active_relocalization() const
-{
-  return this->startup_localization_mode_ == "active_relocalization";
-}
-
-bool Localization::startup_mode_is_fixed_start_pose() const
-{
-  return this->startup_localization_mode_ == "fixed_start_pose";
+  return this->mode_ == "arl_gl";
 }
 
 double Localization::sample_normal(const double stddev)

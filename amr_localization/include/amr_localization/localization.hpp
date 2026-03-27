@@ -130,10 +130,8 @@ private:
   void handle_trigger_global_localization(
     const std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Request> request,
     std::shared_ptr<amr_msgs::srv::TriggerGlobalLocalization::Response> response);
-  bool startup_mode_is_manual_set_initial_pose() const;
-  bool startup_mode_is_global_relocalization() const;
-  bool startup_mode_is_active_relocalization() const;
-  bool startup_mode_is_fixed_start_pose() const;
+  bool mode_is_nav() const;
+  bool mode_is_arl_gl() const;
   double sample_normal(double stddev);
   double normalize_angle(double angle) const;
   double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
@@ -163,7 +161,7 @@ private:
   std::string localization_status_topic_;
   std::string localization_candidates_topic_;
   std::string trigger_global_localization_service_name_;
-  std::string startup_localization_mode_;
+  std::string mode_;
   std::string map_frame_;
   std::string odom_frame_;
   std::string base_frame_;

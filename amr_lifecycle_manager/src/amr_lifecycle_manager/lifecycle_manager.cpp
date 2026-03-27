@@ -10,7 +10,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
   autostart_(true),
   service_timeout_ms_(5000),
   state_poll_interval_ms_(200),
-  startup_localization_mode_("global_relocalization"),
+  mode_("nav"),
   initial_pose_enabled_(false),
   initial_pose_topic_("/amr/localization/initial_pose"),
   initial_pose_frame_id_("map"),
@@ -27,7 +27,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
   this->declare_parameter("autostart", this->autostart_);
   this->declare_parameter("service_timeout_ms", this->service_timeout_ms_);
   this->declare_parameter("state_poll_interval_ms", this->state_poll_interval_ms_);
-  this->declare_parameter("startup.localization_mode", this->startup_localization_mode_);
+  this->declare_parameter("mode", this->mode_);
   this->declare_parameter("initial_pose.enabled", this->initial_pose_enabled_);
   this->declare_parameter("initial_pose.topic", this->initial_pose_topic_);
   this->declare_parameter("initial_pose.frame_id", this->initial_pose_frame_id_);
@@ -43,7 +43,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
   this->get_parameter("autostart", this->autostart_);
   this->get_parameter("service_timeout_ms", this->service_timeout_ms_);
   this->get_parameter("state_poll_interval_ms", this->state_poll_interval_ms_);
-  this->get_parameter("startup.localization_mode", this->startup_localization_mode_);
+  this->get_parameter("mode", this->mode_);
   this->get_parameter("initial_pose.enabled", this->initial_pose_enabled_);
   this->get_parameter("initial_pose.topic", this->initial_pose_topic_);
   this->get_parameter("initial_pose.frame_id", this->initial_pose_frame_id_);
@@ -55,17 +55,14 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
   this->get_parameter("initial_pose.covariance.y", this->initial_pose_covariance_y_);
   this->get_parameter("initial_pose.covariance.yaw", this->initial_pose_covariance_yaw_);
 
-  if (
-    this->startup_localization_mode_ == "manual_set_initial_pose" ||
-    this->startup_localization_mode_ == "global_relocalization" ||
-    this->startup_localization_mode_ == "active_relocalization")
-  {
+  if (this->mode_ == "arl_gl") {
     this->initial_pose_enabled_ = false;
-  } else if (this->startup_localization_mode_ != "fixed_start_pose") {
+  } else if (this->mode_ != "nav") {
     RCLCPP_WARN(
       this->get_logger(),
-      "Unknown startup.localization_mode '%s'; disabling managed initial pose publish",
-      this->startup_localization_mode_.c_str());
+      "Unknown mode '%s'; falling back to 'nav'",
+      this->mode_.c_str());
+    this->mode_ = "nav";
     this->initial_pose_enabled_ = false;
   }
 
@@ -88,10 +85,10 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured lifecycle manager '%s' with %zu managed nodes (startup_mode='%s', managed_initial_pose=%s)",
+    "Configured lifecycle manager '%s' with %zu managed nodes (mode='%s', managed_initial_pose=%s)",
     this->get_fully_qualified_name(),
     this->managed_nodes_.size(),
-    this->startup_localization_mode_.c_str(),
+    this->mode_.c_str(),
     this->initial_pose_enabled_ ? "true" : "false");
 
   if (this->autostart_) {
