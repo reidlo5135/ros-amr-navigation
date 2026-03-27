@@ -212,6 +212,8 @@ button.danger {
   display: grid;
   gap: 8px;
   overflow: auto;
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .event-item {
@@ -221,6 +223,7 @@ button.danger {
   color: #565656;
   font-size: 12px;
   line-height: 1.45;
+  align-self: start;
 }
 
 @media (max-width: 1180px) {
