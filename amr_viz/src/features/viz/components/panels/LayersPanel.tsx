@@ -1,6 +1,7 @@
-import type { LayerVisibility } from "../../types";
+import type { LayerVisibility, VisualizationMode } from "../../types";
 
 type LayersPanelProps = {
+  visualizationMode: VisualizationMode;
   layerVisibility: LayerVisibility;
   onToggleLayer: (layer: keyof LayerVisibility) => void;
 };
@@ -11,7 +12,7 @@ type LayerEntry = {
   icon: string;
 };
 
-const layerEntries: LayerEntry[] = [
+const navLayerEntries: LayerEntry[] = [
   { key: "grid", label: "Grid", icon: "grid" },
   { key: "map", label: "Map", icon: "map" },
   { key: "globalCostmap", label: "Global Costmap", icon: "costmap-global" },
@@ -21,6 +22,16 @@ const layerEntries: LayerEntry[] = [
   { key: "robot", label: "Robot", icon: "robot" },
   { key: "globalPlan", label: "Global Plan", icon: "path-global" },
   { key: "localPlan", label: "Local Plan", icon: "path-local" },
+  { key: "scan", label: "LaserScan", icon: "scan" },
+  { key: "tf", label: "TF", icon: "tf" },
+];
+
+const arlLayerEntries: LayerEntry[] = [
+  { key: "grid", label: "Grid", icon: "grid" },
+  { key: "map", label: "Map", icon: "map" },
+  { key: "localizationCandidates", label: "GL Candidates", icon: "candidate" },
+  { key: "footprint", label: "Exact Footprint", icon: "footprint" },
+  { key: "robot", label: "Robot", icon: "robot" },
   { key: "scan", label: "LaserScan", icon: "scan" },
   { key: "tf", label: "TF", icon: "tf" },
 ];
@@ -92,7 +103,12 @@ function LayerIcon({ kind }: { kind: string }) {
   );
 }
 
-export function LayersPanel({ layerVisibility, onToggleLayer }: LayersPanelProps) {
+export function LayersPanel({
+  visualizationMode,
+  layerVisibility,
+  onToggleLayer,
+}: LayersPanelProps) {
+  const layerEntries = visualizationMode === "arl" ? arlLayerEntries : navLayerEntries;
   return (
     <section className="panel-card panel-card-fill">
       <div className="panel-section-title">Displays</div>

@@ -68,6 +68,11 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_candidate_refine_xy_steps_(5),
   relocalization_candidate_refine_yaw_steps_(5),
   relocalization_candidate_min_score_ratio_(0.90),
+  relocalization_temp_submap_enabled_(true),
+  relocalization_temp_submap_resolution_(0.05),
+  relocalization_temp_submap_size_m_(6.0),
+  relocalization_temp_submap_min_hits_(2),
+  relocalization_temp_submap_score_weight_(0.45),
   kidnapped_detection_enabled_(true),
   kidnapped_start_with_global_localization_(false),
   kidnapped_auto_trigger_enabled_(false),
@@ -94,6 +99,10 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_started_at_(0, 0, RCL_ROS_TIME),
   relocalization_candidate_locked_(false),
   next_candidate_id_(1U),
+  relocalization_temp_submap_marked_cells_(0U),
+  relocalization_temp_submap_width_(0),
+  relocalization_temp_submap_height_(0),
+  has_relocalization_reference_odom_pose_(false),
   has_latest_odom_(false),
   has_latest_scan_(false),
   has_map_(false),
@@ -194,6 +203,21 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "amcl.relocalization_candidate_min_score_ratio",
     this->relocalization_candidate_min_score_ratio_);
+  this->declare_parameter(
+    "amcl.relocalization_temp_submap.enabled",
+    this->relocalization_temp_submap_enabled_);
+  this->declare_parameter(
+    "amcl.relocalization_temp_submap.resolution",
+    this->relocalization_temp_submap_resolution_);
+  this->declare_parameter(
+    "amcl.relocalization_temp_submap.size_m",
+    this->relocalization_temp_submap_size_m_);
+  this->declare_parameter(
+    "amcl.relocalization_temp_submap.min_hits",
+    this->relocalization_temp_submap_min_hits_);
+  this->declare_parameter(
+    "amcl.relocalization_temp_submap.score_weight",
+    this->relocalization_temp_submap_score_weight_);
   this->declare_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->declare_parameter(
     "kidnapped.start_with_global_localization",
@@ -309,6 +333,21 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter(
     "amcl.relocalization_candidate_min_score_ratio",
     this->relocalization_candidate_min_score_ratio_);
+  this->get_parameter(
+    "amcl.relocalization_temp_submap.enabled",
+    this->relocalization_temp_submap_enabled_);
+  this->get_parameter(
+    "amcl.relocalization_temp_submap.resolution",
+    this->relocalization_temp_submap_resolution_);
+  this->get_parameter(
+    "amcl.relocalization_temp_submap.size_m",
+    this->relocalization_temp_submap_size_m_);
+  this->get_parameter(
+    "amcl.relocalization_temp_submap.min_hits",
+    this->relocalization_temp_submap_min_hits_);
+  this->get_parameter(
+    "amcl.relocalization_temp_submap.score_weight",
+    this->relocalization_temp_submap_score_weight_);
   this->get_parameter("kidnapped.enabled", this->kidnapped_detection_enabled_);
   this->get_parameter(
     "kidnapped.start_with_global_localization",
@@ -568,6 +607,10 @@ void Localization::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr mess
     return;
   }
 
+  if (this->localization_mode_ == LocalizationMode::kGlobalRelocalizing) {
+    this->update_relocalization_temp_submap(*message);
+  }
+
   this->apply_measurement_update(*message);
   const auto stamp = message->header.stamp.sec == 0 && message->header.stamp.nanosec == 0U ?
     this->now() :
@@ -621,6 +664,7 @@ void Localization::handle_initial_pose(
   this->last_measurement_confidence_ = 0.0;
   this->previous_candidate_tracks_.clear();
   this->next_candidate_id_ = 1U;
+  this->reset_relocalization_temp_submap();
 
   if (this->has_latest_odom_) {
     this->previous_odom_pose_ = this->odometry_pose_to_pose_stamped(this->latest_odom_);
@@ -704,6 +748,7 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & 
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   this->relocalization_candidate_locked_ = false;
+  this->reset_relocalization_temp_submap();
 }
 
 bool Localization::initialize_particles_global()
@@ -735,6 +780,7 @@ bool Localization::initialize_particles_global()
   this->localization_position_std_ = std::numeric_limits<double>::infinity();
   this->localization_yaw_std_ = std::numeric_limits<double>::infinity();
   this->relocalization_candidate_locked_ = false;
+  this->reset_relocalization_temp_submap();
   return true;
 }
 
@@ -885,6 +931,98 @@ void Localization::update_relocalization_candidate_lock()
   this->relocalization_candidate_locked_ = true;
 }
 
+void Localization::reset_relocalization_temp_submap()
+{
+  this->relocalization_temp_submap_width_ = std::max(
+    1,
+    static_cast<int>(std::ceil(
+      std::max(this->relocalization_temp_submap_resolution_, 0.01) > 0.0 ?
+      (std::max(this->relocalization_temp_submap_size_m_, 1.0) /
+      std::max(this->relocalization_temp_submap_resolution_, 0.01)) :
+      1.0)));
+  this->relocalization_temp_submap_height_ = this->relocalization_temp_submap_width_;
+  const std::size_t cell_count = static_cast<std::size_t>(
+    this->relocalization_temp_submap_width_ * this->relocalization_temp_submap_height_);
+  this->relocalization_temp_submap_counts_.assign(cell_count, 0U);
+  this->relocalization_temp_submap_marked_cells_ = 0U;
+  this->has_relocalization_reference_odom_pose_ = false;
+  this->relocalization_reference_odom_pose_ = geometry_msgs::msg::PoseStamped();
+}
+
+void Localization::update_relocalization_temp_submap(const sensor_msgs::msg::LaserScan & scan)
+{
+  if (
+    !this->relocalization_temp_submap_enabled_ ||
+    !this->has_latest_odom_ ||
+    scan.ranges.empty() ||
+    this->relocalization_temp_submap_counts_.empty())
+  {
+    return;
+  }
+
+  if (!this->has_relocalization_reference_odom_pose_) {
+    this->relocalization_reference_odom_pose_ = this->odometry_pose_to_pose_stamped(this->latest_odom_);
+    this->has_relocalization_reference_odom_pose_ = true;
+  }
+
+  const auto current_odom_pose = this->odometry_pose_to_pose_stamped(this->latest_odom_);
+  const double reference_yaw =
+    this->quaternion_yaw(this->relocalization_reference_odom_pose_.pose.orientation);
+  const double current_yaw = this->quaternion_yaw(current_odom_pose.pose.orientation);
+  const double delta_world_x =
+    current_odom_pose.pose.position.x - this->relocalization_reference_odom_pose_.pose.position.x;
+  const double delta_world_y =
+    current_odom_pose.pose.position.y - this->relocalization_reference_odom_pose_.pose.position.y;
+  const double robot_local_x =
+    (std::cos(reference_yaw) * delta_world_x) + (std::sin(reference_yaw) * delta_world_y);
+  const double robot_local_y =
+    (-std::sin(reference_yaw) * delta_world_x) + (std::cos(reference_yaw) * delta_world_y);
+  const double robot_local_yaw = this->normalize_angle(current_yaw - reference_yaw);
+
+  const auto beam_count = static_cast<int>(scan.ranges.size());
+  const int sampled_beam_count = std::max(1, std::min(this->max_beams_, beam_count));
+  const int stride = std::max(1, beam_count / sampled_beam_count);
+  const double max_range = std::min(this->max_beam_range_, static_cast<double>(scan.range_max));
+  const double half_extent = 0.5 * std::max(this->relocalization_temp_submap_size_m_, 1.0);
+  const double resolution = std::max(this->relocalization_temp_submap_resolution_, 0.01);
+
+  for (int beam_index = 0; beam_index < beam_count; beam_index += stride) {
+    const double beam_range = static_cast<double>(scan.ranges[beam_index]);
+    if (
+      !std::isfinite(beam_range) ||
+      beam_range < static_cast<double>(scan.range_min) ||
+      beam_range > max_range)
+    {
+      continue;
+    }
+
+    const double beam_angle =
+      static_cast<double>(scan.angle_min) +
+      (static_cast<double>(beam_index) * static_cast<double>(scan.angle_increment)) +
+      robot_local_yaw;
+    const double hit_local_x = robot_local_x + (beam_range * std::cos(beam_angle));
+    const double hit_local_y = robot_local_y + (beam_range * std::sin(beam_angle));
+    const int grid_x = static_cast<int>(std::floor((hit_local_x + half_extent) / resolution));
+    const int grid_y = static_cast<int>(std::floor((hit_local_y + half_extent) / resolution));
+    if (
+      grid_x < 0 || grid_y < 0 ||
+      grid_x >= this->relocalization_temp_submap_width_ ||
+      grid_y >= this->relocalization_temp_submap_height_)
+    {
+      continue;
+    }
+
+    const std::size_t index = static_cast<std::size_t>(
+      (grid_y * this->relocalization_temp_submap_width_) + grid_x);
+    if (this->relocalization_temp_submap_counts_[index] == 0U) {
+      this->relocalization_temp_submap_marked_cells_ += 1U;
+    }
+    this->relocalization_temp_submap_counts_[index] = static_cast<uint16_t>(std::min<int>(
+      std::numeric_limits<uint16_t>::max(),
+      static_cast<int>(this->relocalization_temp_submap_counts_[index]) + 1));
+  }
+}
+
 Localization::CandidateCluster Localization::refine_candidate_cluster_scan_first(
   const CandidateCluster & seed_cluster) const
 {
@@ -941,6 +1079,85 @@ Localization::CandidateCluster Localization::refine_candidate_cluster_scan_first
   refined_cluster.yaw = best_particle.yaw;
   refined_cluster.score = best_score;
   return refined_cluster;
+}
+
+double Localization::score_candidate_with_relocalization_temp_submap(
+  const CandidateCluster & cluster) const
+{
+  if (
+    !this->relocalization_temp_submap_enabled_ ||
+    !this->has_latest_odom_ ||
+    !this->has_relocalization_reference_odom_pose_ ||
+    this->relocalization_temp_submap_marked_cells_ == 0U ||
+    this->relocalization_temp_submap_counts_.empty())
+  {
+    return 0.0;
+  }
+
+  const auto current_odom_pose = this->odometry_pose_to_pose_stamped(this->latest_odom_);
+  const double reference_yaw =
+    this->quaternion_yaw(this->relocalization_reference_odom_pose_.pose.orientation);
+  const double current_yaw = this->quaternion_yaw(current_odom_pose.pose.orientation);
+  const double delta_world_x =
+    current_odom_pose.pose.position.x - this->relocalization_reference_odom_pose_.pose.position.x;
+  const double delta_world_y =
+    current_odom_pose.pose.position.y - this->relocalization_reference_odom_pose_.pose.position.y;
+  const double current_local_x =
+    (std::cos(reference_yaw) * delta_world_x) + (std::sin(reference_yaw) * delta_world_y);
+  const double current_local_y =
+    (-std::sin(reference_yaw) * delta_world_x) + (std::cos(reference_yaw) * delta_world_y);
+  const double current_local_yaw = this->normalize_angle(current_yaw - reference_yaw);
+
+  const double map_ref_yaw = this->normalize_angle(cluster.yaw - current_local_yaw);
+  const double map_ref_x =
+    cluster.x -
+    ((std::cos(map_ref_yaw) * current_local_x) - (std::sin(map_ref_yaw) * current_local_y));
+  const double map_ref_y =
+    cluster.y -
+    ((std::sin(map_ref_yaw) * current_local_x) + (std::cos(map_ref_yaw) * current_local_y));
+
+  double matched_weight = 0.0;
+  double mismatched_weight = 0.0;
+  double total_weight = 0.0;
+  const int min_hits = std::max(1, this->relocalization_temp_submap_min_hits_);
+
+  for (std::size_t index = 0; index < this->relocalization_temp_submap_counts_.size(); ++index) {
+    const uint16_t hit_count = this->relocalization_temp_submap_counts_[index];
+    if (hit_count < min_hits) {
+      continue;
+    }
+
+    double local_x = 0.0;
+    double local_y = 0.0;
+    if (!this->local_submap_index_to_local_point(static_cast<int>(index), local_x, local_y)) {
+      continue;
+    }
+
+    const double world_x =
+      map_ref_x + (std::cos(map_ref_yaw) * local_x) - (std::sin(map_ref_yaw) * local_y);
+    const double world_y =
+      map_ref_y + (std::sin(map_ref_yaw) * local_x) + (std::cos(map_ref_yaw) * local_y);
+    int map_grid_x = 0;
+    int map_grid_y = 0;
+    if (!this->world_to_grid(world_x, world_y, map_grid_x, map_grid_y)) {
+      mismatched_weight += static_cast<double>(hit_count);
+      total_weight += static_cast<double>(hit_count);
+      continue;
+    }
+
+    total_weight += static_cast<double>(hit_count);
+    if (this->is_occupied_cell(map_grid_x, map_grid_y)) {
+      matched_weight += static_cast<double>(hit_count);
+    } else {
+      mismatched_weight += static_cast<double>(hit_count);
+    }
+  }
+
+  if (total_weight <= 0.0) {
+    return 0.0;
+  }
+
+  return (matched_weight - (0.35 * mismatched_weight)) / total_weight;
 }
 
 std::vector<Localization::CandidateCluster> Localization::extract_candidate_clusters() const
@@ -1066,6 +1283,9 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
     if (cluster.cluster_weight <= 0.0) {
       continue;
     }
+
+    const double temp_submap_score = this->score_candidate_with_relocalization_temp_submap(cluster);
+    cluster.score += this->relocalization_temp_submap_score_weight_ * temp_submap_score;
 
     for (const auto & previous_track : this->previous_candidate_tracks_) {
       const double dx = cluster.x - previous_track.x;
@@ -1450,6 +1670,29 @@ bool Localization::grid_to_world(
   return true;
 }
 
+bool Localization::local_submap_index_to_local_point(
+  const int index,
+  double & local_x,
+  double & local_y) const
+{
+  if (
+    this->relocalization_temp_submap_width_ <= 0 ||
+    this->relocalization_temp_submap_height_ <= 0 ||
+    index < 0 ||
+    index >= (this->relocalization_temp_submap_width_ * this->relocalization_temp_submap_height_))
+  {
+    return false;
+  }
+
+  const double half_extent = 0.5 * std::max(this->relocalization_temp_submap_size_m_, 1.0);
+  const double resolution = std::max(this->relocalization_temp_submap_resolution_, 0.01);
+  const int grid_x = index % this->relocalization_temp_submap_width_;
+  const int grid_y = index / this->relocalization_temp_submap_width_;
+  local_x = ((static_cast<double>(grid_x) + 0.5) * resolution) - half_extent;
+  local_y = ((static_cast<double>(grid_y) + 0.5) * resolution) - half_extent;
+  return true;
+}
+
 bool Localization::is_occupied_cell(const int grid_x, const int grid_y) const
 {
   if (!this->has_map_ || !this->map_occupancy_grid_) {
@@ -1670,6 +1913,7 @@ void Localization::start_global_relocalization(const std::string & reason)
   this->relocalization_candidate_locked_ = false;
   this->previous_candidate_tracks_.clear();
   this->next_candidate_id_ = 1U;
+  this->reset_relocalization_temp_submap();
 
   if (this->has_latest_odom_) {
     this->previous_odom_pose_ = this->odometry_pose_to_pose_stamped(this->latest_odom_);
@@ -1737,6 +1981,7 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
       this->relocalization_requested_ = false;
       this->low_confidence_update_count_ = 0;
       this->relocalization_success_count_ = 0;
+      this->reset_relocalization_temp_submap();
       RCLCPP_INFO(
         this->get_logger(),
         "Global relocalization succeeded with confidence %.3f, cluster_weight %.3f, dominance %.3f, position_std %.3f, yaw_std %.3f",
@@ -1755,6 +2000,7 @@ void Localization::update_localization_mode(const rclcpp::Time & stamp)
       this->localization_mode_ = LocalizationMode::kFailed;
       this->relocalization_requested_ = false;
       this->relocalization_success_count_ = 0;
+      this->reset_relocalization_temp_submap();
       RCLCPP_ERROR(
         this->get_logger(),
         "Global relocalization timed out after %.2f sec",
@@ -1878,7 +2124,13 @@ void Localization::reset_state()
   this->relocalization_started_at_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
   this->relocalization_candidate_locked_ = false;
   this->relocalization_candidate_pose_ = geometry_msgs::msg::PoseStamped();
+  this->relocalization_reference_odom_pose_ = geometry_msgs::msg::PoseStamped();
   this->previous_candidate_tracks_.clear();
+  this->relocalization_temp_submap_counts_.clear();
+  this->relocalization_temp_submap_marked_cells_ = 0U;
+  this->relocalization_temp_submap_width_ = 0;
+  this->relocalization_temp_submap_height_ = 0;
+  this->has_relocalization_reference_odom_pose_ = false;
   this->next_candidate_id_ = 1U;
   this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;

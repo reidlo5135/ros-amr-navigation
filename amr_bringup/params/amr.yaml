@@ -131,6 +131,12 @@
       relocalization_candidate_refine_xy_steps: 5
       relocalization_candidate_refine_yaw_steps: 5
       relocalization_candidate_min_score_ratio: 0.90
+      relocalization_temp_submap:
+        enabled: true
+        resolution: 0.05
+        size_m: 6.0
+        min_hits: 2
+        score_weight: 0.45
     kidnapped:
       enabled: true
       start_with_global_localization: true
@@ -275,6 +281,7 @@
       command: "/amr/motion/command"
       plan: "/amr/planner/local"
       pose: "/amr/localization/pose"
+      odom: "/odom"
       scan: "/scan"
       status: "/amr/motion/status"
       velocity: "/cmd_vel"
@@ -352,6 +359,8 @@
 
 /amr/recovery_server:
   ros__parameters:
+    topics:
+      scan: "/scan"
     services:
       plan_recovery: "/amr/recovery_server/plan_recovery"
     defaults:
@@ -367,6 +376,9 @@
       probe_distance: 0.30
       probe_long_distance: 0.48
       probe_speed: 0.06
+      probe_safety_margin: 0.18
+      probe_sector_half_width_rad: 0.30
+      probe_spin_heading_threshold_rad: 0.30
 
 /amr/mqtt_bridge:
   ros__parameters:

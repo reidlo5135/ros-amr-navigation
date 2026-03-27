@@ -18,6 +18,7 @@ find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 
 add_executable(${PROJECT_NAME}
@@ -30,6 +31,7 @@ ament_target_dependencies(${PROJECT_NAME}
   geometry_msgs
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
   tf2
 )
 

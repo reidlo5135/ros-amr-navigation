@@ -1,9 +1,13 @@
+import type { VisualizationMode } from "../../types";
+
 type TopbarProps = {
   connectionLabel: string;
   poseLabel: string;
   signalBars: number;
   signalRttMs: number | null;
   batteryPercentage: number | null;
+  visualizationMode: VisualizationMode;
+  onVisualizationModeChange: (mode: VisualizationMode) => void;
 };
 
 export function Topbar({
@@ -12,6 +16,8 @@ export function Topbar({
   signalBars,
   signalRttMs,
   batteryPercentage,
+  visualizationMode,
+  onVisualizationModeChange,
 }: TopbarProps) {
   const batteryLevelClass =
     batteryPercentage === null ? "" :
@@ -25,6 +31,22 @@ export function Topbar({
       <div className="topbar-status">
         <span className="topbar-chip">Fixed Frame: map</span>
         <span className="topbar-chip">{connectionLabel}</span>
+        <span className="topbar-chip topbar-mode-toggle">
+          <button
+            type="button"
+            className={visualizationMode === "arl" ? "active-mode" : ""}
+            onClick={() => onVisualizationModeChange("arl")}
+          >
+            ARL
+          </button>
+          <button
+            type="button"
+            className={visualizationMode === "nav" ? "active-mode secondary" : "secondary"}
+            onClick={() => onVisualizationModeChange("nav")}
+          >
+            Nav
+          </button>
+        </span>
         <span className="topbar-chip">Pose {poseLabel}</span>
         <span className="topbar-chip signal-chip" aria-label="MQTT signal status">
           <span className="signal-bars" aria-hidden="true">

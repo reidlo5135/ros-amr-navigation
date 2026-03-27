@@ -20,6 +20,7 @@ export type GoalMarker = {
 };
 
 export type InteractionMode = "idle" | "goal" | "initial_pose";
+export type VisualizationMode = "nav" | "arl";
 
 export type GoalLifecycleState =
   | "Idle"

@@ -25,6 +25,8 @@ export function VizDashboardPage() {
         signalBars={dashboard.signalBars}
         signalRttMs={dashboard.signalRttMs}
         batteryPercentage={dashboard.batteryPercentage}
+        visualizationMode={dashboard.visualizationMode}
+        onVisualizationModeChange={dashboard.switchVisualizationMode}
       />
 
       <section className="workspace">
@@ -48,6 +50,7 @@ export function VizDashboardPage() {
             onCancelGoal={dashboard.cancelGoal}
           />
           <LayersPanel
+            visualizationMode={dashboard.visualizationMode}
             layerVisibility={dashboard.layerVisibility}
             onToggleLayer={dashboard.toggleLayer}
           />
@@ -60,12 +63,16 @@ export function VizDashboardPage() {
             <span className="toolbar-value">
               Map {dashboard.bridgeState.map ? `${dashboard.bridgeState.map.info.width}x${dashboard.bridgeState.map.info.height}` : "--"}
             </span>
-            <span className="toolbar-value">
-              Global {dashboard.bridgeState.global_path?.poses.length ?? 0} pts
-            </span>
-            <span className="toolbar-value">
-              Local {dashboard.bridgeState.local_path?.poses.length ?? 0} pts
-            </span>
+            {dashboard.visualizationMode === "nav" && (
+              <>
+                <span className="toolbar-value">
+                  Global {dashboard.bridgeState.global_path?.poses.length ?? 0} pts
+                </span>
+                <span className="toolbar-value">
+                  Local {dashboard.bridgeState.local_path?.poses.length ?? 0} pts
+                </span>
+              </>
+            )}
             <span className="toolbar-value">
               Scan {dashboard.bridgeState.scan?.ranges.length ?? 0} rays
             </span>

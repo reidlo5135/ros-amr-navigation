@@ -12,6 +12,7 @@
 #include "amr_msgs/msg/motion_status.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -60,6 +61,7 @@ private:
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
   void handle_local_plan(const nav_msgs::msg::Path::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
+  void handle_odometry(const nav_msgs::msg::Odometry::SharedPtr message);
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void publish_control();
   void reset_velocity_controller_state();
@@ -91,6 +93,7 @@ private:
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_plan_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_publisher_;
@@ -99,6 +102,7 @@ private:
   std::string command_topic_;
   std::string local_plan_topic_;
   std::string current_pose_topic_;
+  std::string odom_topic_;
   std::string scan_topic_;
   std::string status_topic_;
   std::string cmd_vel_topic_;
@@ -137,6 +141,7 @@ private:
   amr_msgs::msg::MotionCommand latest_command_;
   nav_msgs::msg::Path latest_local_plan_;
   geometry_msgs::msg::PoseStamped current_pose_;
+  geometry_msgs::msg::PoseStamped latest_odom_pose_;
   geometry_msgs::msg::PoseStamped progress_reference_pose_;
   geometry_msgs::msg::PoseStamped recovery_reference_pose_;
   sensor_msgs::msg::LaserScan latest_scan_;
@@ -146,6 +151,7 @@ private:
   bool has_command_;
   bool has_local_plan_;
   bool has_current_pose_;
+  bool has_latest_odom_;
   bool has_latest_scan_;
   bool has_progress_reference_;
   bool has_recovery_reference_;

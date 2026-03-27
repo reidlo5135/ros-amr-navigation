@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -145,6 +146,7 @@ private:
   uint32_t active_relocalization_command_id_;
   std::size_t active_relocalization_phase_index_;
   int64_t active_relocalization_command_started_ns_;
+  int64_t active_relocalization_command_timeout_ns_;
   int64_t active_relocalization_last_trigger_ns_;
   bool active_relocalization_request_pending_;
   int64_t active_relocalization_request_started_ns_;

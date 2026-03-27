@@ -8,6 +8,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   command_topic_(""),
   local_plan_topic_(""),
   current_pose_topic_(""),
+  odom_topic_(""),
   scan_topic_(""),
   status_topic_(""),
   cmd_vel_topic_(""),
@@ -42,6 +43,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   has_command_(false),
   has_local_plan_(false),
   has_current_pose_(false),
+  has_latest_odom_(false),
   has_latest_scan_(false),
   has_progress_reference_(false),
   has_recovery_reference_(false)
@@ -49,6 +51,7 @@ MotionController::MotionController(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
   this->declare_parameter("topics.pose", this->current_pose_topic_);
+  this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.status", this->status_topic_);
   this->declare_parameter("topics.velocity", this->cmd_vel_topic_);
@@ -114,6 +117,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
   this->get_parameter("topics.pose", this->current_pose_topic_);
+  this->get_parameter("topics.odom", this->odom_topic_);
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.status", this->status_topic_);
   this->get_parameter("topics.velocity", this->cmd_vel_topic_);
@@ -184,16 +188,18 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   if (
     this->command_topic_.empty() || this->local_plan_topic_.empty() ||
-    this->current_pose_topic_.empty() || this->scan_topic_.empty() ||
+    this->current_pose_topic_.empty() || this->odom_topic_.empty() ||
+    this->scan_topic_.empty() ||
     this->status_topic_.empty() ||
     this->cmd_vel_topic_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' scan='%s' status='%s' cmd_vel='%s'",
+      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' odom='%s' scan='%s' status='%s' cmd_vel='%s'",
       this->command_topic_.c_str(),
       this->local_plan_topic_.c_str(),
       this->current_pose_topic_.c_str(),
+      this->odom_topic_.c_str(),
       this->scan_topic_.c_str(),
       this->status_topic_.c_str(),
       this->cmd_vel_topic_.c_str());
@@ -218,6 +224,11 @@ MotionController::CallbackReturn MotionController::on_configure(
     [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
       this->handle_current_pose(message);
     });
+  this->odometry_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
+    this->odom_topic_, rclcpp::SystemDefaultsQoS(),
+    [this](const nav_msgs::msg::Odometry::SharedPtr message) {
+      this->handle_odometry(message);
+    });
   this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     this->scan_topic_, rclcpp::SensorDataQoS(),
     [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
@@ -238,10 +249,11 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured motion controller with command='%s', plan='%s', pose='%s', cmd_vel='%s', mode='%s'",
+    "Configured motion controller with command='%s', plan='%s', pose='%s', odom='%s', cmd_vel='%s', mode='%s'",
     this->command_topic_.c_str(),
     this->local_plan_topic_.c_str(),
     this->current_pose_topic_.c_str(),
+    this->odom_topic_.c_str(),
     this->cmd_vel_topic_.c_str(),
     velocity_control_mode.c_str());
 
@@ -285,6 +297,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->odometry_subscription_.reset();
   this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
@@ -292,11 +305,13 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_odom_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
   this->has_current_pose_ = false;
+  this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
@@ -311,6 +326,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->current_pose_subscription_.reset();
+  this->odometry_subscription_.reset();
   this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
@@ -318,11 +334,13 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_odom_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
   this->has_local_plan_ = false;
   this->has_current_pose_ = false;
+  this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
@@ -370,6 +388,13 @@ void MotionController::handle_current_pose(const geometry_msgs::msg::PoseStamped
 {
   this->current_pose_ = *message;
   this->has_current_pose_ = true;
+}
+
+void MotionController::handle_odometry(const nav_msgs::msg::Odometry::SharedPtr message)
+{
+  this->latest_odom_pose_.header = message->header;
+  this->latest_odom_pose_.pose = message->pose.pose;
+  this->has_latest_odom_ = true;
 }
 
 void MotionController::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message)
@@ -537,9 +562,15 @@ void MotionController::publish_control()
     } else {
       this->ensure_recovery_reference_initialized();
       const double elapsed_sec = (this->now() - this->recovery_start_time_).seconds();
+      const auto & recovery_progress_pose =
+        this->has_latest_odom_ ? this->latest_odom_pose_ : this->current_pose_;
+      const double recovery_progress_yaw = this->has_latest_odom_ ?
+        this->quaternion_yaw(this->latest_odom_pose_.pose.orientation) :
+        current_yaw;
 
       if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_BACKUP) {
-        const double traveled = this->pose_distance(this->current_pose_, this->recovery_reference_pose_);
+        const double traveled = this->pose_distance(
+          recovery_progress_pose, this->recovery_reference_pose_);
         const double remaining = std::max(0.0, this->latest_command_.recovery_distance - traveled);
         status.remaining_distance = remaining;
         debug_remaining_distance = remaining;
@@ -554,7 +585,8 @@ void MotionController::publish_control()
             -std::max(this->latest_command_.recovery_speed, this->min_linear_speed_);
         }
       } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_PROBE) {
-        const double traveled = this->pose_distance(this->current_pose_, this->recovery_reference_pose_);
+        const double traveled = this->pose_distance(
+          recovery_progress_pose, this->recovery_reference_pose_);
         const double remaining = std::max(0.0, this->latest_command_.recovery_distance - traveled);
         const bool probe_safety_gate_blocked = this->is_probe_safety_gate_triggered();
         status.remaining_distance = remaining;
@@ -584,7 +616,7 @@ void MotionController::publish_control()
           desired_twist.linear.x);
       } else if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_SPIN) {
         const double target_yaw = this->recovery_start_yaw_ + this->latest_command_.recovery_angle;
-        const double heading_error = this->normalize_angle(target_yaw - current_yaw);
+        const double heading_error = this->normalize_angle(target_yaw - recovery_progress_yaw);
         status.heading_error = heading_error;
         status.remaining_distance = std::abs(heading_error);
         debug_remaining_distance = status.remaining_distance;
@@ -673,9 +705,10 @@ void MotionController::ensure_recovery_reference_initialized()
     return;
   }
 
-  this->recovery_reference_pose_ = this->current_pose_;
+  this->recovery_reference_pose_ = this->has_latest_odom_ ? this->latest_odom_pose_ : this->current_pose_;
   this->recovery_start_time_ = this->now();
-  this->recovery_start_yaw_ = this->quaternion_yaw(this->current_pose_.pose.orientation);
+  this->recovery_start_yaw_ =
+    this->quaternion_yaw(this->recovery_reference_pose_.pose.orientation);
   this->has_recovery_reference_ = true;
 }
 

@@ -59,6 +59,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   active_relocalization_command_id_(0U),
   active_relocalization_phase_index_(0U),
   active_relocalization_command_started_ns_(0),
+  active_relocalization_command_timeout_ns_(0),
   active_relocalization_last_trigger_ns_(0),
   active_relocalization_request_pending_(false),
   active_relocalization_request_started_ns_(0),
@@ -1333,6 +1334,7 @@ void Btnavigator::run_active_relocalization_supervisor()
       this->active_relocalization_command_id_ = 0U;
       this->active_relocalization_phase_index_ = 0U;
       this->active_relocalization_command_started_ns_ = 0;
+      this->active_relocalization_command_timeout_ns_ = 0;
       this->active_relocalization_request_pending_ = false;
       this->active_relocalization_request_started_ns_ = 0;
       this->active_relocalization_pending_behavior_.clear();
@@ -1375,6 +1377,7 @@ void Btnavigator::run_active_relocalization_supervisor()
     this->active_relocalization_command_id_ = 0U;
     this->active_relocalization_phase_index_ = 0U;
     this->active_relocalization_command_started_ns_ = 0;
+    this->active_relocalization_command_timeout_ns_ = 0;
     this->active_relocalization_request_pending_ = false;
     this->active_relocalization_request_started_ns_ = 0;
     this->active_relocalization_pending_behavior_.clear();
@@ -1418,8 +1421,8 @@ void Btnavigator::run_active_relocalization_supervisor()
         this->active_relocalization_command_active_ = false;
         this->active_relocalization_command_id_ = 0U;
         this->active_relocalization_command_started_ns_ = 0;
-        this->active_relocalization_phase_index_ =
-          (this->active_relocalization_phase_index_ + 1U) % 7U;
+        this->active_relocalization_command_timeout_ns_ = 0;
+        this->active_relocalization_phase_index_ = 0U;
         return;
       }
 
@@ -1427,7 +1430,7 @@ void Btnavigator::run_active_relocalization_supervisor()
       if (
         this->active_relocalization_command_started_ns_ > 0 &&
         (now_ns - this->active_relocalization_command_started_ns_) >
-        static_cast<int64_t>(this->arl_command_timeout_ms_) * 1000000LL)
+        this->active_relocalization_command_timeout_ns_)
       {
         RCLCPP_WARN(
           this->get_logger(),
@@ -1437,8 +1440,8 @@ void Btnavigator::run_active_relocalization_supervisor()
         this->active_relocalization_command_active_ = false;
         this->active_relocalization_command_id_ = 0U;
         this->active_relocalization_command_started_ns_ = 0;
-        this->active_relocalization_phase_index_ =
-          (this->active_relocalization_phase_index_ + 1U) % 7U;
+        this->active_relocalization_command_timeout_ns_ = 0;
+        this->active_relocalization_phase_index_ = 0U;
       }
       return;
     }
@@ -1459,13 +1462,7 @@ void Btnavigator::run_active_relocalization_supervisor()
   }
 
   static constexpr const char * kArlBehaviors[] = {
-    "probe_forward_long",
-    "probe_forward",
-    "probe_forward",
-    "arl_spin",
-    "probe_forward_long",
-    "probe_forward",
-    "arl_spin"
+    "arl_probe_auto"
   };
   static constexpr std::size_t kArlBehaviorCount =
     sizeof(kArlBehaviors) / sizeof(kArlBehaviors[0]);
@@ -1542,6 +1539,32 @@ void Btnavigator::request_active_relocalization_behavior_async(
       command.header.stamp = this->now();
       command.header.frame_id =
         command.header.frame_id.empty() ? std::string("map") : command.header.frame_id;
+      int64_t command_timeout_ns =
+        static_cast<int64_t>(std::max(1000, this->arl_command_timeout_ms_)) * 1000000LL;
+      if (
+        (command.mode == amr_msgs::msg::MotionCommand::MODE_PROBE ||
+        command.mode == amr_msgs::msg::MotionCommand::MODE_BACKUP) &&
+        command.recovery_speed > 1e-3)
+      {
+        const double expected_sec =
+          (std::max(0.0, command.recovery_distance) / command.recovery_speed) + 1.5;
+        command_timeout_ns = std::max(
+          command_timeout_ns,
+          static_cast<int64_t>(std::llround(expected_sec * 1.0e9)));
+      } else if (
+        command.mode == amr_msgs::msg::MotionCommand::MODE_WAIT &&
+        command.recovery_duration > 0.0)
+      {
+        command_timeout_ns = std::max(
+          command_timeout_ns,
+          static_cast<int64_t>(std::llround((command.recovery_duration + 0.5) * 1.0e9)));
+      } else if (command.mode == amr_msgs::msg::MotionCommand::MODE_SPIN) {
+        const double expected_sec =
+          (std::fabs(command.recovery_angle) / 0.4) + 1.0;
+        command_timeout_ns = std::max(
+          command_timeout_ns,
+          static_cast<int64_t>(std::llround(expected_sec * 1.0e9)));
+      }
       {
         std::scoped_lock command_lock(this->command_mutex_);
         command.command_id = this->next_command_id_++;
@@ -1553,6 +1576,7 @@ void Btnavigator::request_active_relocalization_behavior_async(
         this->active_relocalization_command_active_ = true;
         this->active_relocalization_command_id_ = command.command_id;
         this->active_relocalization_command_started_ns_ = this->now().nanoseconds();
+        this->active_relocalization_command_timeout_ns_ = command_timeout_ns;
         this->active_relocalization_phase_index_ = behavior_index;
       }
 

@@ -4,9 +4,9 @@ import { VizMqttClient, type VizMqttMessage } from "../../../lib/mqtt";
 import type { BridgeState, TfMessage } from "../../../lib/protocol";
 import {
   createCommandId,
+  createLayerVisibilityForMode,
   createInitialState,
   defaultMqttUrl,
-  initialLayerVisibility,
   isObjectPayload,
   isTfMessage,
   mergeTfMessages,
@@ -18,6 +18,7 @@ import type {
   GoalMarker,
   InteractionMode,
   LayerVisibility,
+  VisualizationMode,
 } from "../types";
 
 export function useVizDashboard() {
@@ -44,7 +45,10 @@ export function useVizDashboard() {
   const [goalMarker, setGoalMarker] = useState<GoalMarker | null>(null);
   const [goalLifecycle, setGoalLifecycle] = useState<GoalLifecycleState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("idle");
-  const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>(initialLayerVisibility);
+  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>("nav");
+  const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>(
+    createLayerVisibilityForMode("nav"),
+  );
   const [signalRttMs, setSignalRttMs] = useState<number | null>(null);
   const [signalLastSeenAt, setSignalLastSeenAt] = useState<number | null>(null);
 
@@ -257,6 +261,11 @@ export function useVizDashboard() {
     }));
   };
 
+  const switchVisualizationMode = (mode: VisualizationMode) => {
+    setVisualizationMode(mode);
+    setLayerVisibility(createLayerVisibilityForMode(mode));
+  };
+
   const sendGoal = (x: number, y: number, yaw: number) => {
     const requestId = createCommandId();
     setInteractionMode("idle");
@@ -425,6 +434,7 @@ export function useVizDashboard() {
     setGoalYaw,
     goalMarker,
     interactionMode,
+    visualizationMode,
     layerVisibility,
     resolvedGoalLifecycle,
     batteryPercentage,
@@ -433,6 +443,7 @@ export function useVizDashboard() {
     connect,
     disconnect,
     toggleLayer,
+    switchVisualizationMode,
     toggleGoalMode,
     toggleInitialPoseMode,
     cancelGoal,

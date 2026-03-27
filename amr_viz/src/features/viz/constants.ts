@@ -1,5 +1,5 @@
 import type { BridgeState, TfMessage, TransformMessage } from "../../lib/protocol";
-import type { LayerVisibility } from "./types";
+import type { LayerVisibility, VisualizationMode } from "./types";
 
 export const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/robot_pose": "robot_pose",
@@ -24,12 +24,12 @@ export const topicSubscriptions = [
   "amr/status/#",
 ];
 
-export const initialLayerVisibility: LayerVisibility = {
+export const navLayerVisibility: LayerVisibility = {
   grid: true,
   map: true,
   globalCostmap: true,
   localCostmap: true,
-  localizationCandidates: true,
+  localizationCandidates: false,
   footprint: true,
   robot: true,
   globalPlan: true,
@@ -37,6 +37,24 @@ export const initialLayerVisibility: LayerVisibility = {
   scan: true,
   tf: true,
 };
+
+export const arlLayerVisibility: LayerVisibility = {
+  grid: true,
+  map: true,
+  globalCostmap: false,
+  localCostmap: false,
+  localizationCandidates: true,
+  footprint: true,
+  robot: true,
+  globalPlan: false,
+  localPlan: false,
+  scan: true,
+  tf: true,
+};
+
+export function createLayerVisibilityForMode(mode: VisualizationMode): LayerVisibility {
+  return mode === "arl" ? { ...arlLayerVisibility } : { ...navLayerVisibility };
+}
 
 export function createCommandId() {
   return `${Date.now()}-${Math.round(Math.random() * 10000)}`;

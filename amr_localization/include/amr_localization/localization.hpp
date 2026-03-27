@@ -9,6 +9,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <cstddef>
 #include <vector>
 
 #include "amr_msgs/msg/localization_candidate_array.hpp"
@@ -91,7 +92,10 @@ private:
   void apply_measurement_update(const sensor_msgs::msg::LaserScan & scan);
   void resample_particles();
   void update_relocalization_candidate_lock();
+  void reset_relocalization_temp_submap();
+  void update_relocalization_temp_submap(const sensor_msgs::msg::LaserScan & scan);
   CandidateCluster refine_candidate_cluster_scan_first(const CandidateCluster & seed_cluster) const;
+  double score_candidate_with_relocalization_temp_submap(const CandidateCluster & cluster) const;
   std::vector<CandidateCluster> extract_candidate_clusters() const;
   amr_msgs::msg::LocalizationCandidateArray build_candidate_array_message(
     const rclcpp::Time & stamp,
@@ -105,6 +109,7 @@ private:
     const nav_msgs::msg::Odometry & odometry) const;
   bool world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const;
   bool grid_to_world(int grid_x, int grid_y, double & world_x, double & world_y) const;
+  bool local_submap_index_to_local_point(int index, double & local_x, double & local_y) const;
   bool is_occupied_cell(int grid_x, int grid_y) const;
   bool is_free_cell(int grid_x, int grid_y) const;
   bool sample_random_free_pose(Particle & particle);
@@ -197,6 +202,11 @@ private:
   int relocalization_candidate_refine_xy_steps_;
   int relocalization_candidate_refine_yaw_steps_;
   double relocalization_candidate_min_score_ratio_;
+  bool relocalization_temp_submap_enabled_;
+  double relocalization_temp_submap_resolution_;
+  double relocalization_temp_submap_size_m_;
+  int relocalization_temp_submap_min_hits_;
+  double relocalization_temp_submap_score_weight_;
   bool kidnapped_detection_enabled_;
   bool kidnapped_start_with_global_localization_;
   bool kidnapped_auto_trigger_enabled_;
@@ -230,7 +240,13 @@ private:
   rclcpp::Time relocalization_started_at_;
   bool relocalization_candidate_locked_;
   geometry_msgs::msg::PoseStamped relocalization_candidate_pose_;
+  geometry_msgs::msg::PoseStamped relocalization_reference_odom_pose_;
   std::vector<CandidateTrack> previous_candidate_tracks_;
+  std::vector<uint16_t> relocalization_temp_submap_counts_;
+  std::size_t relocalization_temp_submap_marked_cells_;
+  int relocalization_temp_submap_width_;
+  int relocalization_temp_submap_height_;
+  bool has_relocalization_reference_odom_pose_;
   uint32_t next_candidate_id_;
   bool has_latest_odom_;
   bool has_latest_scan_;
