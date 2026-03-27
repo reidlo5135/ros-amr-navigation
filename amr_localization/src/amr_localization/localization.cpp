@@ -621,6 +621,7 @@ void Localization::handle_odometry(const nav_msgs::msg::Odometry::SharedPtr mess
 {
   this->latest_odom_ = *message;
   this->has_latest_odom_ = true;
+  this->maybe_start_pending_startup_relocalization();
 
   const auto current_odom_pose = this->odometry_pose_to_pose_stamped(*message);
   if (!this->has_previous_odom_) {
@@ -644,6 +645,7 @@ void Localization::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr mess
 {
   this->latest_scan_ = *message;
   this->has_latest_scan_ = true;
+  this->maybe_start_pending_startup_relocalization();
 
   if (!this->particles_initialized_ || !this->has_map_) {
     return;
@@ -686,6 +688,23 @@ void Localization::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
       this->startup_global_relocalization_pending_ = true;
     }
   }
+}
+
+void Localization::maybe_start_pending_startup_relocalization()
+{
+  if (
+    !this->startup_global_relocalization_pending_ ||
+    !(this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) ||
+    this->particles_initialized_ ||
+    !this->has_map_ ||
+    this->localization_mode_ != LocalizationMode::kTracking ||
+    this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
+  {
+    return;
+  }
+
+  this->startup_global_relocalization_pending_ = false;
+  this->start_global_relocalization("startup global localization");
 }
 
 void Localization::handle_initial_pose(

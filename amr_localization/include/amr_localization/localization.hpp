@@ -86,6 +86,7 @@ private:
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_initial_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr message);
   void publish_auto_initial_pose();
+  void maybe_start_pending_startup_relocalization();
   void initialize_particles(const geometry_msgs::msg::PoseStamped & pose);
   bool initialize_particles_global();
   void apply_motion_update(
