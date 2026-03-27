@@ -145,6 +145,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::LocalizationCandidateArray>::SharedPtr localization_candidates_publisher_;
   rclcpp::Service<amr_msgs::srv::TriggerGlobalLocalization>::SharedPtr trigger_global_localization_service_;
   rclcpp::TimerBase::SharedPtr auto_initial_pose_timer_;
+  rclcpp::TimerBase::SharedPtr startup_global_relocalization_timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> transform_broadcaster_;
 
   std::string odom_topic_;

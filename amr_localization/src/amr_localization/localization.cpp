@@ -513,8 +513,24 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
     this->has_map_ &&
     this->localization_mode_ == LocalizationMode::kTracking)
   {
-    this->startup_global_relocalization_pending_ = false;
-    this->start_global_relocalization("startup global localization");
+    this->startup_global_relocalization_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(50),
+      [this]() {
+        if (this->startup_global_relocalization_timer_) {
+          this->startup_global_relocalization_timer_->cancel();
+          this->startup_global_relocalization_timer_.reset();
+        }
+        if (
+          this->startup_global_relocalization_pending_ &&
+          (this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) &&
+          !this->particles_initialized_ &&
+          this->has_map_ &&
+          this->localization_mode_ == LocalizationMode::kTracking)
+        {
+          this->startup_global_relocalization_pending_ = false;
+          this->start_global_relocalization("startup global localization");
+        }
+      });
   }
 
   if (this->auto_initial_pose_enabled_ && !this->auto_initial_pose_published_) {
@@ -545,6 +561,10 @@ Localization::CallbackReturn Localization::on_deactivate(const rclcpp_lifecycle:
   if (this->auto_initial_pose_timer_) {
     this->auto_initial_pose_timer_->cancel();
   }
+  if (this->startup_global_relocalization_timer_) {
+    this->startup_global_relocalization_timer_->cancel();
+    this->startup_global_relocalization_timer_.reset();
+  }
   RCLCPP_INFO(this->get_logger(), "Deactivated localization");
   return CallbackReturn::SUCCESS;
 }
@@ -563,6 +583,7 @@ Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::St
   this->localization_candidates_publisher_.reset();
   this->trigger_global_localization_service_.reset();
   this->auto_initial_pose_timer_.reset();
+  this->startup_global_relocalization_timer_.reset();
   this->transform_broadcaster_.reset();
   this->reset_state();
   return CallbackReturn::SUCCESS;
@@ -582,6 +603,7 @@ Localization::CallbackReturn Localization::on_shutdown(const rclcpp_lifecycle::S
   this->localization_candidates_publisher_.reset();
   this->trigger_global_localization_service_.reset();
   this->auto_initial_pose_timer_.reset();
+  this->startup_global_relocalization_timer_.reset();
   this->transform_broadcaster_.reset();
   this->reset_state();
   return CallbackReturn::SUCCESS;
