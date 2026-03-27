@@ -6,6 +6,7 @@ import type {
   BridgeState,
   LaserScanMessage,
   LocalizationCandidateArrayMessage,
+  OdometryMessage,
   OccupancyGridMessage,
   Pose,
   TfMessage,
@@ -65,6 +66,13 @@ function rotate2d(x: number, y: number, yaw: number) {
     x: (x * cosYaw) - (y * sinYaw),
     y: (x * sinYaw) + (y * cosYaw),
   };
+}
+
+function quaternionYaw(orientation: { x: number; y: number; z: number; w: number }) {
+  const sinyCosp = 2 * ((orientation.w * orientation.z) + (orientation.x * orientation.y));
+  const cosyCosp =
+    1 - (2 * ((orientation.y * orientation.y) + (orientation.z * orientation.z)));
+  return Math.atan2(sinyCosp, cosyCosp);
 }
 
 function parseTriplet(value: string | null | undefined, fallback = 0): THREE.Vector3 {
@@ -606,6 +614,70 @@ function buildLocalizationCandidateMarkers(
     group.add(marker, label);
   }
 
+  return group;
+}
+
+function buildOdomGhostMarker(
+  odom: OdometryMessage | undefined,
+  tf: TfMessage | undefined,
+  tfStatic: TfMessage | undefined,
+): THREE.Group | null {
+  if (!odom) {
+    return null;
+  }
+
+  const lookup = buildFrameLookup(tf, tfStatic);
+  const odomFrame = resolveFrame(odom.header.frame_id, lookup);
+  if (!odomFrame) {
+    return null;
+  }
+
+  const localPosition = odom.pose.position;
+  const localYaw = quaternionYaw(odom.pose.orientation);
+  const rotated = rotate2d(localPosition.x, localPosition.y, odomFrame.yaw);
+  const x = odomFrame.x + rotated.x;
+  const y = odomFrame.y + rotated.y;
+  const yaw = odomFrame.yaw + localYaw;
+
+  const group = new THREE.Group();
+  const ring = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(
+      Array.from({ length: 33 }, (_, index) => {
+        const angle = (index / 32) * Math.PI * 2;
+        return new THREE.Vector3(Math.cos(angle) * 0.10, 0.055, Math.sin(angle) * 0.10);
+      }),
+    ),
+    new THREE.LineDashedMaterial({
+      color: "#c55cff",
+      dashSize: 0.05,
+      gapSize: 0.03,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  ring.computeLineDistances();
+  ring.rotation.x = -Math.PI / 2;
+  ring.renderOrder = 24;
+
+  const arrow = new THREE.Mesh(
+    new THREE.ConeGeometry(0.055, 0.16, 14),
+    new THREE.MeshBasicMaterial({
+      color: "#c55cff",
+      transparent: true,
+      opacity: 0.9,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  arrow.rotation.z = -Math.PI / 2;
+  arrow.position.set(0.15, 0.06, 0);
+  arrow.renderOrder = 25;
+
+  group.add(ring, arrow);
+  group.position.set(x, 0, -y);
+  group.rotation.y = -yaw;
   return group;
 }
 
@@ -1216,6 +1288,7 @@ export function SceneViewport({
   const localPathRef = useRef<THREE.Group | null>(null);
   const goalMarkerRef = useRef<THREE.Group | null>(null);
   const localizationCandidatesRef = useRef<THREE.Group | null>(null);
+  const odomGhostRef = useRef<THREE.Group | null>(null);
   const previewMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
@@ -1456,6 +1529,7 @@ export function SceneViewport({
       disposeObject(tfGroupRef.current);
       disposeObject(goalMarkerRef.current);
       disposeObject(localizationCandidatesRef.current);
+      disposeObject(odomGhostRef.current);
       disposeObject(robot);
       renderer.dispose();
       scene.clear();
@@ -1508,6 +1582,11 @@ export function SceneViewport({
       disposeObject(localizationCandidatesRef.current);
       localizationCandidatesRef.current = null;
     }
+    if (odomGhostRef.current) {
+      scene.remove(odomGhostRef.current);
+      disposeObject(odomGhostRef.current);
+      odomGhostRef.current = null;
+    }
 
     const showLivePlans =
       goalLifecycle === "Running" ||
@@ -1546,6 +1625,11 @@ export function SceneViewport({
     if (localizationCandidatesRef.current) {
       localizationCandidatesRef.current.visible = layerVisibility.localizationCandidates;
       scene.add(localizationCandidatesRef.current);
+    }
+    odomGhostRef.current = buildOdomGhostMarker(state.odom, state.tf, state.tf_static);
+    if (odomGhostRef.current) {
+      odomGhostRef.current.visible = layerVisibility.odomGhost;
+      scene.add(odomGhostRef.current);
     }
 
     for (const [ref, grid, palette, yOffset] of [

@@ -8,6 +8,12 @@ namespace
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kMinimumWeight = 1e-6;
+constexpr int kTempSubmapHitScore = 6;
+constexpr int kTempSubmapFreeScore = 1;
+constexpr int kTempSubmapScoreClamp = 48;
+constexpr int kTempSubmapOccupiedThreshold = 4;
+constexpr int kTempSubmapFreeThreshold = 3;
+constexpr double kTempSubmapLockScoreThreshold = 0.10;
 
 }  // namespace
 
@@ -98,8 +104,10 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   relocalization_observation_count_(0),
   relocalization_started_at_(0, 0, RCL_ROS_TIME),
   relocalization_candidate_locked_(false),
+  primary_candidate_temp_submap_score_(0.0),
   next_candidate_id_(1U),
   relocalization_temp_submap_marked_cells_(0U),
+  relocalization_temp_submap_known_cells_(0U),
   relocalization_temp_submap_width_(0),
   relocalization_temp_submap_height_(0),
   has_relocalization_reference_odom_pose_(false),
@@ -959,13 +967,18 @@ void Localization::update_relocalization_candidate_lock()
 
   const bool should_lock =
     this->last_measurement_confidence_ >= this->relocalization_candidate_lock_confidence_threshold_ &&
-    this->localization_cluster_weight_ >= this->relocalization_candidate_lock_cluster_weight_threshold_;
+    this->localization_cluster_weight_ >= this->relocalization_candidate_lock_cluster_weight_threshold_ &&
+    this->primary_candidate_temp_submap_score_ >= kTempSubmapLockScoreThreshold;
 
   if (!should_lock) {
     return;
   }
 
-  this->relocalization_candidate_pose_ = this->estimated_pose_;
+  if (!this->primary_candidate_pose_.header.frame_id.empty()) {
+    this->relocalization_candidate_pose_ = this->primary_candidate_pose_;
+  } else {
+    this->relocalization_candidate_pose_ = this->estimated_pose_;
+  }
   this->relocalization_candidate_locked_ = true;
 }
 
@@ -982,7 +995,9 @@ void Localization::reset_relocalization_temp_submap()
   const std::size_t cell_count = static_cast<std::size_t>(
     this->relocalization_temp_submap_width_ * this->relocalization_temp_submap_height_);
   this->relocalization_temp_submap_counts_.assign(cell_count, 0U);
+  this->relocalization_temp_submap_scores_.assign(cell_count, 0);
   this->relocalization_temp_submap_marked_cells_ = 0U;
+  this->relocalization_temp_submap_known_cells_ = 0U;
   this->has_relocalization_reference_odom_pose_ = false;
   this->relocalization_reference_odom_pose_ = geometry_msgs::msg::PoseStamped();
 }
@@ -1021,16 +1036,16 @@ void Localization::update_relocalization_temp_submap(const sensor_msgs::msg::Las
   const int sampled_beam_count = std::max(1, std::min(this->max_beams_, beam_count));
   const int stride = std::max(1, beam_count / sampled_beam_count);
   const double max_range = std::min(this->max_beam_range_, static_cast<double>(scan.range_max));
-  const double half_extent = 0.5 * std::max(this->relocalization_temp_submap_size_m_, 1.0);
   const double resolution = std::max(this->relocalization_temp_submap_resolution_, 0.01);
 
   for (int beam_index = 0; beam_index < beam_count; beam_index += stride) {
-    const double beam_range = static_cast<double>(scan.ranges[beam_index]);
-    if (
-      !std::isfinite(beam_range) ||
-      beam_range < static_cast<double>(scan.range_min) ||
-      beam_range > max_range)
-    {
+    const double observed_range = static_cast<double>(scan.ranges[beam_index]);
+    const bool has_hit =
+      std::isfinite(observed_range) &&
+      observed_range >= static_cast<double>(scan.range_min) &&
+      observed_range <= max_range;
+    const double ray_length = has_hit ? observed_range : max_range;
+    if (ray_length < static_cast<double>(scan.range_min)) {
       continue;
     }
 
@@ -1038,26 +1053,74 @@ void Localization::update_relocalization_temp_submap(const sensor_msgs::msg::Las
       static_cast<double>(scan.angle_min) +
       (static_cast<double>(beam_index) * static_cast<double>(scan.angle_increment)) +
       robot_local_yaw;
-    const double hit_local_x = robot_local_x + (beam_range * std::cos(beam_angle));
-    const double hit_local_y = robot_local_y + (beam_range * std::sin(beam_angle));
-    const int grid_x = static_cast<int>(std::floor((hit_local_x + half_extent) / resolution));
-    const int grid_y = static_cast<int>(std::floor((hit_local_y + half_extent) / resolution));
-    if (
-      grid_x < 0 || grid_y < 0 ||
-      grid_x >= this->relocalization_temp_submap_width_ ||
-      grid_y >= this->relocalization_temp_submap_height_)
-    {
+
+    const int ray_steps = std::max(1, static_cast<int>(std::ceil(ray_length / resolution)));
+    for (int step = 1; step < ray_steps; ++step) {
+      const double distance = ray_length * static_cast<double>(step) / static_cast<double>(ray_steps);
+      const double free_local_x = robot_local_x + (distance * std::cos(beam_angle));
+      const double free_local_y = robot_local_y + (distance * std::sin(beam_angle));
+      std::size_t free_index = 0U;
+      if (this->local_point_to_submap_index(free_local_x, free_local_y, free_index)) {
+        this->add_relocalization_temp_submap_score(free_index, -kTempSubmapFreeScore);
+      }
+    }
+
+    if (!has_hit) {
       continue;
     }
 
-    const std::size_t index = static_cast<std::size_t>(
-      (grid_y * this->relocalization_temp_submap_width_) + grid_x);
-    if (this->relocalization_temp_submap_counts_[index] == 0U) {
+    const double hit_local_x = robot_local_x + (observed_range * std::cos(beam_angle));
+    const double hit_local_y = robot_local_y + (observed_range * std::sin(beam_angle));
+    std::size_t hit_index = 0U;
+    if (!this->local_point_to_submap_index(hit_local_x, hit_local_y, hit_index)) {
+      continue;
+    }
+
+    if (this->relocalization_temp_submap_counts_[hit_index] == 0U) {
       this->relocalization_temp_submap_marked_cells_ += 1U;
     }
-    this->relocalization_temp_submap_counts_[index] = static_cast<uint16_t>(std::min<int>(
+    this->relocalization_temp_submap_counts_[hit_index] = static_cast<uint16_t>(std::min<int>(
       std::numeric_limits<uint16_t>::max(),
-      static_cast<int>(this->relocalization_temp_submap_counts_[index]) + 1));
+      static_cast<int>(this->relocalization_temp_submap_counts_[hit_index]) + 1));
+    this->add_relocalization_temp_submap_score(hit_index, kTempSubmapHitScore);
+  }
+}
+
+bool Localization::local_point_to_submap_index(
+  const double local_x,
+  const double local_y,
+  std::size_t & index) const
+{
+  const double half_extent = 0.5 * std::max(this->relocalization_temp_submap_size_m_, 1.0);
+  const double resolution = std::max(this->relocalization_temp_submap_resolution_, 0.01);
+  const int grid_x = static_cast<int>(std::floor((local_x + half_extent) / resolution));
+  const int grid_y = static_cast<int>(std::floor((local_y + half_extent) / resolution));
+  if (
+    grid_x < 0 || grid_y < 0 ||
+    grid_x >= this->relocalization_temp_submap_width_ ||
+    grid_y >= this->relocalization_temp_submap_height_)
+  {
+    return false;
+  }
+
+  index = static_cast<std::size_t>((grid_y * this->relocalization_temp_submap_width_) + grid_x);
+  return true;
+}
+
+void Localization::add_relocalization_temp_submap_score(const std::size_t index, const int delta)
+{
+  if (index >= this->relocalization_temp_submap_scores_.size()) {
+    return;
+  }
+
+  const int previous_score = static_cast<int>(this->relocalization_temp_submap_scores_[index]);
+  const int next_score = std::clamp(
+    previous_score + delta,
+    -kTempSubmapScoreClamp,
+    kTempSubmapScoreClamp);
+  this->relocalization_temp_submap_scores_[index] = static_cast<int16_t>(next_score);
+  if (previous_score == 0 && next_score != 0) {
+    this->relocalization_temp_submap_known_cells_ += 1U;
   }
 }
 
@@ -1065,6 +1128,7 @@ Localization::CandidateCluster Localization::refine_candidate_cluster_scan_first
   const CandidateCluster & seed_cluster) const
 {
   CandidateCluster refined_cluster = seed_cluster;
+  refined_cluster.temp_submap_score = seed_cluster.temp_submap_score;
   if (!this->has_latest_scan_ || this->latest_scan_.ranges.empty()) {
     return refined_cluster;
   }
@@ -1126,8 +1190,8 @@ double Localization::score_candidate_with_relocalization_temp_submap(
     !this->relocalization_temp_submap_enabled_ ||
     !this->has_latest_odom_ ||
     !this->has_relocalization_reference_odom_pose_ ||
-    this->relocalization_temp_submap_marked_cells_ == 0U ||
-    this->relocalization_temp_submap_counts_.empty())
+    this->relocalization_temp_submap_known_cells_ == 0U ||
+    this->relocalization_temp_submap_scores_.empty())
   {
     return 0.0;
   }
@@ -1155,13 +1219,17 @@ double Localization::score_candidate_with_relocalization_temp_submap(
     ((std::sin(map_ref_yaw) * current_local_x) + (std::cos(map_ref_yaw) * current_local_y));
 
   double matched_weight = 0.0;
-  double mismatched_weight = 0.0;
+  double penalty_weight = 0.0;
   double total_weight = 0.0;
   const int min_hits = std::max(1, this->relocalization_temp_submap_min_hits_);
 
-  for (std::size_t index = 0; index < this->relocalization_temp_submap_counts_.size(); ++index) {
+  for (std::size_t index = 0; index < this->relocalization_temp_submap_scores_.size(); ++index) {
+    const int local_score = static_cast<int>(this->relocalization_temp_submap_scores_[index]);
     const uint16_t hit_count = this->relocalization_temp_submap_counts_[index];
-    if (hit_count < min_hits) {
+    const bool expects_occupied =
+      local_score >= kTempSubmapOccupiedThreshold && hit_count >= static_cast<uint16_t>(min_hits);
+    const bool expects_free = local_score <= -kTempSubmapFreeThreshold;
+    if (!expects_occupied && !expects_free) {
       continue;
     }
 
@@ -1178,16 +1246,32 @@ double Localization::score_candidate_with_relocalization_temp_submap(
     int map_grid_x = 0;
     int map_grid_y = 0;
     if (!this->world_to_grid(world_x, world_y, map_grid_x, map_grid_y)) {
-      mismatched_weight += static_cast<double>(hit_count);
-      total_weight += static_cast<double>(hit_count);
+      penalty_weight += std::abs(static_cast<double>(local_score));
+      total_weight += std::abs(static_cast<double>(local_score));
       continue;
     }
 
-    total_weight += static_cast<double>(hit_count);
-    if (this->is_occupied_cell(map_grid_x, map_grid_y)) {
-      matched_weight += static_cast<double>(hit_count);
-    } else {
-      mismatched_weight += static_cast<double>(hit_count);
+    const double sample_weight = std::abs(static_cast<double>(local_score));
+    total_weight += sample_weight;
+    const bool map_occupied = this->is_occupied_cell(map_grid_x, map_grid_y);
+    const bool map_free = this->is_free_cell(map_grid_x, map_grid_y);
+
+    if (expects_occupied) {
+      if (map_occupied) {
+        matched_weight += 1.2 * sample_weight;
+      } else if (map_free) {
+        penalty_weight += 1.4 * sample_weight;
+      } else {
+        penalty_weight += 0.6 * sample_weight;
+      }
+    } else if (expects_free) {
+      if (map_free) {
+        matched_weight += 0.8 * sample_weight;
+      } else if (map_occupied) {
+        penalty_weight += 1.5 * sample_weight;
+      } else {
+        penalty_weight += 0.5 * sample_weight;
+      }
     }
   }
 
@@ -1195,7 +1279,7 @@ double Localization::score_candidate_with_relocalization_temp_submap(
     return 0.0;
   }
 
-  return (matched_weight - (0.35 * mismatched_weight)) / total_weight;
+  return std::clamp((matched_weight - (0.60 * penalty_weight)) / total_weight, -1.0, 1.0);
 }
 
 std::vector<Localization::CandidateCluster> Localization::extract_candidate_clusters() const
@@ -1289,6 +1373,7 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
       cluster.position_std =
         std::sqrt(std::max(0.0, position_variance_accumulator / total_weight));
       cluster.yaw_std = std::sqrt(std::max(0.0, yaw_variance_accumulator / total_weight));
+      cluster.temp_submap_score = 0.0;
       return cluster;
     };
 
@@ -1323,6 +1408,7 @@ std::vector<Localization::CandidateCluster> Localization::extract_candidate_clus
     }
 
     const double temp_submap_score = this->score_candidate_with_relocalization_temp_submap(cluster);
+    cluster.temp_submap_score = temp_submap_score;
     cluster.score += this->relocalization_temp_submap_score_weight_ * temp_submap_score;
 
     for (const auto & previous_track : this->previous_candidate_tracks_) {
@@ -1605,6 +1691,17 @@ void Localization::publish_localization_candidates(const rclcpp::Time & stamp)
   }
 
   const auto clusters = this->extract_candidate_clusters();
+  this->primary_candidate_pose_ = geometry_msgs::msg::PoseStamped();
+  this->primary_candidate_temp_submap_score_ = 0.0;
+  if (!clusters.empty()) {
+    this->primary_candidate_pose_.header.stamp = stamp;
+    this->primary_candidate_pose_.header.frame_id = this->map_frame_;
+    this->primary_candidate_pose_.pose.position.x = clusters.front().x;
+    this->primary_candidate_pose_.pose.position.y = clusters.front().y;
+    this->primary_candidate_pose_.pose.position.z = 0.0;
+    this->update_pose_orientation(this->primary_candidate_pose_, clusters.front().yaw);
+    this->primary_candidate_temp_submap_score_ = clusters.front().temp_submap_score;
+  }
   auto message = this->build_candidate_array_message(stamp, clusters);
   this->localization_candidates_publisher_->publish(message);
 }
@@ -2162,13 +2259,17 @@ void Localization::reset_state()
   this->relocalization_started_at_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
   this->relocalization_candidate_locked_ = false;
   this->relocalization_candidate_pose_ = geometry_msgs::msg::PoseStamped();
+  this->primary_candidate_pose_ = geometry_msgs::msg::PoseStamped();
   this->relocalization_reference_odom_pose_ = geometry_msgs::msg::PoseStamped();
   this->previous_candidate_tracks_.clear();
   this->relocalization_temp_submap_counts_.clear();
+  this->relocalization_temp_submap_scores_.clear();
   this->relocalization_temp_submap_marked_cells_ = 0U;
+  this->relocalization_temp_submap_known_cells_ = 0U;
   this->relocalization_temp_submap_width_ = 0;
   this->relocalization_temp_submap_height_ = 0;
   this->has_relocalization_reference_odom_pose_ = false;
+  this->primary_candidate_temp_submap_score_ = 0.0;
   this->next_candidate_id_ = 1U;
   this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;

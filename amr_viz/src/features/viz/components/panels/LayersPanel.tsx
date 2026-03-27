@@ -18,6 +18,7 @@ const navLayerEntries: LayerEntry[] = [
   { key: "globalCostmap", label: "Global Costmap", icon: "costmap-global" },
   { key: "localCostmap", label: "Local Costmap", icon: "costmap-local" },
   { key: "localizationCandidates", label: "GL Candidates", icon: "candidate" },
+  { key: "odomGhost", label: "Odom Ghost", icon: "odom-ghost" },
   { key: "footprint", label: "Exact Footprint", icon: "footprint" },
   { key: "robot", label: "Robot", icon: "robot" },
   { key: "globalPlan", label: "Global Plan", icon: "path-global" },
@@ -30,6 +31,7 @@ const arlLayerEntries: LayerEntry[] = [
   { key: "grid", label: "Grid", icon: "grid" },
   { key: "map", label: "Map", icon: "map" },
   { key: "localizationCandidates", label: "GL Candidates", icon: "candidate" },
+  { key: "odomGhost", label: "Odom Ghost", icon: "odom-ghost" },
   { key: "footprint", label: "Exact Footprint", icon: "footprint" },
   { key: "robot", label: "Robot", icon: "robot" },
   { key: "scan", label: "LaserScan", icon: "scan" },
@@ -67,6 +69,12 @@ function LayerIcon({ kind }: { kind: string }) {
           <circle cx="11.5" cy="4.5" r="1.2" />
           <path d="M5.7 10.1 10.2 5.8" />
           <path d="M11.5 4.5 13 6M11.5 4.5 10 3" />
+        </svg>
+      )}
+      {kind === "odom-ghost" && (
+        <svg viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="4.5" strokeDasharray="1.2 1.2" />
+          <path d="M8 8 12.5 5.5" />
         </svg>
       )}
       {kind === "footprint" && (

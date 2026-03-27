@@ -3,6 +3,7 @@ import type { LayerVisibility, VisualizationMode } from "./types";
 
 export const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/robot_pose": "robot_pose",
+  "amr/robot/turtlebot3/telemetry/odom": "odom",
   "amr/robot/turtlebot3/viz/global_path": "global_path",
   "amr/robot/turtlebot3/viz/local_path": "local_path",
   "amr/robot/turtlebot3/viz/map": "map",
@@ -19,6 +20,7 @@ export const telemetryTopicMap: Record<string, keyof BridgeState> = {
 
 export const topicSubscriptions = [
   "amr/robot/turtlebot3/viz/#",
+  "amr/robot/turtlebot3/telemetry/odom",
   "amr/response/#",
   "amr/feedback/#",
   "amr/status/#",
@@ -30,6 +32,7 @@ export const navLayerVisibility: LayerVisibility = {
   globalCostmap: true,
   localCostmap: true,
   localizationCandidates: false,
+  odomGhost: false,
   footprint: true,
   robot: true,
   globalPlan: true,
@@ -44,6 +47,7 @@ export const arlLayerVisibility: LayerVisibility = {
   globalCostmap: false,
   localCostmap: false,
   localizationCandidates: true,
+  odomGhost: true,
   footprint: true,
   robot: true,
   globalPlan: false,

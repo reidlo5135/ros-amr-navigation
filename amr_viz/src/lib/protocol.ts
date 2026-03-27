@@ -77,6 +77,24 @@ export type LaserScanMessage = {
   ranges: number[];
 };
 
+export type OdometryMessage = {
+  header: Header;
+  child_frame_id: string;
+  pose: {
+    position: Vector3;
+    orientation: {
+      x: number;
+      y: number;
+      z: number;
+      w: number;
+    };
+  };
+  twist: {
+    linear: Vector3;
+    angular: Vector3;
+  };
+};
+
 export type TransformMessage = {
   header: Header;
   child_frame_id: string;
@@ -128,6 +146,7 @@ export type LocalizationCandidateArrayMessage = {
 
 export type BridgeState = {
   robot_pose?: Pose;
+  odom?: OdometryMessage;
   global_path?: PathMessage;
   local_path?: PathMessage;
   map?: OccupancyGridMessage;

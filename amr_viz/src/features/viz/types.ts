@@ -4,6 +4,7 @@ export type LayerVisibility = {
   globalCostmap: boolean;
   localCostmap: boolean;
   localizationCandidates: boolean;
+  odomGhost: boolean;
   footprint: boolean;
   robot: boolean;
   globalPlan: boolean;

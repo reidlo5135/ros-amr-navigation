@@ -3,6 +3,7 @@ import { Topbar } from "../components/layout/Topbar";
 import { EventsPanel } from "../components/panels/EventsPanel";
 import { GoalControlPanel } from "../components/panels/GoalControlPanel";
 import { LayersPanel } from "../components/panels/LayersPanel";
+import { LocalizationDebugPanel } from "../components/panels/LocalizationDebugPanel";
 import { MqttPanel } from "../components/panels/MqttPanel";
 import { NavigationStatusPanel } from "../components/panels/NavigationStatusPanel";
 import { useVizDashboard } from "../hooks/useVizDashboard";
@@ -16,6 +17,19 @@ export function VizDashboardPage() {
   const poseLabel = dashboard.bridgeState.robot_pose
     ? `${dashboard.bridgeState.robot_pose.position.x.toFixed(2)}, ${dashboard.bridgeState.robot_pose.position.y.toFixed(2)}`
     : "--";
+  const hasRobotPose = Boolean(dashboard.bridgeState.robot_pose);
+  const hasOdom = Boolean(dashboard.bridgeState.odom);
+  const hasFootprint = Boolean(dashboard.bridgeState.robot_description?.footprint_polygon?.length);
+  const odomFrameId = dashboard.bridgeState.odom?.header.frame_id || "odom";
+  const allTransforms = [
+    ...(dashboard.bridgeState.tf?.transforms ?? []),
+    ...(dashboard.bridgeState.tf_static?.transforms ?? []),
+  ];
+  const hasMapToOdom = allTransforms.some(
+    (transform) =>
+      transform.header.frame_id === "map" &&
+      transform.child_frame_id === odomFrameId,
+  );
 
   return (
     <main className="app-shell">
@@ -95,6 +109,12 @@ export function VizDashboardPage() {
           <NavigationStatusPanel
             motionStatus={dashboard.bridgeState.motion_status}
             goalLifecycle={dashboard.resolvedGoalLifecycle}
+          />
+          <LocalizationDebugPanel
+            hasRobotPose={hasRobotPose}
+            hasOdom={hasOdom}
+            hasFootprint={hasFootprint}
+            hasMapToOdom={hasMapToOdom}
           />
           <EventsPanel events={dashboard.events} />
         </aside>

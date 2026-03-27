@@ -49,6 +49,7 @@ private:
     double y;
     double yaw;
     double score;
+    double temp_submap_score;
     double cluster_weight;
     double dominance_ratio;
     double position_std;
@@ -95,6 +96,8 @@ private:
   void update_relocalization_candidate_lock();
   void reset_relocalization_temp_submap();
   void update_relocalization_temp_submap(const sensor_msgs::msg::LaserScan & scan);
+  bool local_point_to_submap_index(double local_x, double local_y, std::size_t & index) const;
+  void add_relocalization_temp_submap_score(std::size_t index, int delta);
   CandidateCluster refine_candidate_cluster_scan_first(const CandidateCluster & seed_cluster) const;
   double score_candidate_with_relocalization_temp_submap(const CandidateCluster & cluster) const;
   std::vector<CandidateCluster> extract_candidate_clusters() const;
@@ -242,13 +245,17 @@ private:
   rclcpp::Time relocalization_started_at_;
   bool relocalization_candidate_locked_;
   geometry_msgs::msg::PoseStamped relocalization_candidate_pose_;
+  geometry_msgs::msg::PoseStamped primary_candidate_pose_;
   geometry_msgs::msg::PoseStamped relocalization_reference_odom_pose_;
   std::vector<CandidateTrack> previous_candidate_tracks_;
   std::vector<uint16_t> relocalization_temp_submap_counts_;
+  std::vector<int16_t> relocalization_temp_submap_scores_;
   std::size_t relocalization_temp_submap_marked_cells_;
+  std::size_t relocalization_temp_submap_known_cells_;
   int relocalization_temp_submap_width_;
   int relocalization_temp_submap_height_;
   bool has_relocalization_reference_odom_pose_;
+  double primary_candidate_temp_submap_score_;
   uint32_t next_candidate_id_;
   bool has_latest_odom_;
   bool has_latest_scan_;

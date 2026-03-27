@@ -162,6 +162,10 @@ button.danger {
   color: #d79b00;
 }
 
+.layer-icon-odom-ghost {
+  color: #c55cff;
+}
+
 .layer-icon-footprint {
   color: #5579b0;
 }
@@ -206,6 +210,14 @@ button.danger {
   color: var(--text);
   font-size: 13px;
   font-weight: 700;
+}
+
+.metric-status-ok {
+  color: #286b36 !important;
+}
+
+.metric-status-missing {
+  color: #9a5b10 !important;
 }
 
 .event-log {
