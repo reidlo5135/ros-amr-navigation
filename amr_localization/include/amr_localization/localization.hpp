@@ -18,6 +18,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
+#include "lifecycle_msgs/msg/state.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -255,6 +256,7 @@ private:
   bool has_initial_pose_;
   bool particles_initialized_;
   bool auto_initial_pose_published_;
+  bool startup_global_relocalization_pending_;
 };
 
 }  // namespace amr_localization

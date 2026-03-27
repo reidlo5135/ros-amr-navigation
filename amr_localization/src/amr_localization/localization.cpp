@@ -109,7 +109,8 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   has_previous_odom_(false),
   has_initial_pose_(false),
   particles_initialized_(false),
-  auto_initial_pose_published_(false)
+  auto_initial_pose_published_(false),
+  startup_global_relocalization_pending_(false)
 {
   this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
@@ -505,6 +506,17 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
     this->publish_outputs(this->now());
   }
 
+  if (
+    this->startup_global_relocalization_pending_ &&
+    (this->startup_mode_is_global_relocalization() || this->startup_mode_is_active_relocalization()) &&
+    !this->particles_initialized_ &&
+    this->has_map_ &&
+    this->localization_mode_ == LocalizationMode::kTracking)
+  {
+    this->startup_global_relocalization_pending_ = false;
+    this->start_global_relocalization("startup global localization");
+  }
+
   if (this->auto_initial_pose_enabled_ && !this->auto_initial_pose_published_) {
     this->auto_initial_pose_timer_ = this->create_wall_timer(
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -638,7 +650,11 @@ void Localization::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     !this->particles_initialized_ &&
     this->localization_mode_ == LocalizationMode::kTracking)
   {
-    this->start_global_relocalization("startup global localization");
+    if (this->get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+      this->start_global_relocalization("startup global localization");
+    } else {
+      this->startup_global_relocalization_pending_ = true;
+    }
   }
 }
 
@@ -2139,6 +2155,7 @@ void Localization::reset_state()
   this->has_initial_pose_ = false;
   this->particles_initialized_ = false;
   this->auto_initial_pose_published_ = false;
+  this->startup_global_relocalization_pending_ = false;
 }
 
 }  // namespace amr_localization
