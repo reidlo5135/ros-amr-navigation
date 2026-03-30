@@ -175,63 +175,12 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
-| `2026-03-31` | `amr_slam_mapper` live temp map 기반 nav 연동 검토, mapping completion / nav-ready 기준 설계, non-loop drift 대응 검토 |
 | `2026-03-26` | kidnapped 대응용 global localization 설계, offline/disconnect 재초기화 흐름 검토 |
 | `2026-03-25` | exact footprint collision 완료, local planner decision semantics 반영, recovery/final approach 1차 안정화, viz 운영성 강화 |
 | `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
 | `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
 | `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
-
-
-## 2026-03-31
-
-- `amr_slam_mapper` live temp map 기반 navigation 연동 검토
-  - static SLAM map 저장/전환을 선행하지 않고, `amr_slam_mapper`가 publish 중인 `/amr/map/temp`와 `map -> odom`를 기존 navigation stack에 직접 연결 가능한지 검토
-  - `amr_costmap_server`가 static yaml 대신 live temp map을 받아 inflation / local-global costmap 갱신을 수행하는 구조 검토
-  - `amr_global_planner`, `amr_local_planner`, `amr_bt_navigator`가 SLAM live map 위에서도 기존 책임을 유지할 수 있는지 검토
-  - 검토 관점
-    - `slam_toolbox + nav2`처럼 SLAM이 mapping + localization을 맡고 navigation이 그 위에 올라타는 구조를 목표로 볼지 정리
-    - static map 전환보다 `navigation-ready on live SLAM` 개념이 더 적절한지 검토
-    - live map update 시 planner replan / costmap invalidate / graph correction jump를 어떻게 다룰지 정리
-
-- mapping completion / `ready_for_nav` 기준 재설계
-  - 단순 known/free/occupied ratio만으로는 실제 환경 크기를 모르기 때문에 완료 판정이 부정확하다는 점 반영
-  - 전체 환경 대비 비율 대신 최근 신규 정보량 감소, frontier 소진, 재방문 일관성, graph 안정화를 중심으로 판단 기준 재설계
-  - 저장 가능 상태(`ready_for_save`)와 navigation 가능 상태(`ready_for_nav`)를 분리하는 방향 검토
-  - 검토 관점
-    - 최근 N초 / 최근 M개 keyframe 동안 새롭게 known으로 바뀐 셀 비율이 충분히 낮은지
-    - frontier 또는 unknown boundary가 의미 있게 줄었는지
-    - scan matching score와 graph correction delta가 안정화되었는지
-    - 시작 구간 또는 재방문 구간에서 일관된 정합이 되는지
-
-- section / room 기반 completion 판단 가능성 검토
-  - 실제 환경 전체 크기를 모르므로, 문 / 턱 / 좁은 통로를 기준으로 공간을 section 또는 room 단위로 나누는 completion 방식 검토
-  - 로봇청소기류처럼 구획 경계 추정 후 구획별 완료 / 미완료를 관리하는 방향 검토
-  - 검토 관점
-    - door-like narrow passage 또는 bottleneck을 자동 검출할 수 있는지
-    - closed region / room candidate를 map에서 추정 가능한지
-    - section completion을 누적해 전체 mapping 종료 또는 nav-ready로 이어갈 수 있는지
-
-- non-loop trajectory에서의 drift 누적 문제 대응 검토
-  - 현재 `amr_slam_mapper`는 loop closure 또는 재방문이 없으면 graph correction이 약해져, 타원형 코스처럼 기준점 재방문이 없는 경로에서는 맵이 틀어질 수 있음
-  - loop 미성립 상황에서도 드리프트를 줄일 수 있는 front-end / back-end 보강 포인트 검토
-  - 검토 관점
-    - local scan matching window / scoring 개선
-    - submap anchor 보강 또는 sliding submap 구조 도입
-    - IMU yaw 보정 외 병진 오차 누적 완화 방법
-    - long corridor / elongated path에서 loop 없이도 안정성을 높일 수 있는 keyframe / optimizer 정책
-
-- 후속 구현 후보 정리
-  - `mapping_metrics` 또는 유사 진단 메시지 추가
-    - recent_new_known_ratio
-    - frontier_count 또는 frontier_density
-    - scan_match_score_avg
-    - loop_closure_count
-    - graph_correction_delta
-    - revisit_consistency score
-  - `ready_for_save`, `ready_for_nav` 상태 publish 경로 설계
-  - live temp map navigation prototype 시 `mapping_mode`와 `nav_mode`를 어떻게 병행 또는 연결할지 설계
 
 ## 2026-03-26
 
