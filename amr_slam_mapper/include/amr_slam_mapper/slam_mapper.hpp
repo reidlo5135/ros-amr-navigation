@@ -121,7 +121,7 @@ private:
     const sensor_msgs::msg::LaserScan & scan,
     const Pose2D & corrected_pose,
     nav_msgs::msg::OccupancyGrid & map,
-    std::vector<int16_t> & occupancy_scores) const;
+    std::vector<int16_t> & occupancy_scores);
   void rebuild_map_from_pose_graph();
 
   void maybe_add_pose_graph_node(
@@ -159,7 +159,7 @@ private:
     std::vector<int16_t> & occupancy_scores,
     int grid_x,
     int grid_y,
-    int delta) const;
+    int delta);
   void refresh_cell_from_score(
     nav_msgs::msg::OccupancyGrid & map,
     const std::vector<int16_t> & occupancy_scores,
@@ -170,17 +170,17 @@ private:
     int start_x,
     int start_y,
     int end_x,
-    int end_y) const;
+    int end_y);
   void mark_free_cell(
     nav_msgs::msg::OccupancyGrid & map,
     std::vector<int16_t> & occupancy_scores,
     int grid_x,
-    int grid_y) const;
+    int grid_y);
   void mark_occupied_cell(
     nav_msgs::msg::OccupancyGrid & map,
     std::vector<int16_t> & occupancy_scores,
     int grid_x,
-    int grid_y) const;
+    int grid_y);
 
   void set_quaternion_from_yaw(geometry_msgs::msg::Quaternion & orientation, double yaw) const;
   double quaternion_to_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
@@ -198,6 +198,10 @@ private:
 
   nav_msgs::msg::OccupancyGrid temporary_map_;
   std::vector<int16_t> occupancy_scores_;
+  std::vector<uint16_t> occupied_observation_counts_;
+  std::vector<uint16_t> free_observation_counts_;
+  std::vector<uint32_t> last_hit_scan_ids_;
+  uint32_t scan_sequence_{0U};
   mutable std::mutex map_mutex_;
 
   nav_msgs::msg::Odometry latest_odometry_{};
@@ -257,6 +261,11 @@ private:
   int mapping_free_score_threshold_;
   int mapping_score_min_;
   int mapping_score_max_;
+  int occupancy_min_persistent_hits_;
+  int occupancy_min_confirmed_free_observations_;
+  int occupancy_hit_decay_on_free_;
+  int occupancy_stale_scan_window_;
+  int occupancy_stale_score_penalty_;
 
   double keyframe_distance_threshold_;
   double keyframe_yaw_threshold_;
