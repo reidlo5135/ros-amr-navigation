@@ -238,6 +238,56 @@ button.danger {
   align-self: start;
 }
 
+.joystick-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.joystick-pad {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.95) 0, rgba(244, 244, 244, 0.98) 58%, #ededed 100%);
+  touch-action: none;
+  user-select: none;
+}
+
+.joystick-cross {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.09);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.joystick-cross-horizontal {
+  width: 112px;
+  height: 1px;
+}
+
+.joystick-cross-vertical {
+  width: 1px;
+  height: 112px;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  border-radius: 50%;
+  border: 1px solid rgba(208, 138, 23, 0.6);
+  background: radial-gradient(circle at 35% 35%, #ffe7bd 0, #f2c165 45%, #d08a17 100%);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
+}
+
 @media (max-width: 1180px) {
   .field-grid-triple,
   .button-row {

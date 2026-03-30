@@ -1309,6 +1309,56 @@ static bool amr_mqtt_bridge_deserialize_twist_raw(
   return rmw_rc == RMW_RET_OK;
 }
 
+static bool amr_mqtt_bridge_extract_twist_from_json(
+  const char * payload,
+  geometry_msgs__msg__Twist * twist)
+{
+  const char * begin = payload;
+  const char * end = payload + strlen(payload);
+  const char * linear_begin = NULL;
+  const char * linear_end = NULL;
+  const char * angular_begin = NULL;
+  const char * angular_end = NULL;
+
+  if (payload == NULL || twist == NULL) {
+    return false;
+  }
+
+  memset(twist, 0, sizeof(*twist));
+
+  if (amr_mqtt_bridge_extract_json_object_in_range(
+      begin, end, "linear", &linear_begin, &linear_end))
+  {
+    (void)amr_mqtt_bridge_extract_json_double_in_range(
+      linear_begin, linear_end, "x", &twist->linear.x);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(
+      linear_begin, linear_end, "y", &twist->linear.y);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(
+      linear_begin, linear_end, "z", &twist->linear.z);
+  } else {
+    (void)amr_mqtt_bridge_extract_json_double_in_range(begin, end, "linear_x", &twist->linear.x);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(begin, end, "linear_y", &twist->linear.y);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(begin, end, "linear_z", &twist->linear.z);
+  }
+
+  if (amr_mqtt_bridge_extract_json_object_in_range(
+      begin, end, "angular", &angular_begin, &angular_end))
+  {
+    (void)amr_mqtt_bridge_extract_json_double_in_range(
+      angular_begin, angular_end, "x", &twist->angular.x);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(
+      angular_begin, angular_end, "y", &twist->angular.y);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(
+      angular_begin, angular_end, "z", &twist->angular.z);
+  } else {
+    (void)amr_mqtt_bridge_extract_json_double_in_range(begin, end, "angular_x", &twist->angular.x);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(begin, end, "angular_y", &twist->angular.y);
+    (void)amr_mqtt_bridge_extract_json_double_in_range(begin, end, "angular_z", &twist->angular.z);
+  }
+
+  return true;
+}
+
 static void amr_mqtt_bridge_telemetry_callback(const void * message, void * context)
 {
   amr_mqtt_bridge_telemetry_endpoint_t * endpoint =
@@ -2577,8 +2627,20 @@ static void amr_mqtt_bridge_handle_cmd_vel_message(
   size_t payload_length)
 {
   rcl_ret_t rc;
+  char text_payload[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
 
-  if (!amr_mqtt_bridge_deserialize_twist_raw(
+  if (payload != NULL && payload_length > 0U && ((const unsigned char *)payload)[0] == '{') {
+    const size_t copy_length =
+      payload_length < (sizeof(text_payload) - 1U) ? payload_length : (sizeof(text_payload) - 1U);
+    memcpy(text_payload, payload, copy_length);
+    text_payload[copy_length] = '\0';
+    if (!amr_mqtt_bridge_extract_twist_from_json(
+        text_payload,
+        &g_amr_mqtt_bridge_ros_state.cmd_vel_message))
+    {
+      return;
+    }
+  } else if (!amr_mqtt_bridge_deserialize_twist_raw(
       payload,
       payload_length,
       &g_amr_mqtt_bridge_ros_state.cmd_vel_message))

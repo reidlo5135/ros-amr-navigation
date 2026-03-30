@@ -49,6 +49,9 @@ export function useVizDashboard() {
   const [viewMode, setViewModeState] = useState<"nav" | "mapping">("nav");
   const [signalRttMs, setSignalRttMs] = useState<number | null>(null);
   const [signalLastSeenAt, setSignalLastSeenAt] = useState<number | null>(null);
+  const [teleopLinearX, setTeleopLinearX] = useState(0);
+  const [teleopAngularZ, setTeleopAngularZ] = useState(0);
+  const [teleopActive, setTeleopActive] = useState(false);
 
   const clearTransientTelemetry = () => {
     pendingTelemetryRef.current = {};
@@ -91,6 +94,9 @@ export function useVizDashboard() {
         if (status === "connecting") {
           setIsMqttConnected(false);
           clearTransientTelemetry();
+          setTeleopActive(false);
+          setTeleopLinearX(0);
+          setTeleopAngularZ(0);
           setConnectionLabel(`Connecting: ${detail ?? mqttUrl}`);
           setEvents((current) => [`Connecting: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
@@ -110,6 +116,9 @@ export function useVizDashboard() {
           setSignalRttMs(null);
           setSignalLastSeenAt(null);
           clearTransientTelemetry();
+          setTeleopActive(false);
+          setTeleopLinearX(0);
+          setTeleopAngularZ(0);
           setConnectionLabel(`MQTT error: ${detail ?? mqttUrl}`);
           setEvents((current) => [`MQTT error: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
@@ -121,6 +130,9 @@ export function useVizDashboard() {
         setSignalRttMs(null);
         setSignalLastSeenAt(null);
         clearTransientTelemetry();
+        setTeleopActive(false);
+        setTeleopLinearX(0);
+        setTeleopAngularZ(0);
         setConnectionLabel("Disconnected");
       });
     });
@@ -256,12 +268,36 @@ export function useVizDashboard() {
     return () => window.clearInterval(intervalId);
   }, [isMqttConnected]);
 
+  useEffect(() => {
+    if (!isMqttConnected || !teleopActive) {
+      return;
+    }
+
+    const publishTeleop = () => {
+      clientRef.current.publishJson(
+        "amr/robot/turtlebot3/command/cmd_vel",
+        {
+          linear: { x: teleopLinearX, y: 0.0, z: 0.0 },
+          angular: { x: 0.0, y: 0.0, z: teleopAngularZ },
+        },
+        { qos: 0, retain: false },
+      );
+    };
+
+    publishTeleop();
+    const intervalId = window.setInterval(publishTeleop, 100);
+    return () => window.clearInterval(intervalId);
+  }, [isMqttConnected, teleopActive, teleopLinearX, teleopAngularZ]);
+
   const connect = () => {
     clientRef.current.connect(mqttUrl, topicSubscriptions);
   };
 
   const disconnect = () => {
     clientRef.current.disconnect();
+    setTeleopActive(false);
+    setTeleopLinearX(0);
+    setTeleopAngularZ(0);
     setConnectionLabel("Disconnected");
   };
 
@@ -378,6 +414,22 @@ export function useVizDashboard() {
     });
   };
 
+  const updateTeleopCommand = (linearX: number, angularZ: number) => {
+    setTeleopLinearX(linearX);
+    setTeleopAngularZ(angularZ);
+    setTeleopActive(true);
+  };
+
+  const stopTeleopCommand = () => {
+    setTeleopLinearX(0);
+    setTeleopAngularZ(0);
+    setTeleopActive(false);
+    publishJson("amr/robot/turtlebot3/command/cmd_vel", {
+      linear: { x: 0.0, y: 0.0, z: 0.0 },
+      angular: { x: 0.0, y: 0.0, z: 0.0 },
+    });
+  };
+
   const resolvedGoalLifecycle: GoalLifecycleState = (() => {
     if (
       goalLifecycle === "Aborted" ||
@@ -458,8 +510,12 @@ export function useVizDashboard() {
     batteryPercentage,
     signalBars,
     signalRttMs,
+    teleopLinearX,
+    teleopAngularZ,
     connect,
     disconnect,
+    updateTeleopCommand,
+    stopTeleopCommand,
     toggleLayer,
     setViewMode,
     toggleGoalMode,

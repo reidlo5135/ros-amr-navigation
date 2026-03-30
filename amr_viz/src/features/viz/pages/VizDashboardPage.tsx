@@ -2,6 +2,7 @@ import { SceneViewport } from "../components/scene/SceneViewport";
 import { Topbar } from "../components/layout/Topbar";
 import { EventsPanel } from "../components/panels/EventsPanel";
 import { GoalControlPanel } from "../components/panels/GoalControlPanel";
+import { JoystickPanel } from "../components/panels/JoystickPanel";
 import { LayersPanel } from "../components/panels/LayersPanel";
 import { MqttPanel } from "../components/panels/MqttPanel";
 import { NavigationStatusPanel } from "../components/panels/NavigationStatusPanel";
@@ -104,6 +105,12 @@ export function VizDashboardPage() {
             goalLifecycle={dashboard.resolvedGoalLifecycle}
           />
           <EventsPanel events={dashboard.events} />
+          <JoystickPanel
+            linearX={dashboard.teleopLinearX}
+            angularZ={dashboard.teleopAngularZ}
+            onCommandChange={dashboard.updateTeleopCommand}
+            onCommandStop={dashboard.stopTeleopCommand}
+          />
         </aside>
       </section>
     </main>
