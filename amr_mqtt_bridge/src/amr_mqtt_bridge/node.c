@@ -1518,7 +1518,11 @@ static bool amr_mqtt_bridge_write_temp_map_files(
     "origin: [%.9f, %.9f, %.9f]\n",
     map->info.origin.position.x,
     map->info.origin.position.y,
-    amr_mqtt_bridge_yaw_from_quaternion(&map->info.origin.orientation));
+    amr_mqtt_bridge_quaternion_to_yaw(
+      map->info.origin.orientation.x,
+      map->info.origin.orientation.y,
+      map->info.origin.orientation.z,
+      map->info.origin.orientation.w));
   (void)fprintf(yaml_file, "negate: 0\n");
   (void)fprintf(yaml_file, "occupied_thresh: 0.65\n");
   (void)fprintf(yaml_file, "free_thresh: 0.196\n");
@@ -1580,7 +1584,7 @@ static void amr_mqtt_bridge_handle_save_map_command(const char * payload)
     return;
   }
 
-  (void)snprintf(message, sizeof(message), "saved map image=%s yaml=%s", image_path, yaml_path);
+  (void)snprintf(message, sizeof(message), "saved map files");
   amr_mqtt_bridge_publish_simple_response(
     g_amr_mqtt_bridge_config.mqtt.response_save_map,
     request_id,
