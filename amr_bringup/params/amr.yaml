@@ -74,11 +74,12 @@
       free_score_threshold: -5
       score_min: -20
       score_max: 100
-      min_persistent_hits: 3
-      min_confirmed_free_observations: 2
+      min_persistent_hits: 2
+      min_confirmed_free_observations: 4
       hit_decay_on_free: 1
-      stale_scan_window: 30
-      stale_score_penalty: 2
+      stale_scan_window: 120
+      stale_score_penalty: 1
+      dynamic_filter_requires_loop_closure: true
     pose_graph:
       keyframe_distance_threshold: 0.30
       keyframe_yaw_threshold: 0.30
