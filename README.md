@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.14.1` direction:
+Current `0.14.2` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_bridge` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - `amr_viz` connects directly to MQTT over WebSocket.
@@ -61,7 +61,7 @@ flowchart LR
 
 ## Removed Packages
 
-These packages are no longer part of the active `0.14.1` stack:
+These packages are no longer part of the active `0.14.2` stack:
 - `amr_obstacle_detection`
 - `amr_rviz_plugins`
 - the old server-side `amr_mqtt_bridge`
@@ -75,6 +75,8 @@ Robot-side `amr_mqtt_bridge` publishes:
 
 `amr_viz` consumes:
 - `amr/robot/turtlebot3/viz/map`
+- `amr/robot/turtlebot3/viz/temp_map/raw`
+- `amr/robot/turtlebot3/viz/temp_map/refined`
 - `amr/robot/turtlebot3/viz/global_costmap`
 - `amr/robot/turtlebot3/viz/local_costmap`
 - `amr/robot/turtlebot3/viz/robot_pose`

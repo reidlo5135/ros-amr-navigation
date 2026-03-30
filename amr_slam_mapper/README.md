@@ -9,11 +9,15 @@ Pure SLAM mapping runtime for temporary occupancy-grid generation.
 - accumulates keyframes into a pose-graph structure
 - searches loop-closure candidates from scan descriptors
 - applies lightweight graph optimization when a loop closure is accepted
-- publishes the live temporary SLAM map on `/amr/map/temp`
+- publishes the live raw temporary SLAM map on `/amr/map/temp/raw`
+- publishes the refined temporary SLAM map on `/amr/map/temp/refined`
+- keeps `/amr/map/temp` as a refined compatibility alias
 - publishes corrected mapping odometry on `/amr/slam_mapper/odometry`
 
 ## Important Topics
 
+- `/amr/map/temp/raw`
+- `/amr/map/temp/refined`
 - `/amr/map/temp`
 - `/amr/slam_mapper/odometry`
 

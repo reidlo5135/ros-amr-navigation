@@ -58,13 +58,15 @@ export function useVizDashboard() {
     pendingTelemetryRef.current = {};
     bridgeStateRef.current = {
       ...bridgeStateRef.current,
-      temp_map: undefined,
+      temp_map_raw: undefined,
+      temp_map_refined: undefined,
       mapping_pose: undefined,
       slam_graph: undefined,
     };
     setBridgeState((current) => ({
       ...current,
-      temp_map: undefined,
+      temp_map_raw: undefined,
+      temp_map_refined: undefined,
       mapping_pose: undefined,
       slam_graph: undefined,
     }));

@@ -95,7 +95,7 @@
 #define AMR_MQTT_BRIDGE_NODE_NAME "mqtt_bridge"
 #define AMR_MQTT_BRIDGE_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_BRIDGE_MAX_STRING_LENGTH 512
-#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 18
+#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 19
 #define AMR_MQTT_BRIDGE_MAX_FOOTPRINT_POLYGON_VALUES 32
 
 typedef char *(*amr_mqtt_bridge_serializer_fn_t)(const void *message);
@@ -153,6 +153,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char telemetry_robot_description[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_battery_state[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_temp_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char telemetry_temp_map_raw[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_mapping_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_slam_graph[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -191,6 +192,7 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_robot_description[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_battery_state[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_temp_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_temp_map_raw[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_mapping_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_slam_graph[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -253,6 +255,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   std_msgs__msg__String robot_description_message;
   sensor_msgs__msg__BatteryState battery_state_message;
   nav_msgs__msg__OccupancyGrid temp_map_message;
+  nav_msgs__msg__OccupancyGrid temp_map_raw_message;
   geometry_msgs__msg__PoseStamped mapping_pose_message;
   std_msgs__msg__String slam_graph_message;
   geometry_msgs__msg__Twist cmd_vel_message;
@@ -274,6 +277,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t robot_description_subscription;
   rcl_subscription_t battery_state_subscription;
   rcl_subscription_t temp_map_subscription;
+  rcl_subscription_t temp_map_raw_subscription;
   rcl_subscription_t mapping_pose_subscription;
   rcl_subscription_t slam_graph_subscription;
   rcl_publisher_t cmd_vel_publisher;

@@ -1,7 +1,8 @@
 export type LayerVisibility = {
   grid: boolean;
   map: boolean;
-  tempMap: boolean;
+  rawMap: boolean;
+  refinedMap: boolean;
   globalCostmap: boolean;
   localCostmap: boolean;
   footprint: boolean;

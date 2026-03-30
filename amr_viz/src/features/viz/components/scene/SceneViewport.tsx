@@ -18,7 +18,8 @@ type SceneViewportProps = {
   layerVisibility: {
     grid: boolean;
     map: boolean;
-    tempMap: boolean;
+    rawMap: boolean;
+    refinedMap: boolean;
     globalCostmap: boolean;
     localCostmap: boolean;
     footprint: boolean;
@@ -566,7 +567,7 @@ function interpolateChannel(start: number, end: number, ratio: number) {
 
 function buildOccupancyTexture(
   grid: OccupancyGridMessage,
-  palette: "map" | "temp_map" | "global_costmap" | "local_costmap",
+  palette: "map" | "temp_map_raw" | "temp_map_refined" | "global_costmap" | "local_costmap",
 ): THREE.Texture {
   const { width, height } = grid.info;
   const canvas = document.createElement("canvas");
@@ -610,7 +611,7 @@ function buildOccupancyTexture(
           alpha = 255;
         }
       } else {
-        if (palette === "temp_map") {
+        if (palette === "temp_map_refined") {
           if (value < 0) {
             red = 204;
             green = 208;
@@ -626,6 +627,23 @@ function buildOccupancyTexture(
             green = 251;
             blue = 252;
             alpha = 255;
+          }
+        } else if (palette === "temp_map_raw") {
+          if (value < 0) {
+            red = 0;
+            green = 0;
+            blue = 0;
+            alpha = 0;
+          } else if (value >= 50) {
+            red = 56;
+            green = 196;
+            blue = 214;
+            alpha = 170;
+          } else {
+            red = 128;
+            green = 228;
+            blue = 240;
+            alpha = 38;
           }
         } else if (value > 0) {
           const normalized = Math.max(0, Math.min(1, value / 100));
@@ -685,7 +703,7 @@ function buildOccupancyTexture(
 
 function buildOccupancyMesh(
   grid: OccupancyGridMessage,
-  palette: "map" | "temp_map" | "global_costmap" | "local_costmap",
+  palette: "map" | "temp_map_raw" | "temp_map_refined" | "global_costmap" | "local_costmap",
   yOffset: number,
 ): THREE.Mesh {
   const widthMeters = grid.info.width * grid.info.resolution;
@@ -716,7 +734,10 @@ function buildOccupancyMesh(
     -(grid.info.origin.position.y + rotatedOffset.y),
   );
   mesh.renderOrder =
-    palette === "map" ? 1 : palette === "temp_map" ? 2 : palette === "global_costmap" ? 3 : 4;
+    palette === "map" ? 1 :
+    palette === "temp_map_refined" ? 2 :
+    palette === "temp_map_raw" ? 3 :
+    palette === "global_costmap" ? 4 : 5;
   return mesh;
 }
 
@@ -1283,7 +1304,8 @@ export function SceneViewport({
   const goalMarkerRef = useRef<THREE.Group | null>(null);
   const previewMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
-  const tempMapMeshRef = useRef<THREE.Mesh | null>(null);
+  const rawMapMeshRef = useRef<THREE.Mesh | null>(null);
+  const refinedMapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const footprintRef = useRef<THREE.Group | null>(null);
@@ -1516,7 +1538,8 @@ export function SceneViewport({
       disposeObject(globalPathRef.current);
       disposeObject(localPathRef.current);
       disposeObject(mapMeshRef.current);
-      disposeObject(tempMapMeshRef.current);
+      disposeObject(rawMapMeshRef.current);
+      disposeObject(refinedMapMeshRef.current);
       disposeObject(globalCostmapMeshRef.current);
       disposeObject(localCostmapMeshRef.current);
       disposeObject(footprintRef.current);
@@ -1613,7 +1636,8 @@ export function SceneViewport({
 
     for (const [ref, grid, palette, yOffset] of [
       [mapMeshRef, state.map, "map", 0.005],
-      [tempMapMeshRef, state.temp_map, "temp_map", 0.014],
+      [rawMapMeshRef, state.temp_map_raw, "temp_map_raw", 0.014],
+      [refinedMapMeshRef, state.temp_map_refined, "temp_map_refined", 0.012],
       [globalCostmapMeshRef, state.global_costmap, "global_costmap", 0.02],
       [localCostmapMeshRef, state.local_costmap, "local_costmap", 0.03],
     ] as const) {
@@ -1626,7 +1650,8 @@ export function SceneViewport({
         ref.current = buildOccupancyMesh(grid, palette, yOffset);
         ref.current.visible =
           palette === "map" ? layerVisibility.map :
-          palette === "temp_map" ? layerVisibility.tempMap :
+          palette === "temp_map_raw" ? layerVisibility.rawMap :
+          palette === "temp_map_refined" ? layerVisibility.refinedMap :
           palette === "global_costmap" ? layerVisibility.globalCostmap :
           layerVisibility.localCostmap;
         scene.add(ref.current);
@@ -1760,8 +1785,12 @@ export function SceneViewport({
       scene.add(loopMarkersRef.current);
     }
 
-    if ((viewMode === "mapping" ? state.temp_map ?? state.map : state.map ?? state.temp_map) && cameraRef.current) {
-      const activeMap = viewMode === "mapping" ? state.temp_map ?? state.map : state.map ?? state.temp_map;
+    if ((viewMode === "mapping"
+      ? state.temp_map_refined ?? state.temp_map_raw ?? state.map
+      : state.map ?? state.temp_map_refined ?? state.temp_map_raw) && cameraRef.current) {
+      const activeMap = viewMode === "mapping"
+        ? state.temp_map_refined ?? state.temp_map_raw ?? state.map
+        : state.map ?? state.temp_map_refined ?? state.temp_map_raw;
       if (!activeMap) {
         renderRef.current?.();
         return;

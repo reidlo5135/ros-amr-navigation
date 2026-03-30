@@ -4,6 +4,12 @@ Changelog
 2026-03-30
 ----------
 
+- Started the ``0.14.2`` patch branch:
+
+  - split the temporary SLAM map into raw and refined publish layers
+  - kept the legacy ``/amr/map/temp`` topic as a refined compatibility alias
+  - exposed raw and refined SLAM map layers through MQTT and ``amr_viz`` mapping mode
+
 - Started the ``0.14.1`` patch branch:
 
   - documented the current ``amr_slam_mapper`` pose-graph SLAM pipeline in its README

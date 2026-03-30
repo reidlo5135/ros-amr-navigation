@@ -8,7 +8,7 @@
       map: "map"
     topics:
       map: "/amr/map/data"
-      temporary_map: "/amr/map/temp"
+      temporary_map: "/amr/map/temp/refined"
       corrected_odometry: "/amr/slam_mapper/odometry"
     services:
       get: "/amr/map_server/get_map"
@@ -40,6 +40,8 @@
       imu: "/imu"
       scan: "/scan"
       temp_map: "/amr/map/temp"
+      temp_map_raw: "/amr/map/temp/raw"
+      temp_map_refined: "/amr/map/temp/refined"
       corrected_odometry: "/amr/slam_mapper/odometry"
       mapping_pose: "/amr/slam_mapper/pose"
       graph_debug: "/amr/slam_mapper/graph_debug"
@@ -74,6 +76,9 @@
       free_score_threshold: -5
       score_min: -20
       score_max: 100
+    refinement:
+      min_occupied_neighbor_count: 2
+      min_free_neighbor_count: 4
     pose_graph:
       keyframe_distance_threshold: 0.30
       keyframe_yaw_threshold: 0.30
@@ -360,7 +365,8 @@
       topics:
         telemetry:
           map: "amr/robot/turtlebot3/telemetry/map"
-          temp_map: "amr/robot/turtlebot3/telemetry/temp_map"
+          temp_map: "amr/robot/turtlebot3/telemetry/temp_map/refined"
+          temp_map_raw: "amr/robot/turtlebot3/telemetry/temp_map/raw"
           robot_pose: "amr/robot/turtlebot3/telemetry/robot_pose"
           mapping_pose: "amr/robot/turtlebot3/telemetry/mapping_pose"
           global_path: "amr/robot/turtlebot3/telemetry/global_path"
@@ -401,7 +407,8 @@
     ros:
       topics:
         map: "/amr/map/data"
-        temp_map: "/amr/map/temp"
+        temp_map: "/amr/map/temp/refined"
+        temp_map_raw: "/amr/map/temp/raw"
         robot_pose: "/amr/localization/pose"
         mapping_pose: "/amr/slam_mapper/pose"
         global_path: "/amr/planner/global"

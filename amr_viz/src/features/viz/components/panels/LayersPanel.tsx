@@ -15,7 +15,8 @@ type LayerEntry = {
 const layerEntries: LayerEntry[] = [
   { key: "grid", label: "Grid", icon: "grid" },
   { key: "map", label: "Map", icon: "map" },
-  { key: "tempMap", label: "Temp SLAM Map", icon: "temp-map" },
+  { key: "rawMap", label: "Raw SLAM Map", icon: "temp-map-raw" },
+  { key: "refinedMap", label: "Refined SLAM Map", icon: "temp-map-refined" },
   { key: "globalCostmap", label: "Global Costmap", icon: "costmap-global" },
   { key: "localCostmap", label: "Local Costmap", icon: "costmap-local" },
   { key: "footprint", label: "Exact Footprint", icon: "footprint" },
@@ -42,11 +43,15 @@ function LayerIcon({ kind }: { kind: string }) {
           <path d="M2 3.5 5.5 2l5 1.5L14 2.5v10L10.5 14l-5-1.5L2 13.5z" />
         </svg>
       )}
-      {kind === "temp-map" && (
+      {(kind === "temp-map-raw" || kind === "temp-map-refined") && (
         <svg viewBox="0 0 16 16">
           <rect x="2" y="2" width="12" height="12" rx="1.2" />
           <path d="M2 8h12M8 2v12" />
-          <circle cx="11.5" cy="4.5" r="1.1" />
+          {kind === "temp-map-raw" ? (
+            <path d="M3.5 12.5 12.5 3.5" />
+          ) : (
+            <circle cx="11.5" cy="4.5" r="1.1" />
+          )}
         </svg>
       )}
       {kind === "costmap-global" && (
@@ -117,7 +122,7 @@ function LayerIcon({ kind }: { kind: string }) {
 export function LayersPanel({ viewMode, layerVisibility, onToggleLayer }: LayersPanelProps) {
   const visibleEntries = layerEntries.filter(({ key }) => {
     if (viewMode === "nav") {
-      return key !== "tempMap" && key !== "keyframes" && key !== "graphEdges" && key !== "loopMarkers";
+      return key !== "rawMap" && key !== "refinedMap" && key !== "keyframes" && key !== "graphEdges" && key !== "loopMarkers";
     }
     return key !== "map" &&
       key !== "globalCostmap" &&

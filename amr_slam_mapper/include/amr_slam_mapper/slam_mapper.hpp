@@ -90,12 +90,23 @@ private:
 
   void initialize_mapping_map();
   void publish_outputs();
+  void refresh_refined_map();
   void publish_temporary_map();
+  void publish_raw_temporary_map();
+  void publish_refined_temporary_map();
   void publish_corrected_odometry();
   void publish_mapping_pose();
   void publish_graph_debug();
   void publish_map_to_odom_tf();
   std::string build_graph_debug_json() const;
+  nav_msgs::msg::OccupancyGrid build_refined_map(
+    const nav_msgs::msg::OccupancyGrid & source_map) const;
+  int count_neighboring_cells(
+    const nav_msgs::msg::OccupancyGrid & map,
+    int grid_x,
+    int grid_y,
+    int minimum_value,
+    int maximum_value) const;
 
   void handle_odometry(const nav_msgs::msg::Odometry::SharedPtr message);
   void handle_imu(const sensor_msgs::msg::Imu::SharedPtr message);
@@ -187,6 +198,8 @@ private:
   double normalize_angle(double angle) const;
 
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr temporary_map_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr raw_temporary_map_publisher_;
+  rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr refined_temporary_map_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr corrected_odometry_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr mapping_pose_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr graph_debug_publisher_;
@@ -197,6 +210,7 @@ private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> transform_broadcaster_;
 
   nav_msgs::msg::OccupancyGrid temporary_map_;
+  nav_msgs::msg::OccupancyGrid refined_temporary_map_;
   std::vector<int16_t> occupancy_scores_;
   mutable std::mutex map_mutex_;
 
@@ -226,6 +240,8 @@ private:
   std::string imu_topic_;
   std::string scan_topic_;
   std::string temporary_map_topic_;
+  std::string raw_temporary_map_topic_;
+  std::string refined_temporary_map_topic_;
   std::string corrected_odometry_topic_;
   std::string mapping_pose_topic_;
   std::string graph_debug_topic_;
@@ -257,6 +273,8 @@ private:
   int mapping_free_score_threshold_;
   int mapping_score_min_;
   int mapping_score_max_;
+  int refinement_min_occupied_neighbor_count_;
+  int refinement_min_free_neighbor_count_;
 
   double keyframe_distance_threshold_;
   double keyframe_yaw_threshold_;

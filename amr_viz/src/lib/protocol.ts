@@ -155,7 +155,8 @@ export type BridgeState = {
   global_path?: PathMessage;
   local_path?: PathMessage;
   map?: OccupancyGridMessage;
-  temp_map?: OccupancyGridMessage;
+  temp_map_raw?: OccupancyGridMessage;
+  temp_map_refined?: OccupancyGridMessage;
   global_costmap?: OccupancyGridMessage;
   local_costmap?: OccupancyGridMessage;
   motion_status?: MotionStatusMessage;

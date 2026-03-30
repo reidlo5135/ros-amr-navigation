@@ -12,6 +12,8 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   imu_topic_("/imu"),
   scan_topic_("/scan"),
   temporary_map_topic_("/amr/map/temp"),
+  raw_temporary_map_topic_("/amr/map/temp/raw"),
+  refined_temporary_map_topic_("/amr/map/temp/refined"),
   corrected_odometry_topic_("/amr/slam_mapper/odometry"),
   mapping_pose_topic_("/amr/slam_mapper/pose"),
   graph_debug_topic_("/amr/slam_mapper/graph_debug"),
@@ -41,6 +43,8 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   mapping_free_score_threshold_(-5),
   mapping_score_min_(-20),
   mapping_score_max_(100),
+  refinement_min_occupied_neighbor_count_(2),
+  refinement_min_free_neighbor_count_(4),
   keyframe_distance_threshold_(0.30),
   keyframe_yaw_threshold_(0.30),
   submap_nodes_per_submap_(10),
@@ -62,6 +66,8 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.imu", this->imu_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.temp_map", this->temporary_map_topic_);
+  this->declare_parameter("topics.temp_map_raw", this->raw_temporary_map_topic_);
+  this->declare_parameter("topics.temp_map_refined", this->refined_temporary_map_topic_);
   this->declare_parameter("topics.corrected_odometry", this->corrected_odometry_topic_);
   this->declare_parameter("topics.mapping_pose", this->mapping_pose_topic_);
   this->declare_parameter("topics.graph_debug", this->graph_debug_topic_);
@@ -101,6 +107,10 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "occupancy.free_score_threshold", this->mapping_free_score_threshold_);
   this->declare_parameter("occupancy.score_min", this->mapping_score_min_);
   this->declare_parameter("occupancy.score_max", this->mapping_score_max_);
+  this->declare_parameter(
+    "refinement.min_occupied_neighbor_count", this->refinement_min_occupied_neighbor_count_);
+  this->declare_parameter(
+    "refinement.min_free_neighbor_count", this->refinement_min_free_neighbor_count_);
   this->declare_parameter("pose_graph.keyframe_distance_threshold", this->keyframe_distance_threshold_);
   this->declare_parameter("pose_graph.keyframe_yaw_threshold", this->keyframe_yaw_threshold_);
   this->declare_parameter("pose_graph.submap_nodes_per_submap", this->submap_nodes_per_submap_);
@@ -137,6 +147,8 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
   this->get_parameter("topics.imu", this->imu_topic_);
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.temp_map", this->temporary_map_topic_);
+  this->get_parameter("topics.temp_map_raw", this->raw_temporary_map_topic_);
+  this->get_parameter("topics.temp_map_refined", this->refined_temporary_map_topic_);
   this->get_parameter("topics.corrected_odometry", this->corrected_odometry_topic_);
   this->get_parameter("topics.mapping_pose", this->mapping_pose_topic_);
   this->get_parameter("topics.graph_debug", this->graph_debug_topic_);
@@ -176,6 +188,10 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "occupancy.free_score_threshold", this->mapping_free_score_threshold_);
   this->get_parameter("occupancy.score_min", this->mapping_score_min_);
   this->get_parameter("occupancy.score_max", this->mapping_score_max_);
+  this->get_parameter(
+    "refinement.min_occupied_neighbor_count", this->refinement_min_occupied_neighbor_count_);
+  this->get_parameter(
+    "refinement.min_free_neighbor_count", this->refinement_min_free_neighbor_count_);
   this->get_parameter("pose_graph.keyframe_distance_threshold", this->keyframe_distance_threshold_);
   this->get_parameter("pose_graph.keyframe_yaw_threshold", this->keyframe_yaw_threshold_);
   this->get_parameter("pose_graph.submap_nodes_per_submap", this->submap_nodes_per_submap_);
@@ -219,6 +235,12 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
   this->temporary_map_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
     this->temporary_map_topic_,
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+  this->raw_temporary_map_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
+    this->raw_temporary_map_topic_,
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
+  this->refined_temporary_map_publisher_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>(
+    this->refined_temporary_map_topic_,
+    rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
   this->corrected_odometry_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
     this->corrected_odometry_topic_,
     rclcpp::QoS(rclcpp::KeepLast(10)).reliable());
@@ -254,11 +276,13 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured SLAM mapper with odom='%s', imu='%s', scan='%s', temp_map='%s', corrected_odom='%s', mapping_pose='%s', graph_debug='%s'",
+    "Configured SLAM mapper with odom='%s', imu='%s', scan='%s', temp_map='%s', temp_raw='%s', temp_refined='%s', corrected_odom='%s', mapping_pose='%s', graph_debug='%s'",
     this->odom_topic_.c_str(),
     this->imu_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->temporary_map_topic_.c_str(),
+    this->raw_temporary_map_topic_.c_str(),
+    this->refined_temporary_map_topic_.c_str(),
     this->corrected_odometry_topic_.c_str(),
     this->mapping_pose_topic_.c_str(),
     this->graph_debug_topic_.c_str());
@@ -270,6 +294,12 @@ SlamMapper::CallbackReturn SlamMapper::on_activate(const rclcpp_lifecycle::State
   (void)state;
   if (this->temporary_map_publisher_) {
     this->temporary_map_publisher_->on_activate();
+  }
+  if (this->raw_temporary_map_publisher_) {
+    this->raw_temporary_map_publisher_->on_activate();
+  }
+  if (this->refined_temporary_map_publisher_) {
+    this->refined_temporary_map_publisher_->on_activate();
   }
   if (this->corrected_odometry_publisher_) {
     this->corrected_odometry_publisher_->on_activate();
@@ -289,6 +319,12 @@ SlamMapper::CallbackReturn SlamMapper::on_deactivate(const rclcpp_lifecycle::Sta
   (void)state;
   if (this->temporary_map_publisher_) {
     this->temporary_map_publisher_->on_deactivate();
+  }
+  if (this->raw_temporary_map_publisher_) {
+    this->raw_temporary_map_publisher_->on_deactivate();
+  }
+  if (this->refined_temporary_map_publisher_) {
+    this->refined_temporary_map_publisher_->on_deactivate();
   }
   if (this->corrected_odometry_publisher_) {
     this->corrected_odometry_publisher_->on_deactivate();
@@ -310,6 +346,8 @@ SlamMapper::CallbackReturn SlamMapper::on_cleanup(const rclcpp_lifecycle::State 
   this->imu_subscription_.reset();
   this->odometry_subscription_.reset();
   this->temporary_map_publisher_.reset();
+  this->raw_temporary_map_publisher_.reset();
+  this->refined_temporary_map_publisher_.reset();
   this->corrected_odometry_publisher_.reset();
   this->mapping_pose_publisher_.reset();
   this->graph_debug_publisher_.reset();
@@ -317,6 +355,7 @@ SlamMapper::CallbackReturn SlamMapper::on_cleanup(const rclcpp_lifecycle::State 
   {
     std::scoped_lock lock(this->map_mutex_);
     this->temporary_map_ = nav_msgs::msg::OccupancyGrid();
+    this->refined_temporary_map_ = nav_msgs::msg::OccupancyGrid();
     this->occupancy_scores_.clear();
   }
   this->graph_nodes_.clear();
@@ -350,6 +389,7 @@ void SlamMapper::initialize_mapping_map()
 
   std::scoped_lock lock(this->map_mutex_);
   this->temporary_map_ = std::move(initialized_map);
+  this->refined_temporary_map_ = this->temporary_map_;
   this->occupancy_scores_.assign(
     static_cast<std::size_t>(this->mapping_width_ * this->mapping_height_),
     0);
@@ -357,6 +397,9 @@ void SlamMapper::initialize_mapping_map()
 
 void SlamMapper::publish_outputs()
 {
+  this->refresh_refined_map();
+  this->publish_raw_temporary_map();
+  this->publish_refined_temporary_map();
   this->publish_temporary_map();
   this->publish_corrected_odometry();
   this->publish_mapping_pose();
@@ -375,11 +418,43 @@ void SlamMapper::publish_temporary_map()
   nav_msgs::msg::OccupancyGrid map_to_publish;
   {
     std::scoped_lock lock(this->map_mutex_);
-    map_to_publish = this->temporary_map_;
+    map_to_publish = this->refined_temporary_map_;
   }
   map_to_publish.header.stamp = this->now();
   map_to_publish.info.map_load_time = map_to_publish.header.stamp;
   this->temporary_map_publisher_->publish(map_to_publish);
+}
+
+void SlamMapper::publish_raw_temporary_map()
+{
+  if (!this->raw_temporary_map_publisher_ || !this->raw_temporary_map_publisher_->is_activated()) {
+    return;
+  }
+
+  nav_msgs::msg::OccupancyGrid map_to_publish;
+  {
+    std::scoped_lock lock(this->map_mutex_);
+    map_to_publish = this->temporary_map_;
+  }
+  map_to_publish.header.stamp = this->now();
+  map_to_publish.info.map_load_time = map_to_publish.header.stamp;
+  this->raw_temporary_map_publisher_->publish(map_to_publish);
+}
+
+void SlamMapper::publish_refined_temporary_map()
+{
+  if (!this->refined_temporary_map_publisher_ || !this->refined_temporary_map_publisher_->is_activated()) {
+    return;
+  }
+
+  nav_msgs::msg::OccupancyGrid map_to_publish;
+  {
+    std::scoped_lock lock(this->map_mutex_);
+    map_to_publish = this->refined_temporary_map_;
+  }
+  map_to_publish.header.stamp = this->now();
+  map_to_publish.info.map_load_time = map_to_publish.header.stamp;
+  this->refined_temporary_map_publisher_->publish(map_to_publish);
 }
 
 void SlamMapper::publish_corrected_odometry()
@@ -430,6 +505,92 @@ void SlamMapper::publish_graph_debug()
   std_msgs::msg::String message;
   message.data = this->build_graph_debug_json();
   this->graph_debug_publisher_->publish(message);
+}
+
+void SlamMapper::refresh_refined_map()
+{
+  nav_msgs::msg::OccupancyGrid raw_snapshot;
+  {
+    std::scoped_lock lock(this->map_mutex_);
+    raw_snapshot = this->temporary_map_;
+  }
+
+  nav_msgs::msg::OccupancyGrid refined_map = this->build_refined_map(raw_snapshot);
+  refined_map.header.stamp = this->now();
+  refined_map.info.map_load_time = refined_map.header.stamp;
+
+  {
+    std::scoped_lock lock(this->map_mutex_);
+    this->refined_temporary_map_ = std::move(refined_map);
+  }
+}
+
+nav_msgs::msg::OccupancyGrid SlamMapper::build_refined_map(
+  const nav_msgs::msg::OccupancyGrid & source_map) const
+{
+  nav_msgs::msg::OccupancyGrid refined_map = source_map;
+  if (source_map.data.empty()) {
+    return refined_map;
+  }
+
+  const int width = static_cast<int>(source_map.info.width);
+  const int height = static_cast<int>(source_map.info.height);
+  for (int grid_y = 0; grid_y < height; ++grid_y) {
+    for (int grid_x = 0; grid_x < width; ++grid_x) {
+      std::size_t index = 0U;
+      if (!this->grid_index(source_map, grid_x, grid_y, index) || index >= source_map.data.size()) {
+        continue;
+      }
+
+      const int8_t cell_value = source_map.data[index];
+      if (cell_value < 50) {
+        continue;
+      }
+
+      const int occupied_neighbors =
+        this->count_neighboring_cells(source_map, grid_x, grid_y, 50, 100);
+      const int free_neighbors =
+        this->count_neighboring_cells(source_map, grid_x, grid_y, 0, 49);
+
+      if (
+        occupied_neighbors < std::max(1, this->refinement_min_occupied_neighbor_count_) &&
+        free_neighbors >= std::max(1, this->refinement_min_free_neighbor_count_))
+      {
+        refined_map.data[index] = -1;
+      }
+    }
+  }
+
+  return refined_map;
+}
+
+int SlamMapper::count_neighboring_cells(
+  const nav_msgs::msg::OccupancyGrid & map,
+  int grid_x,
+  int grid_y,
+  int minimum_value,
+  int maximum_value) const
+{
+  int count = 0;
+  for (int offset_y = -1; offset_y <= 1; ++offset_y) {
+    for (int offset_x = -1; offset_x <= 1; ++offset_x) {
+      if (offset_x == 0 && offset_y == 0) {
+        continue;
+      }
+
+      std::size_t index = 0U;
+      if (!this->grid_index(map, grid_x + offset_x, grid_y + offset_y, index) || index >= map.data.size()) {
+        continue;
+      }
+
+      const int value = static_cast<int>(map.data[index]);
+      if (value >= minimum_value && value <= maximum_value) {
+        ++count;
+      }
+    }
+  }
+
+  return count;
 }
 
 void SlamMapper::publish_map_to_odom_tf()

@@ -77,7 +77,10 @@ export function VizDashboardPage() {
               Map {dashboard.bridgeState.map ? `${dashboard.bridgeState.map.info.width}x${dashboard.bridgeState.map.info.height}` : "--"}
             </span>
             <span className="toolbar-value">
-              Temp {dashboard.bridgeState.temp_map ? `${dashboard.bridgeState.temp_map.info.width}x${dashboard.bridgeState.temp_map.info.height}` : "--"}
+              Raw {dashboard.bridgeState.temp_map_raw ? `${dashboard.bridgeState.temp_map_raw.info.width}x${dashboard.bridgeState.temp_map_raw.info.height}` : "--"}
+            </span>
+            <span className="toolbar-value">
+              Refined {dashboard.bridgeState.temp_map_refined ? `${dashboard.bridgeState.temp_map_refined.info.width}x${dashboard.bridgeState.temp_map_refined.info.height}` : "--"}
             </span>
             <span className="toolbar-value">
               Global {dashboard.bridgeState.global_path?.poses.length ?? 0} pts
