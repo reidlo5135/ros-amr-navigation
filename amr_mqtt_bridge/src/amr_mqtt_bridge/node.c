@@ -47,6 +47,19 @@ static const rmw_qos_profile_t k_transient_local_qos = {
   false
 };
 
+static bool amr_mqtt_bridge_extract_json_double_in_range(
+  const char * begin,
+  const char * end,
+  const char * key,
+  double * output);
+
+static bool amr_mqtt_bridge_extract_json_object_in_range(
+  const char * begin,
+  const char * end,
+  const char * key,
+  const char ** object_begin,
+  const char ** object_end);
+
 static void amr_mqtt_bridge_log_rcl_error(const char * label, rcl_ret_t rc)
 {
   if (rc == RCL_RET_OK) {
