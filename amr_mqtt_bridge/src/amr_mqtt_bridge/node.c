@@ -64,6 +64,19 @@ static bool amr_mqtt_bridge_extract_json_object_in_range(
   const char ** object_begin,
   const char ** object_end);
 
+static bool amr_mqtt_bridge_extract_json_string_in_range(
+  const char * begin,
+  const char * end,
+  const char * key,
+  char * output,
+  size_t output_capacity);
+
+static void amr_mqtt_bridge_publish_simple_response(
+  const char * mqtt_topic,
+  const char * request_id,
+  bool success,
+  const char * message);
+
 static void amr_mqtt_bridge_log_rcl_error(const char * label, rcl_ret_t rc)
 {
   if (rc == RCL_RET_OK) {
