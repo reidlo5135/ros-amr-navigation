@@ -421,6 +421,10 @@ export function useVizDashboard() {
     setTeleopLinearX(linearX);
     setTeleopAngularZ(angularZ);
     setTeleopActive(true);
+    publishJson("amr/robot/turtlebot3/command/cmd_vel", {
+      linear: { x: linearX, y: 0.0, z: 0.0 },
+      angular: { x: 0.0, y: 0.0, z: angularZ },
+    });
   };
 
   const stopTeleopCommand = () => {

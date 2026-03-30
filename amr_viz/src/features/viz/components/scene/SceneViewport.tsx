@@ -611,7 +611,7 @@ function buildOccupancyTexture(
           alpha = 255;
         }
       } else {
-        if (palette === "temp_map_refined") {
+        if (palette === "temp_map_raw") {
           if (value < 0) {
             red = 204;
             green = 208;
@@ -628,7 +628,7 @@ function buildOccupancyTexture(
             blue = 252;
             alpha = 255;
           }
-        } else if (palette === "temp_map_raw") {
+        } else if (palette === "temp_map_refined") {
           if (value < 0) {
             red = 0;
             green = 0;
@@ -735,8 +735,8 @@ function buildOccupancyMesh(
   );
   mesh.renderOrder =
     palette === "map" ? 1 :
-    palette === "temp_map_refined" ? 2 :
-    palette === "temp_map_raw" ? 3 :
+    palette === "temp_map_raw" ? 2 :
+    palette === "temp_map_refined" ? 3 :
     palette === "global_costmap" ? 4 : 5;
   return mesh;
 }

@@ -2171,7 +2171,7 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
     false,
     false,
     0U,
-    300U);
+    1000U);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[16],
     "temp_map",
@@ -2188,7 +2188,7 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
     false,
     false,
     0U,
-    300U);
+    700U);
   amr_mqtt_bridge_configure_endpoint(
     &g_amr_mqtt_bridge_ros_state.telemetry_endpoints[17],
     "mapping_pose",
@@ -2222,7 +2222,7 @@ static int amr_mqtt_bridge_init_ros_interfaces(void)
     false,
     false,
     0U,
-    250U);
+    700U);
 
   for (size_t index = 0; index < g_amr_mqtt_bridge_ros_state.telemetry_endpoint_count; ++index)
   {
