@@ -4,6 +4,11 @@ Changelog
 2026-03-30
 ----------
 
+- Started the ``0.14.1`` patch branch:
+
+  - documented the current ``amr_slam_mapper`` pose-graph SLAM pipeline in its README
+  - continued the mapping-focused ``0.14.x`` line on top of the stable navigation baseline
+
 - Started the ``0.14.0`` development branch:
 
   - reset the main AMR line back onto the stable ``0.12.4`` navigation baseline
