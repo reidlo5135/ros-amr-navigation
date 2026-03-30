@@ -1,6 +1,6 @@
 #include "amr_bt_navigator/bt_navigator.hpp"
 
-namespace amr_bt_navigator
+namespace amr::bt::navigator
 {
 
 namespace
@@ -1041,4 +1041,4 @@ void Btnavigator::publish_stop_command()
     stop_command.command_id);
 }
 
-}  // namespace amr_bt_navigator
+}  // namespace amr::bt::navigator

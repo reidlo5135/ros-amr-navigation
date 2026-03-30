@@ -3,7 +3,8 @@
 int main(int argc, const char *argv[])
 {
   rcl_ret_t rc = amr_mqtt_bridge_initialize(argc, argv);
-  if (rc != RCL_RET_OK) {
+  if (rc != RCL_RET_OK)
+  {
     return (int)rc;
   }
 

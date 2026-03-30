@@ -16,19 +16,20 @@
 #include "amr_msgs/msg/local_plan_status.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/srv/plan_local_escape.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/path.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
-namespace amr_local_planner
+namespace amr::planner::local
 {
 
 class LocalPlanner : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit LocalPlanner(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~LocalPlanner() = default;
 
 private:
   struct LocalPlanBuildResult
@@ -154,7 +155,7 @@ private:
   double dynamic_obstacle_goal_proximity_disable_distance_;
   int nearest_free_search_radius_cells_;
   std::vector<double> footprint_polygon_param_;
-  amr_geometry::FootprintPolygon footprint_polygon_;
+  amr::geometry::FootprintPolygon footprint_polygon_;
   uint32_t last_command_id_;
   std::size_t last_progress_index_;
   amr_msgs::msg::MotionCommand latest_command_;
@@ -167,6 +168,6 @@ private:
   bool has_map_;
 };
 
-}  // namespace amr_local_planner
+}  // namespace amr::planner::local
 
 #endif  // AMR_LOCAL_PLANNER__LOCAL_PLANNER_HPP_

@@ -1,9 +1,10 @@
 #include "amr_motion_controller/motion_controller.hpp"
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<amr_motion_controller::MotionController>();
+  std::shared_ptr<amr::motion::controller::MotionController> node =
+    std::make_shared<amr::motion::controller::MotionController>();
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node->get_node_base_interface());
   executor.spin();

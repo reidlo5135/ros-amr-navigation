@@ -2,7 +2,7 @@
 
 static int amr_mqtt_bridge_subscribe_command_topics(void)
 {
-  const char * command_topics[] = {
+  const char *command_topics[] = {
     g_amr_mqtt_bridge_config.mqtt.command_cmd_vel,
     g_amr_mqtt_bridge_config.mqtt.command_save_map,
     g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose,
@@ -10,17 +10,19 @@ static int amr_mqtt_bridge_subscribe_command_topics(void)
     g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose,
     g_amr_mqtt_bridge_config.mqtt.command_ping
   };
-  const char * request_topics[] = {
+  const char *request_topics[] = {
     g_amr_mqtt_bridge_config.mqtt.request_plan_segment,
     g_amr_mqtt_bridge_config.mqtt.request_plan_route
   };
 
-  for (size_t index = 0; index < (sizeof(command_topics) / sizeof(command_topics[0])); ++index) {
+  for (size_t index = 0; index < (sizeof(command_topics) / sizeof(command_topics[0])); ++index)
+  {
     int mqtt_rc = MQTTClient_subscribe(
       g_amr_mqtt_bridge_mqtt.client,
       command_topics[index],
       g_amr_mqtt_bridge_config.mqtt.command_qos);
-    if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    if (mqtt_rc != MQTTCLIENT_SUCCESS)
+    {
       RCUTILS_LOG_ERROR_NAMED(
         "amr_mqtt_bridge",
         "Failed to subscribe MQTT command topic '%s': rc=%d (%s)",
@@ -31,12 +33,14 @@ static int amr_mqtt_bridge_subscribe_command_topics(void)
     }
   }
 
-  for (size_t index = 0; index < (sizeof(request_topics) / sizeof(request_topics[0])); ++index) {
+  for (size_t index = 0; index < (sizeof(request_topics) / sizeof(request_topics[0])); ++index)
+  {
     int mqtt_rc = MQTTClient_subscribe(
       g_amr_mqtt_bridge_mqtt.client,
       request_topics[index],
       g_amr_mqtt_bridge_config.mqtt.service_qos);
-    if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+    if (mqtt_rc != MQTTCLIENT_SUCCESS)
+    {
       RCUTILS_LOG_ERROR_NAMED(
         "amr_mqtt_bridge",
         "Failed to subscribe MQTT request topic '%s': rc=%d (%s)",
@@ -87,7 +91,8 @@ int amr_mqtt_bridge_connect_mqtt(void)
     g_amr_mqtt_bridge_config.broker.client_id,
     MQTTCLIENT_PERSISTENCE_NONE,
     NULL);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
     RCUTILS_LOG_ERROR_NAMED(
       "amr_mqtt_bridge",
       "Failed to create MQTT client for %s: rc=%d (%s)",
@@ -100,15 +105,18 @@ int amr_mqtt_bridge_connect_mqtt(void)
   g_amr_mqtt_bridge_mqtt.client_created = true;
   connect_options.keepAliveInterval = g_amr_mqtt_bridge_config.broker.keep_alive_sec;
   connect_options.cleansession = g_amr_mqtt_bridge_config.broker.clean_session ? 1 : 0;
-  if (g_amr_mqtt_bridge_config.broker.username[0] != '\0') {
+  if (g_amr_mqtt_bridge_config.broker.username[0] != '\0')
+  {
     connect_options.username = g_amr_mqtt_bridge_config.broker.username;
   }
-  if (g_amr_mqtt_bridge_config.broker.password[0] != '\0') {
+  if (g_amr_mqtt_bridge_config.broker.password[0] != '\0')
+  {
     connect_options.password = g_amr_mqtt_bridge_config.broker.password;
   }
 
   mqtt_rc = MQTTClient_connect(g_amr_mqtt_bridge_mqtt.client, &connect_options);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
     RCUTILS_LOG_ERROR_NAMED(
       "amr_mqtt_bridge",
       "Failed to connect MQTT broker %s: rc=%d (%s)",
@@ -124,7 +132,8 @@ int amr_mqtt_bridge_connect_mqtt(void)
   g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
   g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec = 0;
   mqtt_rc = amr_mqtt_bridge_subscribe_command_topics();
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
     return 1;
   }
 
@@ -137,12 +146,14 @@ int amr_mqtt_bridge_connect_mqtt(void)
 
 void amr_mqtt_bridge_disconnect_mqtt(void)
 {
-  if (g_amr_mqtt_bridge_mqtt.connected) {
+  if (g_amr_mqtt_bridge_mqtt.connected)
+  {
     (void)MQTTClient_disconnect(g_amr_mqtt_bridge_mqtt.client, 1000);
     g_amr_mqtt_bridge_mqtt.connected = false;
   }
   g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
-  if (g_amr_mqtt_bridge_mqtt.client_created) {
+  if (g_amr_mqtt_bridge_mqtt.client_created)
+  {
     MQTTClient_destroy(&g_amr_mqtt_bridge_mqtt.client);
     g_amr_mqtt_bridge_mqtt.client_created = false;
   }
@@ -154,10 +165,12 @@ bool amr_mqtt_bridge_ensure_connected(void)
   int mqtt_rc = 0;
   MQTTClient_connectOptions connect_options = MQTTClient_connectOptions_initializer;
 
-  if (!g_amr_mqtt_bridge_mqtt.client_created) {
+  if (!g_amr_mqtt_bridge_mqtt.client_created)
+  {
     return false;
   }
-  if (MQTTClient_isConnected(g_amr_mqtt_bridge_mqtt.client)) {
+  if (MQTTClient_isConnected(g_amr_mqtt_bridge_mqtt.client))
+  {
     g_amr_mqtt_bridge_mqtt.connected = true;
     return true;
   }
@@ -165,21 +178,25 @@ bool amr_mqtt_bridge_ensure_connected(void)
   g_amr_mqtt_bridge_mqtt.connected = false;
   g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
 
-  if (now_sec == g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec) {
+  if (now_sec == g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec)
+  {
     return false;
   }
 
   g_amr_mqtt_bridge_mqtt.last_reconnect_attempt_sec = now_sec;
   connect_options.keepAliveInterval = g_amr_mqtt_bridge_config.broker.keep_alive_sec;
   connect_options.cleansession = g_amr_mqtt_bridge_config.broker.clean_session ? 1 : 0;
-  if (g_amr_mqtt_bridge_config.broker.username[0] != '\0') {
+  if (g_amr_mqtt_bridge_config.broker.username[0] != '\0')
+  {
     connect_options.username = g_amr_mqtt_bridge_config.broker.username;
   }
-  if (g_amr_mqtt_bridge_config.broker.password[0] != '\0') {
+  if (g_amr_mqtt_bridge_config.broker.password[0] != '\0')
+  {
     connect_options.password = g_amr_mqtt_bridge_config.broker.password;
   }
   mqtt_rc = MQTTClient_connect(g_amr_mqtt_bridge_mqtt.client, &connect_options);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
     RCUTILS_LOG_WARN_NAMED(
       "amr_mqtt_bridge",
       "Failed to reconnect MQTT broker %s: rc=%d (%s)",
@@ -191,7 +208,8 @@ bool amr_mqtt_bridge_ensure_connected(void)
 
   g_amr_mqtt_bridge_mqtt.connected = true;
   mqtt_rc = amr_mqtt_bridge_subscribe_command_topics();
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
     g_amr_mqtt_bridge_mqtt.connected = false;
     g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
     return false;
@@ -204,8 +222,8 @@ bool amr_mqtt_bridge_ensure_connected(void)
 }
 
 bool amr_mqtt_bridge_publish_payload(
-  const char * mqtt_topic,
-  const char * payload,
+  const char *mqtt_topic,
+  const char *payload,
   int qos,
   bool retained)
 {
@@ -213,7 +231,8 @@ bool amr_mqtt_bridge_publish_payload(
   MQTTClient_deliveryToken token = 0;
   int mqtt_rc = 0;
 
-  if (!amr_mqtt_bridge_ensure_connected()) {
+  if (!amr_mqtt_bridge_ensure_connected())
+  {
     return false;
   }
 
@@ -227,23 +246,26 @@ bool amr_mqtt_bridge_publish_payload(
     mqtt_topic,
     &message,
     &token);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
+    if (mqtt_rc == MQTTCLIENT_DISCONNECTED)
+    {
       g_amr_mqtt_bridge_mqtt.connected = false;
       g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
     }
     return false;
   }
 
-  if (qos > 0) {
+  if (qos > 0)
+  {
     (void)MQTTClient_waitForCompletion(g_amr_mqtt_bridge_mqtt.client, token, 1000L);
   }
   return true;
 }
 
 bool amr_mqtt_bridge_publish_binary_payload(
-  const char * mqtt_topic,
-  const void * payload,
+  const char *mqtt_topic,
+  const void *payload,
   size_t payload_length,
   int qos,
   bool retained)
@@ -252,7 +274,8 @@ bool amr_mqtt_bridge_publish_binary_payload(
   MQTTClient_deliveryToken token = 0;
   int mqtt_rc = 0;
 
-  if (!amr_mqtt_bridge_ensure_connected()) {
+  if (!amr_mqtt_bridge_ensure_connected())
+  {
     return false;
   }
 
@@ -266,15 +289,18 @@ bool amr_mqtt_bridge_publish_binary_payload(
     mqtt_topic,
     &message,
     &token);
-  if (mqtt_rc != MQTTCLIENT_SUCCESS) {
-    if (mqtt_rc == MQTTCLIENT_DISCONNECTED) {
+  if (mqtt_rc != MQTTCLIENT_SUCCESS)
+  {
+    if (mqtt_rc == MQTTCLIENT_DISCONNECTED)
+    {
       g_amr_mqtt_bridge_mqtt.connected = false;
       g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = false;
     }
     return false;
   }
 
-  if (qos > 0) {
+  if (qos > 0)
+  {
     (void)MQTTClient_waitForCompletion(g_amr_mqtt_bridge_mqtt.client, token, 1000L);
   }
   return true;

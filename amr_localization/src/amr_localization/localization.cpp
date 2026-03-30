@@ -1,6 +1,6 @@
 #include "amr_localization/localization.hpp"
 
-namespace amr_localization
+namespace amr::localization::estimator
 {
 
 namespace
@@ -783,4 +783,4 @@ void Localization::reset_state()
   this->auto_initial_pose_published_ = false;
 }
 
-}  // namespace amr_localization
+}  // namespace amr::localization::estimator

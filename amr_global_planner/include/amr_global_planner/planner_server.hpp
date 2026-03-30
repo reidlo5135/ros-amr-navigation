@@ -11,19 +11,20 @@
 #include "amr_global_planner/a_star.hpp"
 #include "amr_msgs/srv/plan_route.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/path.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
-namespace amr_global_planner
+namespace amr::planner::global
 {
 
 class PlannerServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit PlannerServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~PlannerServer() = default;
 
 private:
   using CallbackReturn =
@@ -48,30 +49,29 @@ private:
     std::string & message) const;
   bool world_to_grid(
     const geometry_msgs::msg::PoseStamped & pose,
-    planner::GridCell & cell) const;
-  geometry_msgs::msg::PoseStamped grid_to_world(const planner::GridCell & cell) const;
+    GridCell & cell) const;
+  geometry_msgs::msg::PoseStamped grid_to_world(const GridCell & cell) const;
   bool is_occupied_cell(
     const std::vector<int8_t> & occupancy_grid,
     int width,
     int height,
-    const planner::GridCell & cell) const;
+    const GridCell & cell) const;
   bool is_cell_collision(
     const std::vector<int8_t> & occupancy_grid,
     int width,
     int height,
-    const planner::GridCell & cell,
+    const GridCell & cell,
     double yaw) const;
   bool find_nearest_free_cell(
     const std::vector<int8_t> & occupancy_grid,
     int width,
     int height,
-    planner::GridCell & cell,
+    GridCell & cell,
     int max_radius,
     double yaw) const;
-  std::vector<planner::GridCell> simplify_grid_path(
-    const std::vector<planner::GridCell> & grid_path) const;
+  std::vector<GridCell> simplify_grid_path(const std::vector<GridCell> & grid_path) const;
   nav_msgs::msg::Path create_path_message(
-    const std::vector<planner::GridCell> & grid_path) const;
+    const std::vector<GridCell> & grid_path) const;
   nav_msgs::msg::Path merge_paths(const std::vector<nav_msgs::msg::Path> & paths) const;
   void costmap_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map);
 
@@ -81,7 +81,7 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr computed_plan_publisher_;
   nav_msgs::msg::OccupancyGrid::SharedPtr global_costmap_;
   nav_msgs::msg::Path planned_path_;
-  planner::AStarPlanner::UniquePtr a_star_planner_;
+  AStarPlanner::UniquePtr a_star_planner_;
   std::string costmap_topic_;
   std::string computed_plan_topic_;
   std::string plan_segment_service_name_;
@@ -94,9 +94,9 @@ private:
   double turn_penalty_;
   int nearest_free_search_radius_cells_;
   std::vector<double> footprint_polygon_param_;
-  amr_geometry::FootprintPolygon footprint_polygon_;
+  amr::geometry::FootprintPolygon footprint_polygon_;
 };
 
-}  // namespace amr_global_planner
+}  // namespace amr::planner::global
 
 #endif  // AMR_GLOBAL_PLANNER__PLANNER_SERVER_HPP_

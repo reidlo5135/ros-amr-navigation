@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace amr_geometry
+namespace amr::geometry
 {
 
 struct FootprintPoint
@@ -268,6 +268,6 @@ inline bool footprint_pose_collides(
     allow_unknown);
 }
 
-}  // namespace amr_geometry
+}  // namespace amr::geometry
 
 #endif  // AMR_GEOMETRY__FOOTPRINT_HPP_

@@ -10,23 +10,24 @@
 #include <string>
 #include <vector>
 
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/odometry.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
-#include "tf2_ros/transform_broadcaster.h"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
-namespace amr_localization
+namespace amr::localization::estimator
 {
 
 class Localization : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit Localization(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~Localization() = default;
 
 private:
   struct Particle
@@ -131,6 +132,6 @@ private:
   bool auto_initial_pose_published_;
 };
 
-}  // namespace amr_localization
+}  // namespace amr::localization::estimator
 
 #endif  // AMR_LOCALIZATION__LOCALIZATION_HPP_

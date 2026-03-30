@@ -8,19 +8,20 @@
 #include <vector>
 
 #include "amr_msgs/srv/clear_costmap.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
 
-namespace amr_costmap_server
+namespace amr::costmap::server
 {
 
 class CostmapServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit CostmapServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~CostmapServer() = default;
 
 private:
   using CallbackReturn =
@@ -78,6 +79,6 @@ private:
   bool has_scan_;
 };
 
-}  // namespace amr_costmap_server
+}  // namespace amr::costmap::server
 
 #endif  // AMR_COSTMAP_SERVER__COSTMAP_SERVER_HPP_

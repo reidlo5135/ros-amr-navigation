@@ -1,6 +1,6 @@
 #include "amr_recovery_server/recovery_server.hpp"
 
-namespace amr_recovery_server
+namespace amr::recovery::server
 {
 
 namespace
@@ -185,4 +185,4 @@ geometry_msgs::msg::Quaternion RecoveryServer::yaw_to_quaternion(const double ya
   return orientation;
 }
 
-}  // namespace amr_recovery_server
+}  // namespace amr::recovery::server

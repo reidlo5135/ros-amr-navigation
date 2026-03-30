@@ -1,0 +1,56 @@
+
+# rclc/rclcpp
+
+1. common
+- 포인터 선언 시 *<변수명>, 주소 복사 선언 시 &<변수명> 으로 무조건 통일.
+e.g. before) * options, after) *options
+
+- const &<변수명> 복사 적극 활용
+
+- auto 사용 최대 지양.
+type 기재 가능하면 전부 기재.
+
+- 함수 선언/호출 시 개행 사용 최대 지양.
+e.g. Pose2D refine_pose_with_scan_matching(const sensor_msgs::msg::LaserScan &scan, const Pose2D &predicted_pose) const
+로 사용.
+
+- tab indent는 BSD style로 통일
+e.g. if, for, 함수 등등 전부 개행 이후 {} 시작.
+e.g. hpp
+namesapce amr::slam::mapper
+{
+    class SlamMapper
+    {
+    private:
+    public:
+    public:
+    };
+}
+
+e.g. cpp
+using namespace amr::slam::mapper;
+
+SlamMapper::SlamMapper()
+{
+
+}
+
+---
+
+2. hpp
+- namespace 는 amr::<category>::<actor noun>로 통일
+e.g. amr::slam::mapper, amr::map::server, amr::mqtt:bridge ...
+
+- #include 시 외부 header는 <>로, custom header는 ""로 wrapping
+e.g. <cstdint>, <rclcpp/rclcpp.hpp>, <geometry_msgs/msg/twist.hpp>
+"amr_slam_mapper/amr_slam_mapper.hpp" ...
+
+- 생성자에는 explicit, 소멸자에는 virtual 무조건 기재.
+
+- class 구성 시 순서는 private, protected, public 순으로 통일.
+e.g. private: ..., protected ..., public: 생성자, 소멸자, public: using SharedPtr... 순으로
+
+3. cpp
+- #include 는 무조건 #include "package/<pair되는 hpp>" 만 하고,
+나머지 외부 header는 전부 pair.hpp에서 처리.
+e.g. #include "amr_slam_mapper/amr_slam_mapper.hpp" 한줄만 있어야함.

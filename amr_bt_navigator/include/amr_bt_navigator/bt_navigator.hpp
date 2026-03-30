@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -10,7 +11,15 @@
 #include <string>
 #include <thread>
 
-#include "ament_index_cpp/get_package_share_directory.hpp"
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <behaviortree_cpp_v3/bt_factory.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <lifecycle_msgs/msg/state.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+
 #include "amr_msgs/action/navigate_to_pose.hpp"
 #include "amr_msgs/msg/local_plan_status.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
@@ -18,21 +27,15 @@
 #include "amr_msgs/srv/clear_costmap.hpp"
 #include "amr_msgs/srv/plan_recovery.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
-#include "behaviortree_cpp_v3/bt_factory.h"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "lifecycle_msgs/msg/state.hpp"
-#include "nav_msgs/msg/path.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_action/rclcpp_action.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
 
-namespace amr_bt_navigator
+namespace amr::bt::navigator
 {
 
 class Btnavigator : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit Btnavigator(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~Btnavigator() = default;
 
 private:
   using CallbackReturn =
@@ -118,6 +121,6 @@ private:
   std::weak_ptr<GoalHandleNavigateToPose> active_goal_handle_;
 };
 
-}  // namespace amr_bt_navigator
+}  // namespace amr::bt::navigator
 
 #endif  // AMR_BT_NAVIGATOR__BT_NAVIGATOR_HPP_

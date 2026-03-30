@@ -1,9 +1,10 @@
 #include "amr_localization/localization.hpp"
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<amr_localization::Localization>();
+  std::shared_ptr<amr::localization::estimator::Localization> node =
+    std::make_shared<amr::localization::estimator::Localization>();
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node->get_node_base_interface());
   executor.spin();

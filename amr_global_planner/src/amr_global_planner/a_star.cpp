@@ -1,6 +1,6 @@
 #include "amr_global_planner/a_star.hpp"
 
-namespace amr_global_planner::planner
+namespace amr::planner::global
 {
 
 namespace
@@ -49,7 +49,7 @@ AStarPlanner::AStarPlanner(
 AStarPlanner::~AStarPlanner() = default;
 
 void AStarPlanner::set_collision_model(
-  amr_geometry::FootprintPolygon footprint,
+  amr::geometry::FootprintPolygon footprint,
   const double resolution,
   const double origin_x,
   const double origin_y)
@@ -200,7 +200,7 @@ bool AStarPlanner::is_occupied(
   if (!footprint_.empty() && map_resolution_ > 0.0 && height > 0) {
     const double pose_x = map_origin_x_ + (static_cast<double>(cell.x) + 0.5) * map_resolution_;
     const double pose_y = map_origin_y_ + (static_cast<double>(cell.y) + 0.5) * map_resolution_;
-    return amr_geometry::footprint_pose_collides(
+    return amr::geometry::footprint_pose_collides(
       occupancy_grid,
       width,
       height,
@@ -309,4 +309,4 @@ std::vector<GridCell> AStarPlanner::get_neighbors(const GridCell & cell) const
   return neighbors;
 }
 
-}  // namespace amr_global_planner::planner
+}  // namespace amr::planner::global

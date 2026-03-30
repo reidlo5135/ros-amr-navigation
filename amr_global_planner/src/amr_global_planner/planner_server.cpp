@@ -1,6 +1,6 @@
 #include "amr_global_planner/planner_server.hpp"
 
-namespace amr_global_planner
+namespace amr::planner::global
 {
 
 namespace
@@ -77,15 +77,15 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
 
   const auto connectivity =
     this->connectivity_ == 4 ?
-    planner::AStarConnectivity::Four :
-    planner::AStarConnectivity::Eight;
-  this->a_star_planner_ = std::make_unique<planner::AStarPlanner>(
+    AStarConnectivity::Four :
+    AStarConnectivity::Eight;
+  this->a_star_planner_ = std::make_unique<AStarPlanner>(
     this->obstacle_threshold_,
     this->allow_unknown_,
     connectivity,
     this->turn_penalty_,
     this->prevent_corner_cutting_);
-  this->footprint_polygon_ = amr_geometry::make_footprint_polygon(this->footprint_polygon_param_);
+  this->footprint_polygon_ = amr::geometry::make_footprint_polygon(this->footprint_polygon_param_);
 
   this->global_costmap_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->planned_path_ = nav_msgs::msg::Path();
@@ -246,8 +246,8 @@ bool PlannerServer::compute_plan_between_poses(
     return false;
   }
 
-  planner::GridCell start_cell{};
-  planner::GridCell goal_cell{};
+  GridCell start_cell{};
+  GridCell goal_cell{};
   if (!this->world_to_grid(start, start_cell)) {
     message = "Start pose is outside map bounds";
     return false;
@@ -300,7 +300,7 @@ bool PlannerServer::compute_plan_between_poses(
 
 bool PlannerServer::world_to_grid(
   const geometry_msgs::msg::PoseStamped & pose,
-  planner::GridCell & cell) const
+  GridCell & cell) const
 {
   if (!this->global_costmap_ || this->global_costmap_->info.resolution <= 0.0F) {
     return false;
@@ -320,7 +320,7 @@ bool PlannerServer::world_to_grid(
     cell.y < static_cast<int>(map_info.height);
 }
 
-geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const planner::GridCell & cell) const
+geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell & cell) const
 {
   geometry_msgs::msg::PoseStamped pose;
 
@@ -344,7 +344,7 @@ bool PlannerServer::is_occupied_cell(
   const std::vector<int8_t> & occupancy_grid,
   const int width,
   const int height,
-  const planner::GridCell & cell) const
+  const GridCell & cell) const
 {
   if (cell.x < 0 || cell.x >= width || cell.y < 0 || cell.y >= height) {
     return true;
@@ -361,7 +361,7 @@ bool PlannerServer::find_nearest_free_cell(
   const std::vector<int8_t> & occupancy_grid,
   const int width,
   const int height,
-  planner::GridCell & cell,
+  GridCell & cell,
   const int max_radius,
   const double yaw) const
 {
@@ -372,7 +372,7 @@ bool PlannerServer::find_nearest_free_cell(
   for (int radius = 1; radius <= max_radius; ++radius) {
     for (int dy = -radius; dy <= radius; ++dy) {
       for (int dx = -radius; dx <= radius; ++dx) {
-        const planner::GridCell candidate{cell.x + dx, cell.y + dy};
+        const GridCell candidate{cell.x + dx, cell.y + dy};
         if (!this->is_cell_collision(occupancy_grid, width, height, candidate, yaw)) {
           cell = candidate;
           return true;
@@ -388,7 +388,7 @@ bool PlannerServer::is_cell_collision(
   const std::vector<int8_t> & occupancy_grid,
   const int width,
   const int height,
-  const planner::GridCell & cell,
+  const GridCell & cell,
   const double yaw) const
 {
   if (this->footprint_polygon_.empty() || !this->global_costmap_) {
@@ -396,7 +396,7 @@ bool PlannerServer::is_cell_collision(
   }
 
   const auto pose = this->grid_to_world(cell);
-  return amr_geometry::footprint_pose_collides(
+  return amr::geometry::footprint_pose_collides(
     occupancy_grid,
     width,
     height,
@@ -411,14 +411,13 @@ bool PlannerServer::is_cell_collision(
     this->allow_unknown_);
 }
 
-std::vector<planner::GridCell> PlannerServer::simplify_grid_path(
-  const std::vector<planner::GridCell> & grid_path) const
+std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCell> & grid_path) const
 {
   if (!this->simplify_path_ || grid_path.size() <= 2U) {
     return grid_path;
   }
 
-  std::vector<planner::GridCell> simplified_path;
+  std::vector<GridCell> simplified_path;
   simplified_path.reserve(grid_path.size());
   simplified_path.push_back(grid_path.front());
 
@@ -442,7 +441,7 @@ std::vector<planner::GridCell> PlannerServer::simplify_grid_path(
 }
 
 nav_msgs::msg::Path PlannerServer::create_path_message(
-  const std::vector<planner::GridCell> & grid_path) const
+  const std::vector<GridCell> & grid_path) const
 {
   nav_msgs::msg::Path path;
   if (!this->global_costmap_) {
@@ -487,4 +486,4 @@ void PlannerServer::costmap_subscription_cb(const nav_msgs::msg::OccupancyGrid::
   this->global_costmap_ = map;
 }
 
-}  // namespace amr_global_planner
+}  // namespace amr::planner::global

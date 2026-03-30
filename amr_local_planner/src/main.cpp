@@ -1,9 +1,10 @@
 #include "amr_local_planner/local_planner.hpp"
 
-int main(int argc, char ** argv)
+int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<amr_local_planner::LocalPlanner>();
+  std::shared_ptr<amr::planner::local::LocalPlanner> node =
+    std::make_shared<amr::planner::local::LocalPlanner>();
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(node->get_node_base_interface());
   executor.spin();

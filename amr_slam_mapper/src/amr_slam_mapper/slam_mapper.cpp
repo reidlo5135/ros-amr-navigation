@@ -1,14 +1,6 @@
 #include "amr_slam_mapper/slam_mapper.hpp"
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cstddef>
-#include <limits>
-#include <numeric>
-#include <sstream>
-
-namespace amr_slam_mapper
+namespace amr::slam::mapper
 {
 
 SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
@@ -1219,4 +1211,4 @@ double SlamMapper::normalize_angle(double angle) const
   return angle;
 }
 
-}  // namespace amr_slam_mapper
+}  // namespace amr::slam::mapper

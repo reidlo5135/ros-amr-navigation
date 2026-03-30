@@ -1,6 +1,6 @@
 #include "amr_lifecycle_manager/lifecycle_manager.hpp"
 
-namespace amr_lifecycle_manager
+namespace amr::lifecycle::manager
 {
 
 using namespace std::chrono_literals;
@@ -256,4 +256,4 @@ void LifecycleManager::publish_initial_pose()
     this->initial_pose_yaw_);
 }
 
-}  // namespace amr_lifecycle_manager
+}  // namespace amr::lifecycle::manager

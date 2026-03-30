@@ -98,7 +98,7 @@
 #define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 18
 #define AMR_MQTT_BRIDGE_MAX_FOOTPRINT_POLYGON_VALUES 32
 
-typedef char * (* amr_mqtt_bridge_serializer_fn_t)(const void * message);
+typedef char *(*amr_mqtt_bridge_serializer_fn_t)(const void *message);
 
 typedef struct amr_mqtt_bridge_runtime_s
 {
@@ -214,13 +214,13 @@ typedef struct amr_mqtt_bridge_config_s
 
 typedef struct amr_mqtt_bridge_telemetry_endpoint_s
 {
-  const char * label;
-  const char * ros_topic;
-  const char * mqtt_topic;
-  rcl_subscription_t * subscription;
-  void * message;
-  const rosidl_message_type_support_t * type_support;
-  const rmw_qos_profile_t * qos_profile;
+  const char *label;
+  const char *ros_topic;
+  const char *mqtt_topic;
+  rcl_subscription_t *subscription;
+  void *message;
+  const rosidl_message_type_support_t *type_support;
+  const rmw_qos_profile_t *qos_profile;
   int mqtt_qos;
   bool retained;
   bool raw_passthrough;
@@ -322,13 +322,13 @@ int amr_mqtt_bridge_connect_mqtt(void);
 void amr_mqtt_bridge_disconnect_mqtt(void);
 bool amr_mqtt_bridge_ensure_connected(void);
 bool amr_mqtt_bridge_publish_payload(
-  const char * mqtt_topic,
-  const char * payload,
+  const char *mqtt_topic,
+  const char *payload,
   int qos,
   bool retained);
 bool amr_mqtt_bridge_publish_binary_payload(
-  const char * mqtt_topic,
-  const void * payload,
+  const char *mqtt_topic,
+  const void *payload,
   size_t payload_length,
   int qos,
   bool retained);

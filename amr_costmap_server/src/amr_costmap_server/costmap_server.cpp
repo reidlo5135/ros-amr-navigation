@@ -1,6 +1,6 @@
 #include "amr_costmap_server/costmap_server.hpp"
 
-namespace amr_costmap_server
+namespace amr::costmap::server
 {
 
 namespace
@@ -466,4 +466,4 @@ void CostmapServer::update_footprint_metrics()
   }
 }
 
-}  // namespace amr_costmap_server
+}  // namespace amr::costmap::server

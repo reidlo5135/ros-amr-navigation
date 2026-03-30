@@ -10,20 +10,21 @@
 
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "geometry_msgs/msg/twist.hpp"
-#include "nav_msgs/msg/path.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
 
-namespace amr_motion_controller
+namespace amr::motion::controller
 {
 
 class MotionController : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit MotionController(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~MotionController() = default;
 
 private:
   enum class VelocityControlMode
@@ -147,6 +148,6 @@ private:
   bool has_recovery_reference_;
 };
 
-}  // namespace amr_motion_controller
+}  // namespace amr::motion::controller
 
 #endif  // AMR_MOTION_CONTROLLER__MOTION_CONTROLLER_HPP_

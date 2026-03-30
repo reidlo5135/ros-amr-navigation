@@ -1,30 +1,38 @@
 #ifndef AMR_SLAM_MAPPER__SLAM_MAPPER_HPP_
 #define AMR_SLAM_MAPPER__SLAM_MAPPER_HPP_
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <mutex>
+#include <numeric>
+#include <sstream>
 #include <string>
 #include <vector>
 
-#include "geometry_msgs/msg/quaternion.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/odometry.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "sensor_msgs/msg/imu.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
-#include "std_msgs/msg/string.hpp"
-#include "tf2_ros/transform_broadcaster.h"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/quaternion.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
-namespace amr_slam_mapper
+namespace amr::slam::mapper
 {
 
 class SlamMapper : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit SlamMapper(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~SlamMapper() = default;
 
 private:
   struct Pose2D
@@ -265,6 +273,6 @@ private:
   int descriptor_beams_;
 };
 
-}  // namespace amr_slam_mapper
+}  // namespace amr::slam::mapper
 
 #endif  // AMR_SLAM_MAPPER__SLAM_MAPPER_HPP_

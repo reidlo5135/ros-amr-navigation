@@ -8,21 +8,21 @@
 #include <thread>
 #include <vector>
 
-#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
-#include "lifecycle_msgs/msg/state.hpp"
-#include "lifecycle_msgs/msg/transition.hpp"
-#include "lifecycle_msgs/srv/change_state.hpp"
-#include "lifecycle_msgs/srv/get_state.hpp"
-#include "rclcpp/rclcpp.hpp"
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <lifecycle_msgs/msg/state.hpp>
+#include <lifecycle_msgs/msg/transition.hpp>
+#include <lifecycle_msgs/srv/change_state.hpp>
+#include <lifecycle_msgs/srv/get_state.hpp>
+#include <rclcpp/rclcpp.hpp>
 
-namespace amr_lifecycle_manager
+namespace amr::lifecycle::manager
 {
 
 class LifecycleManager : public rclcpp::Node
 {
 public:
   explicit LifecycleManager(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
-  ~LifecycleManager() override;
+  virtual ~LifecycleManager() override;
 
 private:
   struct ManagedNode
@@ -64,6 +64,6 @@ private:
   std::atomic<bool> shutdown_requested_;
 };
 
-}  // namespace amr_lifecycle_manager
+}  // namespace amr::lifecycle::manager
 
 #endif  // AMR_LIFECYCLE_MANAGER__LIFECYCLE_MANAGER_HPP_

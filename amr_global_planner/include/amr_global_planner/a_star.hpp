@@ -13,7 +13,7 @@
 
 #include "amr_geometry/footprint.hpp"
 
-namespace amr_global_planner::planner
+namespace amr::planner::global
 {
 
 struct GridCell
@@ -50,10 +50,10 @@ public:
     double turn_penalty = 0.0,
     bool prevent_corner_cutting = true);
 
-  ~AStarPlanner();
+  virtual ~AStarPlanner();
 
   void set_collision_model(
-    amr_geometry::FootprintPolygon footprint,
+    amr::geometry::FootprintPolygon footprint,
     double resolution,
     double origin_x,
     double origin_y);
@@ -103,12 +103,12 @@ private:
   double turn_penalty_;
   AStarConnectivity connectivity_;
   bool prevent_corner_cutting_;
-  amr_geometry::FootprintPolygon footprint_;
+  amr::geometry::FootprintPolygon footprint_;
   double map_resolution_;
   double map_origin_x_;
   double map_origin_y_;
 };
 
-}  // namespace amr_global_planner::planner
+}  // namespace amr::planner::global
 
 #endif  // AMR_GLOBAL_PLANNER__A_STAR_HPP_

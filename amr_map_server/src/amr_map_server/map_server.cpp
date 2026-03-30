@@ -1,14 +1,6 @@
 #include "amr_map_server/map_server.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <fstream>
-#include <limits>
-#include <sstream>
-#include <stdexcept>
-
-namespace amr_map_server
+namespace amr::map::server
 {
 
 namespace
@@ -755,4 +747,4 @@ double MapServer::quaternion_to_yaw(const geometry_msgs::msg::Quaternion & orien
   return std::atan2(siny_cosp, cosy_cosp);
 }
 
-}  // namespace amr_map_server
+}  // namespace amr::map::server

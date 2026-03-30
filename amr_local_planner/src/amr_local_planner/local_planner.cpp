@@ -1,6 +1,6 @@
 #include "amr_local_planner/local_planner.hpp"
 
-namespace amr_local_planner
+namespace amr::planner::local
 {
 
 namespace
@@ -66,7 +66,7 @@ bool is_occupied(
   const GridCell & cell,
   int obstacle_threshold,
   bool allow_unknown,
-  const amr_geometry::FootprintPolygon & footprint_polygon,
+  const amr::geometry::FootprintPolygon & footprint_polygon,
   double resolution,
   double origin_x,
   double origin_y,
@@ -75,7 +75,7 @@ bool is_occupied(
   if (!footprint_polygon.empty() && resolution > 0.0 && height > 0) {
     const double pose_x = origin_x + (static_cast<double>(cell.x) + 0.5) * resolution;
     const double pose_y = origin_y + (static_cast<double>(cell.y) + 0.5) * resolution;
-    return amr_geometry::footprint_pose_collides(
+    return amr::geometry::footprint_pose_collides(
       occupancy_grid,
       width,
       height,
@@ -106,7 +106,7 @@ bool is_diagonal_move_blocked(
   int obstacle_threshold,
   bool allow_unknown,
   bool prevent_corner_cutting,
-  const amr_geometry::FootprintPolygon & footprint_polygon,
+  const amr::geometry::FootprintPolygon & footprint_polygon,
   double resolution,
   double origin_x,
   double origin_y)
@@ -208,7 +208,7 @@ bool plan_on_grid(
   int connectivity,
   bool prevent_corner_cutting,
   double penalty,
-  const amr_geometry::FootprintPolygon & footprint_polygon,
+  const amr::geometry::FootprintPolygon & footprint_polygon,
   double resolution,
   double origin_x,
   double origin_y,
@@ -448,7 +448,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     return CallbackReturn::FAILURE;
   }
 
-  this->footprint_polygon_ = amr_geometry::make_footprint_polygon(this->footprint_polygon_param_);
+  this->footprint_polygon_ = amr::geometry::make_footprint_polygon(this->footprint_polygon_param_);
 
   this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS(),
@@ -1252,7 +1252,7 @@ bool LocalPlanner::is_grid_pose_collision(
     this->map_occupancy_grid_->info.origin.position.x + ((static_cast<double>(grid_x) + 0.5) * resolution);
   const double pose_y =
     this->map_occupancy_grid_->info.origin.position.y + ((static_cast<double>(grid_y) + 0.5) * resolution);
-  return amr_geometry::footprint_pose_collides(
+  return amr::geometry::footprint_pose_collides(
     occupancy_grid,
     width,
     height,
@@ -1364,4 +1364,4 @@ double LocalPlanner::pose_distance(
   return std::sqrt((dx * dx) + (dy * dy));
 }
 
-}  // namespace amr_local_planner
+}  // namespace amr::planner::local

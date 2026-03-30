@@ -7,17 +7,18 @@
 
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/srv/plan_recovery.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
-namespace amr_recovery_server
+namespace amr::recovery::server
 {
 
 class RecoveryServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit RecoveryServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~RecoveryServer() = default;
 
 private:
   using CallbackReturn =
@@ -50,6 +51,6 @@ private:
   double spin_angle_rad_;
 };
 
-}  // namespace amr_recovery_server
+}  // namespace amr::recovery::server
 
 #endif  // AMR_RECOVERY_SERVER__RECOVERY_SERVER_HPP_

@@ -1,6 +1,6 @@
 #include "amr_motion_controller/motion_controller.hpp"
 
-namespace amr_motion_controller
+namespace amr::motion::controller
 {
 
 MotionController::MotionController(const rclcpp::NodeOptions & options)
@@ -874,4 +874,4 @@ double MotionController::pose_distance(
   return std::sqrt((dx * dx) + (dy * dy));
 }
 
-}  // namespace amr_motion_controller
+}  // namespace amr::motion::controller

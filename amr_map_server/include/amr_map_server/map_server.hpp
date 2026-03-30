@@ -1,30 +1,39 @@
 #ifndef AMR_MAP_SERVER__MAP_SERVER_HPP_
 #define AMR_MAP_SERVER__MAP_SERVER_HPP_
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <mutex>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
-#include "ament_index_cpp/get_package_share_directory.hpp"
-#include "geometry_msgs/msg/quaternion.hpp"
-#include "nav_msgs/msg/occupancy_grid.hpp"
-#include "nav_msgs/msg/odometry.hpp"
-#include "nav_msgs/srv/get_map.hpp"
-#include "opencv2/imgcodecs.hpp"
-#include "opencv2/imgproc.hpp"
-#include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "std_srvs/srv/trigger.hpp"
-#include "yaml-cpp/yaml.h"
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <geometry_msgs/msg/quaternion.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/srv/get_map.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <std_srvs/srv/trigger.hpp>
+#include <yaml-cpp/yaml.h>
 
-namespace amr_map_server
+namespace amr::map::server
 {
 
 class MapServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
   explicit MapServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  virtual ~MapServer() = default;
 
 private:
   struct MapQualityMetrics
@@ -120,6 +129,6 @@ private:
   bool has_latest_corrected_pose_;
 };
 
-}  // namespace amr_map_server
+}  // namespace amr::map::server
 
 #endif  // AMR_MAP_SERVER__MAP_SERVER_HPP_
