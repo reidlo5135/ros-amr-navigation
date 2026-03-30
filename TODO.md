@@ -175,12 +175,49 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
+| `2026-03-31` | `amr_slam_mapper` live map 기반 nav 연계 검토, raw/refined map layer 분리 후속, loop/revisit 기반 refined cleanup 설계 |
 | `2026-03-26` | kidnapped 대응용 global localization 설계, offline/disconnect 재초기화 흐름 검토 |
 | `2026-03-25` | exact footprint collision 완료, local planner decision semantics 반영, recovery/final approach 1차 안정화, viz 운영성 강화 |
 | `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
 | `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
 | `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
+
+## 2026-03-31
+
+- `amr_slam_mapper` live temp map 기반 navigation 연계 검토
+  - `slam_toolbox + nav2`처럼 static map 저장 선행 없이 live SLAM map 위에서 planning / costmap / navigation을 얹는 구조 검토
+  - `amr_slam_mapper`가 계속 publish 중인 corrected pose, `map -> odom`, `/amr/map/temp/refined`를 기존 nav 패키지가 직접 소비할 수 있는지 점검
+  - 검토 관점
+    - `amr_costmap_server`가 static yaml 대신 live map topic을 source로 받도록 확장하는 방식 비교
+    - unknown 구역에 대한 global planner 정책과 frontier 근처 replanning 정책 분리 필요 여부 검토
+    - graph optimization correction이 클 때 nav hold / replan / continue 중 어떤 정책이 맞는지 검토
+- raw / refined temp map 2-layer 구조 후속 설계
+  - 현재 `/amr/map/temp/raw`, `/amr/map/temp/refined` 분리 발행을 기준으로 각 layer 책임을 더 명확히 정리
+  - `raw`는 SLAM front-end가 직접 누적하는 지도, `refined`는 후처리/정제/품질 보강 결과물이라는 경계 유지
+  - 검토 관점
+    - viz / save / nav에서 raw와 refined 중 어느 것을 기본 소비할지 정책 정리
+    - `map_server`는 refined만 저장/평가하고 raw는 디버그용으로 남길지 검토
+    - refined layer에 wall sharpening, speckle cleanup, dynamic garbage cleanup을 어디까지 넣을지 범위 정의
+- loop / revisit trigger 기반 refined cleanup 검토
+  - 매 scan front-end filtering 대신 loop closure 또는 재방문 시점에만 refined map 정제를 수행하는 구조 검토
+  - 사람이 한 번 지나간 흔적처럼 휘발성 점유를 `raw`에는 남기되, `refined`에서는 revisit 기반으로 제거하는 흐름 구체화
+  - 검토 관점
+    - full backward replay 없이 현재 corrected pose + 최근 scan + cluster metadata만으로 cleanup이 가능한지 검토
+    - 셀 단위보다 occupied cluster/blob 단위로 판정하는 편이 더 안정적인지 검토
+    - loop closure가 없는 구간에서도 local revisit trigger를 추가로 둘지 비교
+- loop 생성 전 / 후 mapping readiness 기준 정리
+  - 첫 loop closure 이전에는 map 품질이 불안정한 만큼 `mapping bootstrap` 상태로, 첫 loop 이후에는 `navigation-ready on live SLAM` 상태로 보는 시나리오 검토
+  - 검토 관점
+    - goal nav는 loop 이후부터 허용하고, 그 전에는 teleop 또는 frontier만 허용하는 정책 비교
+    - `ready_for_save`와 `ready_for_nav`를 별도 상태로 둘지 검토
+    - section closure, revisit consistency, graph correction 안정성을 readiness metric으로 조합할지 검토
+- 제자리 회전과 pure spin 구간 품질 저하 대응 검토
+  - 현재 `slam_mapper`는 pure spin에 상대적으로 약하므로 mapping 운용 정책과 알고리즘 보완 양쪽을 검토
+  - 검토 관점
+    - pure spin 중 keyframe 억제 또는 scan 적분 가중치 완화가 필요한지 검토
+    - 회전 불변 loop descriptor 도입 필요성 검토
+    - mapping UX 차원에서 `move -> turn a bit -> move`형 주행 패턴을 권장할지 검토
 
 ## 2026-03-26
 
