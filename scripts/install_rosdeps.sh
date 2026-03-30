@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+sudo apt update -y && sudo apt upgrade -y
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "[rosdep] workspace: ${ROOT_DIR}"

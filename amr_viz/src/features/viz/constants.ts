@@ -1,11 +1,13 @@
 import type { BridgeState, TfMessage, TransformMessage } from "../../lib/protocol";
-import type { LayerVisibility } from "./types";
+import type { LayerVisibility, ViewMode } from "./types";
 
 export const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/robot_pose": "robot_pose",
+  "amr/robot/turtlebot3/viz/mapping_pose": "mapping_pose",
   "amr/robot/turtlebot3/viz/global_path": "global_path",
   "amr/robot/turtlebot3/viz/local_path": "local_path",
   "amr/robot/turtlebot3/viz/map": "map",
+  "amr/robot/turtlebot3/viz/temp_map": "temp_map",
   "amr/robot/turtlebot3/viz/global_costmap": "global_costmap",
   "amr/robot/turtlebot3/viz/local_costmap": "local_costmap",
   "amr/robot/turtlebot3/viz/motion_status": "motion_status",
@@ -14,6 +16,7 @@ export const telemetryTopicMap: Record<string, keyof BridgeState> = {
   "amr/robot/turtlebot3/viz/tf_static": "tf_static",
   "amr/robot/turtlebot3/viz/robot_description": "robot_description",
   "amr/robot/turtlebot3/viz/battery_state": "battery_state",
+  "amr/robot/turtlebot3/viz/slam_graph": "slam_graph",
 };
 
 export const topicSubscriptions = [
@@ -26,6 +29,7 @@ export const topicSubscriptions = [
 export const initialLayerVisibility: LayerVisibility = {
   grid: true,
   map: true,
+  tempMap: false,
   globalCostmap: true,
   localCostmap: true,
   footprint: true,
@@ -34,7 +38,31 @@ export const initialLayerVisibility: LayerVisibility = {
   localPlan: true,
   scan: true,
   tf: true,
+  keyframes: false,
+  graphEdges: false,
+  loopMarkers: false,
 };
+
+export const mappingLayerVisibility: LayerVisibility = {
+  grid: true,
+  map: true,
+  tempMap: true,
+  globalCostmap: false,
+  localCostmap: false,
+  footprint: true,
+  robot: true,
+  globalPlan: false,
+  localPlan: false,
+  scan: true,
+  tf: true,
+  keyframes: true,
+  graphEdges: true,
+  loopMarkers: true,
+};
+
+export function layerProfileForMode(mode: ViewMode): LayerVisibility {
+  return mode === "mapping" ? mappingLayerVisibility : initialLayerVisibility;
+}
 
 export function createCommandId() {
   return `${Date.now()}-${Math.round(Math.random() * 10000)}`;

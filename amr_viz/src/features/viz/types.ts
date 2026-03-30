@@ -1,6 +1,7 @@
 export type LayerVisibility = {
   grid: boolean;
   map: boolean;
+  tempMap: boolean;
   globalCostmap: boolean;
   localCostmap: boolean;
   footprint: boolean;
@@ -9,6 +10,9 @@ export type LayerVisibility = {
   localPlan: boolean;
   scan: boolean;
   tf: boolean;
+  keyframes: boolean;
+  graphEdges: boolean;
+  loopMarkers: boolean;
 };
 
 export type GoalMarker = {
@@ -19,6 +23,8 @@ export type GoalMarker = {
 };
 
 export type InteractionMode = "idle" | "goal" | "initial_pose";
+
+export type ViewMode = "nav" | "mapping";
 
 export type GoalLifecycleState =
   | "Idle"

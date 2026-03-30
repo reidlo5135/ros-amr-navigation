@@ -6,6 +6,7 @@ Metapackage for the active AMR navigation stack.
 
 - `amr_msgs`
 - `amr_map_server`
+- `amr_slam_mapper`
 - `amr_localization`
 - `amr_costmap_server`
 - `amr_global_planner`

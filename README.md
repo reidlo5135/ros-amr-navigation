@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.12.4` direction:
+Current `0.14.0` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_bridge` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - `amr_viz` connects directly to MQTT over WebSocket.
@@ -50,7 +50,8 @@ flowchart LR
 - `amr_global_planner`: A* planner on the global costmap
 - `amr_local_planner`: local slicing, local replan, and local escape service
 - `amr_localization`: localization and `map -> odom`
-- `amr_map_server`: static map serving and optional mapping mode
+- `amr_map_server`: official-map lifecycle, evaluation, and save/freeze services
+- `amr_slam_mapper`: pure SLAM mapping runtime for temporary map generation
 - `amr_motion_controller`: path tracking, stop logic, and progress checking
 - `amr_mqtt_bridge`: robot-side ROS <-> MQTT bridge
 - `amr_msgs`: custom messages, services, and actions
@@ -60,7 +61,7 @@ flowchart LR
 
 ## Removed Packages
 
-These packages are no longer part of the active `0.12.4` stack:
+These packages are no longer part of the active `0.14.0` stack:
 - `amr_obstacle_detection`
 - `amr_rviz_plugins`
 - the old server-side `amr_mqtt_bridge`
@@ -112,6 +113,7 @@ npm run dev
 colcon build --packages-select \
   amr_msgs \
   amr_map_server \
+  amr_slam_mapper \
   amr_localization \
   amr_costmap_server \
   amr_global_planner \

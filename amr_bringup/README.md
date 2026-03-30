@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the `0.12.4` stack.
+Central launch and parameter package for the `0.14.0` stack.
 
 ## Main Files
 
@@ -19,6 +19,7 @@ Central launch and parameter package for the `0.12.4` stack.
 
 `mapping_mode:=true` keeps:
 - `amr_map_server`
+- `amr_slam_mapper`
 
 and skips:
 - `amr_localization`

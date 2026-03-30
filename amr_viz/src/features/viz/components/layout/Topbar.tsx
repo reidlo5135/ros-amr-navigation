@@ -1,6 +1,8 @@
 type TopbarProps = {
   connectionLabel: string;
   poseLabel: string;
+  viewMode: "nav" | "mapping";
+  onViewModeChange: (mode: "nav" | "mapping") => void;
   signalBars: number;
   signalRttMs: number | null;
   batteryPercentage: number | null;
@@ -9,6 +11,8 @@ type TopbarProps = {
 export function Topbar({
   connectionLabel,
   poseLabel,
+  viewMode,
+  onViewModeChange,
   signalBars,
   signalRttMs,
   batteryPercentage,
@@ -26,6 +30,22 @@ export function Topbar({
         <span className="topbar-chip">Fixed Frame: map</span>
         <span className="topbar-chip">{connectionLabel}</span>
         <span className="topbar-chip">Pose {poseLabel}</span>
+        <span className="topbar-chip mode-chip">
+          <button
+            type="button"
+            className={`mode-button${viewMode === "nav" ? " active" : ""}`}
+            onClick={() => onViewModeChange("nav")}
+          >
+            Nav
+          </button>
+          <button
+            type="button"
+            className={`mode-button${viewMode === "mapping" ? " active" : ""}`}
+            onClick={() => onViewModeChange("mapping")}
+          >
+            Mapping
+          </button>
+        </span>
         <span className="topbar-chip signal-chip" aria-label="MQTT signal status">
           <span className="signal-bars" aria-hidden="true">
             {[0, 1, 2, 3].map((index) => (

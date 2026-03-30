@@ -1,6 +1,7 @@
 import type { LayerVisibility } from "../../types";
 
 type LayersPanelProps = {
+  viewMode: "nav" | "mapping";
   layerVisibility: LayerVisibility;
   onToggleLayer: (layer: keyof LayerVisibility) => void;
 };
@@ -14,6 +15,7 @@ type LayerEntry = {
 const layerEntries: LayerEntry[] = [
   { key: "grid", label: "Grid", icon: "grid" },
   { key: "map", label: "Map", icon: "map" },
+  { key: "tempMap", label: "Temp SLAM Map", icon: "temp-map" },
   { key: "globalCostmap", label: "Global Costmap", icon: "costmap-global" },
   { key: "localCostmap", label: "Local Costmap", icon: "costmap-local" },
   { key: "footprint", label: "Exact Footprint", icon: "footprint" },
@@ -22,6 +24,9 @@ const layerEntries: LayerEntry[] = [
   { key: "localPlan", label: "Local Plan", icon: "path-local" },
   { key: "scan", label: "LaserScan", icon: "scan" },
   { key: "tf", label: "TF", icon: "tf" },
+  { key: "keyframes", label: "Keyframes", icon: "keyframes" },
+  { key: "graphEdges", label: "Graph Edges", icon: "graph-edges" },
+  { key: "loopMarkers", label: "Loop Markers", icon: "loop-markers" },
 ];
 
 function LayerIcon({ kind }: { kind: string }) {
@@ -35,6 +40,13 @@ function LayerIcon({ kind }: { kind: string }) {
       {kind === "map" && (
         <svg viewBox="0 0 16 16">
           <path d="M2 3.5 5.5 2l5 1.5L14 2.5v10L10.5 14l-5-1.5L2 13.5z" />
+        </svg>
+      )}
+      {kind === "temp-map" && (
+        <svg viewBox="0 0 16 16">
+          <rect x="2" y="2" width="12" height="12" rx="1.2" />
+          <path d="M2 8h12M8 2v12" />
+          <circle cx="11.5" cy="4.5" r="1.1" />
         </svg>
       )}
       {kind === "costmap-global" && (
@@ -79,16 +91,42 @@ function LayerIcon({ kind }: { kind: string }) {
           <path d="M8 8V2M8 8H14M8 8 3 13" />
         </svg>
       )}
+      {kind === "keyframes" && (
+        <svg viewBox="0 0 16 16">
+          <circle cx="3.5" cy="12.5" r="1.2" />
+          <circle cx="8" cy="8" r="1.2" />
+          <circle cx="12.5" cy="3.5" r="1.2" />
+          <path d="M4.5 11.5 7 9 11.2 4.8" />
+        </svg>
+      )}
+      {kind === "graph-edges" && (
+        <svg viewBox="0 0 16 16">
+          <path d="M2.5 12.5 6.2 8.2 9.1 9.3 13.5 3.5" />
+        </svg>
+      )}
+      {kind === "loop-markers" && (
+        <svg viewBox="0 0 16 16">
+          <path d="M4 9a4 4 0 1 0 2-3.46" />
+          <path d="M6 3.5H3.2V6.3" />
+        </svg>
+      )}
     </span>
   );
 }
 
-export function LayersPanel({ layerVisibility, onToggleLayer }: LayersPanelProps) {
+export function LayersPanel({ viewMode, layerVisibility, onToggleLayer }: LayersPanelProps) {
+  const visibleEntries = layerEntries.filter(({ key }) => {
+    if (viewMode === "nav") {
+      return key !== "tempMap" && key !== "keyframes" && key !== "graphEdges" && key !== "loopMarkers";
+    }
+    return key !== "globalCostmap" && key !== "localCostmap" && key !== "globalPlan" && key !== "localPlan";
+  });
+
   return (
     <section className="panel-card panel-card-fill">
       <div className="panel-section-title">Displays</div>
       <div className="layer-list">
-        {layerEntries.map(({ key, label, icon }) => (
+        {visibleEntries.map(({ key, label, icon }) => (
           <label className="layer-item" key={key}>
             <input
               type="checkbox"

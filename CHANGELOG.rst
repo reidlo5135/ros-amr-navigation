@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-03-30
+----------
+
+- Started the ``0.14.0`` development branch:
+
+  - reset the main AMR line back onto the stable ``0.12.4`` navigation baseline
+  - began separating future SLAM mapping work into ``amr_slam_mapper``
+  - kept ``amr_map_server`` focused on map lifecycle, publishing, evaluation, and save flows
+  - prepared the next mapping iteration around pure SLAM mapping and temporary-map publishing
 2026-03-25
 ----------
 

@@ -7,15 +7,18 @@ import type {
   LaserScanMessage,
   OccupancyGridMessage,
   Pose,
+  SlamGraphMessage,
   TfMessage,
 } from "../../../../lib/protocol";
-import type { GoalLifecycleState } from "../../types";
+import type { GoalLifecycleState, ViewMode } from "../../types";
 
 type SceneViewportProps = {
   state: BridgeState;
+  viewMode: ViewMode;
   layerVisibility: {
     grid: boolean;
     map: boolean;
+    tempMap: boolean;
     globalCostmap: boolean;
     localCostmap: boolean;
     footprint: boolean;
@@ -24,6 +27,9 @@ type SceneViewportProps = {
     localPlan: boolean;
     scan: boolean;
     tf: boolean;
+    keyframes: boolean;
+    graphEdges: boolean;
+    loopMarkers: boolean;
   };
   goalMarker?: {
     x: number;
@@ -560,7 +566,7 @@ function interpolateChannel(start: number, end: number, ratio: number) {
 
 function buildOccupancyTexture(
   grid: OccupancyGridMessage,
-  palette: "map" | "global_costmap" | "local_costmap",
+  palette: "map" | "temp_map" | "global_costmap" | "local_costmap",
 ): THREE.Texture {
   const { width, height } = grid.info;
   const canvas = document.createElement("canvas");
@@ -606,7 +612,13 @@ function buildOccupancyTexture(
       } else {
         if (value > 0) {
           const normalized = Math.max(0, Math.min(1, value / 100));
-          alpha = Math.max(36, Math.round((palette === "global_costmap" ? 156 : 168) * normalized));
+          alpha = Math.max(
+            36,
+            Math.round(
+              (palette === "global_costmap" ? 156 : palette === "temp_map" ? 176 : 168) *
+                normalized,
+            ),
+          );
           if (palette === "global_costmap") {
             if (normalized < 0.45) {
               const ratio = normalized / 0.45;
@@ -618,6 +630,18 @@ function buildOccupancyTexture(
               red = interpolateChannel(118, 76, ratio);
               green = interpolateChannel(235, 185, ratio);
               blue = interpolateChannel(233, 206, ratio);
+            }
+          } else if (palette === "temp_map") {
+            if (normalized < 0.45) {
+              const ratio = normalized / 0.45;
+              red = interpolateChannel(200, 115, ratio);
+              green = interpolateChannel(255, 219, ratio);
+              blue = interpolateChannel(220, 232, ratio);
+            } else {
+              const ratio = (normalized - 0.45) / 0.55;
+              red = interpolateChannel(115, 24, ratio);
+              green = interpolateChannel(219, 142, ratio);
+              blue = interpolateChannel(232, 170, ratio);
             }
           } else {
             if (normalized < 0.45) {
@@ -656,7 +680,7 @@ function buildOccupancyTexture(
 
 function buildOccupancyMesh(
   grid: OccupancyGridMessage,
-  palette: "map" | "global_costmap" | "local_costmap",
+  palette: "map" | "temp_map" | "global_costmap" | "local_costmap",
   yOffset: number,
 ): THREE.Mesh {
   const widthMeters = grid.info.width * grid.info.resolution;
@@ -686,8 +710,125 @@ function buildOccupancyMesh(
     yOffset,
     -(grid.info.origin.position.y + rotatedOffset.y),
   );
-  mesh.renderOrder = palette === "map" ? 1 : palette === "global_costmap" ? 2 : 3;
+  mesh.renderOrder =
+    palette === "map" ? 1 : palette === "temp_map" ? 2 : palette === "global_costmap" ? 3 : 4;
   return mesh;
+}
+
+function buildKeyframeMarkers(graph: SlamGraphMessage | undefined): THREE.Group | null {
+  if (!graph || graph.nodes.length === 0) {
+    return null;
+  }
+
+  const positions: number[] = [];
+  for (const node of graph.nodes) {
+    positions.push(node.x, 0.09, -node.y);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const points = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color: "#2c77ff",
+      size: 0.12,
+      transparent: true,
+      opacity: 0.92,
+      depthTest: false,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  points.renderOrder = 26;
+
+  const group = new THREE.Group();
+  group.add(points);
+  return group;
+}
+
+function buildGraphEdges(graph: SlamGraphMessage | undefined): THREE.Group | null {
+  if (!graph || graph.edges.length === 0) {
+    return null;
+  }
+
+  const normalPositions: number[] = [];
+  const loopPositions: number[] = [];
+  for (const edge of graph.edges) {
+    const target = edge.loop_closure ? loopPositions : normalPositions;
+    target.push(edge.from_x, 0.082, -edge.from_y, edge.to_x, 0.082, -edge.to_y);
+  }
+
+  const group = new THREE.Group();
+  if (normalPositions.length > 0) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(normalPositions, 3));
+    const lines = new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({
+        color: "#3c3c3c",
+        transparent: true,
+        opacity: 0.38,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    lines.renderOrder = 24;
+    group.add(lines);
+  }
+
+  if (loopPositions.length > 0) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(loopPositions, 3));
+    const loops = new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({
+        color: "#d73cff",
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    loops.renderOrder = 25;
+    group.add(loops);
+  }
+
+  return group.children.length > 0 ? group : null;
+}
+
+function buildLoopMarkers(graph: SlamGraphMessage | undefined): THREE.Group | null {
+  if (!graph || graph.edges.length === 0) {
+    return null;
+  }
+
+  const group = new THREE.Group();
+  for (const edge of graph.edges) {
+    if (!edge.loop_closure) {
+      continue;
+    }
+    for (const [x, y] of [
+      [edge.from_x, edge.from_y],
+      [edge.to_x, edge.to_y],
+    ] as const) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.06, 0.09, 22),
+        new THREE.MeshBasicMaterial({
+          color: "#ff4be1",
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.1, -y);
+      ring.renderOrder = 27;
+      group.add(ring);
+    }
+  }
+
+  return group.children.length > 0 ? group : null;
 }
 
 function buildFrameLookup(tf?: TfMessage, tfStatic?: TfMessage) {
@@ -1117,6 +1258,7 @@ function buildRobotModelGroup(
 
 export function SceneViewport({
   state,
+  viewMode,
   layerVisibility,
   goalMarker,
   goalLifecycle = "Idle",
@@ -1136,6 +1278,7 @@ export function SceneViewport({
   const goalMarkerRef = useRef<THREE.Group | null>(null);
   const previewMarkerRef = useRef<THREE.Group | null>(null);
   const mapMeshRef = useRef<THREE.Mesh | null>(null);
+  const tempMapMeshRef = useRef<THREE.Mesh | null>(null);
   const globalCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const localCostmapMeshRef = useRef<THREE.Mesh | null>(null);
   const footprintRef = useRef<THREE.Group | null>(null);
@@ -1143,6 +1286,9 @@ export function SceneViewport({
   const blockedLinkRef = useRef<THREE.Group | null>(null);
   const scanRef = useRef<THREE.Points | null>(null);
   const tfGroupRef = useRef<THREE.Group | null>(null);
+  const keyframesRef = useRef<THREE.Group | null>(null);
+  const graphEdgesRef = useRef<THREE.Group | null>(null);
+  const loopMarkersRef = useRef<THREE.Group | null>(null);
   const lastCenteredMapSignatureRef = useRef<string>("");
   const renderRef = useRef<(() => void) | null>(null);
   const interactionModeRef = useRef<SceneViewportProps["interactionMode"]>("idle");
@@ -1294,7 +1440,7 @@ export function SceneViewport({
 
     const handlePointerDown = (event: PointerEvent) => {
       const currentMode = interactionModeRef.current;
-      if (currentMode === "idle" || event.button !== 0) {
+      if ((currentMode !== "goal" && currentMode !== "initial_pose") || event.button !== 0) {
         return;
       }
       const point = readGroundPoint(event);
@@ -1365,6 +1511,7 @@ export function SceneViewport({
       disposeObject(globalPathRef.current);
       disposeObject(localPathRef.current);
       disposeObject(mapMeshRef.current);
+      disposeObject(tempMapMeshRef.current);
       disposeObject(globalCostmapMeshRef.current);
       disposeObject(localCostmapMeshRef.current);
       disposeObject(footprintRef.current);
@@ -1372,6 +1519,9 @@ export function SceneViewport({
       disposeObject(blockedLinkRef.current);
       disposeObject(scanRef.current);
       disposeObject(tfGroupRef.current);
+      disposeObject(keyframesRef.current);
+      disposeObject(graphEdgesRef.current);
+      disposeObject(loopMarkersRef.current);
       disposeObject(goalMarkerRef.current);
       disposeObject(robot);
       renderer.dispose();
@@ -1387,7 +1537,10 @@ export function SceneViewport({
       return;
     }
 
-    const robotPose = state.robot_pose;
+    const robotPose =
+      viewMode === "mapping"
+        ? state.mapping_pose ?? state.robot_pose
+        : state.robot_pose ?? state.mapping_pose;
     if (gridRef.current) {
       gridRef.current.visible = layerVisibility.grid;
     }
@@ -1455,6 +1608,7 @@ export function SceneViewport({
 
     for (const [ref, grid, palette, yOffset] of [
       [mapMeshRef, state.map, "map", 0.005],
+      [tempMapMeshRef, state.temp_map, "temp_map", 0.014],
       [globalCostmapMeshRef, state.global_costmap, "global_costmap", 0.02],
       [localCostmapMeshRef, state.local_costmap, "local_costmap", 0.03],
     ] as const) {
@@ -1467,6 +1621,7 @@ export function SceneViewport({
         ref.current = buildOccupancyMesh(grid, palette, yOffset);
         ref.current.visible =
           palette === "map" ? layerVisibility.map :
+          palette === "temp_map" ? layerVisibility.tempMap :
           palette === "global_costmap" ? layerVisibility.globalCostmap :
           layerVisibility.localCostmap;
         scene.add(ref.current);
@@ -1480,7 +1635,7 @@ export function SceneViewport({
     }
     footprintRef.current = buildFootprintOverlay(
       state.robot_description?.footprint_polygon,
-      state.robot_pose,
+      robotPose,
       state.motion_status?.costmap_blocked || state.motion_status?.safety_gate_blocked
         ? {
             fillColor: state.motion_status?.safety_gate_blocked ? "#ff4b4b" : "#3f7dff",
@@ -1526,7 +1681,7 @@ export function SceneViewport({
     }
     if (state.motion_status?.has_blocked_pose) {
       blockedLinkRef.current = buildBlockedLinkOverlay(
-        state.robot_pose,
+        robotPose,
         state.motion_status.blocked_pose,
       );
     }
@@ -1544,7 +1699,7 @@ export function SceneViewport({
       state.scan,
       state.tf,
       state.tf_static,
-      state.robot_pose,
+      robotPose,
     );
     if (scanRef.current) {
       scanRef.current.visible = layerVisibility.scan;
@@ -1559,7 +1714,7 @@ export function SceneViewport({
     tfGroupRef.current = buildTfGroup(
       state.tf,
       state.tf_static,
-      state.robot_pose,
+      robotPose,
       state.map,
     );
     if (tfGroupRef.current) {
@@ -1567,29 +1722,67 @@ export function SceneViewport({
       scene.add(tfGroupRef.current);
     }
 
-    if (state.map && cameraRef.current) {
+    if (keyframesRef.current) {
+      scene.remove(keyframesRef.current);
+      disposeObject(keyframesRef.current);
+      keyframesRef.current = null;
+    }
+    keyframesRef.current = buildKeyframeMarkers(state.slam_graph);
+    if (keyframesRef.current) {
+      keyframesRef.current.visible = layerVisibility.keyframes;
+      scene.add(keyframesRef.current);
+    }
+
+    if (graphEdgesRef.current) {
+      scene.remove(graphEdgesRef.current);
+      disposeObject(graphEdgesRef.current);
+      graphEdgesRef.current = null;
+    }
+    graphEdgesRef.current = buildGraphEdges(state.slam_graph);
+    if (graphEdgesRef.current) {
+      graphEdgesRef.current.visible = layerVisibility.graphEdges;
+      scene.add(graphEdgesRef.current);
+    }
+
+    if (loopMarkersRef.current) {
+      scene.remove(loopMarkersRef.current);
+      disposeObject(loopMarkersRef.current);
+      loopMarkersRef.current = null;
+    }
+    loopMarkersRef.current = buildLoopMarkers(state.slam_graph);
+    if (loopMarkersRef.current) {
+      loopMarkersRef.current.visible = layerVisibility.loopMarkers;
+      scene.add(loopMarkersRef.current);
+    }
+
+    if ((viewMode === "mapping" ? state.temp_map ?? state.map : state.map ?? state.temp_map) && cameraRef.current) {
+      const activeMap = viewMode === "mapping" ? state.temp_map ?? state.map : state.map ?? state.temp_map;
+      if (!activeMap) {
+        renderRef.current?.();
+        return;
+      }
       const controls = controlsRef.current;
       const mapSignature = [
-        state.map.info.width,
-        state.map.info.height,
-        state.map.info.resolution,
-        state.map.info.origin.position.x,
-        state.map.info.origin.position.y,
-        state.map.info.origin.orientation.yaw,
+        activeMap.info.width,
+        activeMap.info.height,
+        activeMap.info.resolution,
+        activeMap.info.origin.position.x,
+        activeMap.info.origin.position.y,
+        activeMap.info.origin.orientation.yaw,
       ].join(":");
       if (lastCenteredMapSignatureRef.current === mapSignature) {
         renderRef.current?.();
         return;
       }
-      const widthMeters = state.map.info.width * state.map.info.resolution;
-      const heightMeters = state.map.info.height * state.map.info.resolution;
+      const widthMeters = activeMap.info.width * activeMap.info.resolution;
+      const heightMeters = activeMap.info.height * activeMap.info.resolution;
       const center = rotate2d(
         widthMeters / 2,
         heightMeters / 2,
-        state.map.info.origin.orientation.yaw,
+        activeMap.info.origin.orientation.yaw,
       );
-      const centerX = state.map.info.origin.position.x + center.x;
-      const centerY = state.map.info.origin.position.y + center.y;
+      const centerX = activeMap.info.origin.position.x + center.x;
+      const centerY = activeMap.info.origin.position.y + center.y;
       cameraRef.current.position.x = centerX;
       cameraRef.current.position.z = -(centerY + 0.001);
       if (controls) {
@@ -1602,7 +1795,7 @@ export function SceneViewport({
     }
 
     renderRef.current?.();
-  }, [state, layerVisibility, goalMarker, goalLifecycle]);
+  }, [state, viewMode, layerVisibility, goalMarker, goalLifecycle]);
 
   return <div className="scene-viewport" ref={viewportRef} />;
 }

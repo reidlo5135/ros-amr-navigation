@@ -13,8 +13,12 @@ import "../styles/topbar.css";
 
 export function VizDashboardPage() {
   const dashboard = useVizDashboard();
-  const poseLabel = dashboard.bridgeState.robot_pose
-    ? `${dashboard.bridgeState.robot_pose.position.x.toFixed(2)}, ${dashboard.bridgeState.robot_pose.position.y.toFixed(2)}`
+  const activePose =
+    dashboard.viewMode === "mapping"
+      ? dashboard.bridgeState.mapping_pose ?? dashboard.bridgeState.robot_pose
+      : dashboard.bridgeState.robot_pose ?? dashboard.bridgeState.mapping_pose;
+  const poseLabel = activePose
+    ? `${activePose.position.x.toFixed(2)}, ${activePose.position.y.toFixed(2)}`
     : "--";
 
   return (
@@ -22,6 +26,8 @@ export function VizDashboardPage() {
       <Topbar
         connectionLabel={dashboard.connectionLabel}
         poseLabel={poseLabel}
+        viewMode={dashboard.viewMode}
+        onViewModeChange={dashboard.setViewMode}
         signalBars={dashboard.signalBars}
         signalRttMs={dashboard.signalRttMs}
         batteryPercentage={dashboard.batteryPercentage}
@@ -48,6 +54,7 @@ export function VizDashboardPage() {
             onCancelGoal={dashboard.cancelGoal}
           />
           <LayersPanel
+            viewMode={dashboard.viewMode}
             layerVisibility={dashboard.layerVisibility}
             onToggleLayer={dashboard.toggleLayer}
           />
@@ -61,6 +68,9 @@ export function VizDashboardPage() {
               Map {dashboard.bridgeState.map ? `${dashboard.bridgeState.map.info.width}x${dashboard.bridgeState.map.info.height}` : "--"}
             </span>
             <span className="toolbar-value">
+              Temp {dashboard.bridgeState.temp_map ? `${dashboard.bridgeState.temp_map.info.width}x${dashboard.bridgeState.temp_map.info.height}` : "--"}
+            </span>
+            <span className="toolbar-value">
               Global {dashboard.bridgeState.global_path?.poses.length ?? 0} pts
             </span>
             <span className="toolbar-value">
@@ -70,11 +80,15 @@ export function VizDashboardPage() {
               Scan {dashboard.bridgeState.scan?.ranges.length ?? 0} rays
             </span>
             <span className="toolbar-value">
+              Graph {dashboard.bridgeState.slam_graph?.node_count ?? 0}N/{dashboard.bridgeState.slam_graph?.edge_count ?? 0}E
+            </span>
+            <span className="toolbar-value">
               TF {(dashboard.bridgeState.tf?.transforms.length ?? 0) + (dashboard.bridgeState.tf_static?.transforms.length ?? 0)} frames
             </span>
           </div>
           <SceneViewport
             state={dashboard.bridgeState}
+            viewMode={dashboard.viewMode}
             layerVisibility={dashboard.layerVisibility}
             goalMarker={dashboard.goalMarker}
             goalLifecycle={dashboard.resolvedGoalLifecycle}

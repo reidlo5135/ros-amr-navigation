@@ -110,11 +110,52 @@ export type BatteryStateMessage = {
   present: boolean;
 };
 
+export type SlamGraphNode = {
+  id: number;
+  x: number;
+  y: number;
+  yaw: number;
+  submap_id: number;
+};
+
+export type SlamGraphEdge = {
+  from: number;
+  to: number;
+  from_x: number;
+  from_y: number;
+  to_x: number;
+  to_y: number;
+  weight: number;
+  loop_closure: boolean;
+};
+
+export type SlamGraphSubmap = {
+  id: number;
+  start_node_index: number;
+  end_node_index: number;
+  keyframe_count: number;
+  anchor_x: number;
+  anchor_y: number;
+  anchor_yaw: number;
+};
+
+export type SlamGraphMessage = {
+  frame_id: string;
+  node_count: number;
+  edge_count: number;
+  loop_count: number;
+  nodes: SlamGraphNode[];
+  edges: SlamGraphEdge[];
+  submaps: SlamGraphSubmap[];
+};
+
 export type BridgeState = {
   robot_pose?: Pose;
+  mapping_pose?: Pose;
   global_path?: PathMessage;
   local_path?: PathMessage;
   map?: OccupancyGridMessage;
+  temp_map?: OccupancyGridMessage;
   global_costmap?: OccupancyGridMessage;
   local_costmap?: OccupancyGridMessage;
   motion_status?: MotionStatusMessage;
@@ -123,6 +164,7 @@ export type BridgeState = {
   tf_static?: TfMessage;
   robot_description?: RobotDescriptionMessage;
   battery_state?: BatteryStateMessage;
+  slam_graph?: SlamGraphMessage;
 };
 
 export type BridgeEnvelope =

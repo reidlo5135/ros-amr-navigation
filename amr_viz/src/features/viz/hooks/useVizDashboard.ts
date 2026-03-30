@@ -7,6 +7,7 @@ import {
   createInitialState,
   defaultMqttUrl,
   initialLayerVisibility,
+  layerProfileForMode,
   isObjectPayload,
   isTfMessage,
   mergeTfMessages,
@@ -45,8 +46,25 @@ export function useVizDashboard() {
   const [goalLifecycle, setGoalLifecycle] = useState<GoalLifecycleState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("idle");
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>(initialLayerVisibility);
+  const [viewMode, setViewModeState] = useState<"nav" | "mapping">("nav");
   const [signalRttMs, setSignalRttMs] = useState<number | null>(null);
   const [signalLastSeenAt, setSignalLastSeenAt] = useState<number | null>(null);
+
+  const clearTransientTelemetry = () => {
+    pendingTelemetryRef.current = {};
+    bridgeStateRef.current = {
+      ...bridgeStateRef.current,
+      temp_map: undefined,
+      mapping_pose: undefined,
+      slam_graph: undefined,
+    };
+    setBridgeState((current) => ({
+      ...current,
+      temp_map: undefined,
+      mapping_pose: undefined,
+      slam_graph: undefined,
+    }));
+  };
 
   useEffect(() => {
     bridgeStateRef.current = bridgeState;
@@ -72,6 +90,7 @@ export function useVizDashboard() {
       startTransition(() => {
         if (status === "connecting") {
           setIsMqttConnected(false);
+          clearTransientTelemetry();
           setConnectionLabel(`Connecting: ${detail ?? mqttUrl}`);
           setEvents((current) => [`Connecting: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
@@ -90,6 +109,7 @@ export function useVizDashboard() {
           lastPingSentAtRef.current = null;
           setSignalRttMs(null);
           setSignalLastSeenAt(null);
+          clearTransientTelemetry();
           setConnectionLabel(`MQTT error: ${detail ?? mqttUrl}`);
           setEvents((current) => [`MQTT error: ${detail ?? mqttUrl}`, ...current].slice(0, 10));
           return;
@@ -100,6 +120,7 @@ export function useVizDashboard() {
         lastPingSentAtRef.current = null;
         setSignalRttMs(null);
         setSignalLastSeenAt(null);
+        clearTransientTelemetry();
         setConnectionLabel("Disconnected");
       });
     });
@@ -112,7 +133,8 @@ export function useVizDashboard() {
             (bridgeStateRef.current[mappedChannel] as TfMessage | undefined);
           pendingTelemetryRef.current[mappedChannel] = mergeTfMessages(currentValue, message.json);
         } else {
-          pendingTelemetryRef.current[mappedChannel] = message.json as BridgeState[keyof BridgeState];
+          (pendingTelemetryRef.current as Record<keyof BridgeState, BridgeState[keyof BridgeState] | undefined>)[mappedChannel] =
+            message.json as BridgeState[typeof mappedChannel];
         }
         if (flushFrameRef.current === null) {
           flushFrameRef.current = window.requestAnimationFrame(flushTelemetry);
@@ -255,6 +277,11 @@ export function useVizDashboard() {
       ...current,
       [layer]: !current[layer],
     }));
+  };
+
+  const setViewMode = (mode: "nav" | "mapping") => {
+    setViewModeState(mode);
+    setLayerVisibility({ ...layerProfileForMode(mode) });
   };
 
   const sendGoal = (x: number, y: number, yaw: number) => {
@@ -425,6 +452,7 @@ export function useVizDashboard() {
     setGoalYaw,
     goalMarker,
     interactionMode,
+    viewMode,
     layerVisibility,
     resolvedGoalLifecycle,
     batteryPercentage,
@@ -433,6 +461,7 @@ export function useVizDashboard() {
     connect,
     disconnect,
     toggleLayer,
+    setViewMode,
     toggleGoalMode,
     toggleInitialPoseMode,
     cancelGoal,

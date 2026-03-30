@@ -1,18 +1,18 @@
 # amr_map_server
 
-Map source for both localization and navigation.
+Map lifecycle server for official and temporary occupancy maps.
 
 ## Role
 
 - loads and publishes the static SLAM map
-- supports optional mapping mode
+- accepts a temporary SLAM map from `amr_slam_mapper`
 - can evaluate and save a temporary mapping result
-- publishes map and temporary map topics
+- publishes the official map topic
 
 ## Important Topics
 
 - `/amr/map/data`
-- `/amr/map/temporary`
+- `/amr/map/temp`
 
 ## Important Services
 

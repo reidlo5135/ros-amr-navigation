@@ -52,7 +52,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "mapping_mode",
                 default_value="false",
-                description="Run localization in mapping mode and skip navigation bringup.",
+                description="Run pure SLAM mapping mode and skip navigation bringup.",
             ),
             DeclareLaunchArgument(
                 "robot_bringup_delay_sec",

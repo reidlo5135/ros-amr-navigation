@@ -150,6 +150,10 @@ button.danger {
   color: #6e5a88;
 }
 
+.layer-icon-temp-map {
+  color: #2f9f97;
+}
+
 .layer-icon-costmap-global {
   color: #3a9ca4;
 }
@@ -182,6 +186,18 @@ button.danger {
   color: #7e6ac6;
 }
 
+.layer-icon-keyframes {
+  color: #2c77ff;
+}
+
+.layer-icon-graph-edges {
+  color: #636363;
+}
+
+.layer-icon-loop-markers {
+  color: #d73cff;
+}
+
 .metric-list {
   display: grid;
   gap: 8px;
@@ -208,6 +224,8 @@ button.danger {
   display: grid;
   gap: 8px;
   overflow: auto;
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .event-item {
@@ -217,6 +235,7 @@ button.danger {
   color: #565656;
   font-size: 12px;
   line-height: 1.45;
+  align-self: start;
 }
 
 @media (max-width: 1180px) {

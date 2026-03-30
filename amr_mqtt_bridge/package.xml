@@ -13,6 +13,7 @@
   <depend>amr_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>libpaho-mqtt-dev</depend>
   <depend>rcl</depend>
   <depend>rcl_action</depend>
   <depend>rclc</depend>
