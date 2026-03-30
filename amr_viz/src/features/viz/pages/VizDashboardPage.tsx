@@ -4,6 +4,7 @@ import { EventsPanel } from "../components/panels/EventsPanel";
 import { GoalControlPanel } from "../components/panels/GoalControlPanel";
 import { JoystickPanel } from "../components/panels/JoystickPanel";
 import { LayersPanel } from "../components/panels/LayersPanel";
+import { MapSavePanel } from "../components/panels/MapSavePanel";
 import { MqttPanel } from "../components/panels/MqttPanel";
 import { NavigationStatusPanel } from "../components/panels/NavigationStatusPanel";
 import { useVizDashboard } from "../hooks/useVizDashboard";
@@ -59,6 +60,13 @@ export function VizDashboardPage() {
             layerVisibility={dashboard.layerVisibility}
             onToggleLayer={dashboard.toggleLayer}
           />
+          {dashboard.viewMode === "mapping" && (
+            <MapSavePanel
+              basename={dashboard.mapSaveBasename}
+              onBasenameChange={dashboard.setMapSaveBasename}
+              onSave={dashboard.saveMappingMap}
+            />
+          )}
         </aside>
 
         <section className="scene-panel">

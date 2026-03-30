@@ -45,7 +45,7 @@ export const initialLayerVisibility: LayerVisibility = {
 
 export const mappingLayerVisibility: LayerVisibility = {
   grid: true,
-  map: true,
+  map: false,
   tempMap: true,
   globalCostmap: false,
   localCostmap: false,

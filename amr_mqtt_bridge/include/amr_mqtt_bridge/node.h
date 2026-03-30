@@ -156,6 +156,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char telemetry_mapping_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_slam_graph[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char command_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_cancel_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -164,6 +165,7 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char status_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char response_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char request_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char request_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -198,6 +200,7 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char service_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char action_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char save_directory[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
 } amr_mqtt_bridge_ros_interfaces_t;
 
 typedef struct amr_mqtt_bridge_config_s

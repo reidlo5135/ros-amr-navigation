@@ -1,5 +1,9 @@
 #include "amr_mqtt_bridge/node.h"
 
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 amr_mqtt_bridge_runtime_t g_amr_mqtt_bridge_runtime = {0};
 amr_mqtt_bridge_mqtt_state_t g_amr_mqtt_bridge_mqtt = {0};
 amr_mqtt_bridge_config_t g_amr_mqtt_bridge_config = {0};
@@ -196,6 +200,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     sizeof(g_amr_mqtt_bridge_config.mqtt.command_cmd_vel),
     "amr/robot/turtlebot3/command/cmd_vel");
   amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.command_save_map,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.command_save_map),
+    "amr/command/save_map");
+  amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose,
     sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose),
     "amr/command/set_initial_pose");
@@ -227,6 +235,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose,
     sizeof(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose),
     "amr/response/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.mqtt.response_save_map,
+    sizeof(g_amr_mqtt_bridge_config.mqtt.response_save_map),
+    "amr/response/save_map");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.mqtt.response_ping,
     sizeof(g_amr_mqtt_bridge_config.mqtt.response_ping),
@@ -348,6 +360,10 @@ static void amr_mqtt_bridge_set_default_config(void)
     g_amr_mqtt_bridge_config.ros.action_navigate_to_pose,
     sizeof(g_amr_mqtt_bridge_config.ros.action_navigate_to_pose),
     "/amr/navigator/navigate_to_pose");
+  amr_mqtt_bridge_copy_string(
+    g_amr_mqtt_bridge_config.ros.save_directory,
+    sizeof(g_amr_mqtt_bridge_config.ros.save_directory),
+    "/home/burger1/ws/data/maps");
   g_amr_mqtt_bridge_config.footprint_polygon_size = 0U;
 }
 
@@ -519,6 +535,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.mapping_pose", g_amr_mqtt_bridge_config.mqtt.telemetry_mapping_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_mapping_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.telemetry.slam_graph", g_amr_mqtt_bridge_config.mqtt.telemetry_slam_graph, sizeof(g_amr_mqtt_bridge_config.mqtt.telemetry_slam_graph));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.cmd_vel", g_amr_mqtt_bridge_config.mqtt.command_cmd_vel, sizeof(g_amr_mqtt_bridge_config.mqtt.command_cmd_vel));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.save_map", g_amr_mqtt_bridge_config.mqtt.command_save_map, sizeof(g_amr_mqtt_bridge_config.mqtt.command_save_map));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.command.cancel_navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose));
@@ -527,6 +544,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.status.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.status_navigate_to_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.set_initial_pose", g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.navigate_to_pose", g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.mqtt.response_navigate_to_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.save_map", g_amr_mqtt_bridge_config.mqtt.response_save_map, sizeof(g_amr_mqtt_bridge_config.mqtt.response_save_map));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.response.ping", g_amr_mqtt_bridge_config.mqtt.response_ping, sizeof(g_amr_mqtt_bridge_config.mqtt.response_ping));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.request.plan_segment", g_amr_mqtt_bridge_config.mqtt.request_plan_segment, sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_segment));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.request.plan_route", g_amr_mqtt_bridge_config.mqtt.request_plan_route, sizeof(g_amr_mqtt_bridge_config.mqtt.request_plan_route));
@@ -558,6 +576,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "ros.services.plan_segment", g_amr_mqtt_bridge_config.ros.service_plan_segment, sizeof(g_amr_mqtt_bridge_config.ros.service_plan_segment));
     amr_mqtt_bridge_read_string_param(node_params, "ros.services.plan_route", g_amr_mqtt_bridge_config.ros.service_plan_route, sizeof(g_amr_mqtt_bridge_config.ros.service_plan_route));
     amr_mqtt_bridge_read_string_param(node_params, "ros.actions.navigate_to_pose", g_amr_mqtt_bridge_config.ros.action_navigate_to_pose, sizeof(g_amr_mqtt_bridge_config.ros.action_navigate_to_pose));
+    amr_mqtt_bridge_read_string_param(node_params, "ros.save.directory", g_amr_mqtt_bridge_config.ros.save_directory, sizeof(g_amr_mqtt_bridge_config.ros.save_directory));
     amr_mqtt_bridge_read_double_array_param(
       node_params,
       "footprint.polygon",
@@ -1370,6 +1389,190 @@ static bool amr_mqtt_bridge_extract_twist_from_json(
   }
 
   return true;
+}
+
+static bool amr_mqtt_bridge_ensure_directory_exists(const char * path)
+{
+  char buffer[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  size_t length = 0U;
+
+  if (path == NULL || path[0] == '\0') {
+    return false;
+  }
+
+  length = strlen(path);
+  if (length >= sizeof(buffer)) {
+    return false;
+  }
+
+  memcpy(buffer, path, length + 1U);
+
+  for (char * cursor = buffer + 1; *cursor != '\0'; ++cursor) {
+    if (*cursor != '/') {
+      continue;
+    }
+    *cursor = '\0';
+    if (mkdir(buffer, 0775) != 0 && errno != EEXIST) {
+      return false;
+    }
+    *cursor = '/';
+  }
+
+  if (mkdir(buffer, 0775) != 0 && errno != EEXIST) {
+    return false;
+  }
+
+  return true;
+}
+
+static bool amr_mqtt_bridge_is_valid_map_basename(const char * basename)
+{
+  for (size_t index = 0U; basename != NULL && basename[index] != '\0'; ++index) {
+    const char ch = basename[index];
+    const bool alpha_numeric =
+      (ch >= 'a' && ch <= 'z') ||
+      (ch >= 'A' && ch <= 'Z') ||
+      (ch >= '0' && ch <= '9');
+    if (!alpha_numeric && ch != '_' && ch != '-' && ch != '.') {
+      return false;
+    }
+  }
+
+  return basename != NULL && basename[0] != '\0';
+}
+
+static bool amr_mqtt_bridge_write_temp_map_files(
+  const nav_msgs__msg__OccupancyGrid * map,
+  const char * directory,
+  const char * basename,
+  char * image_path,
+  size_t image_path_capacity,
+  char * yaml_path,
+  size_t yaml_path_capacity)
+{
+  FILE * image_file = NULL;
+  FILE * yaml_file = NULL;
+
+  if (map == NULL || directory == NULL || basename == NULL ||
+    map->info.width == 0U || map->info.height == 0U || map->data.size == 0U)
+  {
+    return false;
+  }
+
+  if (!amr_mqtt_bridge_ensure_directory_exists(directory)) {
+    return false;
+  }
+
+  (void)snprintf(image_path, image_path_capacity, "%s/%s.pgm", directory, basename);
+  (void)snprintf(yaml_path, yaml_path_capacity, "%s/%s.yaml", directory, basename);
+
+  image_file = fopen(image_path, "wb");
+  if (image_file == NULL) {
+    return false;
+  }
+
+  (void)fprintf(
+    image_file,
+    "P5\n%u %u\n255\n",
+    (unsigned int)map->info.width,
+    (unsigned int)map->info.height);
+
+  for (size_t row = 0U; row < map->info.height; ++row) {
+    const size_t map_row = map->info.height - 1U - row;
+    for (size_t col = 0U; col < map->info.width; ++col) {
+      const size_t index = (map_row * map->info.width) + col;
+      const int8_t cell = map->data.data[index];
+      uint8_t pixel = 205U;
+      if (cell == 0) {
+        pixel = 254U;
+      } else if (cell >= 50) {
+        pixel = 0U;
+      }
+      (void)fwrite(&pixel, sizeof(pixel), 1U, image_file);
+    }
+  }
+  (void)fclose(image_file);
+  image_file = NULL;
+
+  yaml_file = fopen(yaml_path, "wb");
+  if (yaml_file == NULL) {
+    return false;
+  }
+  (void)fprintf(yaml_file, "image: %s.pgm\n", basename);
+  (void)fprintf(yaml_file, "resolution: %.9f\n", map->info.resolution);
+  (void)fprintf(
+    yaml_file,
+    "origin: [%.9f, %.9f, %.9f]\n",
+    map->info.origin.position.x,
+    map->info.origin.position.y,
+    amr_mqtt_bridge_yaw_from_quaternion(&map->info.origin.orientation));
+  (void)fprintf(yaml_file, "negate: 0\n");
+  (void)fprintf(yaml_file, "occupied_thresh: 0.65\n");
+  (void)fprintf(yaml_file, "free_thresh: 0.196\n");
+  (void)fclose(yaml_file);
+
+  return true;
+}
+
+static void amr_mqtt_bridge_handle_save_map_command(const char * payload)
+{
+  char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  char basename[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  char image_path[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  char yaml_path[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  char message[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
+  const nav_msgs__msg__OccupancyGrid * map = &g_amr_mqtt_bridge_ros_state.temp_map_message;
+
+  if (payload == NULL) {
+    return;
+  }
+
+  (void)amr_mqtt_bridge_extract_json_string_in_range(
+    payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id));
+  if (!amr_mqtt_bridge_extract_json_string_in_range(
+      payload, payload + strlen(payload), "basename", basename, sizeof(basename)) ||
+    !amr_mqtt_bridge_is_valid_map_basename(basename))
+  {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_save_map,
+      request_id,
+      false,
+      "invalid map basename");
+    return;
+  }
+
+  if (map->info.width == 0U || map->info.height == 0U || map->data.size == 0U) {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_save_map,
+      request_id,
+      false,
+      "temporary map is not available");
+    return;
+  }
+
+  if (!amr_mqtt_bridge_write_temp_map_files(
+      map,
+      g_amr_mqtt_bridge_config.ros.save_directory,
+      basename,
+      image_path,
+      sizeof(image_path),
+      yaml_path,
+      sizeof(yaml_path)))
+  {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_save_map,
+      request_id,
+      false,
+      "failed to save map files");
+    return;
+  }
+
+  (void)snprintf(message, sizeof(message), "saved map image=%s yaml=%s", image_path, yaml_path);
+  amr_mqtt_bridge_publish_simple_response(
+    g_amr_mqtt_bridge_config.mqtt.response_save_map,
+    request_id,
+    true,
+    message);
 }
 
 static void amr_mqtt_bridge_telemetry_callback(const void * message, void * context)
@@ -3322,6 +3525,13 @@ static void amr_mqtt_bridge_poll_mqtt(void)
       amr_mqtt_bridge_handle_cmd_vel_message(
         message->payload,
         (size_t)message->payloadlen);
+    } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_save_map) == 0) {
+      char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
+      if (payload_text != NULL) {
+        memcpy(payload_text, message->payload, (size_t)message->payloadlen);
+        amr_mqtt_bridge_handle_save_map_command(payload_text);
+        free(payload_text);
+      }
     } else if (strcmp(topic_name, g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose) == 0) {
       char * payload_text = (char *)calloc((size_t)message->payloadlen + 1U, sizeof(char));
       if (payload_text != NULL) {

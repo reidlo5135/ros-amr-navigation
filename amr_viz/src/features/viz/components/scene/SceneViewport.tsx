@@ -610,12 +610,29 @@ function buildOccupancyTexture(
           alpha = 255;
         }
       } else {
-        if (value > 0) {
+        if (palette === "temp_map") {
+          if (value < 0) {
+            red = 204;
+            green = 208;
+            blue = 214;
+            alpha = 255;
+          } else if (value >= 50) {
+            red = 28;
+            green = 32;
+            blue = 38;
+            alpha = 255;
+          } else {
+            red = 250;
+            green = 251;
+            blue = 252;
+            alpha = 255;
+          }
+        } else if (value > 0) {
           const normalized = Math.max(0, Math.min(1, value / 100));
           alpha = Math.max(
             36,
             Math.round(
-              (palette === "global_costmap" ? 156 : palette === "temp_map" ? 176 : 168) *
+              (palette === "global_costmap" ? 156 : 168) *
                 normalized,
             ),
           );
@@ -630,18 +647,6 @@ function buildOccupancyTexture(
               red = interpolateChannel(118, 76, ratio);
               green = interpolateChannel(235, 185, ratio);
               blue = interpolateChannel(233, 206, ratio);
-            }
-          } else if (palette === "temp_map") {
-            if (normalized < 0.45) {
-              const ratio = normalized / 0.45;
-              red = interpolateChannel(200, 115, ratio);
-              green = interpolateChannel(255, 219, ratio);
-              blue = interpolateChannel(220, 232, ratio);
-            } else {
-              const ratio = (normalized - 0.45) / 0.55;
-              red = interpolateChannel(115, 24, ratio);
-              green = interpolateChannel(219, 142, ratio);
-              blue = interpolateChannel(232, 170, ratio);
             }
           } else {
             if (normalized < 0.45) {

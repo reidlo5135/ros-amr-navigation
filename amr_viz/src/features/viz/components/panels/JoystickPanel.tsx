@@ -11,11 +11,19 @@ type JoystickPanelProps = {
 const PAD_SIZE = 160;
 const PAD_RADIUS = PAD_SIZE / 2;
 const KNOB_RADIUS = 20;
-const MAX_LINEAR_X = 0.18;
-const MAX_ANGULAR_Z = 1.4;
+const MAX_LINEAR_X = 0.1;
+const MAX_ANGULAR_Z = 0.8;
+const RESPONSE_EXPONENT = 1.35;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function shapeNormalized(value: number) {
+  if (Math.abs(value) < 0.04) {
+    return 0;
+  }
+  return Math.sign(value) * Math.pow(Math.abs(value), RESPONSE_EXPONENT);
 }
 
 export function JoystickPanel({
@@ -48,9 +56,11 @@ export function JoystickPanel({
     const clampedY = offsetY * limitedScale;
     const normalizedX = clamp(clampedX / (PAD_RADIUS - KNOB_RADIUS), -1, 1);
     const normalizedY = clamp(clampedY / (PAD_RADIUS - KNOB_RADIUS), -1, 1);
+    const shapedX = shapeNormalized(normalizedX);
+    const shapedY = shapeNormalized(normalizedY);
 
     setDragVector({ x: clampedX, y: clampedY });
-    onCommandChange(-normalizedY * MAX_LINEAR_X, -normalizedX * MAX_ANGULAR_Z);
+    onCommandChange(-shapedY * MAX_LINEAR_X, -shapedX * MAX_ANGULAR_Z);
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {

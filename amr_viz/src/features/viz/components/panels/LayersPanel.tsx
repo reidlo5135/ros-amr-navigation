@@ -119,7 +119,11 @@ export function LayersPanel({ viewMode, layerVisibility, onToggleLayer }: Layers
     if (viewMode === "nav") {
       return key !== "tempMap" && key !== "keyframes" && key !== "graphEdges" && key !== "loopMarkers";
     }
-    return key !== "globalCostmap" && key !== "localCostmap" && key !== "globalPlan" && key !== "localPlan";
+    return key !== "map" &&
+      key !== "globalCostmap" &&
+      key !== "localCostmap" &&
+      key !== "globalPlan" &&
+      key !== "localPlan";
   });
 
   return (

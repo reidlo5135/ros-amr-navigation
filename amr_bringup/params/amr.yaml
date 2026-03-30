@@ -379,6 +379,7 @@
           slam_graph: "amr/robot/turtlebot3/telemetry/slam_graph"
         command:
           cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
+          save_map: "amr/command/save_map"
           set_initial_pose: "amr/command/set_initial_pose"
           navigate_to_pose: "amr/command/navigate_to_pose"
           cancel_navigate_to_pose: "amr/command/cancel_navigate_to_pose"
@@ -390,6 +391,7 @@
         response:
           set_initial_pose: "amr/response/set_initial_pose"
           navigate_to_pose: "amr/response/navigate_to_pose"
+          save_map: "amr/response/save_map"
           ping: "amr/response/ping"
           plan_segment: "amr/response/plan_segment"
           plan_route: "amr/response/plan_route"
@@ -425,3 +427,5 @@
         plan_route: "/amr/global_planner/plan_route"
       actions:
         navigate_to_pose: "/amr/navigator/navigate_to_pose"
+      save:
+        directory: "/home/burger1/ws/data/maps"

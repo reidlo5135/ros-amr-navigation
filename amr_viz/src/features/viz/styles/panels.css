@@ -105,6 +105,7 @@ button.danger {
   height: 100%;
   align-content: stretch;
   grid-auto-rows: minmax(30px, 1fr);
+  overflow-y: auto;
 }
 
 .layer-item {

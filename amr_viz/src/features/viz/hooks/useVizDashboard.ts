@@ -42,6 +42,7 @@ export function useVizDashboard() {
   const [goalX, setGoalX] = useState("2.5");
   const [goalY, setGoalY] = useState("0.0");
   const [goalYaw, setGoalYaw] = useState("0.0");
+  const [mapSaveBasename, setMapSaveBasename] = useState("amr_mapping_map");
   const [goalMarker, setGoalMarker] = useState<GoalMarker | null>(null);
   const [goalLifecycle, setGoalLifecycle] = useState<GoalLifecycleState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("idle");
@@ -430,6 +431,18 @@ export function useVizDashboard() {
     });
   };
 
+  const saveMappingMap = () => {
+    const trimmed = mapSaveBasename.trim();
+    if (trimmed.length === 0) {
+      setEvents((current) => ["Map basename is required", ...current].slice(0, 10));
+      return;
+    }
+    publishJson("amr/command/save_map", {
+      request_id: createCommandId(),
+      basename: trimmed,
+    });
+  };
+
   const resolvedGoalLifecycle: GoalLifecycleState = (() => {
     if (
       goalLifecycle === "Aborted" ||
@@ -502,6 +515,8 @@ export function useVizDashboard() {
     setGoalY,
     goalYaw,
     setGoalYaw,
+    mapSaveBasename,
+    setMapSaveBasename,
     goalMarker,
     interactionMode,
     viewMode,
@@ -516,6 +531,7 @@ export function useVizDashboard() {
     disconnect,
     updateTeleopCommand,
     stopTeleopCommand,
+    saveMappingMap,
     toggleLayer,
     setViewMode,
     toggleGoalMode,
