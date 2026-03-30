@@ -138,7 +138,6 @@ private:
   void maybe_optimize_pose_graph(const LoopClosureCandidate & candidate, int current_node_index);
   void optimize_pose_graph();
   void update_submap_accumulation(const GraphNode & node);
-  bool is_dynamic_filter_active() const;
 
   Pose2D compose_pose(const Pose2D & lhs, const Pose2D & rhs) const;
   Pose2D inverse_pose(const Pose2D & pose) const;
@@ -217,7 +216,6 @@ private:
   bool has_start_odom_yaw_{false};
   bool has_latest_imu_{false};
   bool has_start_imu_yaw_{false};
-  bool has_confirmed_loop_closure_{false};
 
   std::vector<GraphNode> graph_nodes_;
   std::vector<GraphEdge> graph_edges_;
@@ -268,7 +266,6 @@ private:
   int occupancy_hit_decay_on_free_;
   int occupancy_stale_scan_window_;
   int occupancy_stale_score_penalty_;
-  bool occupancy_dynamic_filter_requires_loop_closure_;
 
   double keyframe_distance_threshold_;
   double keyframe_yaw_threshold_;

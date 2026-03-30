@@ -46,7 +46,6 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   occupancy_hit_decay_on_free_(1),
   occupancy_stale_scan_window_(30),
   occupancy_stale_score_penalty_(2),
-  occupancy_dynamic_filter_requires_loop_closure_(true),
   keyframe_distance_threshold_(0.30),
   keyframe_yaw_threshold_(0.30),
   submap_nodes_per_submap_(10),
@@ -118,9 +117,6 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "occupancy.stale_scan_window", this->occupancy_stale_scan_window_);
   this->declare_parameter(
     "occupancy.stale_score_penalty", this->occupancy_stale_score_penalty_);
-  this->declare_parameter(
-    "occupancy.dynamic_filter_requires_loop_closure",
-    this->occupancy_dynamic_filter_requires_loop_closure_);
   this->declare_parameter("pose_graph.keyframe_distance_threshold", this->keyframe_distance_threshold_);
   this->declare_parameter("pose_graph.keyframe_yaw_threshold", this->keyframe_yaw_threshold_);
   this->declare_parameter("pose_graph.submap_nodes_per_submap", this->submap_nodes_per_submap_);
@@ -207,9 +203,6 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "occupancy.stale_scan_window", this->occupancy_stale_scan_window_);
   this->get_parameter(
     "occupancy.stale_score_penalty", this->occupancy_stale_score_penalty_);
-  this->get_parameter(
-    "occupancy.dynamic_filter_requires_loop_closure",
-    this->occupancy_dynamic_filter_requires_loop_closure_);
   this->get_parameter("pose_graph.keyframe_distance_threshold", this->keyframe_distance_threshold_);
   this->get_parameter("pose_graph.keyframe_yaw_threshold", this->keyframe_yaw_threshold_);
   this->get_parameter("pose_graph.submap_nodes_per_submap", this->submap_nodes_per_submap_);
@@ -242,7 +235,6 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
   this->next_graph_node_id_ = 1;
   this->next_submap_id_ = 1;
   this->scan_sequence_ = 0U;
-  this->has_confirmed_loop_closure_ = false;
   this->map_to_odom_ = Pose2D{};
   this->current_corrected_pose_ = Pose2D{};
   this->has_latest_odometry_ = false;
@@ -409,15 +401,6 @@ void SlamMapper::publish_outputs()
   if (this->publish_map_to_odom_tf_) {
     this->publish_map_to_odom_tf();
   }
-}
-
-bool SlamMapper::is_dynamic_filter_active() const
-{
-  if (!this->occupancy_dynamic_filter_requires_loop_closure_) {
-    return true;
-  }
-
-  return this->has_confirmed_loop_closure_;
 }
 
 void SlamMapper::publish_temporary_map()
@@ -1036,7 +1019,6 @@ void SlamMapper::maybe_optimize_pose_graph(const LoopClosureCandidate & candidat
   loop_edge.weight = 3.0;
   loop_edge.loop_closure = true;
   this->graph_edges_.push_back(loop_edge);
-  this->has_confirmed_loop_closure_ = true;
 
   this->graph_nodes_[current_node_index].map_pose = candidate.matched_pose;
   this->optimize_pose_graph();
@@ -1190,10 +1172,8 @@ void SlamMapper::refresh_cell_from_score(
     static_cast<int>(this->occupied_observation_counts_[index]);
   const int free_observation_count =
     static_cast<int>(this->free_observation_counts_[index]);
-  const bool dynamic_filter_active = this->is_dynamic_filter_active();
   const uint32_t last_hit_scan_id = this->last_hit_scan_ids_[index];
   const bool stale_hit =
-    dynamic_filter_active &&
     last_hit_scan_id > 0U &&
     this->scan_sequence_ > last_hit_scan_id &&
     (this->scan_sequence_ - last_hit_scan_id) >=
@@ -1203,18 +1183,13 @@ void SlamMapper::refresh_cell_from_score(
 
   if (
     adjusted_score >= this->mapping_occupied_score_threshold_ &&
-    (
-      !dynamic_filter_active ||
-      (
-        occupied_observation_count >= std::max(1, this->occupancy_min_persistent_hits_) &&
-        occupied_observation_count > free_observation_count)))
+    occupied_observation_count >= std::max(1, this->occupancy_min_persistent_hits_) &&
+    occupied_observation_count > free_observation_count)
   {
     map.data[index] = 100;
   } else if (
     adjusted_score <= this->mapping_free_score_threshold_ ||
-    (
-      dynamic_filter_active &&
-      free_observation_count >= std::max(1, this->occupancy_min_confirmed_free_observations_)))
+    free_observation_count >= std::max(1, this->occupancy_min_confirmed_free_observations_))
   {
     map.data[index] = 0;
   } else {
@@ -1263,17 +1238,15 @@ void SlamMapper::mark_free_cell(
     return;
   }
 
-  if (this->is_dynamic_filter_active()) {
-    this->free_observation_counts_[index] = static_cast<uint16_t>(std::min<int>(
-      std::numeric_limits<uint16_t>::max(),
-      static_cast<int>(this->free_observation_counts_[index]) + 1));
-    if (this->occupied_observation_counts_[index] > 0U) {
-      const int decayed_count = std::max(
-        0,
-        static_cast<int>(this->occupied_observation_counts_[index]) -
-        std::max(0, this->occupancy_hit_decay_on_free_));
-      this->occupied_observation_counts_[index] = static_cast<uint16_t>(decayed_count);
-    }
+  this->free_observation_counts_[index] = static_cast<uint16_t>(std::min<int>(
+    std::numeric_limits<uint16_t>::max(),
+    static_cast<int>(this->free_observation_counts_[index]) + 1));
+  if (this->occupied_observation_counts_[index] > 0U) {
+    const int decayed_count = std::max(
+      0,
+      static_cast<int>(this->occupied_observation_counts_[index]) -
+      std::max(0, this->occupancy_hit_decay_on_free_));
+    this->occupied_observation_counts_[index] = static_cast<uint16_t>(decayed_count);
   }
 
   this->update_cell_score(map, occupancy_scores, grid_x, grid_y, -this->mapping_free_score_);
