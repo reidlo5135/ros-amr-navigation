@@ -266,6 +266,9 @@ private:
   int scan_matching_minimum_occupied_cells_;
   double scan_matching_occupied_match_score_;
   double scan_matching_free_space_penalty_;
+  double scan_matching_min_score_improvement_;
+  double scan_matching_max_translation_correction_;
+  double scan_matching_max_yaw_correction_deg_;
 
   int mapping_hit_score_;
   int mapping_free_score_;

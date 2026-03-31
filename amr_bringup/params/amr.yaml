@@ -69,6 +69,9 @@
       minimum_occupied_cells: 50
       occupied_match_score: 3.0
       free_space_penalty: 1.0
+      min_score_improvement: 2.0
+      max_translation_correction: 0.08
+      max_yaw_correction_deg: 6.0
     occupancy:
       hit_score: 20
       free_score: 3

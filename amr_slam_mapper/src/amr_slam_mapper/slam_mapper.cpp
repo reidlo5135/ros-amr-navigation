@@ -37,6 +37,9 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   scan_matching_minimum_occupied_cells_(50),
   scan_matching_occupied_match_score_(3.0),
   scan_matching_free_space_penalty_(1.0),
+  scan_matching_min_score_improvement_(2.0),
+  scan_matching_max_translation_correction_(0.08),
+  scan_matching_max_yaw_correction_deg_(6.0),
   mapping_hit_score_(20),
   mapping_free_score_(3),
   mapping_occupied_score_threshold_(20),
@@ -99,6 +102,12 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "scan_matching.occupied_match_score", this->scan_matching_occupied_match_score_);
   this->declare_parameter(
     "scan_matching.free_space_penalty", this->scan_matching_free_space_penalty_);
+  this->declare_parameter(
+    "scan_matching.min_score_improvement", this->scan_matching_min_score_improvement_);
+  this->declare_parameter(
+    "scan_matching.max_translation_correction", this->scan_matching_max_translation_correction_);
+  this->declare_parameter(
+    "scan_matching.max_yaw_correction_deg", this->scan_matching_max_yaw_correction_deg_);
   this->declare_parameter("occupancy.hit_score", this->mapping_hit_score_);
   this->declare_parameter("occupancy.free_score", this->mapping_free_score_);
   this->declare_parameter(
@@ -180,6 +189,12 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "scan_matching.occupied_match_score", this->scan_matching_occupied_match_score_);
   this->get_parameter(
     "scan_matching.free_space_penalty", this->scan_matching_free_space_penalty_);
+  this->get_parameter(
+    "scan_matching.min_score_improvement", this->scan_matching_min_score_improvement_);
+  this->get_parameter(
+    "scan_matching.max_translation_correction", this->scan_matching_max_translation_correction_);
+  this->get_parameter(
+    "scan_matching.max_yaw_correction_deg", this->scan_matching_max_yaw_correction_deg_);
   this->get_parameter("occupancy.hit_score", this->mapping_hit_score_);
   this->get_parameter("occupancy.free_score", this->mapping_free_score_);
   this->get_parameter(
@@ -796,9 +811,16 @@ SlamMapper::Pose2D SlamMapper::refine_pose_with_scan_matching(
     std::max(0.0, this->scan_matching_angular_window_deg_) * kDegToRad;
   const double angular_step_rad =
     std::max(1.0, this->scan_matching_angular_step_deg_) * kDegToRad;
+  const double max_translation_correction =
+    std::max(0.0, this->scan_matching_max_translation_correction_);
+  const double max_yaw_correction_rad =
+    std::max(0.0, this->scan_matching_max_yaw_correction_deg_) * kDegToRad;
+  const double min_score_improvement =
+    std::max(0.0, this->scan_matching_min_score_improvement_);
 
   Pose2D best_pose = predicted_pose;
-  double best_score = this->score_scan_candidate(map_snapshot, scan, predicted_pose);
+  const double predicted_score = this->score_scan_candidate(map_snapshot, scan, predicted_pose);
+  double best_score = predicted_score;
 
   for (double delta_x = -linear_window; delta_x <= linear_window + 1e-6; delta_x += linear_step) {
     for (double delta_y = -linear_window; delta_y <= linear_window + 1e-6; delta_y += linear_step) {
@@ -827,6 +849,21 @@ SlamMapper::Pose2D SlamMapper::refine_pose_with_scan_matching(
         }
       }
     }
+  }
+
+  const double correction_x = best_pose.x - predicted_pose.x;
+  const double correction_y = best_pose.y - predicted_pose.y;
+  const double correction_translation = std::hypot(correction_x, correction_y);
+  const double correction_yaw =
+    std::abs(this->normalize_angle(best_pose.yaw - predicted_pose.yaw));
+
+  if (
+    !std::isfinite(best_score) ||
+    (best_score - predicted_score) < min_score_improvement ||
+    correction_translation > max_translation_correction ||
+    correction_yaw > max_yaw_correction_rad)
+  {
+    return predicted_pose;
   }
 
   return best_pose;
