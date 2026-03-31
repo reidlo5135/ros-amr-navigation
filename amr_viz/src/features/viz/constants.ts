@@ -7,7 +7,7 @@ export function defaultRobotId() {
     return configuredRobotId.trim();
   }
 
-  return "turtlebot3";
+  return "burger1";
 }
 
 export function normalizeRobotId(value: string) {

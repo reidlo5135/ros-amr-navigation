@@ -360,56 +360,13 @@
       username: ""
       password: ""
     mqtt:
-      root: "/amr"
-      robot_id: "turtlebot3"
+      robot_id: "burger1"
       qos:
         telemetry: 0
         command: 0
         service: 0
       topics:
-        telemetry:
-          map: "/amr/turtlebot3/telemetry/map"
-          temp_map: "/amr/turtlebot3/telemetry/temp_map/refined"
-          temp_map_raw: "/amr/turtlebot3/telemetry/temp_map/raw"
-          robot_pose: "/amr/turtlebot3/telemetry/robot_pose"
-          mapping_pose: "/amr/turtlebot3/telemetry/mapping_pose"
-          global_path: "/amr/turtlebot3/telemetry/global_path"
-          local_path: "/amr/turtlebot3/telemetry/local_path"
-          global_costmap: "/amr/turtlebot3/telemetry/global_costmap"
-          local_costmap: "/amr/turtlebot3/telemetry/local_costmap"
-          motion_status: "/amr/turtlebot3/telemetry/motion_status"
-          scan: "/amr/turtlebot3/telemetry/scan"
-          odom: "/amr/turtlebot3/telemetry/odom"
-          imu: "/amr/turtlebot3/telemetry/imu"
-          tf: "/amr/turtlebot3/telemetry/tf"
-          tf_static: "/amr/turtlebot3/telemetry/tf_static"
-          joint_states: "/amr/turtlebot3/telemetry/joint_states"
-          robot_description: "/amr/turtlebot3/telemetry/robot_description"
-          battery_state: "/amr/turtlebot3/telemetry/battery_state"
-          slam_graph: "/amr/turtlebot3/telemetry/slam_graph"
-        command:
-          cmd_vel: "/amr/turtlebot3/command/cmd_vel"
-          save_map: "/amr/turtlebot3/command/save_map"
-          set_initial_pose: "/amr/turtlebot3/command/set_initial_pose"
-          navigate_to_pose: "/amr/turtlebot3/command/navigate_to_pose"
-          cancel_navigate_to_pose: "/amr/turtlebot3/command/cancel_navigate_to_pose"
-          ping: "/amr/turtlebot3/command/ping"
-          set_robot_id: "/amr/turtlebot3/command/set_robot_id"
-        feedback:
-          navigate_to_pose: "/amr/turtlebot3/feedback/navigate_to_pose"
-        status:
-          navigate_to_pose: "/amr/turtlebot3/status/navigate_to_pose"
-        response:
-          set_initial_pose: "/amr/turtlebot3/response/set_initial_pose"
-          navigate_to_pose: "/amr/turtlebot3/response/navigate_to_pose"
-          save_map: "/amr/turtlebot3/response/save_map"
-          ping: "/amr/turtlebot3/response/ping"
-          set_robot_id: "/amr/turtlebot3/response/set_robot_id"
-          plan_segment: "/amr/turtlebot3/response/plan_segment"
-          plan_route: "/amr/turtlebot3/response/plan_route"
-        request:
-          plan_segment: "/amr/turtlebot3/request/plan_segment"
-          plan_route: "/amr/turtlebot3/request/plan_route"
+        header: "/amr"
     ros:
       topics:
         map: "/amr/map/data"

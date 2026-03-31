@@ -763,6 +763,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_read_string_param(node_params, "broker.password", g_amr_mqtt_bridge_config.broker.password, sizeof(g_amr_mqtt_bridge_config.broker.password));
 
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.root", g_amr_mqtt_bridge_config.mqtt.root, sizeof(g_amr_mqtt_bridge_config.mqtt.root));
+    amr_mqtt_bridge_read_string_param(node_params, "mqtt.topics.header", g_amr_mqtt_bridge_config.mqtt.root, sizeof(g_amr_mqtt_bridge_config.mqtt.root));
     amr_mqtt_bridge_read_string_param(node_params, "mqtt.robot_id", g_amr_mqtt_bridge_config.mqtt.robot_id, sizeof(g_amr_mqtt_bridge_config.mqtt.robot_id));
     amr_mqtt_bridge_read_integer_param(node_params, "mqtt.qos.telemetry", &g_amr_mqtt_bridge_config.mqtt.telemetry_qos);
     amr_mqtt_bridge_read_integer_param(node_params, "mqtt.qos.command", &g_amr_mqtt_bridge_config.mqtt.command_qos);
