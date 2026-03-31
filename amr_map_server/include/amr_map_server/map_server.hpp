@@ -58,7 +58,9 @@ private:
 
   bool load_static_map_from_files();
   void publish_official_map();
-  std::string resolve_path(const std::string & configured_path) const;
+  std::string resolve_path(
+    const std::string & configured_path,
+    const std::string & base_directory = "") const;
   void set_quaternion_from_yaw(geometry_msgs::msg::Quaternion & orientation, double yaw) const;
   double quaternion_to_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
 

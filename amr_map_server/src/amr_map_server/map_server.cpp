@@ -280,7 +280,9 @@ bool MapServer::load_static_map_from_files()
     return false;
   }
 
-  const auto image_path = this->resolve_path(map_yaml["image"].as<std::string>());
+  const auto image_path = this->resolve_path(
+    map_yaml["image"].as<std::string>(),
+    std::filesystem::path(resolved_yaml_path).parent_path().string());
   cv::Mat image = cv::imread(image_path, cv::IMREAD_UNCHANGED);
   if (image.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Failed to load map image '%s'", image_path.c_str());
@@ -721,10 +723,17 @@ bool MapServer::grid_index(
   return true;
 }
 
-std::string MapServer::resolve_path(const std::string & configured_path) const
+std::string MapServer::resolve_path(
+  const std::string & configured_path,
+  const std::string & base_directory) const
 {
   const auto resolved_uri_path = resolve_package_uri(configured_path);
-  return std::filesystem::path(resolved_uri_path).lexically_normal().string();
+  std::filesystem::path resolved_path(resolved_uri_path);
+  if (!base_directory.empty() && !resolved_path.is_absolute()) {
+    resolved_path = std::filesystem::path(base_directory) / resolved_path;
+  }
+
+  return resolved_path.lexically_normal().string();
 }
 
 void MapServer::set_quaternion_from_yaw(
