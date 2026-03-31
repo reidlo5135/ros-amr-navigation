@@ -3,16 +3,19 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { VizMqttClient, type VizMqttMessage } from "../../../lib/mqtt";
 import type { BridgeState, TfMessage } from "../../../lib/protocol";
 import {
+  buildCommandTopic,
+  buildTelemetryTopicMap,
+  buildTopicSubscriptions,
   createCommandId,
   createInitialState,
   defaultMqttUrl,
+  defaultRobotId,
   initialLayerVisibility,
   layerProfileForMode,
   isObjectPayload,
   isTfMessage,
   mergeTfMessages,
-  telemetryTopicMap,
-  topicSubscriptions,
+  mqttTopicRoot,
 } from "../constants";
 import type {
   GoalLifecycleState,
@@ -30,8 +33,10 @@ export function useVizDashboard() {
   const activeNavigateRequestIdRef = useRef<string | null>(null);
   const activePingRequestIdRef = useRef<string | null>(null);
   const lastPingSentAtRef = useRef<number | null>(null);
+  const previousRobotIdRef = useRef(defaultRobotId());
 
   const [mqttUrl, setMqttUrl] = useState(defaultMqttUrl);
+  const [robotId, setRobotId] = useState(defaultRobotId);
   const [bridgeState, setBridgeState] = useState<BridgeState>(createInitialState);
   const [connectionLabel, setConnectionLabel] = useState("Disconnected");
   const [isMqttConnected, setIsMqttConnected] = useState(false);
@@ -78,6 +83,8 @@ export function useVizDashboard() {
 
   useEffect(() => {
     const client = clientRef.current;
+    const telemetryTopicMap = buildTelemetryTopicMap(robotId);
+    const topicRoot = mqttTopicRoot(robotId);
 
     const flushTelemetry = () => {
       flushFrameRef.current = null;
@@ -168,10 +175,10 @@ export function useVizDashboard() {
         return;
       }
 
-      if (message.topic.startsWith("amr/response/") && isObjectPayload(message.json)) {
+      if (message.topic.startsWith(`${topicRoot}/response/`) && isObjectPayload(message.json)) {
         const success = message.json.success === true ? "OK" : "FAIL";
         const detail = typeof message.json.message === "string" ? message.json.message : "ack";
-        if (message.topic === "amr/response/ping") {
+        if (message.topic === `${topicRoot}/response/ping`) {
           const requestId =
             typeof message.json.request_id === "string" ? message.json.request_id : "";
           const sentAtMs =
@@ -186,7 +193,7 @@ export function useVizDashboard() {
           }
           return;
         }
-        if (message.topic === "amr/response/navigate_to_pose") {
+        if (message.topic === `${topicRoot}/response/navigate_to_pose`) {
           const requestId =
             typeof message.json.request_id === "string" ? message.json.request_id : "";
           const accepted = message.json.accepted === true;
@@ -220,7 +227,11 @@ export function useVizDashboard() {
         return;
       }
 
-      if ((message.topic.startsWith("amr/feedback/") || message.topic.startsWith("amr/status/")) && !message.text) {
+      if (
+        (message.topic.startsWith(`${topicRoot}/feedback/`) ||
+          message.topic.startsWith(`${topicRoot}/status/`)) &&
+        !message.text
+      ) {
         if (!binaryTopicsRef.current.has(message.topic)) {
           binaryTopicsRef.current.add(message.topic);
           setEvents((current) => [`Binary action stream on ${message.topic}`, ...current].slice(0, 10));
@@ -241,7 +252,7 @@ export function useVizDashboard() {
       unsubscribeStatus();
       unsubscribeMessage();
     };
-  }, [mqttUrl]);
+  }, [mqttUrl, robotId]);
 
   useEffect(() => {
     if (!isMqttConnected) {
@@ -252,7 +263,7 @@ export function useVizDashboard() {
       const requestId = createCommandId();
       const sentAtMs = Date.now();
       const published = clientRef.current.publishJson(
-        "amr/command/ping",
+        buildCommandTopic(robotId, "ping"),
         {
           request_id: requestId,
           sent_at_ms: sentAtMs,
@@ -269,7 +280,7 @@ export function useVizDashboard() {
     publishPing();
     const intervalId = window.setInterval(publishPing, 2500);
     return () => window.clearInterval(intervalId);
-  }, [isMqttConnected]);
+  }, [isMqttConnected, robotId]);
 
   useEffect(() => {
     if (!isMqttConnected || !teleopActive) {
@@ -278,7 +289,7 @@ export function useVizDashboard() {
 
     const publishTeleop = () => {
       clientRef.current.publishJson(
-        "amr/robot/turtlebot3/command/cmd_vel",
+        buildCommandTopic(robotId, "cmd_vel"),
         {
           linear: { x: teleopLinearX, y: 0.0, z: 0.0 },
           angular: { x: 0.0, y: 0.0, z: teleopAngularZ },
@@ -290,10 +301,24 @@ export function useVizDashboard() {
     publishTeleop();
     const intervalId = window.setInterval(publishTeleop, 100);
     return () => window.clearInterval(intervalId);
-  }, [isMqttConnected, teleopActive, teleopLinearX, teleopAngularZ]);
+  }, [isMqttConnected, teleopActive, teleopLinearX, teleopAngularZ, robotId]);
+
+  useEffect(() => {
+    if (previousRobotIdRef.current === robotId) {
+      return;
+    }
+
+    previousRobotIdRef.current = robotId;
+    if (!isMqttConnected) {
+      return;
+    }
+
+    clientRef.current.disconnect();
+    clientRef.current.connect(mqttUrl, buildTopicSubscriptions(robotId));
+  }, [isMqttConnected, mqttUrl, robotId]);
 
   const connect = () => {
-    clientRef.current.connect(mqttUrl, topicSubscriptions);
+    clientRef.current.connect(mqttUrl, buildTopicSubscriptions(robotId));
   };
 
   const disconnect = () => {
@@ -332,7 +357,7 @@ export function useVizDashboard() {
     setGoalX(x.toFixed(2));
     setGoalY(y.toFixed(2));
     setGoalYaw(yaw.toFixed(2));
-    publishJson("amr/command/navigate_to_pose", {
+    publishJson(buildCommandTopic(robotId, "navigate_to_pose"), {
       request_id: requestId,
       goal_pose: {
         header: {
@@ -358,7 +383,7 @@ export function useVizDashboard() {
     setGoalX(x.toFixed(2));
     setGoalY(y.toFixed(2));
     setGoalYaw(yaw.toFixed(2));
-    publishJson("amr/command/set_initial_pose", {
+    publishJson(buildCommandTopic(robotId, "set_initial_pose"), {
       request_id: createCommandId(),
       frame_id: "map",
       x,
@@ -412,7 +437,7 @@ export function useVizDashboard() {
     setInteractionMode("idle");
     setGoalMarker(null);
     setGoalLifecycle("Canceling");
-    publishJson("amr/command/cancel_navigate_to_pose", {
+    publishJson(buildCommandTopic(robotId, "cancel_navigate_to_pose"), {
       request_id: createCommandId(),
     });
   };
@@ -421,7 +446,7 @@ export function useVizDashboard() {
     setTeleopLinearX(linearX);
     setTeleopAngularZ(angularZ);
     setTeleopActive(true);
-    publishJson("amr/robot/turtlebot3/command/cmd_vel", {
+    publishJson(buildCommandTopic(robotId, "cmd_vel"), {
       linear: { x: linearX, y: 0.0, z: 0.0 },
       angular: { x: 0.0, y: 0.0, z: angularZ },
     });
@@ -431,7 +456,7 @@ export function useVizDashboard() {
     setTeleopLinearX(0);
     setTeleopAngularZ(0);
     setTeleopActive(false);
-    publishJson("amr/robot/turtlebot3/command/cmd_vel", {
+    publishJson(buildCommandTopic(robotId, "cmd_vel"), {
       linear: { x: 0.0, y: 0.0, z: 0.0 },
       angular: { x: 0.0, y: 0.0, z: 0.0 },
     });
@@ -443,7 +468,7 @@ export function useVizDashboard() {
       setEvents((current) => ["Map basename is required", ...current].slice(0, 10));
       return;
     }
-    publishJson("amr/command/save_map", {
+    publishJson(buildCommandTopic(robotId, "save_map"), {
       request_id: createCommandId(),
       basename: trimmed,
     });
@@ -512,6 +537,8 @@ export function useVizDashboard() {
   return {
     mqttUrl,
     setMqttUrl,
+    robotId,
+    setRobotId,
     bridgeState,
     connectionLabel,
     events,

@@ -1,31 +1,63 @@
 import type { BridgeState, TfMessage, TransformMessage } from "../../lib/protocol";
 import type { LayerVisibility, ViewMode } from "./types";
 
-export const telemetryTopicMap: Record<string, keyof BridgeState> = {
-  "amr/robot/turtlebot3/viz/robot_pose": "robot_pose",
-  "amr/robot/turtlebot3/viz/mapping_pose": "mapping_pose",
-  "amr/robot/turtlebot3/viz/global_path": "global_path",
-  "amr/robot/turtlebot3/viz/local_path": "local_path",
-  "amr/robot/turtlebot3/viz/map": "map",
-  "amr/robot/turtlebot3/viz/temp_map/raw": "temp_map_raw",
-  "amr/robot/turtlebot3/viz/temp_map/refined": "temp_map_refined",
-  "amr/robot/turtlebot3/viz/global_costmap": "global_costmap",
-  "amr/robot/turtlebot3/viz/local_costmap": "local_costmap",
-  "amr/robot/turtlebot3/viz/motion_status": "motion_status",
-  "amr/robot/turtlebot3/viz/scan": "scan",
-  "amr/robot/turtlebot3/viz/tf": "tf",
-  "amr/robot/turtlebot3/viz/tf_static": "tf_static",
-  "amr/robot/turtlebot3/viz/robot_description": "robot_description",
-  "amr/robot/turtlebot3/viz/battery_state": "battery_state",
-  "amr/robot/turtlebot3/viz/slam_graph": "slam_graph",
-};
+export function defaultRobotId() {
+  const configuredRobotId = import.meta.env.VITE_AMR_VIZ_ROBOT_ID as string | undefined;
+  if (configuredRobotId && configuredRobotId.trim().length > 0) {
+    return configuredRobotId.trim();
+  }
 
-export const topicSubscriptions = [
-  "amr/robot/turtlebot3/viz/#",
-  "amr/response/#",
-  "amr/feedback/#",
-  "amr/status/#",
-];
+  return "turtlebot3";
+}
+
+export function normalizeRobotId(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return defaultRobotId();
+  }
+
+  return trimmed;
+}
+
+export function mqttTopicRoot(robotId: string) {
+  return `/amr/${normalizeRobotId(robotId)}`;
+}
+
+export function buildTelemetryTopicMap(robotId: string): Record<string, keyof BridgeState> {
+  const root = mqttTopicRoot(robotId);
+  return {
+    [`${root}/viz/robot_pose`]: "robot_pose",
+    [`${root}/viz/mapping_pose`]: "mapping_pose",
+    [`${root}/viz/global_path`]: "global_path",
+    [`${root}/viz/local_path`]: "local_path",
+    [`${root}/viz/map`]: "map",
+    [`${root}/viz/temp_map/raw`]: "temp_map_raw",
+    [`${root}/viz/temp_map/refined`]: "temp_map_refined",
+    [`${root}/viz/global_costmap`]: "global_costmap",
+    [`${root}/viz/local_costmap`]: "local_costmap",
+    [`${root}/viz/motion_status`]: "motion_status",
+    [`${root}/viz/scan`]: "scan",
+    [`${root}/viz/tf`]: "tf",
+    [`${root}/viz/tf_static`]: "tf_static",
+    [`${root}/viz/robot_description`]: "robot_description",
+    [`${root}/viz/battery_state`]: "battery_state",
+    [`${root}/viz/slam_graph`]: "slam_graph",
+  };
+}
+
+export function buildTopicSubscriptions(robotId: string) {
+  const root = mqttTopicRoot(robotId);
+  return [
+    `${root}/viz/#`,
+    `${root}/response/#`,
+    `${root}/feedback/#`,
+    `${root}/status/#`,
+  ];
+}
+
+export function buildCommandTopic(robotId: string, commandName: string) {
+  return `${mqttTopicRoot(robotId)}/command/${commandName}`;
+}
 
 export const initialLayerVisibility: LayerVisibility = {
   grid: true,
