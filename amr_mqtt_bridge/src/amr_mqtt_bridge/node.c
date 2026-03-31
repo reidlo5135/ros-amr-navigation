@@ -481,7 +481,7 @@ static void amr_mqtt_bridge_set_default_config(void)
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.mqtt.robot_id,
     sizeof(g_amr_mqtt_bridge_config.mqtt.robot_id),
-    "turtlebot3");
+    "burger1");
   g_amr_mqtt_bridge_config.mqtt.telemetry_qos = 0;
   g_amr_mqtt_bridge_config.mqtt.command_qos = 0;
   g_amr_mqtt_bridge_config.mqtt.service_qos = 0;
@@ -808,7 +808,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
   {
     RCUTILS_LOG_WARN_NAMED(
       "amr_mqtt_bridge",
-      "Invalid MQTT root '%s' or robot_id '%s'; falling back to /amr/turtlebot3",
+      "Invalid MQTT root '%s' or robot_id '%s'; falling back to /amr/burger1",
       g_amr_mqtt_bridge_config.mqtt.root,
       g_amr_mqtt_bridge_config.mqtt.robot_id);
     amr_mqtt_bridge_copy_string(
@@ -818,7 +818,7 @@ static void amr_mqtt_bridge_load_parameter_overrides(void)
     amr_mqtt_bridge_copy_string(
       g_amr_mqtt_bridge_config.mqtt.robot_id,
       sizeof(g_amr_mqtt_bridge_config.mqtt.robot_id),
-      "turtlebot3");
+      "burger1");
     (void)amr_mqtt_bridge_rebuild_mqtt_topics();
   }
 
