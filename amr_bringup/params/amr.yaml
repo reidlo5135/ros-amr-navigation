@@ -360,53 +360,13 @@
       username: ""
       password: ""
     mqtt:
-      root: "amr/robot/turtlebot3"
+      robot_id: "burger1"
       qos:
         telemetry: 0
         command: 0
         service: 0
       topics:
-        telemetry:
-          map: "amr/robot/turtlebot3/telemetry/map"
-          temp_map: "amr/robot/turtlebot3/telemetry/temp_map/refined"
-          temp_map_raw: "amr/robot/turtlebot3/telemetry/temp_map/raw"
-          robot_pose: "amr/robot/turtlebot3/telemetry/robot_pose"
-          mapping_pose: "amr/robot/turtlebot3/telemetry/mapping_pose"
-          global_path: "amr/robot/turtlebot3/telemetry/global_path"
-          local_path: "amr/robot/turtlebot3/telemetry/local_path"
-          global_costmap: "amr/robot/turtlebot3/telemetry/global_costmap"
-          local_costmap: "amr/robot/turtlebot3/telemetry/local_costmap"
-          motion_status: "amr/robot/turtlebot3/telemetry/motion_status"
-          scan: "amr/robot/turtlebot3/telemetry/scan"
-          odom: "amr/robot/turtlebot3/telemetry/odom"
-          imu: "amr/robot/turtlebot3/telemetry/imu"
-          tf: "amr/robot/turtlebot3/telemetry/tf"
-          tf_static: "amr/robot/turtlebot3/telemetry/tf_static"
-          joint_states: "amr/robot/turtlebot3/telemetry/joint_states"
-          robot_description: "amr/robot/turtlebot3/telemetry/robot_description"
-          battery_state: "amr/robot/turtlebot3/telemetry/battery_state"
-          slam_graph: "amr/robot/turtlebot3/telemetry/slam_graph"
-        command:
-          cmd_vel: "amr/robot/turtlebot3/command/cmd_vel"
-          save_map: "amr/command/save_map"
-          set_initial_pose: "amr/command/set_initial_pose"
-          navigate_to_pose: "amr/command/navigate_to_pose"
-          cancel_navigate_to_pose: "amr/command/cancel_navigate_to_pose"
-          ping: "amr/command/ping"
-        feedback:
-          navigate_to_pose: "amr/feedback/navigate_to_pose"
-        status:
-          navigate_to_pose: "amr/status/navigate_to_pose"
-        response:
-          set_initial_pose: "amr/response/set_initial_pose"
-          navigate_to_pose: "amr/response/navigate_to_pose"
-          save_map: "amr/response/save_map"
-          ping: "amr/response/ping"
-          plan_segment: "amr/response/plan_segment"
-          plan_route: "amr/response/plan_route"
-        request:
-          plan_segment: "amr/request/plan_segment"
-          plan_route: "amr/request/plan_route"
+        header: "/amr"
     ros:
       topics:
         map: "/amr/map/data"

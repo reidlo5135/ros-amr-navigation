@@ -39,7 +39,9 @@ export function VizDashboardPage() {
         <aside className="sidebar sidebar-left">
           <MqttPanel
             mqttUrl={dashboard.mqttUrl}
+            robotId={dashboard.robotId}
             onMqttUrlChange={dashboard.setMqttUrl}
+            onRobotIdChange={dashboard.setRobotId}
             onConnect={dashboard.connect}
             onDisconnect={dashboard.disconnect}
           />

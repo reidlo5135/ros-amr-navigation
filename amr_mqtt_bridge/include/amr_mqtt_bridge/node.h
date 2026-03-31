@@ -118,12 +118,15 @@ typedef struct amr_mqtt_bridge_mqtt_state_s
   bool connected;
   bool command_subscriptions_registered;
   long last_reconnect_attempt_sec;
+  bool robot_id_change_pending;
+  char pending_robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
 } amr_mqtt_bridge_mqtt_state_t;
 
 typedef struct amr_mqtt_bridge_broker_config_s
 {
   char host[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   int port;
+  char client_id_prefix[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char client_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   int keep_alive_sec;
   bool clean_session;
@@ -134,6 +137,7 @@ typedef struct amr_mqtt_bridge_broker_config_s
 typedef struct amr_mqtt_bridge_mqtt_topics_s
 {
   char root[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   int telemetry_qos;
   int command_qos;
   int service_qos;
@@ -162,12 +166,14 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_cancel_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char command_set_robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char feedback_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char status_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char response_set_robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char request_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char request_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
