@@ -3,3 +3,4 @@ install
 log
 __pycache__
 __node_modules__
+.codex
