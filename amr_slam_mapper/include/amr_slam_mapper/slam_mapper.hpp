@@ -148,11 +148,6 @@ private:
   double compute_descriptor_distance(
     const std::vector<float> & lhs,
     const std::vector<float> & rhs) const;
-  double compute_best_shifted_descriptor_distance(
-    const std::vector<float> & lhs,
-    const std::vector<float> & rhs,
-    int & best_shift,
-    double & second_best_distance) const;
   LoopClosureCandidate search_loop_closure_candidate(
     const sensor_msgs::msg::LaserScan & scan,
     const std::vector<float> & descriptor) const;
@@ -306,8 +301,6 @@ private:
   int submap_nodes_per_submap_;
   int loop_closure_min_node_separation_;
   double loop_closure_descriptor_threshold_;
-  double loop_closure_descriptor_max_yaw_difference_deg_;
-  double loop_closure_descriptor_min_shift_margin_;
   double loop_closure_acceptance_score_;
   double loop_closure_search_linear_window_;
   double loop_closure_search_linear_step_;

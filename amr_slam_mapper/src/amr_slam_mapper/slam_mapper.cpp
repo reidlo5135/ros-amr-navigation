@@ -65,8 +65,6 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   submap_nodes_per_submap_(10),
   loop_closure_min_node_separation_(15),
   loop_closure_descriptor_threshold_(0.12),
-  loop_closure_descriptor_max_yaw_difference_deg_(100.0),
-  loop_closure_descriptor_min_shift_margin_(0.03),
   loop_closure_acceptance_score_(20.0),
   loop_closure_search_linear_window_(0.25),
   loop_closure_search_linear_step_(0.05),
@@ -176,12 +174,6 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "pose_graph.loop_closure_min_node_separation", this->loop_closure_min_node_separation_);
   this->declare_parameter(
     "pose_graph.loop_closure_descriptor_threshold", this->loop_closure_descriptor_threshold_);
-  this->declare_parameter(
-    "pose_graph.loop_closure_descriptor_max_yaw_difference_deg",
-    this->loop_closure_descriptor_max_yaw_difference_deg_);
-  this->declare_parameter(
-    "pose_graph.loop_closure_descriptor_min_shift_margin",
-    this->loop_closure_descriptor_min_shift_margin_);
   this->declare_parameter(
     "pose_graph.loop_closure_acceptance_score", this->loop_closure_acceptance_score_);
   this->declare_parameter(
@@ -308,12 +300,6 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "pose_graph.loop_closure_min_node_separation", this->loop_closure_min_node_separation_);
   this->get_parameter(
     "pose_graph.loop_closure_descriptor_threshold", this->loop_closure_descriptor_threshold_);
-  this->get_parameter(
-    "pose_graph.loop_closure_descriptor_max_yaw_difference_deg",
-    this->loop_closure_descriptor_max_yaw_difference_deg_);
-  this->get_parameter(
-    "pose_graph.loop_closure_descriptor_min_shift_margin",
-    this->loop_closure_descriptor_min_shift_margin_);
   this->get_parameter(
     "pose_graph.loop_closure_acceptance_score", this->loop_closure_acceptance_score_);
   this->get_parameter(
@@ -1303,41 +1289,6 @@ double SlamMapper::compute_descriptor_distance(
   return distance / static_cast<double>(lhs.size());
 }
 
-double SlamMapper::compute_best_shifted_descriptor_distance(
-  const std::vector<float> & lhs,
-  const std::vector<float> & rhs,
-  int & best_shift,
-  double & second_best_distance) const
-{
-  best_shift = 0;
-  second_best_distance = std::numeric_limits<double>::infinity();
-  if (lhs.size() != rhs.size() || lhs.empty()) {
-    return std::numeric_limits<double>::infinity();
-  }
-
-  const int shift_count = static_cast<int>(lhs.size());
-  double best_distance = std::numeric_limits<double>::infinity();
-  for (int shift = 0; shift < shift_count; ++shift) {
-    double distance = 0.0;
-    for (int index = 0; index < shift_count; ++index) {
-      const std::size_t rhs_index = static_cast<std::size_t>((index + shift) % shift_count);
-      distance += std::abs(
-        static_cast<double>(lhs[static_cast<std::size_t>(index)] - rhs[rhs_index]));
-    }
-    distance /= static_cast<double>(shift_count);
-
-    if (distance < best_distance) {
-      second_best_distance = best_distance;
-      best_distance = distance;
-      best_shift = shift;
-    } else if (distance < second_best_distance) {
-      second_best_distance = distance;
-    }
-  }
-
-  return best_distance;
-}
-
 SlamMapper::LoopClosureCandidate SlamMapper::search_loop_closure_candidate(
   const sensor_msgs::msg::LaserScan & scan,
   const std::vector<float> & descriptor) const
@@ -1350,20 +1301,8 @@ SlamMapper::LoopClosureCandidate SlamMapper::search_loop_closure_candidate(
 
   for (std::size_t index = 0; index + static_cast<std::size_t>(this->loop_closure_min_node_separation_) < this->graph_nodes_.size(); ++index) {
     const auto & node = this->graph_nodes_[index];
-    int best_shift = 0;
-    double second_best_descriptor_distance = std::numeric_limits<double>::infinity();
-    const double descriptor_distance = this->compute_best_shifted_descriptor_distance(
-      descriptor,
-      node.descriptor,
-      best_shift,
-      second_best_descriptor_distance);
+    const double descriptor_distance = this->compute_descriptor_distance(descriptor, node.descriptor);
     if (descriptor_distance > this->loop_closure_descriptor_threshold_) {
-      continue;
-    }
-
-    const double descriptor_shift_margin =
-      second_best_descriptor_distance - descriptor_distance;
-    if (descriptor_shift_margin < this->loop_closure_descriptor_min_shift_margin_) {
       continue;
     }
 
@@ -1373,20 +1312,8 @@ SlamMapper::LoopClosureCandidate SlamMapper::search_loop_closure_candidate(
       std::max(0.0, this->loop_closure_search_angular_window_deg_) * kDegToRad;
     const double angular_step_rad =
       std::max(1.0, this->loop_closure_search_angular_step_deg_) * kDegToRad;
-    const double descriptor_yaw_step =
-      (2.0 * 3.14159265358979323846) / static_cast<double>(std::max(1, this->descriptor_beams_));
-    const double descriptor_yaw_offset =
-      -static_cast<double>(best_shift) * descriptor_yaw_step;
-    const double max_descriptor_yaw_difference =
-      std::max(0.0, this->loop_closure_descriptor_max_yaw_difference_deg_) * kDegToRad;
 
-    if (std::abs(descriptor_yaw_offset) > max_descriptor_yaw_difference) {
-      continue;
-    }
-
-    Pose2D descriptor_seed_pose = node.map_pose;
-    descriptor_seed_pose.yaw = this->normalize_angle(node.map_pose.yaw + descriptor_yaw_offset);
-    Pose2D best_pose = descriptor_seed_pose;
+    Pose2D best_pose = node.map_pose;
     double best_score = this->score_scan_candidate(this->temporary_map_, scan, best_pose);
     for (double delta_x = -linear_window; delta_x <= linear_window + 1e-6; delta_x += linear_step) {
       for (double delta_y = -linear_window; delta_y <= linear_window + 1e-6; delta_y += linear_step) {
@@ -1396,9 +1323,9 @@ SlamMapper::LoopClosureCandidate SlamMapper::search_loop_closure_candidate(
           delta_yaw += angular_step_rad)
         {
           Pose2D candidate_pose{};
-          candidate_pose.x = descriptor_seed_pose.x + delta_x;
-          candidate_pose.y = descriptor_seed_pose.y + delta_y;
-          candidate_pose.yaw = this->normalize_angle(descriptor_seed_pose.yaw + delta_yaw);
+          candidate_pose.x = node.map_pose.x + delta_x;
+          candidate_pose.y = node.map_pose.y + delta_y;
+          candidate_pose.yaw = this->normalize_angle(node.map_pose.yaw + delta_yaw);
           const double candidate_score =
             this->score_scan_candidate(this->temporary_map_, scan, candidate_pose);
           if (candidate_score > best_score) {
