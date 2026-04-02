@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-04-02
+----------
+
+- Started the ``0.14.4`` patch branch:
+
+  - continued ``amr_slam_mapper`` refinement after stabilizing straight-line motion priors
+  - began separating rotation-only keyframe behavior from straight/arc motion behavior
+  - limited IMU heading usage to rotation-biased prior assistance instead of full yaw override
+
 2026-03-30
 ----------
 
