@@ -58,6 +58,8 @@
         min: 0.05
         max: 8.0
       publish_map_to_odom_tf: true
+    motion_prior:
+      use_imu_heading: false
     scan_matching:
       linear_window: 0.15
       linear_step: 0.05

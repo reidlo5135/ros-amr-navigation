@@ -26,6 +26,7 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   mapping_origin_yaw_(0.0),
   mapping_min_range_(0.05),
   mapping_max_range_(8.0),
+  use_imu_heading_(false),
   publish_map_to_odom_tf_(true),
   scan_matching_linear_window_(0.15),
   scan_matching_linear_step_(0.05),
@@ -92,6 +93,7 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   this->declare_parameter("mapping.origin.yaw", this->mapping_origin_yaw_);
   this->declare_parameter("mapping.range.min", this->mapping_min_range_);
   this->declare_parameter("mapping.range.max", this->mapping_max_range_);
+  this->declare_parameter("motion_prior.use_imu_heading", this->use_imu_heading_);
   this->declare_parameter("mapping.publish_map_to_odom_tf", this->publish_map_to_odom_tf_);
   this->declare_parameter("scan_matching.linear_window", this->scan_matching_linear_window_);
   this->declare_parameter("scan_matching.linear_step", this->scan_matching_linear_step_);
@@ -201,6 +203,7 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
   this->get_parameter("mapping.origin.yaw", this->mapping_origin_yaw_);
   this->get_parameter("mapping.range.min", this->mapping_min_range_);
   this->get_parameter("mapping.range.max", this->mapping_max_range_);
+  this->get_parameter("motion_prior.use_imu_heading", this->use_imu_heading_);
   this->get_parameter("mapping.publish_map_to_odom_tf", this->publish_map_to_odom_tf_);
   this->get_parameter("scan_matching.linear_window", this->scan_matching_linear_window_);
   this->get_parameter("scan_matching.linear_step", this->scan_matching_linear_step_);
@@ -344,7 +347,7 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured SLAM mapper with odom='%s', imu='%s', scan='%s', temp_map='%s', temp_raw='%s', temp_refined='%s', corrected_odom='%s', mapping_pose='%s', graph_debug='%s'",
+    "Configured SLAM mapper with odom='%s', imu='%s', scan='%s', temp_map='%s', temp_raw='%s', temp_refined='%s', corrected_odom='%s', mapping_pose='%s', graph_debug='%s', use_imu_heading=%s",
     this->odom_topic_.c_str(),
     this->imu_topic_.c_str(),
     this->scan_topic_.c_str(),
@@ -353,7 +356,8 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     this->refined_temporary_map_topic_.c_str(),
     this->corrected_odometry_topic_.c_str(),
     this->mapping_pose_topic_.c_str(),
-    this->graph_debug_topic_.c_str());
+    this->graph_debug_topic_.c_str(),
+    this->use_imu_heading_ ? "true" : "false");
   return CallbackReturn::SUCCESS;
 }
 
@@ -817,7 +821,12 @@ SlamMapper::Pose2D SlamMapper::build_raw_odom_pose() const
   pose.y = this->latest_odometry_.pose.pose.position.y;
   pose.yaw = this->quaternion_to_yaw(this->latest_odometry_.pose.pose.orientation);
 
-  if (this->has_latest_imu_ && this->has_start_imu_yaw_ && this->has_start_odom_yaw_) {
+  if (
+    this->use_imu_heading_ &&
+    this->has_latest_imu_ &&
+    this->has_start_imu_yaw_ &&
+    this->has_start_odom_yaw_)
+  {
     pose.yaw = this->normalize_angle(
       this->start_odom_yaw_ + (this->latest_imu_yaw_ - this->start_imu_yaw_));
   }

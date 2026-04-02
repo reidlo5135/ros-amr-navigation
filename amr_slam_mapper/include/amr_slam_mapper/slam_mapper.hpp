@@ -259,6 +259,7 @@ private:
   double mapping_origin_yaw_;
   double mapping_min_range_;
   double mapping_max_range_;
+  bool use_imu_heading_;
   bool publish_map_to_odom_tf_;
 
   double scan_matching_linear_window_;
