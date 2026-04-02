@@ -29,6 +29,15 @@ timeline
            : package consolidation
     0.11.x : exact planning/control quality uplift
            : docs and package normalization
+    0.12.x : exact footprint navigation baseline
+           : richer amr_viz operator console
+           : stable 0.12.4 navigation runtime
+    0.13.x : ARL / GL experimental track
+           : scan-first relocalization attempts
+           : deprecated after shared-path regression risk
+    0.14.x : mapping-line reboot from 0.12.4
+           : amr_slam_mapper introduction
+           : raw/refined temp SLAM map workflow
     1.0.0 : indoor AMR runtime stabilization
           : reliable recovery, footprint collision, operator UX
           : vehicle-spec abstraction start
@@ -60,6 +69,9 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `0.9.x` | Behavior-based orchestration | BT navigator skeleton, escape/detour recovery flow, better goal/result reporting |
 | `0.10.x` | Runtime role cleanup | recovery server responsibilities, local costmap-driven dynamic handling, unused package removal |
 | `0.11.x` | Consolidation and quality uplift | package normalization, include hygiene, documentation refresh, next-stage planner/controller quality work |
+| `0.12.x` | Stable navigation baseline | exact footprint collision, final-approach/recovery cleanup, richer `amr_viz`, MQTT battery/ping/goal visibility, `0.12.4` stable operator baseline |
+| `0.13.x` | ARL / GL experimental branch | active relocalization, scan-first candidates, ARL probing, candidate viz, then deprecated after shared-path regression risk |
+| `0.14.x` | Mapping line reboot | reset mainline to `0.12.4`, add `amr_slam_mapper`, split mapping mode from nav mode, raw/refined temp SLAM maps, mapping observability and save flows |
 
 ## 0.11.x Focus
 
@@ -68,6 +80,65 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - controller/progress/goal checker separation
 - recovery behavior tuning for narrow-corridor indoor operation
 - operator-facing diagnostics that explain `running`, `recovering`, `stopped`, `aborted`, and `reached`
+
+## 0.12.x Recap
+
+- re-established the navigation stack around exact footprint collision instead of radius-only safety checks
+- improved local planner / motion controller / BT navigator interaction for approach, blocked-state, and recovery sequencing
+- expanded `amr_viz` from a simple viewer into the main operator console
+  - richer goal lifecycle, collision overlays, battery telemetry, MQTT ping state, cleaner panel layout
+  - React app/features modularization and direct MQTT operator flow polish
+- ended the line with `0.12.4` as the last clean navigation-first baseline before ARL/GL experiments
+
+## 0.13.x Experimental Notes
+
+- tried to extend the stack toward kidnapped recovery and active relocalization
+  - global relocalization
+  - scan-first candidate stabilization
+  - ARL probing behaviors
+  - relocalization candidate visualization
+- the direction was technically valuable, but the implementation touched shared startup / localization / BT paths too aggressively
+- result:
+  - learned that ARL/GL must live as a separate system layer or experimental track
+  - `0.13.x` is now considered deprecated as an operational baseline
+  - the main AMR line was intentionally reset to `0.12.4` before moving forward
+
+## 0.14.x Recap
+
+- restarted the mainline from the stable `0.12.4` navigation baseline
+- introduced `amr_slam_mapper` as a new mapping-focused package instead of overloading `amr_map_server`
+- split mapping from navigation more cleanly
+  - `mapping_mode:=true` for pure SLAM recording
+  - navigation mode kept as the existing stable runtime path
+- added pose-graph-oriented temporary SLAM mapping
+  - local scan matching
+  - keyframes / edges / loop closure attempts
+  - graph-based temporary map rebuild
+- added mapping observability and workflow support
+  - mapping mode in `amr_viz`
+  - joystick teleop for mapping
+  - map save controls
+  - raw / refined temp SLAM map layers
+- improved MQTT fleet-readiness on the robot side
+  - robot-id-scoped topics
+  - simpler topic-header configuration
+  - relative map image path resolution fix for YAML-backed map loading
+
+## Immediate Candidate Tracks After 0.14.x
+
+- keep `navigation` and `mapping` as separate operational lanes
+  - do not re-mix ARL/GL into the stable nav runtime path
+- evaluate `live SLAM temp map -> costmap/planner` integration as the next realistic AMR step
+  - instead of forcing `save static map first -> navigate later`
+- keep ARL / GL as a future separate subsystem if revived
+  - likely outside the main navigation baseline
+- continue tightening MQTT robot identity and multi-robot readiness
+  - the next higher-level work after AMR is ACS / fleet integration
+- improve `amr_slam_mapper` only when the scope is clear
+  - scan matcher quality
+  - loop descriptor quality
+  - graph optimization quality
+  - mapping readiness / completion criteria
 
 ## Toward 1.0.0
 
