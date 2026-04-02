@@ -122,6 +122,11 @@ private:
     const nav_msgs::msg::OccupancyGrid & map,
     const sensor_msgs::msg::LaserScan & scan,
     const Pose2D & candidate_pose) const;
+  double nearest_occupied_distance_cells(
+    const nav_msgs::msg::OccupancyGrid & map,
+    int grid_x,
+    int grid_y,
+    int radius_cells) const;
   bool has_nearby_occupied_cell(
     const nav_msgs::msg::OccupancyGrid & map,
     int grid_x,
@@ -263,12 +268,17 @@ private:
   int scan_matching_max_beams_;
   int scan_matching_min_valid_beams_;
   int scan_matching_occupied_search_radius_cells_;
+  int scan_matching_distance_match_radius_cells_;
   int scan_matching_minimum_occupied_cells_;
   double scan_matching_occupied_match_score_;
+  double scan_matching_distance_match_score_;
+  double scan_matching_distance_penalty_per_cell_;
   double scan_matching_free_space_penalty_;
   double scan_matching_min_score_improvement_;
   double scan_matching_max_translation_correction_;
   double scan_matching_max_yaw_correction_deg_;
+  double scan_matching_translation_regularization_weight_;
+  double scan_matching_yaw_regularization_weight_;
 
   int mapping_hit_score_;
   int mapping_free_score_;

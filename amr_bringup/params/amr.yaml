@@ -66,12 +66,17 @@
       max_beams: 32
       min_valid_beams: 8
       occupied_search_radius_cells: 1
+      distance_match_radius_cells: 4
       minimum_occupied_cells: 50
       occupied_match_score: 3.0
+      distance_match_score: 2.0
+      distance_penalty_per_cell: 0.45
       free_space_penalty: 1.0
       min_score_improvement: 2.0
       max_translation_correction: 0.08
       max_yaw_correction_deg: 6.0
+      translation_regularization_weight: 5.0
+      yaw_regularization_weight: 0.75
     occupancy:
       hit_score: 20
       free_score: 3

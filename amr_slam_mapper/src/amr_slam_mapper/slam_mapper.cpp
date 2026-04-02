@@ -34,12 +34,17 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   scan_matching_max_beams_(32),
   scan_matching_min_valid_beams_(8),
   scan_matching_occupied_search_radius_cells_(1),
+  scan_matching_distance_match_radius_cells_(4),
   scan_matching_minimum_occupied_cells_(50),
   scan_matching_occupied_match_score_(3.0),
+  scan_matching_distance_match_score_(2.0),
+  scan_matching_distance_penalty_per_cell_(0.45),
   scan_matching_free_space_penalty_(1.0),
   scan_matching_min_score_improvement_(2.0),
   scan_matching_max_translation_correction_(0.08),
   scan_matching_max_yaw_correction_deg_(6.0),
+  scan_matching_translation_regularization_weight_(5.0),
+  scan_matching_yaw_regularization_weight_(0.75),
   mapping_hit_score_(20),
   mapping_free_score_(3),
   mapping_occupied_score_threshold_(20),
@@ -97,9 +102,17 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "scan_matching.occupied_search_radius_cells",
     this->scan_matching_occupied_search_radius_cells_);
   this->declare_parameter(
+    "scan_matching.distance_match_radius_cells",
+    this->scan_matching_distance_match_radius_cells_);
+  this->declare_parameter(
     "scan_matching.minimum_occupied_cells", this->scan_matching_minimum_occupied_cells_);
   this->declare_parameter(
     "scan_matching.occupied_match_score", this->scan_matching_occupied_match_score_);
+  this->declare_parameter(
+    "scan_matching.distance_match_score", this->scan_matching_distance_match_score_);
+  this->declare_parameter(
+    "scan_matching.distance_penalty_per_cell",
+    this->scan_matching_distance_penalty_per_cell_);
   this->declare_parameter(
     "scan_matching.free_space_penalty", this->scan_matching_free_space_penalty_);
   this->declare_parameter(
@@ -108,6 +121,12 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "scan_matching.max_translation_correction", this->scan_matching_max_translation_correction_);
   this->declare_parameter(
     "scan_matching.max_yaw_correction_deg", this->scan_matching_max_yaw_correction_deg_);
+  this->declare_parameter(
+    "scan_matching.translation_regularization_weight",
+    this->scan_matching_translation_regularization_weight_);
+  this->declare_parameter(
+    "scan_matching.yaw_regularization_weight",
+    this->scan_matching_yaw_regularization_weight_);
   this->declare_parameter("occupancy.hit_score", this->mapping_hit_score_);
   this->declare_parameter("occupancy.free_score", this->mapping_free_score_);
   this->declare_parameter(
@@ -184,9 +203,17 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "scan_matching.occupied_search_radius_cells",
     this->scan_matching_occupied_search_radius_cells_);
   this->get_parameter(
+    "scan_matching.distance_match_radius_cells",
+    this->scan_matching_distance_match_radius_cells_);
+  this->get_parameter(
     "scan_matching.minimum_occupied_cells", this->scan_matching_minimum_occupied_cells_);
   this->get_parameter(
     "scan_matching.occupied_match_score", this->scan_matching_occupied_match_score_);
+  this->get_parameter(
+    "scan_matching.distance_match_score", this->scan_matching_distance_match_score_);
+  this->get_parameter(
+    "scan_matching.distance_penalty_per_cell",
+    this->scan_matching_distance_penalty_per_cell_);
   this->get_parameter(
     "scan_matching.free_space_penalty", this->scan_matching_free_space_penalty_);
   this->get_parameter(
@@ -195,6 +222,12 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "scan_matching.max_translation_correction", this->scan_matching_max_translation_correction_);
   this->get_parameter(
     "scan_matching.max_yaw_correction_deg", this->scan_matching_max_yaw_correction_deg_);
+  this->get_parameter(
+    "scan_matching.translation_regularization_weight",
+    this->scan_matching_translation_regularization_weight_);
+  this->get_parameter(
+    "scan_matching.yaw_regularization_weight",
+    this->scan_matching_yaw_regularization_weight_);
   this->get_parameter("occupancy.hit_score", this->mapping_hit_score_);
   this->get_parameter("occupancy.free_score", this->mapping_free_score_);
   this->get_parameter(
@@ -817,6 +850,10 @@ SlamMapper::Pose2D SlamMapper::refine_pose_with_scan_matching(
     std::max(0.0, this->scan_matching_max_yaw_correction_deg_) * kDegToRad;
   const double min_score_improvement =
     std::max(0.0, this->scan_matching_min_score_improvement_);
+  const double translation_regularization_weight =
+    std::max(0.0, this->scan_matching_translation_regularization_weight_);
+  const double yaw_regularization_weight =
+    std::max(0.0, this->scan_matching_yaw_regularization_weight_);
 
   Pose2D best_pose = predicted_pose;
   const double predicted_score = this->score_scan_candidate(map_snapshot, scan, predicted_pose);
@@ -843,8 +880,18 @@ SlamMapper::Pose2D SlamMapper::refine_pose_with_scan_matching(
 
         const double candidate_score =
           this->score_scan_candidate(map_snapshot, scan, candidate_pose);
-        if (candidate_score > best_score) {
-          best_score = candidate_score;
+        if (!std::isfinite(candidate_score)) {
+          continue;
+        }
+
+        const double correction_translation = std::hypot(delta_x, delta_y);
+        const double correction_yaw_deg = std::abs(delta_yaw) / kDegToRad;
+        const double regularized_score =
+          candidate_score -
+          (translation_regularization_weight * correction_translation) -
+          (yaw_regularization_weight * correction_yaw_deg);
+        if (regularized_score > best_score) {
+          best_score = regularized_score;
           best_pose = candidate_pose;
         }
       }
@@ -912,15 +959,34 @@ double SlamMapper::score_scan_candidate(
 
     ++valid_beam_count;
     const auto cell_value = map.data[cell_index];
+    if (cell_value >= 50) {
+      score += this->scan_matching_occupied_match_score_;
+      continue;
+    }
+
+    const double nearest_distance_cells = this->nearest_occupied_distance_cells(
+      map,
+      grid_x,
+      grid_y,
+      this->scan_matching_distance_match_radius_cells_);
+    if (std::isfinite(nearest_distance_cells)) {
+      const double proximity_score =
+        this->scan_matching_distance_match_score_ -
+        (this->scan_matching_distance_penalty_per_cell_ * nearest_distance_cells);
+      if (proximity_score > 0.0) {
+        score += proximity_score;
+        continue;
+      }
+    }
+
     if (
-      cell_value >= 50 ||
       this->has_nearby_occupied_cell(
         map,
         grid_x,
         grid_y,
         this->scan_matching_occupied_search_radius_cells_))
     {
-      score += this->scan_matching_occupied_match_score_;
+      score += this->scan_matching_occupied_match_score_ * 0.5;
     } else if (cell_value == 0) {
       score -= this->scan_matching_free_space_penalty_;
     }
@@ -930,6 +996,37 @@ double SlamMapper::score_scan_candidate(
     return -std::numeric_limits<double>::infinity();
   }
   return score;
+}
+
+double SlamMapper::nearest_occupied_distance_cells(
+  const nav_msgs::msg::OccupancyGrid & map,
+  int grid_x,
+  int grid_y,
+  int radius_cells) const
+{
+  const int radius = std::max(0, radius_cells);
+  double best_distance = std::numeric_limits<double>::infinity();
+
+  for (int offset_y = -radius; offset_y <= radius; ++offset_y) {
+    for (int offset_x = -radius; offset_x <= radius; ++offset_x) {
+      std::size_t cell_index = 0U;
+      if (!this->grid_index(map, grid_x + offset_x, grid_y + offset_y, cell_index)) {
+        continue;
+      }
+      if (cell_index >= map.data.size() || map.data[cell_index] < 50) {
+        continue;
+      }
+
+      const double distance = std::hypot(
+        static_cast<double>(offset_x),
+        static_cast<double>(offset_y));
+      if (distance < best_distance) {
+        best_distance = distance;
+      }
+    }
+  }
+
+  return best_distance;
 }
 
 bool SlamMapper::has_nearby_occupied_cell(
