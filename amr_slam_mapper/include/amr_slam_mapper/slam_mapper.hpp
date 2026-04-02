@@ -260,6 +260,9 @@ private:
   double mapping_min_range_;
   double mapping_max_range_;
   bool use_imu_heading_;
+  double imu_heading_rotation_threshold_;
+  double imu_heading_blend_gain_;
+  double imu_heading_max_delta_deg_;
   bool publish_map_to_odom_tf_;
 
   double scan_matching_linear_window_;
@@ -292,6 +295,9 @@ private:
 
   double keyframe_distance_threshold_;
   double keyframe_yaw_threshold_;
+  double rotation_only_distance_threshold_;
+  double rotation_only_yaw_threshold_;
+  double rotation_only_angular_velocity_threshold_;
   int submap_nodes_per_submap_;
   int loop_closure_min_node_separation_;
   double loop_closure_descriptor_threshold_;

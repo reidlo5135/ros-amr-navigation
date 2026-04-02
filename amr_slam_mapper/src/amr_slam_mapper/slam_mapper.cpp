@@ -27,6 +27,9 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   mapping_min_range_(0.05),
   mapping_max_range_(8.0),
   use_imu_heading_(false),
+  imu_heading_rotation_threshold_(0.25),
+  imu_heading_blend_gain_(0.35),
+  imu_heading_max_delta_deg_(4.0),
   publish_map_to_odom_tf_(true),
   scan_matching_linear_window_(0.15),
   scan_matching_linear_step_(0.05),
@@ -56,6 +59,9 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   refinement_min_free_neighbor_count_(4),
   keyframe_distance_threshold_(0.30),
   keyframe_yaw_threshold_(0.30),
+  rotation_only_distance_threshold_(0.10),
+  rotation_only_yaw_threshold_(0.70),
+  rotation_only_angular_velocity_threshold_(0.20),
   submap_nodes_per_submap_(10),
   loop_closure_min_node_separation_(15),
   loop_closure_descriptor_threshold_(0.12),
@@ -94,6 +100,13 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   this->declare_parameter("mapping.range.min", this->mapping_min_range_);
   this->declare_parameter("mapping.range.max", this->mapping_max_range_);
   this->declare_parameter("motion_prior.use_imu_heading", this->use_imu_heading_);
+  this->declare_parameter(
+    "motion_prior.imu_heading_rotation_threshold",
+    this->imu_heading_rotation_threshold_);
+  this->declare_parameter("motion_prior.imu_heading_blend_gain", this->imu_heading_blend_gain_);
+  this->declare_parameter(
+    "motion_prior.imu_heading_max_delta_deg",
+    this->imu_heading_max_delta_deg_);
   this->declare_parameter("mapping.publish_map_to_odom_tf", this->publish_map_to_odom_tf_);
   this->declare_parameter("scan_matching.linear_window", this->scan_matching_linear_window_);
   this->declare_parameter("scan_matching.linear_step", this->scan_matching_linear_step_);
@@ -147,6 +160,15 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
     "refinement.min_free_neighbor_count", this->refinement_min_free_neighbor_count_);
   this->declare_parameter("pose_graph.keyframe_distance_threshold", this->keyframe_distance_threshold_);
   this->declare_parameter("pose_graph.keyframe_yaw_threshold", this->keyframe_yaw_threshold_);
+  this->declare_parameter(
+    "pose_graph.rotation_only_distance_threshold",
+    this->rotation_only_distance_threshold_);
+  this->declare_parameter(
+    "pose_graph.rotation_only_yaw_threshold",
+    this->rotation_only_yaw_threshold_);
+  this->declare_parameter(
+    "pose_graph.rotation_only_angular_velocity_threshold",
+    this->rotation_only_angular_velocity_threshold_);
   this->declare_parameter("pose_graph.submap_nodes_per_submap", this->submap_nodes_per_submap_);
   this->declare_parameter(
     "pose_graph.loop_closure_min_node_separation", this->loop_closure_min_node_separation_);
@@ -204,6 +226,13 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
   this->get_parameter("mapping.range.min", this->mapping_min_range_);
   this->get_parameter("mapping.range.max", this->mapping_max_range_);
   this->get_parameter("motion_prior.use_imu_heading", this->use_imu_heading_);
+  this->get_parameter(
+    "motion_prior.imu_heading_rotation_threshold",
+    this->imu_heading_rotation_threshold_);
+  this->get_parameter("motion_prior.imu_heading_blend_gain", this->imu_heading_blend_gain_);
+  this->get_parameter(
+    "motion_prior.imu_heading_max_delta_deg",
+    this->imu_heading_max_delta_deg_);
   this->get_parameter("mapping.publish_map_to_odom_tf", this->publish_map_to_odom_tf_);
   this->get_parameter("scan_matching.linear_window", this->scan_matching_linear_window_);
   this->get_parameter("scan_matching.linear_step", this->scan_matching_linear_step_);
@@ -257,6 +286,15 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
     "refinement.min_free_neighbor_count", this->refinement_min_free_neighbor_count_);
   this->get_parameter("pose_graph.keyframe_distance_threshold", this->keyframe_distance_threshold_);
   this->get_parameter("pose_graph.keyframe_yaw_threshold", this->keyframe_yaw_threshold_);
+  this->get_parameter(
+    "pose_graph.rotation_only_distance_threshold",
+    this->rotation_only_distance_threshold_);
+  this->get_parameter(
+    "pose_graph.rotation_only_yaw_threshold",
+    this->rotation_only_yaw_threshold_);
+  this->get_parameter(
+    "pose_graph.rotation_only_angular_velocity_threshold",
+    this->rotation_only_angular_velocity_threshold_);
   this->get_parameter("pose_graph.submap_nodes_per_submap", this->submap_nodes_per_submap_);
   this->get_parameter(
     "pose_graph.loop_closure_min_node_separation", this->loop_closure_min_node_separation_);
@@ -827,8 +865,18 @@ SlamMapper::Pose2D SlamMapper::build_raw_odom_pose() const
     this->has_start_imu_yaw_ &&
     this->has_start_odom_yaw_)
   {
-    pose.yaw = this->normalize_angle(
-      this->start_odom_yaw_ + (this->latest_imu_yaw_ - this->start_imu_yaw_));
+    constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+    const double angular_velocity = std::abs(this->latest_odometry_.twist.twist.angular.z);
+    if (angular_velocity >= this->imu_heading_rotation_threshold_) {
+      const double imu_yaw = this->normalize_angle(
+        this->start_odom_yaw_ + (this->latest_imu_yaw_ - this->start_imu_yaw_));
+      const double max_delta =
+        std::max(0.0, this->imu_heading_max_delta_deg_) * kDegToRad;
+      double yaw_delta = this->normalize_angle(imu_yaw - pose.yaw);
+      yaw_delta = std::clamp(yaw_delta, -max_delta, max_delta);
+      const double blend_gain = std::clamp(this->imu_heading_blend_gain_, 0.0, 1.0);
+      pose.yaw = this->normalize_angle(pose.yaw + (yaw_delta * blend_gain));
+    }
   }
 
   return pose;
@@ -1141,7 +1189,19 @@ void SlamMapper::maybe_add_pose_graph_node(
     const double dy = corrected_pose.y - last_node.map_pose.y;
     const double distance = std::hypot(dx, dy);
     const double dyaw = std::abs(this->normalize_angle(corrected_pose.yaw - last_node.map_pose.yaw));
-    should_add = distance >= this->keyframe_distance_threshold_ || dyaw >= this->keyframe_yaw_threshold_;
+    const double angular_velocity = std::abs(this->latest_odometry_.twist.twist.angular.z);
+    const bool rotation_only =
+      distance < this->rotation_only_distance_threshold_ &&
+      dyaw >= this->keyframe_yaw_threshold_ &&
+      angular_velocity >= this->rotation_only_angular_velocity_threshold_;
+
+    if (rotation_only) {
+      should_add = dyaw >= this->rotation_only_yaw_threshold_;
+    } else {
+      should_add =
+        distance >= this->keyframe_distance_threshold_ ||
+        dyaw >= this->keyframe_yaw_threshold_;
+    }
   }
 
   if (!should_add) {

@@ -60,6 +60,9 @@
       publish_map_to_odom_tf: true
     motion_prior:
       use_imu_heading: false
+      imu_heading_rotation_threshold: 0.25
+      imu_heading_blend_gain: 0.35
+      imu_heading_max_delta_deg: 4.0
     scan_matching:
       linear_window: 0.15
       linear_step: 0.05
@@ -92,6 +95,9 @@
     pose_graph:
       keyframe_distance_threshold: 0.30
       keyframe_yaw_threshold: 0.30
+      rotation_only_distance_threshold: 0.10
+      rotation_only_yaw_threshold: 0.70
+      rotation_only_angular_velocity_threshold: 0.20
       submap_nodes_per_submap: 10
       loop_closure_min_node_separation: 15
       loop_closure_descriptor_threshold: 0.12
