@@ -63,8 +63,12 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   loop_closure_search_linear_step_(0.05),
   loop_closure_search_angular_window_deg_(18.0),
   loop_closure_search_angular_step_deg_(3.0),
+  odom_edge_weight_(1.25),
+  loop_edge_weight_(2.0),
   graph_optimization_iterations_(20),
   graph_optimization_step_size_(0.35),
+  graph_pose_prior_translation_weight_(0.18),
+  graph_pose_prior_yaw_weight_(0.08),
   descriptor_beams_(32)
 {
   this->declare_parameter("frames.map", this->frame_id_);
@@ -158,10 +162,18 @@ SlamMapper::SlamMapper(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "pose_graph.loop_closure_search_angular_step_deg",
     this->loop_closure_search_angular_step_deg_);
+  this->declare_parameter("pose_graph.odom_edge_weight", this->odom_edge_weight_);
+  this->declare_parameter("pose_graph.loop_edge_weight", this->loop_edge_weight_);
   this->declare_parameter(
     "pose_graph.graph_optimization_iterations", this->graph_optimization_iterations_);
   this->declare_parameter(
     "pose_graph.graph_optimization_step_size", this->graph_optimization_step_size_);
+  this->declare_parameter(
+    "pose_graph.graph_pose_prior_translation_weight",
+    this->graph_pose_prior_translation_weight_);
+  this->declare_parameter(
+    "pose_graph.graph_pose_prior_yaw_weight",
+    this->graph_pose_prior_yaw_weight_);
   this->declare_parameter("pose_graph.descriptor_beams", this->descriptor_beams_);
 }
 
@@ -259,10 +271,18 @@ SlamMapper::CallbackReturn SlamMapper::on_configure(const rclcpp_lifecycle::Stat
   this->get_parameter(
     "pose_graph.loop_closure_search_angular_step_deg",
     this->loop_closure_search_angular_step_deg_);
+  this->get_parameter("pose_graph.odom_edge_weight", this->odom_edge_weight_);
+  this->get_parameter("pose_graph.loop_edge_weight", this->loop_edge_weight_);
   this->get_parameter(
     "pose_graph.graph_optimization_iterations", this->graph_optimization_iterations_);
   this->get_parameter(
     "pose_graph.graph_optimization_step_size", this->graph_optimization_step_size_);
+  this->get_parameter(
+    "pose_graph.graph_pose_prior_translation_weight",
+    this->graph_pose_prior_translation_weight_);
+  this->get_parameter(
+    "pose_graph.graph_pose_prior_yaw_weight",
+    this->graph_pose_prior_yaw_weight_);
   this->get_parameter("pose_graph.descriptor_beams", this->descriptor_beams_);
 
   this->initialize_mapping_map();
@@ -1145,7 +1165,7 @@ void SlamMapper::maybe_add_pose_graph_node(
     odom_edge.from = static_cast<int>(this->graph_nodes_.size()) - 1;
     odom_edge.to = new_index;
     odom_edge.relative_pose = this->relative_pose(previous_node.raw_odom_pose, raw_odom_pose);
-    odom_edge.weight = 1.0;
+    odom_edge.weight = std::max(0.1, this->odom_edge_weight_);
     odom_edge.loop_closure = false;
     this->graph_edges_.push_back(odom_edge);
   }
@@ -1271,11 +1291,10 @@ void SlamMapper::maybe_optimize_pose_graph(const LoopClosureCandidate & candidat
   loop_edge.relative_pose = this->relative_pose(
     this->graph_nodes_[candidate.node_index].map_pose,
     candidate.matched_pose);
-  loop_edge.weight = 3.0;
+  loop_edge.weight = std::max(0.1, this->loop_edge_weight_);
   loop_edge.loop_closure = true;
   this->graph_edges_.push_back(loop_edge);
 
-  this->graph_nodes_[current_node_index].map_pose = candidate.matched_pose;
   this->optimize_pose_graph();
   this->rebuild_map_from_pose_graph();
   this->current_corrected_pose_ = this->graph_nodes_.back().map_pose;
@@ -1295,6 +1314,19 @@ void SlamMapper::optimize_pose_graph()
   if (this->graph_nodes_.size() < 2U || this->graph_edges_.empty()) {
     return;
   }
+
+  const std::vector<Pose2D> prior_poses = [&]() {
+    std::vector<Pose2D> snapshot;
+    snapshot.reserve(this->graph_nodes_.size());
+    for (const auto & node : this->graph_nodes_) {
+      snapshot.push_back(node.map_pose);
+    }
+    return snapshot;
+  }();
+  const double translation_prior_gain =
+    std::max(0.0, this->graph_pose_prior_translation_weight_);
+  const double yaw_prior_gain =
+    std::max(0.0, this->graph_pose_prior_yaw_weight_);
 
   for (int iteration = 0; iteration < std::max(1, this->graph_optimization_iterations_); ++iteration) {
     for (const auto & edge : this->graph_edges_) {
@@ -1318,6 +1350,17 @@ void SlamMapper::optimize_pose_graph()
         from_node.map_pose.yaw =
           this->normalize_angle(from_node.map_pose.yaw - 0.5 * gain * error_yaw);
       }
+    }
+
+    for (std::size_t index = 1; index < this->graph_nodes_.size(); ++index) {
+      auto & node = this->graph_nodes_[index];
+      const auto & prior_pose = prior_poses[index];
+
+      node.map_pose.x += translation_prior_gain * (prior_pose.x - node.map_pose.x);
+      node.map_pose.y += translation_prior_gain * (prior_pose.y - node.map_pose.y);
+      node.map_pose.yaw = this->normalize_angle(
+        node.map_pose.yaw +
+        (yaw_prior_gain * this->normalize_angle(prior_pose.yaw - node.map_pose.yaw)));
     }
   }
 }

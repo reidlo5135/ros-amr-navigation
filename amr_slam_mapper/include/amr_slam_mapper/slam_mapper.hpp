@@ -299,8 +299,12 @@ private:
   double loop_closure_search_linear_step_;
   double loop_closure_search_angular_window_deg_;
   double loop_closure_search_angular_step_deg_;
+  double odom_edge_weight_;
+  double loop_edge_weight_;
   int graph_optimization_iterations_;
   double graph_optimization_step_size_;
+  double graph_pose_prior_translation_weight_;
+  double graph_pose_prior_yaw_weight_;
   int descriptor_beams_;
 };
 
