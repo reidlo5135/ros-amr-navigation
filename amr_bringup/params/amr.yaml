@@ -8,8 +8,8 @@
       map: "map"
     topics:
       map: "/amr/map/data"
-      temporary_map: "/amr/map/temp/refined"
-      corrected_odometry: "/amr/slam_mapper/odometry"
+      temporary_map: "/slam/map/temp/refined"
+      corrected_odometry: "/slam/mapper/odometry"
     services:
       get: "/amr/map_server/get_map"
       freeze: "/amr/map_server/freeze_temporary_map"
@@ -28,91 +28,6 @@
     auto_save:
       enabled: false
       required_consecutive_passes: 3
-
-/amr/slam_mapper:
-  ros__parameters:
-    frames:
-      map: "map"
-      odom: "odom"
-      base: "base_link"
-    topics:
-      odom: "/odom"
-      imu: "/imu"
-      scan: "/scan"
-      temp_map: "/amr/map/temp"
-      temp_map_raw: "/amr/map/temp/raw"
-      temp_map_refined: "/amr/map/temp/refined"
-      corrected_odometry: "/amr/slam_mapper/odometry"
-      mapping_pose: "/amr/slam_mapper/pose"
-      graph_debug: "/amr/slam_mapper/graph_debug"
-    publish_period_ms: 250
-    mapping:
-      resolution: 0.05
-      width: 400
-      height: 400
-      origin:
-        x: -10.0
-        y: -10.0
-        yaw: 0.0
-      range:
-        min: 0.05
-        max: 8.0
-      publish_map_to_odom_tf: true
-    motion_prior:
-      use_imu_heading: false
-      imu_heading_rotation_threshold: 0.25
-      imu_heading_blend_gain: 0.35
-      imu_heading_max_delta_deg: 4.0
-    scan_matching:
-      linear_window: 0.15
-      linear_step: 0.05
-      angular_window_deg: 12.0
-      angular_step_deg: 3.0
-      max_beams: 32
-      min_valid_beams: 8
-      occupied_search_radius_cells: 1
-      distance_match_radius_cells: 4
-      minimum_occupied_cells: 50
-      occupied_match_score: 3.0
-      distance_match_score: 2.0
-      distance_penalty_per_cell: 0.45
-      free_space_penalty: 1.0
-      min_score_improvement: 2.0
-      max_translation_correction: 0.08
-      max_yaw_correction_deg: 6.0
-      translation_regularization_weight: 5.0
-      yaw_regularization_weight: 0.75
-    occupancy:
-      hit_score: 20
-      free_score: 3
-      occupied_score_threshold: 20
-      free_score_threshold: -5
-      score_min: -20
-      score_max: 100
-    refinement:
-      min_occupied_neighbor_count: 2
-      min_free_neighbor_count: 4
-    pose_graph:
-      keyframe_distance_threshold: 0.30
-      keyframe_yaw_threshold: 0.30
-      rotation_only_distance_threshold: 0.10
-      rotation_only_yaw_threshold: 0.70
-      rotation_only_angular_velocity_threshold: 0.20
-      submap_nodes_per_submap: 10
-      loop_closure_min_node_separation: 15
-      loop_closure_descriptor_threshold: 0.12
-      loop_closure_acceptance_score: 20.0
-      loop_closure_search_linear_window: 0.25
-      loop_closure_search_linear_step: 0.05
-      loop_closure_search_angular_window_deg: 18.0
-      loop_closure_search_angular_step_deg: 3.0
-      odom_edge_weight: 1.25
-      loop_edge_weight: 2.0
-      graph_optimization_iterations: 20
-      graph_optimization_step_size: 0.35
-      graph_pose_prior_translation_weight: 0.18
-      graph_pose_prior_yaw_weight: 0.08
-      descriptor_beams: 32
 
 /amr/localization:
   ros__parameters:
@@ -387,10 +302,10 @@
     ros:
       topics:
         map: "/amr/map/data"
-        temp_map: "/amr/map/temp/refined"
-        temp_map_raw: "/amr/map/temp/raw"
+        temp_map: "/slam/map/temp/refined"
+        temp_map_raw: "/slam/map/temp/raw"
         robot_pose: "/amr/localization/pose"
-        mapping_pose: "/amr/slam_mapper/pose"
+        mapping_pose: "/slam/mapper/pose"
         global_path: "/amr/planner/global"
         local_path: "/amr/planner/local"
         global_costmap: "/amr/costmap/global"
@@ -404,7 +319,7 @@
         joint_states: "/joint_states"
         robot_description: "/robot_description"
         battery_state: "/battery_state"
-        slam_graph: "/amr/slam_mapper/graph_debug"
+        slam_graph: "/slam/mapper/graph_debug"
         cmd_vel: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
         navigate_feedback: "/amr/navigator/navigate_to_pose/feedback"

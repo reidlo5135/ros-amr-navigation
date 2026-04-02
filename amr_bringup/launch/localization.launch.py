@@ -21,7 +21,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument(
             "mapping_mode",
             default_value="false",
-            description="Run amr_map_server + amr_slam_mapper in SLAM mapping mode and skip localization/global planner bringup.",
+            description="Run amr_map_server in external SLAM consumer mode and skip localization/global planner bringup.",
         )
     )
 
@@ -32,15 +32,6 @@ def generate_launch_description() -> LaunchDescription:
         namespace="amr",
         output="screen",
         parameters=[bringup_params_file(), {"mode.mapping": mapping_mode}],
-    )
-    slam_mapper = LifecycleNode(
-        package="amr_slam_mapper",
-        executable="amr_slam_mapper",
-        name="slam_mapper",
-        namespace="amr",
-        output="screen",
-        parameters=[bringup_params_file()],
-        condition=IfCondition(mapping_mode),
     )
     localization = LifecycleNode(
         package="amr_localization",
@@ -100,7 +91,6 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "managed_nodes": [
                     "/amr/map_server",
-                    "/amr/slam_mapper",
                 ],
                 "initial_pose.enabled": False,
             },
@@ -109,7 +99,6 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     ld.add_action(map_server)
-    ld.add_action(slam_mapper)
     ld.add_action(localization)
     ld.add_action(costmap_server)
     ld.add_action(global_planner)

@@ -550,19 +550,19 @@ static void amr_mqtt_bridge_set_default_config(void)
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.ros.topic_temp_map,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_temp_map),
-    "/amr/map/temp/refined");
+    "/slam/map/temp/refined");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.ros.topic_temp_map_raw,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_temp_map_raw),
-    "/amr/map/temp/raw");
+    "/slam/map/temp/raw");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.ros.topic_mapping_pose,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_mapping_pose),
-    "/amr/slam_mapper/pose");
+    "/slam/mapper/pose");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.ros.topic_slam_graph,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_slam_graph),
-    "/amr/slam_mapper/graph_debug");
+    "/slam/mapper/graph_debug");
   amr_mqtt_bridge_copy_string(
     g_amr_mqtt_bridge_config.ros.topic_cmd_vel,
     sizeof(g_amr_mqtt_bridge_config.ros.topic_cmd_vel),

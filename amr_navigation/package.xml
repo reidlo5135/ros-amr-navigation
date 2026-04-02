@@ -14,7 +14,6 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>amr_msgs</exec_depend>
   <exec_depend>amr_map_server</exec_depend>
-  <exec_depend>amr_slam_mapper</exec_depend>
   <exec_depend>amr_localization</exec_depend>
   <exec_depend>amr_costmap_server</exec_depend>
   <exec_depend>amr_global_planner</exec_depend>

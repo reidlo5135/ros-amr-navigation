@@ -4,6 +4,12 @@ Changelog
 2026-04-02
 ----------
 
+- Started the ``0.15.0`` development branch:
+
+  - removed the in-repo ``amr_slam_mapper`` runtime in favor of consuming external ``ros-slam-mapper`` topics
+  - switched AMR-side mapping consumers from ``/amr/*`` SLAM sources to external ``/slam/*`` sources
+  - kept MQTT and ``amr_viz`` contracts stable by retargeting the bridge's ROS source topics only
+
 - Started the ``0.14.4`` patch branch:
 
   - continued ``amr_slam_mapper`` refinement after stabilizing straight-line motion priors

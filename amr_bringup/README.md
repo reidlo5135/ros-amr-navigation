@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the `0.14.2` stack.
+Central launch and parameter package for the `0.15.0` AMR stack.
 
 ## Main Files
 
@@ -19,7 +19,7 @@ Central launch and parameter package for the `0.14.2` stack.
 
 `mapping_mode:=true` keeps:
 - `amr_map_server`
-- `amr_slam_mapper`
+- external `ros-slam-mapper` runtime is expected to be launched separately and publish `/slam/*`
 
 and skips:
 - `amr_localization`
@@ -50,3 +50,10 @@ Mapping mode:
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py mapping_mode:=true
 ```
+
+In mapping mode, `amr_bringup` consumes external SLAM topics such as:
+- `/slam/map/temp/refined`
+- `/slam/map/temp/raw`
+- `/slam/mapper/odometry`
+- `/slam/mapper/pose`
+- `/slam/mapper/graph_debug`
