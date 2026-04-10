@@ -6,6 +6,7 @@ Custom ROS interfaces used by the AMR stack.
 
 - actions:
   - `NavigateToPose`
+  - `NavigateToPoses`
 - messages:
   - `MotionCommand`
   - `MotionStatus`

@@ -1,0 +1,11 @@
+geometry_msgs/PoseStamped[] goal_poses
+---
+bool success
+string message
+uint32 completed_goals
+---
+geometry_msgs/PoseStamped current_pose
+uint32 current_goal_index
+uint32 goal_count
+float64 remaining_distance
+float64 heading_error

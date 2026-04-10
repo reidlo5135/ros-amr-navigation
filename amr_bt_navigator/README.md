@@ -5,6 +5,7 @@ BehaviorTree.CPP v3 based navigation decision server.
 ## Role
 
 - serves `NavigateToPose`
+- serves `NavigateToPoses`
 - requests global plans
 - dispatches motion commands
 - monitors progress and blocked states

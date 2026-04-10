@@ -15,6 +15,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/NavigateToPose.action"
+  "action/NavigateToPoses.action"
   "msg/MotionCommand.msg"
   "msg/ObstacleReport.msg"
   "msg/MotionStatus.msg"

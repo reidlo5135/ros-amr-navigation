@@ -252,6 +252,7 @@
       clear_costmap: "/amr/costmap_server/clear_costmap"
     actions:
       navigate_to_pose: "/amr/navigator/navigate_to_pose"
+      navigate_to_poses: "/amr/navigator/navigate_to_poses"
     defaults:
       node_id: "start"
     execution:

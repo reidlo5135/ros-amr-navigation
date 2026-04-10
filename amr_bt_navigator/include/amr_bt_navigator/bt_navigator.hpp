@@ -5,11 +5,13 @@
 #include <chrono>
 #include <exception>
 #include <future>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <behaviortree_cpp_v3/bt_factory.h>
@@ -21,6 +23,7 @@
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 #include "amr_msgs/action/navigate_to_pose.hpp"
+#include "amr_msgs/action/navigate_to_poses.hpp"
 #include "amr_msgs/msg/local_plan_status.hpp"
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
@@ -41,7 +44,16 @@ private:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
   using NavigateToPose = amr_msgs::action::NavigateToPose;
+  using NavigateToPoses = amr_msgs::action::NavigateToPoses;
   using GoalHandleNavigateToPose = rclcpp_action::ServerGoalHandle<NavigateToPose>;
+  using GoalHandleNavigateToPoses = rclcpp_action::ServerGoalHandle<NavigateToPoses>;
+
+  struct ExecutionResult
+  {
+    bool success{false};
+    bool canceled{false};
+    std::string message;
+  };
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
   CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
@@ -52,10 +64,24 @@ private:
   rclcpp_action::GoalResponse handle_goal(
     const rclcpp_action::GoalUUID & uuid,
     std::shared_ptr<const NavigateToPose::Goal> goal);
+  rclcpp_action::GoalResponse handle_goals(
+    const rclcpp_action::GoalUUID & uuid,
+    std::shared_ptr<const NavigateToPoses::Goal> goal);
   rclcpp_action::CancelResponse handle_cancel(
     const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
+  rclcpp_action::CancelResponse handle_cancel_goals(
+    const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle);
   void handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
+  void handle_accepted_goals(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle);
   void execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
+  void execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle);
+  ExecutionResult execute_goal_pose(
+    const geometry_msgs::msg::PoseStamped & goal_pose,
+    const std::string & route_id,
+    const std::function<bool()> & is_cancel_requested,
+    const std::function<void(
+      const geometry_msgs::msg::PoseStamped &,
+      const amr_msgs::msg::MotionStatus &)> & publish_feedback);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message);
   void handle_local_plan_status(const amr_msgs::msg::LocalPlanStatus::SharedPtr message);
@@ -81,13 +107,16 @@ private:
     uint32_t command_id,
     int timeout_ms,
     std::string & error_message);
+  bool has_active_goal() const;
   amr_msgs::msg::MotionCommand build_motion_command(
-    const NavigateToPose::Goal & goal,
+    const geometry_msgs::msg::PoseStamped & goal_pose,
+    const std::string & route_id,
     const nav_msgs::msg::Path & plan);
   void publish_motion_command(const amr_msgs::msg::MotionCommand & command);
   void publish_stop_command();
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
+  rclcpp_action::Server<NavigateToPoses>::SharedPtr action_server_poses_;
   rclcpp::Client<amr_msgs::srv::PlanRecovery>::SharedPtr plan_recovery_client_;
   rclcpp::Client<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_client_;
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
@@ -96,6 +125,7 @@ private:
   rclcpp::Subscription<amr_msgs::msg::LocalPlanStatus>::SharedPtr local_plan_status_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_publisher_;
   std::string navigate_action_name_;
+  std::string navigate_poses_action_name_;
   std::string command_topic_;
   std::string current_pose_topic_;
   std::string motion_status_topic_;
@@ -119,6 +149,7 @@ private:
   mutable std::mutex navigator_mutex_;
   mutable std::mutex active_goal_mutex_;
   std::weak_ptr<GoalHandleNavigateToPose> active_goal_handle_;
+  std::weak_ptr<GoalHandleNavigateToPoses> active_goals_handle_;
 };
 
 }  // namespace amr::bt::navigator
