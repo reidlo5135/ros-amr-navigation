@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the `0.15.0` AMR stack.
+Central launch and parameter package for the `0.15.2` AMR stack.
 
 ## Main Files
 

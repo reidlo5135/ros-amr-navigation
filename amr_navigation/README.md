@@ -21,4 +21,4 @@ Metapackage for the active AMR navigation stack.
 
 - `amr_obstacle_detection` is no longer used.
 - `amr_rviz_plugins` is no longer used.
-- `amr_viz` is a standalone web app and is not part of this metapackage.
+- the operator UI now lives in the external `ros-rcs` desktop app repository.

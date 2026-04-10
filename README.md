@@ -2,10 +2,11 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.0` direction:
+Current `0.15.2` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_bridge` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
-- `amr_viz` connects directly to MQTT over WebSocket.
+- the operator client now lives outside this repo as the desktop app in `ros-rcs`:
+  - `https://github.com/reidlo5135/ros-rcs`
 - Recovery and decision flow follow a Nav2-like split:
   - `amr_bt_navigator` decides
   - planner / controller / recovery packages execute
@@ -14,7 +15,7 @@ Current `0.15.0` direction:
 
 ```mermaid
 flowchart LR
-    Browser["Operator Browser<br/>amr_viz"] -->|WS MQTT| Broker["Mosquitto Broker"]
+    Desktop["Operator Desktop App<br/>ros-rcs"] -->|WS MQTT| Broker["Mosquitto Broker"]
     Broker -->|MQTT command| RobotBridge["amr_mqtt_bridge<br/>robot-side ROS <-> MQTT"]
     RobotBridge -->|ROS topics / services / actions| Nav["Localization + Navigation Runtime"]
 
@@ -56,15 +57,14 @@ flowchart LR
 - `amr_msgs`: custom messages, services, and actions
 - `amr_navigation`: metapackage
 - `amr_recovery_server`: wait / backup / spin recovery command generation
-- `amr_viz`: React MQTT visualization client
-
 ## Removed Packages
 
-These packages are no longer part of the active `0.14.2` stack:
+These packages are no longer part of the active stack:
 - `amr_obstacle_detection`
 - `amr_rviz_plugins`
 - the old server-side `amr_mqtt_bridge`
 - `amr_mqtt_robot_plugin` as a separate package name
+- `amr_viz` in this repository
 
 ## MQTT Model
 
@@ -72,7 +72,7 @@ Robot-side `amr_mqtt_bridge` publishes:
 - raw ROS-oriented telemetry on `amr/robot/turtlebot3/telemetry/*`
 - web-oriented JSON topics on `amr/robot/turtlebot3/viz/*`
 
-`amr_viz` consumes:
+The external `ros-rcs` desktop client consumes:
 - `amr/robot/turtlebot3/viz/map`
 - `amr/robot/turtlebot3/viz/temp_map/raw`
 - `amr/robot/turtlebot3/viz/temp_map/refined`
@@ -100,13 +100,7 @@ TB3 full runtime:
 ros2 launch amr_bringup turtlebot3.launch.py
 ```
 
-Web viz:
-
-```bash
-cd amr_viz
-npm install
-npm run dev
-```
+Operator desktop UI is developed and packaged in the external `ros-rcs` repository.
 
 ## Build
 

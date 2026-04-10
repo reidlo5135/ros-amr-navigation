@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-04-10
+----------
+
+- Started the ``0.15.2`` patch branch:
+
+  - removed the in-repo ``amr_viz`` app from this workspace
+  - moved the operator UI direction to the external ``ros-rcs`` desktop app repository
+  - kept the robot-side MQTT contract in ``amr_mqtt_bridge`` as the integration boundary
+
 2026-04-02
 ----------
 
