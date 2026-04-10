@@ -1,0 +1,52 @@
+Repo: /home/reidlo/ws/src/ros-amr-navigation
+Focus only on amr_slam_mapper-related work.
+
+Current branch:
+- humble/develop/0.14.4
+
+Current status:
+- amr_slam_mapper has recently improved a lot from 0.14.3 to 0.14.4.
+- Straight-line drift was reduced by:
+  1. removing full IMU yaw override
+  2. making IMU heading optional
+  3. using IMU only as limited rotation-time hint
+  4. suppressing rotation-only keyframe overgeneration
+- A loop descriptor improvement was attempted and then reverted because it caused false loop closures and map corruption.
+- Current loop descriptor commit was reverted already, so do NOT assume it is active.
+
+Important recent commits:
+- b92fcfb tune: make slam mapper imu heading optional
+- 7e97341 tune: limit slam mapper rotation keyframes and imu heading
+- d07b3c6 Revert "feat: improve slam mapper loop descriptor matching"
+- 02f6d8e docs: explain slam mapper imu and localization roles
+
+Current observed behavior:
+- Straight-line mapping is much better than before.
+- However, after making a large loop and returning, the trajectory/map can still tilt in +Y direction.
+- This now looks less like pure IMU prior failure and more like loop correction / global heading stabilization weakness.
+- False loop closures must be avoided very conservatively.
+
+Important context:
+- User does NOT want to rush into slam_toolbox integration because it would force broad ROS/MQTT/Viz contract changes.
+- Preferred direction is to keep improving our own slam mapper incrementally.
+- External algorithm/library adoption is still on the table, but only selectively and carefully.
+- We discussed possibly promoting amr_slam_mapper into a more independent package/repo later, likely under a name like ros-slam-mapper.
+
+Constraints / preferences:
+- Keep changes narrow and testable.
+- Avoid breaking existing AMR contracts.
+- Be conservative with loop closure logic.
+- If trying a new loop-related idea, define explicit fail/pass criteria first.
+- Use Korean in user-facing explanations.
+
+Please begin by reading:
+- amr_slam_mapper/TODO.md
+- amr_slam_mapper/README.md
+- amr_slam_mapper/src/amr_slam_mapper/slam_mapper.cpp
+- amr_slam_mapper/include/amr_slam_mapper/slam_mapper.hpp
+- amr_bringup/params/amr.yaml
+
+Suggested next investigation:
+- Why the map still tilts in +Y after large loop return even though straight-line prior improved
+- Whether optimizer anchor strategy / submap direction / loop acceptance policy should be revisited
+- Do NOT reintroduce aggressive rotation-invariant loop descriptor matching without strong anti-false-loop guards

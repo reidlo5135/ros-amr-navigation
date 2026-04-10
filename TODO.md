@@ -38,6 +38,21 @@ timeline
     0.14.x : mapping-line reboot from 0.12.4
            : amr_slam_mapper introduction
            : raw/refined temp SLAM map workflow
+    0.15.x : navigation runtime hardening
+           : recovery observability and regression baselines
+           : stable robot-side MQTT/web operator loop
+    0.16.x : local escape-first recovery refinement
+           : corridor / doorway blocked-state tuning
+           : final-approach stability cleanup
+    0.17.x : planner/controller quality uplift
+           : path smoothing and blocked semantics refinement
+           : recovery exit and path rejoin quality
+    0.18.x : live SLAM temp map navigation integration
+           : mapping-ready / nav-ready state model
+           : map lifecycle and transition cleanup
+    0.19.x : multi-robot and deployment readiness
+           : MQTT topic / command stability
+           : operator diagnostics and long-run operation polish
     1.0.0 : indoor AMR runtime stabilization
           : reliable recovery, footprint collision, operator UX
           : vehicle-spec abstraction start
@@ -72,6 +87,11 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `0.12.x` | Stable navigation baseline | exact footprint collision, final-approach/recovery cleanup, richer `amr_viz`, MQTT battery/ping/goal visibility, `0.12.4` stable operator baseline |
 | `0.13.x` | ARL / GL experimental branch | active relocalization, scan-first candidates, ARL probing, candidate viz, then deprecated after shared-path regression risk |
 | `0.14.x` | Mapping line reboot | reset mainline to `0.12.4`, add `amr_slam_mapper`, split mapping mode from nav mode, raw/refined temp SLAM maps, mapping observability and save flows |
+| `0.15.x` | Runtime hardening | scenario-based regression baselines, clearer recovery diagnostics, robot-side MQTT/web operation stabilization, safer operational baseline after the mapping reboot |
+| `0.16.x` | Recovery refinement | local escape-first recovery flow, narrower-corridor tuning, cleaner blocked semantics, reduced false recovery entry near doors and goal approach |
+| `0.17.x` | Planner/controller quality | global path smoothing, motion-controller approach quality, recovery-exit stability, lower oscillation during path rejoin and final heading alignment |
+| `0.18.x` | Live SLAM navigation bridge | temporary refined map consumption by nav runtime, `ready_for_nav` vs `ready_for_save` mapping criteria, smoother mapping-to-navigation transition without static-save-first workflow |
+| `0.19.x` | Operations and deployment readiness | robot-id / multi-robot topic discipline, stronger reconnect and retained-data behavior, richer operator diagnostics, longer unattended runtime confidence before `1.0.0` |
 
 ## 0.11.x Focus
 
@@ -124,14 +144,64 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - simpler topic-header configuration
   - relative map image path resolution fix for YAML-backed map loading
 
+## 0.15.x Planned Focus
+
+- lock the post-`0.14.x` runtime into a measurable navigation baseline before opening more large feature branches
+- add scenario-driven regression routines for narrow corridor, doorway, dynamic obstacle crossing, and goal-near blockage cases
+- make recovery reasoning easier to inspect end-to-end
+  - planner decision
+  - BT recovery selection
+  - controller blocked / stalled state
+  - operator-visible goal lifecycle
+- tighten robot-side MQTT/web operating stability
+  - reconnect behavior
+  - snapshot / retained telemetry expectations
+  - request / response traceability for operator commands
+
+## 0.16.x Planned Focus
+
+- move recovery quality from "works in the common case" toward "predictable in tight indoor cases"
+- promote local escape into a first-class recovery path before heavier global retries when appropriate
+- reduce corridor and doorway false-blocked cases
+- stabilize final approach when a goal is close but local obstacle evidence is noisy
+- clarify recovery entry / hold / exit conditions so `wait`, `backup`, `spin`, and re-dispatch behave deterministically
+
+## 0.17.x Planned Focus
+
+- improve planner/controller quality after the recovery flow is more trustworthy
+- add path smoothing ahead of future non-diff-drive expansion
+- refine blocked-state semantics between local planner, motion controller, and BT navigator
+- improve recovery exit quality so the robot rejoins the global path without sharp oscillation
+- reduce low-speed final heading jitter and stop/start thrash near the goal
+
+## 0.18.x Planned Focus
+
+- connect live SLAM temporary maps to the navigation runtime in a controlled way
+- define explicit mapping readiness states instead of treating every temporary map as equally usable
+  - `mapping_bootstrap`
+  - `ready_for_nav`
+  - `ready_for_save`
+- evaluate costmap / planner behavior on live refined maps, especially around unknown space and graph correction jumps
+- clean up the workflow from mapping mode to navigation mode so operators do not have to rely on ad-hoc manual steps
+
+## 0.19.x Planned Focus
+
+- harden MQTT and operator workflows for longer-running and multi-robot-style deployment
+- keep robot identity, topic scoping, and command routing stable under reconnect and robot-id changes
+- improve operator diagnostics so `accepted`, `running`, `recovering`, `canceling`, `aborted`, and `reached` are all unambiguous
+- tighten deployment-facing behaviors
+  - retained static data policy
+  - reconnect recovery policy
+  - response semantics for command, planner request, and map-save actions
+
 ## Immediate Candidate Tracks After 0.14.x
 
 - keep `navigation` and `mapping` as separate operational lanes
   - do not re-mix ARL/GL into the stable nav runtime path
-- evaluate `live SLAM temp map -> costmap/planner` integration as the next realistic AMR step
+- spend the first post-`0.14.x` cycle on runtime hardening and regression visibility, not on broad new feature branching
+- bring local escape and recovery quality to an operationally trustworthy state before widening the planning surface
+- evaluate `live SLAM temp map -> costmap/planner` integration only after the current navigation baseline is stable enough to compare against
   - instead of forcing `save static map first -> navigate later`
-- keep ARL / GL as a future separate subsystem if revived
-  - likely outside the main navigation baseline
 - continue tightening MQTT robot identity and multi-robot readiness
   - the next higher-level work after AMR is ACS / fleet integration
 - improve `amr_slam_mapper` only when the scope is clear
