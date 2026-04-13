@@ -3480,6 +3480,7 @@ static void amr_mqtt_bridge_handle_cmd_vel_message(
 static void amr_mqtt_bridge_handle_set_initial_pose_command(const char *payload)
 {
   geometry_msgs__msg__PoseWithCovarianceStamped initial_pose;
+  geometry_msgs__msg__PoseStamped parsed_pose;
   char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = {0};
   char frame_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH] = "map";
   double x = 0.0;
@@ -3488,14 +3489,24 @@ static void amr_mqtt_bridge_handle_set_initial_pose_command(const char *payload)
   double covariance_x = 0.25;
   double covariance_y = 0.25;
   double covariance_yaw = 0.06853891945200942;
+  bool has_flat_pose = false;
+  bool has_structured_pose = false;
   rcl_ret_t rc;
 
-  if (!amr_mqtt_bridge_extract_json_string_in_range(
-      payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id)) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "x", &x) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "y", &y) ||
-    !amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "yaw", &yaw))
+  memset(&parsed_pose, 0, sizeof(parsed_pose));
+  if (!geometry_msgs__msg__PoseStamped__init(&parsed_pose))
   {
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose,
+      "",
+      false,
+      "failed to allocate pose parser state");
+    return;
+  }
+  if (!amr_mqtt_bridge_extract_json_string_in_range(
+      payload, payload + strlen(payload), "request_id", request_id, sizeof(request_id)))
+  {
+    geometry_msgs__msg__PoseStamped__fini(&parsed_pose);
     amr_mqtt_bridge_publish_simple_response(
       g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose,
       request_id[0] != '\0' ? request_id : "",
@@ -3510,9 +3521,48 @@ static void amr_mqtt_bridge_handle_set_initial_pose_command(const char *payload)
   (void)amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "covariance_y", &covariance_y);
   (void)amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "covariance_yaw", &covariance_yaw);
 
+  has_flat_pose =
+    amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "x", &x) &&
+    amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "y", &y) &&
+    amr_mqtt_bridge_extract_json_double_in_range(payload, payload + strlen(payload), "yaw", &yaw);
+
+  if (!has_flat_pose)
+  {
+    has_structured_pose = amr_mqtt_bridge_parse_pose_stamped_in_range(
+      payload, payload + strlen(payload), &parsed_pose);
+    if (has_structured_pose)
+    {
+      x = parsed_pose.pose.position.x;
+      y = parsed_pose.pose.position.y;
+      yaw = amr_mqtt_bridge_quaternion_to_yaw(
+        parsed_pose.pose.orientation.x,
+        parsed_pose.pose.orientation.y,
+        parsed_pose.pose.orientation.z,
+        parsed_pose.pose.orientation.w);
+
+      if (parsed_pose.header.frame_id.data != NULL &&
+        parsed_pose.header.frame_id.data[0] != '\0')
+      {
+        amr_mqtt_bridge_copy_string(frame_id, sizeof(frame_id), parsed_pose.header.frame_id.data);
+      }
+    }
+  }
+
+  if (!has_flat_pose && !has_structured_pose)
+  {
+    geometry_msgs__msg__PoseStamped__fini(&parsed_pose);
+    amr_mqtt_bridge_publish_simple_response(
+      g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose,
+      request_id[0] != '\0' ? request_id : "",
+      false,
+      "invalid set_initial_pose payload");
+    return;
+  }
+
   memset(&initial_pose, 0, sizeof(initial_pose));
   if (!geometry_msgs__msg__PoseWithCovarianceStamped__init(&initial_pose))
   {
+    geometry_msgs__msg__PoseStamped__fini(&parsed_pose);
     amr_mqtt_bridge_publish_simple_response(
       g_amr_mqtt_bridge_config.mqtt.response_set_initial_pose,
       request_id,
@@ -3537,6 +3587,7 @@ static void amr_mqtt_bridge_handle_set_initial_pose_command(const char *payload)
   initial_pose.pose.covariance[35] = covariance_yaw;
 
   rc = rcl_publish(&g_amr_mqtt_bridge_ros_state.initial_pose_publisher, &initial_pose, NULL);
+  geometry_msgs__msg__PoseStamped__fini(&parsed_pose);
   geometry_msgs__msg__PoseWithCovarianceStamped__fini(&initial_pose);
   if (rc != RCL_RET_OK)
   {
