@@ -52,9 +52,11 @@ Viz JSON:
 - `amr/robot/turtlebot3/viz/robot_description`
 
 Commands:
-- `amr/command/navigate_to_pose`
-- `amr/command/cancel_navigate_to_pose`
+- `amr/command/navigate_to_poses`
+- `amr/command/cancel_navigate_to_poses`
 - `amr/command/set_initial_pose`
+
+Single-goal navigation uses the same route API with a one-element `goal_poses` array.
 
 ## Launch
 

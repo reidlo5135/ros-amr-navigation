@@ -323,12 +323,12 @@
         slam_graph: "/slam/mapper/graph_debug"
         cmd_vel: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
-        navigate_feedback: "/amr/navigator/navigate_to_pose/feedback"
-        navigate_status: "/amr/navigator/navigate_to_pose/status"
+        navigate_feedback_poses: "/amr/navigator/navigate_to_poses/feedback"
+        navigate_status_poses: "/amr/navigator/navigate_to_poses/status"
       services:
         plan_segment: "/amr/global_planner/plan_segment"
         plan_route: "/amr/global_planner/plan_route"
       actions:
-        navigate_to_pose: "/amr/navigator/navigate_to_pose"
+        navigate_to_poses: "/amr/navigator/navigate_to_poses"
       save:
         directory: "/home/burger1/ws/data/maps"

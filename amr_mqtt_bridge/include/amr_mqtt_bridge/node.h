@@ -37,8 +37,8 @@
 #include <action_msgs/msg/goal_status_array.h>
 #include <action_msgs/msg/detail/goal_status_array__functions.h>
 #include <action_msgs/srv/detail/cancel_goal__functions.h>
-#include <amr_msgs/action/detail/navigate_to_pose__functions.h>
-#include <amr_msgs/action/detail/navigate_to_pose__type_support.h>
+#include <amr_msgs/action/detail/navigate_to_poses__functions.h>
+#include <amr_msgs/action/detail/navigate_to_poses__type_support.h>
 #include <geometry_msgs/msg/twist.h>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.h>
 #include <geometry_msgs/msg/pose_stamped.h>
@@ -48,7 +48,7 @@
 #include <geometry_msgs/msg/detail/pose_with_covariance_stamped__type_support.h>
 #include <geometry_msgs/msg/detail/twist__functions.h>
 #include <geometry_msgs/msg/detail/twist__type_support.h>
-#include <amr_msgs/action/navigate_to_pose.h>
+#include <amr_msgs/action/navigate_to_poses.h>
 #include <amr_msgs/msg/detail/motion_status__functions.h>
 #include <amr_msgs/msg/detail/motion_status__type_support.h>
 #include <amr_msgs/srv/detail/plan_route__functions.h>
@@ -163,14 +163,14 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char command_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char command_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char command_cancel_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char command_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char command_cancel_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char feedback_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char status_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char feedback_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char status_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char response_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char response_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_ping[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -203,11 +203,11 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_slam_graph[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char topic_navigate_feedback[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char topic_navigate_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_navigate_feedback_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_navigate_status_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_segment[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char service_plan_route[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  char action_navigate_to_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char action_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char save_directory[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
 } amr_mqtt_bridge_ros_interfaces_t;
 
@@ -265,7 +265,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
   geometry_msgs__msg__PoseStamped mapping_pose_message;
   std_msgs__msg__String slam_graph_message;
   geometry_msgs__msg__Twist cmd_vel_message;
-  action_msgs__msg__GoalStatusArray navigate_status_message;
+  action_msgs__msg__GoalStatusArray navigate_poses_status_message;
 
   rcl_subscription_t map_subscription;
   rcl_subscription_t robot_pose_subscription;
@@ -292,8 +292,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_publisher_t navigate_status_publisher;
   rcl_client_t plan_segment_client;
   rcl_client_t plan_route_client;
-  rcl_action_client_t navigate_to_pose_client;
-  rcl_wait_set_t navigate_wait_set;
+  rcl_action_client_t navigate_to_poses_client;
+  rcl_wait_set_t navigate_poses_wait_set;
 
   amr_mqtt_bridge_telemetry_endpoint_t telemetry_endpoints[AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS];
   size_t telemetry_endpoint_count;
@@ -305,9 +305,9 @@ typedef struct amr_mqtt_bridge_ros_state_s
   bool navigate_status_publisher_initialized;
   bool plan_segment_client_initialized;
   bool plan_route_client_initialized;
-  bool navigate_to_pose_client_initialized;
-  bool navigate_wait_set_initialized;
-  bool navigate_status_message_initialized;
+  bool navigate_to_poses_client_initialized;
+  bool navigate_poses_wait_set_initialized;
+  bool navigate_poses_status_message_initialized;
   struct
   {
     bool active;
@@ -317,7 +317,7 @@ typedef struct amr_mqtt_bridge_ros_state_s
     int64_t result_request_sequence_number;
     uint8_t goal_uuid[16];
     char request_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
-  } navigate_state;
+  } navigate_poses_state;
 } amr_mqtt_bridge_ros_state_t;
 
 extern amr_mqtt_bridge_runtime_t g_amr_mqtt_bridge_runtime;

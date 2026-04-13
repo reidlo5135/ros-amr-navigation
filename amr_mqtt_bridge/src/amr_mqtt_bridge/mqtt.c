@@ -6,8 +6,8 @@ static int amr_mqtt_bridge_subscribe_command_topics(void)
     g_amr_mqtt_bridge_config.mqtt.command_cmd_vel,
     g_amr_mqtt_bridge_config.mqtt.command_save_map,
     g_amr_mqtt_bridge_config.mqtt.command_set_initial_pose,
-    g_amr_mqtt_bridge_config.mqtt.command_navigate_to_pose,
-    g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_pose,
+    g_amr_mqtt_bridge_config.mqtt.command_navigate_to_poses,
+    g_amr_mqtt_bridge_config.mqtt.command_cancel_navigate_to_poses,
     g_amr_mqtt_bridge_config.mqtt.command_ping,
     g_amr_mqtt_bridge_config.mqtt.command_set_robot_id
   };
@@ -55,7 +55,7 @@ static int amr_mqtt_bridge_subscribe_command_topics(void)
   g_amr_mqtt_bridge_mqtt.command_subscriptions_registered = true;
   RCUTILS_LOG_INFO_NAMED(
     "amr_mqtt_bridge",
-    "Subscribed MQTT command/request topics for cmd_vel, save_map, initial pose, navigation, cancel, robot_id, and planner services");
+    "Subscribed MQTT command/request topics for cmd_vel, save_map, initial pose, route navigation, cancel, robot_id, and planner services");
   return MQTTCLIENT_SUCCESS;
 }
 

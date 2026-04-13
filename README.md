@@ -88,9 +88,11 @@ The external `ros-rcs` desktop client consumes:
 - `amr/robot/turtlebot3/viz/robot_description`
 
 Commands are sent on:
-- `amr/command/navigate_to_pose`
-- `amr/command/cancel_navigate_to_pose`
+- `amr/command/navigate_to_poses`
+- `amr/command/cancel_navigate_to_poses`
 - `amr/command/set_initial_pose`
+
+Single-goal navigation also uses `amr/command/navigate_to_poses` with a one-element `goal_poses` array.
 
 ## Launch
 
