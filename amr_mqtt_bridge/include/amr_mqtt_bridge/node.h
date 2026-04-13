@@ -169,6 +169,9 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char command_set_robot_id[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char feedback_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char status_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char viz_navigate_to_poses_feedback[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char viz_navigate_to_poses_status[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char viz_navigate_to_poses_response[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_navigate_to_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char response_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
