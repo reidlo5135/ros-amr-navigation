@@ -316,6 +316,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
+| `2026-04-14` | AMR 기본 goal semantics 재정의, `x/y` 우선 도달 정책, goal yaw optional화, `ros-rcs` yaw 입력/표시 축소 검토, `amr_mqtt_bridge` 성능 최적화 및 MQTT payload 경량화 검토, 프로토콜/API 명세 최신화, MQTT 통신 암호화 설계 검토 |
 | `2026-03-31` | `amr_slam_mapper` live map 기반 nav 연계 검토, raw/refined map layer 분리 후속, loop/revisit 기반 refined cleanup 설계 |
 | `2026-03-26` | kidnapped 대응용 global localization 설계, offline/disconnect 재초기화 흐름 검토 |
 | `2026-03-25` | exact footprint collision 완료, local planner decision semantics 반영, recovery/final approach 1차 안정화, viz 운영성 강화 |
@@ -323,6 +324,55 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
 | `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
+
+## 2026-04-14
+
+- AMR 기본 goal semantics 재정의
+  - 일반 indoor AMR route 주행에서는 goal orientation을 기본 요구사항으로 두지 않는 방향 검토
+  - `x, y` 안전 도달을 기본 성공 조건으로 두고, yaw 정렬은 task-specific pose constraint일 때만 활성화하는 정책 정리
+  - 현재 goal yaw를 항상 강하게 요구하는 구조는 AMR보다 AGV에 가까운 제약이라는 점을 기준으로 재검토
+- `amr_motion_controller` goal reached 정책 조정 검토
+  - `distance_tolerance` 만족 시 우선 도달로 보고, heading은 optional 후처리 또는 별도 단계로 다루는 구조 비교
+  - near-goal yaw mismatch 때문에 제자리 회전 반복 후 `aborted`로 끝나는 케이스를 줄이는 방향 검토
+  - `rotate_in_place_goal_distance`, `goal_reach_heading_tolerance`, `rotate_in_place_threshold`가 실제 AMR 운영 철학과 맞는지 재점검
+- `align_heading_at_goal` 의미 재정의
+  - 지금은 기본적으로 `true`로 실려 들어가는 흐름을 뒤집고, 기본값을 `false`로 두는 방향 검토
+  - 정말 heading 정렬이 필요한 경우만 explicit하게 켜는 task-level 옵션으로 내리는 구조 비교
+  - 중간 waypoint는 yaw 무시, 마지막 goal도 기본은 yaw 무시, 특수 task만 heading align 허용하는 정책 검토
+- `ros-rcs` goal 입력 UX 단순화 검토
+  - 일반 route 작성 시 goal yaw 입력을 기본 UI에서 제거하거나 숨기는 방향 검토
+  - operator가 위치 이동과 pose alignment를 다른 intent로 이해할 수 있게 goal 입력 모델을 분리할지 검토
+  - initial pose는 orientation이 필요하지만, navigation goal은 기본적으로 position intent 중심으로 다루는 UX 비교
+- 구현 후보 방향 메모
+  - `MotionCommand.align_heading_at_goal`를 실제 controller goal semantics에 반영
+  - `NavigateToPoses`는 기본적으로 heading-free route execution으로 운용
+  - docking, station facing, sensor-facing alignment 같은 경우만 별도 command/profile로 분리
+  - regression scenario에 `x,y 도달 후 yaw mismatch`, `final spin abort`, `route waypoint yaw ignored` 케이스 추가 검토
+- 프로토콜 / API 명세 최신화
+  - 최근 `NavigateToPoses`, runtime observation, structured initial pose payload, cancel semantics 변경까지 반영해 MQTT/ROS API 명세를 최신 기준으로 재정리
+  - `amr_mqtt_bridge/README.md` 중심 명세와 실제 구현 사이 드리프트가 없는지 점검
+  - command / response / feedback / status / viz topic의 payload schema를 운영 기준으로 다시 고정
+  - `ros-rcs`가 소비하는 topic, field, request/response correlation 규칙도 함께 문서화
+- MQTT 통신 암호화 검토 / 설계
+  - 현재 평문 TCP MQTT 기준 운영을 TLS 기반 구조로 올릴지 검토
+  - broker-side TLS, username/password, topic ACL, 필요 시 mutual TLS까지 단계별 도입 방안 정리
+  - robot-side `amr_mqtt_bridge`, broker, `ros-rcs` client 각각에 필요한 파라미터 / 인증서 / 배포 절차 설계
+  - 현장 운영 난이도와 보안 이득을 같이 비교해 `TLS only`와 `mTLS` 중 현실적인 1차 목표안 도출
+- `amr_mqtt_bridge` 성능 최적화 / 실시간성 보장 검토
+  - 현재 `amr_mqtt_bridge` CPU 사용량이 on-board에서 대략 `30%~100%`, VBox `mosquitto`도 평균 `20%~30%`까지 상승하는 상황을 기준으로 병목 분석
+  - 기존에는 낮은 점유율이던 broker까지 크게 오르는 만큼, raw telemetry / JSON viz payload / publish 빈도 / serialization 경로를 함께 재점검
+  - `ros-rcs` 실시간성이 떨어지는 원인을 bridge-side serialization 과다, 불필요한 full payload publish, broker-side fanout 부담 관점에서 분석
+- MQTT API / JSON payload 경량화 방향 검토
+  - 대용량 map / costmap / scan / path / observation payload에서 full-state push를 계속 보내는 방식이 적절한지 재검토
+  - topic별로 `raw telemetry`, `operator viz`, `high-rate control`, `low-rate status`를 다시 분리해 필요한 데이터만 보내는 정책 비교
+  - JSON field 축소, 숫자 정밀도 축소, delta/snapshot 분리, rate limiting, throttling, change-only publish 적용 가능성 검토
+  - `ros-rcs`는 실시간 운영에 필요한 최소 시계열/상태 위주로 받고, 무거운 debug payload는 opt-in 구독으로 내리는 구조 비교
+- 구현 후보 방향 메모
+  - `amr_mqtt_bridge` endpoint별 publish rate / payload size / serialization cost 계측 먼저 추가
+  - `scan`, `costmap`, `path`, `tf` 계열은 기본 viz payload를 축약본으로 재정의하고 full payload는 필요 시 별도 topic으로 분리
+  - `std_msgs/String` JSON passthrough도 크기와 주기를 같이 관리하도록 정리
+  - broker와 client 모두 부담이 큰 topic은 binary/raw 유지 + viz summary 분리 구조로 재정렬
+  - 목표는 `amr_mqtt_bridge` CPU 부담을 낮추고, broker fanout을 줄이며, `ros-rcs` 체감 실시간성을 최대한 보장하는 것
 
 ## 2026-03-31
 
