@@ -258,6 +258,7 @@
     execution:
       planner_wait_timeout_ms: 2000
       feedback_period_ms: 100
+      nominal_linear_speed: 0.075
     recovery:
       max_retries: 4
       retry_delay_ms: 1000

@@ -4063,12 +4063,12 @@ static void amr_mqtt_bridge_poll_navigate_poses_action(void)
         amr_mqtt_bridge_publish_navigate_response_topic(
           g_amr_mqtt_bridge_config.mqtt.response_navigate_to_poses,
           g_amr_mqtt_bridge_ros_state.navigate_poses_state.request_id,
-          result_response.result.success,
+          result_response.result.error_code == 0U,
           (int)result_response.status,
           true,
           true,
           result_response.result.completed_goals,
-          result_response.result.message.data);
+          result_response.result.error_msg.data);
         memset(&g_amr_mqtt_bridge_ros_state.navigate_poses_state, 0, sizeof(g_amr_mqtt_bridge_ros_state.navigate_poses_state));
       }
       amr_msgs__action__NavigateToPoses_GetResult_Response__fini(&result_response);

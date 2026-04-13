@@ -1,11 +1,19 @@
 geometry_msgs/PoseStamped[] goal_poses
 ---
-bool success
-string message
+uint16 NONE=0
+uint16 UNKNOWN=9000
+uint16 FAILED_TO_LOAD_BEHAVIOR_TREE=9001
+uint16 TF_ERROR=9002
+uint16 TIMEOUT=9003
+
+uint16 error_code
+string error_msg
 uint32 completed_goals
 ---
 geometry_msgs/PoseStamped current_pose
+builtin_interfaces/Duration navigation_time
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries
+float32 distance_remaining
 uint32 current_goal_index
 uint32 goal_count
-float64 remaining_distance
-float64 heading_error

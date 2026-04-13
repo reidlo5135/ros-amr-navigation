@@ -2,6 +2,7 @@
 #define AMR_BT_NAVIGATOR__BT_NAVIGATOR_HPP_
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <exception>
 #include <future>
@@ -53,6 +54,7 @@ private:
     bool success{false};
     bool canceled{false};
     std::string message;
+    uint16_t error_code{9000U};  // UNKNOWN by default; 0 = NONE on success/cancel
   };
 
   CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
@@ -81,7 +83,9 @@ private:
     const std::function<bool()> & is_cancel_requested,
     const std::function<void(
       const geometry_msgs::msg::PoseStamped &,
-      const amr_msgs::msg::MotionStatus &)> & publish_feedback);
+      const amr_msgs::msg::MotionStatus &,
+      int32_t,
+      const rclcpp::Duration &)> & publish_feedback);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message);
   void handle_local_plan_status(const amr_msgs::msg::LocalPlanStatus::SharedPtr message);
@@ -139,6 +143,7 @@ private:
   int feedback_period_ms_;
   int recovery_max_retries_;
   int recovery_retry_delay_ms_;
+  double nominal_speed_;
   uint32_t next_command_id_;
   geometry_msgs::msg::PoseStamped current_pose_;
   amr_msgs::msg::MotionStatus latest_motion_status_;

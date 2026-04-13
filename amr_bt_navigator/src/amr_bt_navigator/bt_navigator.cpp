@@ -43,6 +43,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   feedback_period_ms_(100),
   recovery_max_retries_(3),
   recovery_retry_delay_ms_(700),
+  nominal_speed_(0.075),
   next_command_id_(1U),
   has_current_pose_(false),
   has_motion_status_(false),
@@ -66,6 +67,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->declare_parameter("recovery.max_retries", this->recovery_max_retries_);
   this->declare_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
+  this->declare_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 }
 
 Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::State & state)
@@ -95,6 +97,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->get_parameter("recovery.max_retries", this->recovery_max_retries_);
   this->get_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
+  this->get_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 
   if (this->behavior_tree_xml_path_.empty()) {
     this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
@@ -385,25 +388,38 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     goal->goal_pose,
     "navigate_to_pose",
     [goal_handle]() { return goal_handle->is_canceling(); },
-    [goal_handle](
+    [goal_handle, this](
       const geometry_msgs::msg::PoseStamped & pose,
-      const amr_msgs::msg::MotionStatus & status) {
+      const amr_msgs::msg::MotionStatus & status,
+      int32_t recovery_count,
+      const rclcpp::Duration & nav_time) {
       auto feedback = std::make_shared<NavigateToPose::Feedback>();
       feedback->current_pose = pose;
-      feedback->remaining_distance = status.remaining_distance;
-      feedback->heading_error = status.heading_error;
+      feedback->distance_remaining = static_cast<float>(status.remaining_distance);
+      feedback->number_of_recoveries = static_cast<int16_t>(recovery_count);
+      const auto nav_ns = nav_time.nanoseconds();
+      feedback->navigation_time.sec = static_cast<int32_t>(nav_ns / 1000000000LL);
+      feedback->navigation_time.nanosec = static_cast<uint32_t>(nav_ns % 1000000000LL);
+      if (this->nominal_speed_ > 0.0 && status.remaining_distance > 0.0) {
+        const double est_sec =
+          static_cast<double>(status.remaining_distance) / this->nominal_speed_;
+        feedback->estimated_time_remaining.sec = static_cast<int32_t>(est_sec);
+        feedback->estimated_time_remaining.nanosec =
+          static_cast<uint32_t>((est_sec - std::floor(est_sec)) * 1e9);
+      }
       goal_handle->publish_feedback(feedback);
     });
 
   auto action_result = std::make_shared<NavigateToPose::Result>();
-  action_result->success = result.success;
-  action_result->message = result.message;
-
+  action_result->error_msg = result.message;
   if (result.canceled) {
+    action_result->error_code = NavigateToPose::Result::NONE;
     goal_handle->canceled(action_result);
   } else if (result.success) {
+    action_result->error_code = NavigateToPose::Result::NONE;
     goal_handle->succeed(action_result);
   } else {
+    action_result->error_code = result.error_code;
     goal_handle->abort(action_result);
   }
 
@@ -426,8 +442,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
 
   if (goal->goal_poses.empty()) {
     auto result = std::make_shared<NavigateToPoses::Result>();
-    result->success = false;
-    result->message = "Waypoint route is empty.";
+    result->error_code = NavigateToPoses::Result::UNKNOWN;
+    result->error_msg = "Waypoint route is empty.";
     result->completed_goals = 0U;
     goal_handle->abort(result);
     clear_active_goal();
@@ -437,8 +453,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
   for (std::size_t index = 0; index < goal->goal_poses.size(); ++index) {
     if (goal_handle->is_canceling()) {
       auto result = std::make_shared<NavigateToPoses::Result>();
-      result->success = false;
-      result->message = "Waypoint route canceled.";
+      result->error_code = NavigateToPoses::Result::NONE;
+      result->error_msg = "Waypoint route canceled.";
       result->completed_goals = completed_goals;
       goal_handle->canceled(result);
       clear_active_goal();
@@ -449,22 +465,34 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
       goal->goal_poses[index],
       "navigate_to_poses",
       [goal_handle]() { return goal_handle->is_canceling(); },
-      [goal_handle, index, goal_count](
+      [goal_handle, index, goal_count, this](
         const geometry_msgs::msg::PoseStamped & pose,
-        const amr_msgs::msg::MotionStatus & status) {
+        const amr_msgs::msg::MotionStatus & status,
+        int32_t recovery_count,
+        const rclcpp::Duration & nav_time) {
         auto feedback = std::make_shared<NavigateToPoses::Feedback>();
         feedback->current_pose = pose;
         feedback->current_goal_index = static_cast<uint32_t>(index);
         feedback->goal_count = goal_count;
-        feedback->remaining_distance = status.remaining_distance;
-        feedback->heading_error = status.heading_error;
+        feedback->distance_remaining = static_cast<float>(status.remaining_distance);
+        feedback->number_of_recoveries = static_cast<int16_t>(recovery_count);
+        const auto nav_ns = nav_time.nanoseconds();
+        feedback->navigation_time.sec = static_cast<int32_t>(nav_ns / 1000000000LL);
+        feedback->navigation_time.nanosec = static_cast<uint32_t>(nav_ns % 1000000000LL);
+        if (this->nominal_speed_ > 0.0 && status.remaining_distance > 0.0) {
+          const double est_sec =
+            static_cast<double>(status.remaining_distance) / this->nominal_speed_;
+          feedback->estimated_time_remaining.sec = static_cast<int32_t>(est_sec);
+          feedback->estimated_time_remaining.nanosec =
+            static_cast<uint32_t>((est_sec - std::floor(est_sec)) * 1e9);
+        }
         goal_handle->publish_feedback(feedback);
       });
 
     if (waypoint_result.canceled) {
       auto result = std::make_shared<NavigateToPoses::Result>();
-      result->success = false;
-      result->message = waypoint_result.message;
+      result->error_code = NavigateToPoses::Result::NONE;
+      result->error_msg = waypoint_result.message;
       result->completed_goals = completed_goals;
       goal_handle->canceled(result);
       clear_active_goal();
@@ -473,8 +501,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
 
     if (!waypoint_result.success) {
       auto result = std::make_shared<NavigateToPoses::Result>();
-      result->success = false;
-      result->message =
+      result->error_code = waypoint_result.error_code;
+      result->error_msg =
         "Waypoint " + std::to_string(index + 1) + " failed: " + waypoint_result.message;
       result->completed_goals = completed_goals;
       goal_handle->abort(result);
@@ -486,8 +514,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
   }
 
   auto result = std::make_shared<NavigateToPoses::Result>();
-  result->success = true;
-  result->message =
+  result->error_code = NavigateToPoses::Result::NONE;
+  result->error_msg =
     "Completed all " + std::to_string(completed_goals) + " waypoint goals.";
   result->completed_goals = completed_goals;
   goal_handle->succeed(result);
@@ -500,7 +528,9 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   const std::function<bool()> & is_cancel_requested,
   const std::function<void(
     const geometry_msgs::msg::PoseStamped &,
-    const amr_msgs::msg::MotionStatus &)> & publish_feedback)
+    const amr_msgs::msg::MotionStatus &,
+    int32_t,
+    const rclcpp::Duration &)> & publish_feedback)
 {
   RCLCPP_INFO(
     this->get_logger(),
@@ -915,7 +945,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     return ExecutionResult{
       false,
       false,
-      std::string("Failed to initialize behavior tree: ") + error.what()};
+      std::string("Failed to initialize behavior tree: ") + error.what(),
+      9001U};  // FAILED_TO_LOAD_BEHAVIOR_TREE
   }
 
   if (plan_tree.tickRoot() != BT::NodeStatus::SUCCESS) {
@@ -925,12 +956,15 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       blackboard->get<std::string>("status_message")};
   }
 
+  const auto goal_start = this->now();
+
   while (rclcpp::ok()) {
     const auto status = this->get_motion_status_copy();
     const auto pose = this->get_current_pose_copy();
 
     if (publish_feedback) {
-      publish_feedback(pose, status);
+      const auto recovery_count = blackboard->get<int>("recovery_attempts");
+      publish_feedback(pose, status, recovery_count, this->now() - goal_start);
     }
 
     blackboard->set("current_pose", pose);
@@ -941,22 +975,23 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     const auto message = blackboard->get<std::string>("status_message");
     if (outcome == BtOutcome::kSucceeded) {
       RCLCPP_INFO(this->get_logger(), "BT: goal succeeded: %s", message.c_str());
-      return ExecutionResult{true, false, message};
+      return ExecutionResult{true, false, message, 0U};
     }
     if (outcome == BtOutcome::kCanceled) {
       RCLCPP_INFO(this->get_logger(), "BT: goal canceled: %s", message.c_str());
-      return ExecutionResult{false, true, message};
+      return ExecutionResult{false, true, message, 0U};
     }
     if (outcome == BtOutcome::kStopped) {
       RCLCPP_ERROR(this->get_logger(), "BT: goal aborted: %s", message.c_str());
-      return ExecutionResult{false, false, message};
+      return ExecutionResult{false, false, message, 9000U};
     }
   }
 
   return ExecutionResult{
     false,
     false,
-    "Navigator stopped because ROS is shutting down."};
+    "Navigator stopped because ROS is shutting down.",
+    9000U};
 }
 
 void Btnavigator::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
