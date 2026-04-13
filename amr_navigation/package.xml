@@ -21,6 +21,7 @@
   <exec_depend>amr_motion_controller</exec_depend>
   <exec_depend>amr_recovery_server</exec_depend>
   <exec_depend>amr_bt_navigator</exec_depend>
+  <exec_depend>amr_runtime_observation</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
   <exec_depend>amr_bringup</exec_depend>
   <exec_depend>amr_mqtt_bridge</exec_depend>

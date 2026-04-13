@@ -583,8 +583,10 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     "WaitForPlannerService",
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto cancel_requested =
+        blackboard->get<std::function<bool()>>("is_cancel_requested");
       std::string error_message;
-      if (navigator->wait_for_planner_service(error_message)) {
+      if (navigator->wait_for_planner_service(error_message, cancel_requested)) {
         return BT::NodeStatus::SUCCESS;
       }
       blackboard->set("status_message", error_message);
@@ -595,6 +597,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     "RequestGlobalPlan",
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto cancel_requested =
+        blackboard->get<std::function<bool()>>("is_cancel_requested");
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       nav_msgs::msg::Path plan;
@@ -606,7 +610,9 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         current_pose.pose.position.y,
         goal_pose.pose.position.x,
         goal_pose.pose.position.y);
-      if (!navigator->request_global_plan(current_pose, goal_pose, plan, error_message)) {
+      if (!navigator->request_global_plan(
+          current_pose, goal_pose, plan, error_message, cancel_requested))
+      {
         RCLCPP_WARN(
           navigator->get_logger(),
           "BT: global plan request failed: %s",
@@ -753,6 +759,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     "HandleRecoveryCycle",
     [blackboard](BT::TreeNode &) {
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      const auto cancel_requested =
+        blackboard->get<std::function<bool()>>("is_cancel_requested");
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
@@ -760,15 +768,29 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto attempts = blackboard->get<int>("recovery_attempts");
       std::string error_message;
       amr_msgs::msg::MotionCommand recovery_command;
+      const auto finish_canceled = [&]() {
+        navigator->publish_stop_command();
+        blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+        blackboard->set("status_message", std::string("Navigation canceled."));
+        blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kCanceled));
+        return BT::NodeStatus::SUCCESS;
+      };
 
       RCLCPP_WARN(
         navigator->get_logger(),
         "BT: recovery needed; starting attempt %d",
         attempts + 1);
 
+      if (cancel_requested()) {
+        return finish_canceled();
+      }
+
       navigator->publish_stop_command();
 
-      if (!navigator->wait_for_recovery_services(error_message)) {
+      if (!navigator->wait_for_recovery_services(error_message, cancel_requested)) {
+        if (cancel_requested()) {
+          return finish_canceled();
+        }
         blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
         blackboard->set("status_message", error_message);
         return BT::NodeStatus::SUCCESS;
@@ -776,7 +798,10 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
 
       const int attempt_index = attempts % 3;
       const uint8_t planner_decision = local_plan_status.decision;
-      if (!navigator->clear_local_costmap(error_message)) {
+      if (!navigator->clear_local_costmap(error_message, cancel_requested)) {
+        if (cancel_requested()) {
+          return finish_canceled();
+        }
         RCLCPP_WARN(
           navigator->get_logger(),
           "BT: clear local costmap failed: %s",
@@ -785,9 +810,13 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
 
       if (planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED) {
         nav_msgs::msg::Path replanned_path;
-        if (!navigator->wait_for_planner_service(error_message) ||
-          !navigator->request_global_plan(current_pose, goal_pose, replanned_path, error_message))
+        if (!navigator->wait_for_planner_service(error_message, cancel_requested) ||
+          !navigator->request_global_plan(
+            current_pose, goal_pose, replanned_path, error_message, cancel_requested))
         {
+          if (cancel_requested()) {
+            return finish_canceled();
+          }
           blackboard->set("status_message", error_message);
         } else {
           auto command = navigator->build_motion_command(goal_pose, route_id, replanned_path);
@@ -806,61 +835,89 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         attempt_index < 2)
       {
         if (!navigator->request_recovery_command(
-            "wait", current_pose, goal_pose, recovery_command, error_message))
+            "wait", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
+          if (cancel_requested()) {
+            return finish_canceled();
+          }
           blackboard->set("status_message", error_message);
         } else {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
               std::max(navigator->feedback_period_ms_ * 10, navigator->recovery_retry_delay_ms_),
-              error_message))
+              error_message,
+              cancel_requested))
           {
+            if (cancel_requested()) {
+              return finish_canceled();
+            }
             blackboard->set("status_message", error_message);
           }
         }
       } else if (attempt_index == 0) {
         if (!navigator->request_recovery_command(
-            "wait", current_pose, goal_pose, recovery_command, error_message))
+            "wait", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
+          if (cancel_requested()) {
+            return finish_canceled();
+          }
           blackboard->set("status_message", error_message);
         } else {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
               std::max(navigator->feedback_period_ms_ * 10, navigator->recovery_retry_delay_ms_),
-              error_message))
+              error_message,
+              cancel_requested))
           {
+            if (cancel_requested()) {
+              return finish_canceled();
+            }
             blackboard->set("status_message", error_message);
           }
         }
       } else if (attempt_index == 1) {
         if (!navigator->request_recovery_command(
-            "backup", current_pose, goal_pose, recovery_command, error_message))
+            "backup", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
+          if (cancel_requested()) {
+            return finish_canceled();
+          }
           blackboard->set("status_message", error_message);
         } else {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
               std::max(2000, navigator->recovery_retry_delay_ms_ + 1000),
-              error_message))
+              error_message,
+              cancel_requested))
           {
+            if (cancel_requested()) {
+              return finish_canceled();
+            }
             blackboard->set("status_message", error_message);
           }
         }
       } else {
         if (!navigator->request_recovery_command(
-            "spin", current_pose, goal_pose, recovery_command, error_message))
+            "spin", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
+          if (cancel_requested()) {
+            return finish_canceled();
+          }
           blackboard->set("status_message", error_message);
         } else {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
               std::max(2500, navigator->recovery_retry_delay_ms_ + 1200),
-              error_message))
+              error_message,
+              cancel_requested))
           {
+            if (cancel_requested()) {
+              return finish_canceled();
+            }
             blackboard->set("status_message", error_message);
           }
         }
@@ -879,9 +936,13 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       }
 
       nav_msgs::msg::Path replanned_path;
-      if (!navigator->wait_for_planner_service(error_message) ||
-        !navigator->request_global_plan(current_pose, goal_pose, replanned_path, error_message))
+      if (!navigator->wait_for_planner_service(error_message, cancel_requested) ||
+        !navigator->request_global_plan(
+          current_pose, goal_pose, replanned_path, error_message, cancel_requested))
       {
+        if (cancel_requested()) {
+          return finish_canceled();
+        }
         blackboard->set("status_message", error_message);
         std::this_thread::sleep_for(std::chrono::milliseconds(navigator->recovery_retry_delay_ms_));
         return BT::NodeStatus::SUCCESS;
@@ -950,6 +1011,14 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   }
 
   if (plan_tree.tickRoot() != BT::NodeStatus::SUCCESS) {
+    if (is_cancel_requested()) {
+      const auto message = blackboard->get<std::string>("status_message");
+      return ExecutionResult{
+        false,
+        true,
+        message.empty() ? std::string("Navigation canceled.") : message,
+        0U};
+    }
     return ExecutionResult{
       false,
       false,
@@ -1047,51 +1116,97 @@ bool Btnavigator::is_navigator_ready(std::string & error_message) const
   return true;
 }
 
-bool Btnavigator::wait_for_planner_service(std::string & error_message)
+bool Btnavigator::wait_for_planner_service(
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
 {
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
+
   if (!this->plan_segment_client_) {
     error_message = "Global planner client is not configured.";
     return false;
   }
-  if (!this->plan_segment_client_->wait_for_service(
-      std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
-  {
-    error_message = "Global planner service is not available.";
-    return false;
+
+  int elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    const int wait_ms = std::min(100, this->planner_wait_timeout_ms_ - elapsed_ms);
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (this->plan_segment_client_->wait_for_service(std::chrono::milliseconds(wait_ms))) {
+      error_message.clear();
+      return true;
+    }
+    elapsed_ms += wait_ms;
   }
-  error_message.clear();
-  return true;
+
+  error_message = "Global planner service is not available.";
+  return false;
 }
 
-bool Btnavigator::wait_for_recovery_services(std::string & error_message)
+bool Btnavigator::wait_for_recovery_services(
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
 {
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
+
   if (!this->plan_recovery_client_ || !this->clear_costmap_client_) {
     error_message = "Recovery clients are not configured.";
     return false;
   }
-  if (!this->plan_recovery_client_->wait_for_service(
-      std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
-  {
+
+  int elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    const int wait_ms = std::min(100, this->planner_wait_timeout_ms_ - elapsed_ms);
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (this->plan_recovery_client_->wait_for_service(std::chrono::milliseconds(wait_ms))) {
+      break;
+    }
+    elapsed_ms += wait_ms;
+  }
+  if (elapsed_ms >= this->planner_wait_timeout_ms_) {
     error_message = "Recovery planner service is not available.";
     return false;
   }
-  if (!this->clear_costmap_client_->wait_for_service(
-      std::chrono::milliseconds(this->planner_wait_timeout_ms_)))
-  {
-    error_message = "Clear costmap service is not available.";
-    return false;
+
+  elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    const int wait_ms = std::min(100, this->planner_wait_timeout_ms_ - elapsed_ms);
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (this->clear_costmap_client_->wait_for_service(std::chrono::milliseconds(wait_ms))) {
+      error_message.clear();
+      return true;
+    }
+    elapsed_ms += wait_ms;
   }
-  error_message.clear();
-  return true;
+
+  error_message = "Clear costmap service is not available.";
+  return false;
 }
 
 bool Btnavigator::request_global_plan(
   const geometry_msgs::msg::PoseStamped & start,
   const geometry_msgs::msg::PoseStamped & goal,
   nav_msgs::msg::Path & plan,
-  std::string & error_message)
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::PlanSegment::Request>();
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
+
   request->start = start;
   request->goal = goal;
 
@@ -1104,8 +1219,19 @@ bool Btnavigator::request_global_plan(
     request->goal.pose.position.y);
 
   auto future = this->plan_segment_client_->async_send_request(request);
-  if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
-      std::future_status::ready)
+  int elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (future.wait_for(std::chrono::milliseconds(50)) == std::future_status::ready) {
+      break;
+    }
+    elapsed_ms += 50;
+  }
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+    future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while waiting for a global plan.";
     return false;
@@ -1128,16 +1254,32 @@ bool Btnavigator::request_recovery_command(
   const geometry_msgs::msg::PoseStamped & current_pose,
   const geometry_msgs::msg::PoseStamped & goal_pose,
   amr_msgs::msg::MotionCommand & command,
-  std::string & error_message)
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::PlanRecovery::Request>();
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
+
   request->behavior = behavior;
   request->current_pose = current_pose;
   request->goal_pose = goal_pose;
 
   auto future = this->plan_recovery_client_->async_send_request(request);
-  if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
-      std::future_status::ready)
+  int elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (future.wait_for(std::chrono::milliseconds(50)) == std::future_status::ready) {
+      break;
+    }
+    elapsed_ms += 50;
+  }
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+    future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while waiting for a recovery command.";
     return false;
@@ -1158,14 +1300,31 @@ bool Btnavigator::request_recovery_command(
   return true;
 }
 
-bool Btnavigator::clear_local_costmap(std::string & error_message)
+bool Btnavigator::clear_local_costmap(
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::ClearCostmap::Request>();
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
+
   request->local_only = true;
 
   auto future = this->clear_costmap_client_->async_send_request(request);
-  if (future.wait_for(std::chrono::milliseconds(this->planner_wait_timeout_ms_)) !=
-      std::future_status::ready)
+  int elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (future.wait_for(std::chrono::milliseconds(50)) == std::future_status::ready) {
+      break;
+    }
+    elapsed_ms += 50;
+  }
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+    future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while clearing the local costmap.";
     return false;
@@ -1184,10 +1343,18 @@ bool Btnavigator::clear_local_costmap(std::string & error_message)
 bool Btnavigator::wait_for_command_completion(
   const uint32_t command_id,
   const int timeout_ms,
-  std::string & error_message)
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
 {
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
   const auto start_time = this->now();
   while (rclcpp::ok()) {
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
     const auto status = this->get_motion_status_copy();
     if (status.command_id == command_id && status.command_completed) {
       error_message.clear();

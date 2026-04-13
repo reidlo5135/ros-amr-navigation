@@ -95,7 +95,7 @@
 #define AMR_MQTT_BRIDGE_NODE_NAME "mqtt_bridge"
 #define AMR_MQTT_BRIDGE_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_BRIDGE_MAX_STRING_LENGTH 512
-#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 19
+#define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 21
 #define AMR_MQTT_BRIDGE_MAX_FOOTPRINT_POLYGON_VALUES 32
 
 typedef char *(*amr_mqtt_bridge_serializer_fn_t)(const void *message);
@@ -160,6 +160,8 @@ typedef struct amr_mqtt_bridge_mqtt_topics_s
   char telemetry_temp_map_raw[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_mapping_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char telemetry_slam_graph[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char telemetry_observation_runtime_summary[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char telemetry_observation_runtime_events[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_save_map[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char command_set_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -204,6 +206,8 @@ typedef struct amr_mqtt_bridge_ros_interfaces_s
   char topic_temp_map_raw[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_mapping_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_slam_graph[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_observation_runtime_summary[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
+  char topic_observation_runtime_events[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_cmd_vel[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_initial_pose[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
   char topic_navigate_feedback_poses[AMR_MQTT_BRIDGE_MAX_STRING_LENGTH];
@@ -267,6 +271,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   nav_msgs__msg__OccupancyGrid temp_map_raw_message;
   geometry_msgs__msg__PoseStamped mapping_pose_message;
   std_msgs__msg__String slam_graph_message;
+  std_msgs__msg__String observation_runtime_summary_message;
+  std_msgs__msg__String observation_runtime_events_message;
   geometry_msgs__msg__Twist cmd_vel_message;
   action_msgs__msg__GoalStatusArray navigate_poses_status_message;
 
@@ -289,6 +295,8 @@ typedef struct amr_mqtt_bridge_ros_state_s
   rcl_subscription_t temp_map_raw_subscription;
   rcl_subscription_t mapping_pose_subscription;
   rcl_subscription_t slam_graph_subscription;
+  rcl_subscription_t observation_runtime_summary_subscription;
+  rcl_subscription_t observation_runtime_events_subscription;
   rcl_publisher_t cmd_vel_publisher;
   rcl_publisher_t initial_pose_publisher;
   rcl_publisher_t navigate_feedback_publisher;

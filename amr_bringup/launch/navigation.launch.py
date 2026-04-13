@@ -45,6 +45,14 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[bringup_params_file()],
     )
+    runtime_observation = Node(
+        package="amr_runtime_observation",
+        executable="amr_runtime_observation",
+        name="runtime_observation",
+        namespace="amr",
+        output="screen",
+        parameters=[bringup_params_file()],
+    )
     navigation_manager = Node(
         package="amr_lifecycle_manager",
         executable="amr_lifecycle_manager",
@@ -69,5 +77,6 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(motion_controller)
     ld.add_action(recovery_server)
     ld.add_action(bt_navigator)
+    ld.add_action(runtime_observation)
     ld.add_action(navigation_manager)
     return ld

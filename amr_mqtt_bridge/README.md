@@ -94,6 +94,8 @@ Each topic below carries a raw serialized ROS message payload.
 | `telemetry/temp_map_raw` | `/slam/map/temp/raw` | `nav_msgs/msg/OccupancyGrid` |
 | `telemetry/mapping_pose` | `/slam/mapper/pose` | `geometry_msgs/msg/PoseStamped` |
 | `telemetry/slam_graph` | `/slam/mapper/graph_debug` | `std_msgs/msg/String` |
+| `telemetry/observation/runtime/summary` | `/amr/observation/runtime/summary` | `std_msgs/msg/String` |
+| `telemetry/observation/runtime/events` | `/amr/observation/runtime/events` | `std_msgs/msg/String` |
 
 ### JSON Viz Topics
 
@@ -117,8 +119,26 @@ These are JSON mirrors intended for operator clients. They are published under `
 | `viz/temp_map_raw` | `/slam/map/temp/raw` | `header`, `info`, full `data[]` |
 | `viz/mapping_pose` | `/slam/mapper/pose` | `header`, `position`, `orientation`, `yaw` |
 | `viz/slam_graph` | `/slam/mapper/graph_debug` | raw JSON string payload as-is |
+| `viz/observation/runtime/summary` | `/amr/observation/runtime/summary` | raw JSON string payload as-is |
+| `viz/observation/runtime/events` | `/amr/observation/runtime/events` | raw JSON string payload as-is |
 
 The current implementation does not publish JSON viz mirrors for `odom`, `imu`, or `joint_states`, even though raw telemetry exists for them.
+
+### Runtime Observation Topics
+
+`amr_runtime_observation` publishes JSON summaries directly on ROS `std_msgs/msg/String`, and the bridge forwards them unchanged.
+
+With `robot_id = burger1`, `ros-rcs` can subscribe to:
+
+- `/amr/burger1/telemetry/observation/runtime/summary`
+- `/amr/burger1/telemetry/observation/runtime/events`
+- `/amr/burger1/viz/observation/runtime/summary`
+- `/amr/burger1/viz/observation/runtime/events`
+
+Recommended consumer path for operator-facing clients:
+
+- `viz/observation/runtime/summary` for the latest route/runtime snapshot
+- `viz/observation/runtime/events` for event log or timeline stream
 
 ### Navigation Topics
 

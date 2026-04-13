@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-04-13
+----------
+
+- Started the ``0.15.3`` patch branch:
+
+  - added the initial ``amr_runtime_observation`` package for lightweight runtime summaries and event emission
+  - wired the observation node into navigation bringup without changing the core planner/controller contract
+  - kept the first scope focused on route progress, motion blocking, planner decision, and recovery-count observation
+
 2026-04-10
 ----------
 

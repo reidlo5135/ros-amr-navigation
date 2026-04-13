@@ -275,6 +275,21 @@
       backup_speed: 0.06
       spin_angle_rad: 1.5707963267948966
 
+/amr/runtime_observation:
+  ros__parameters:
+    topics:
+      motion_status: "/amr/motion/status"
+      local_plan_status: "/amr/planner/local_status"
+      observation_summary: "/amr/observation/runtime/summary"
+      observation_events: "/amr/observation/runtime/events"
+    actions:
+      navigate_to_poses: "/amr/navigator/navigate_to_poses"
+    observation:
+      publish_period_ms: 200
+      route_stale_timeout_ms: 1500
+      progress_stall_window_sec: 3.0
+      progress_epsilon: 0.05
+
 /amr/mqtt_bridge:
   ros__parameters:
     footprint:
@@ -322,6 +337,8 @@
         robot_description: "/robot_description"
         battery_state: "/battery_state"
         slam_graph: "/slam/mapper/graph_debug"
+        observation_runtime_summary: "/amr/observation/runtime/summary"
+        observation_runtime_events: "/amr/observation/runtime/events"
         cmd_vel: "/cmd_vel"
         initial_pose: "/amr/localization/initial_pose"
         navigate_feedback_poses: "/amr/navigator/navigate_to_poses/feedback"

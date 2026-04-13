@@ -93,24 +93,33 @@ private:
   amr_msgs::msg::MotionStatus get_motion_status_copy() const;
   amr_msgs::msg::LocalPlanStatus get_local_plan_status_copy() const;
   bool is_navigator_ready(std::string & error_message) const;
-  bool wait_for_planner_service(std::string & error_message);
-  bool wait_for_recovery_services(std::string & error_message);
+  bool wait_for_planner_service(
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
+  bool wait_for_recovery_services(
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
   bool request_global_plan(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
     nav_msgs::msg::Path & plan,
-    std::string & error_message);
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
   bool request_recovery_command(
     const std::string & behavior,
     const geometry_msgs::msg::PoseStamped & current_pose,
     const geometry_msgs::msg::PoseStamped & goal_pose,
     amr_msgs::msg::MotionCommand & command,
-    std::string & error_message);
-  bool clear_local_costmap(std::string & error_message);
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
+  bool clear_local_costmap(
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
   bool wait_for_command_completion(
     uint32_t command_id,
     int timeout_ms,
-    std::string & error_message);
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
   bool has_active_goal() const;
   amr_msgs::msg::MotionCommand build_motion_command(
     const geometry_msgs::msg::PoseStamped & goal_pose,

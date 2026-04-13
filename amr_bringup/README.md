@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the `0.15.2` AMR stack.
+Central launch and parameter package for the `0.15.3` AMR stack.
 
 ## Main Files
 
@@ -36,6 +36,7 @@ and skips:
 - `/amr/local_planner`
 - `/amr/motion_controller`
 - `/amr/recovery_server`
+- `/amr/runtime_observation`
 - `/amr/navigator`
 - `/amr/mqtt_bridge`
 

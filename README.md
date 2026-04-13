@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.2` direction:
+Current `0.15.3` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_bridge` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - the operator client now lives outside this repo as the desktop app in `ros-rcs`:
@@ -55,6 +55,7 @@ flowchart LR
 - `amr_motion_controller`: path tracking, stop logic, and progress checking
 - `amr_mqtt_bridge`: robot-side ROS <-> MQTT bridge
 - `amr_msgs`: custom messages, services, and actions
+- `amr_runtime_observation`: runtime summary and event aggregation for navigation state
 - `amr_navigation`: metapackage
 - `amr_recovery_server`: wait / backup / spin recovery command generation
 ## Removed Packages
@@ -117,6 +118,7 @@ colcon build --packages-select \
   amr_motion_controller \
   amr_recovery_server \
   amr_bt_navigator \
+  amr_runtime_observation \
   amr_lifecycle_manager \
   amr_mqtt_bridge \
   amr_bringup \
