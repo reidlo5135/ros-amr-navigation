@@ -433,6 +433,11 @@ It may publish:
 
 The heavy data plane is still in transition from the old `telemetry/*` plus `viz/*` mirror model.
 
+Compatibility note:
+
+- TF payloads keep ROS-like `header.frame_id` and `child_frame_id` fields for client compatibility
+- newer control-plane payloads still use the flatter non-ROS schema described above
+
 The current implementation still emits high-volume MQTT topics such as:
 
 - `telemetry/map`

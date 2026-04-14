@@ -131,6 +131,16 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   return orientation;
 }
 
+void append_header(std::string & out, const std_msgs::msg::Header & header)
+{
+  appendf(
+    out,
+    "\"header\":{\"stamp\":{\"sec\":%d,\"nanosec\":%u},\"frame_id\":%s}",
+    static_cast<int>(header.stamp.sec),
+    header.stamp.nanosec,
+    escape_json(header.frame_id).c_str());
+}
+
 void append_frame(std::string & out, const std::string & frame_id)
 {
   if (frame_id.empty()) {
@@ -435,9 +445,8 @@ void append_transform_stamped(std::string & out, const geometry_msgs::msg::Trans
     transform.transform.rotation.z,
     transform.transform.rotation.w);
   out += "{";
-  out += "\"parent_frame\":";
-  out += escape_json(transform.header.frame_id);
-  out += ",\"child_frame\":";
+  append_header(out, transform.header);
+  out += ",\"child_frame_id\":";
   out += escape_json(transform.child_frame_id);
   appendf(
     out,
