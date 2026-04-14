@@ -310,6 +310,7 @@
       password: ""
     mqtt:
       robot_id: "burger1"
+      raw_telemetry_enabled: false
       qos:
         telemetry: 0
         command: 0

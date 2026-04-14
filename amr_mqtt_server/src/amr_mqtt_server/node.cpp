@@ -1077,6 +1077,7 @@ private:
   {
     std::string root{"/amr"};
     std::string robot_id{"burger1"};
+    bool raw_telemetry_enabled{false};
     int telemetry_qos{0};
     int command_qos{0};
     int service_qos{0};
@@ -1186,6 +1187,7 @@ private:
     this->get_parameter_or("mqtt.root", mqtt_.root, mqtt_.root);
     this->get_parameter_or("mqtt.topics.header", mqtt_.root, mqtt_.root);
     this->get_parameter_or("mqtt.robot_id", mqtt_.robot_id, mqtt_.robot_id);
+    this->get_parameter_or("mqtt.raw_telemetry_enabled", mqtt_.raw_telemetry_enabled, mqtt_.raw_telemetry_enabled);
     this->get_parameter_or("mqtt.qos.telemetry", mqtt_.telemetry_qos, mqtt_.telemetry_qos);
     this->get_parameter_or("mqtt.qos.command", mqtt_.command_qos, mqtt_.command_qos);
     this->get_parameter_or("mqtt.qos.service", mqtt_.service_qos, mqtt_.service_qos);
@@ -1595,7 +1597,7 @@ private:
           on_receive(*message);
         }
         const uint64_t now = now_ms();
-        if (endpoint->raw_passthrough) {
+        if (endpoint->raw_passthrough && mqtt_.raw_telemetry_enabled) {
           const bool should_publish_raw =
             (!endpoint->raw_publish_once || !endpoint->raw_published_once) &&
             (endpoint->raw_min_period_ms == 0U ||
@@ -1609,21 +1611,21 @@ private:
             endpoint->last_raw_publish_ms = now;
             endpoint->raw_published_once = true;
           }
+        }
 
-          if (serializer && !endpoint->viz_topic.empty()) {
-            const bool should_publish_viz =
-              (!endpoint->viz_publish_once || !endpoint->viz_published_once) &&
-              (endpoint->viz_min_period_ms == 0U ||
-              now >= endpoint->last_viz_publish_ms + endpoint->viz_min_period_ms);
-            if (should_publish_viz) {
-              publish_payload(
-                endpoint->viz_topic,
-                serializer(*message),
-                mqtt_.telemetry_qos,
-                endpoint->retained);
-              endpoint->last_viz_publish_ms = now;
-              endpoint->viz_published_once = true;
-            }
+        if (serializer && endpoint->raw_passthrough && !endpoint->viz_topic.empty()) {
+          const bool should_publish_viz =
+            (!endpoint->viz_publish_once || !endpoint->viz_published_once) &&
+            (endpoint->viz_min_period_ms == 0U ||
+            now >= endpoint->last_viz_publish_ms + endpoint->viz_min_period_ms);
+          if (should_publish_viz) {
+            publish_payload(
+              endpoint->viz_topic,
+              serializer(*message),
+              mqtt_.telemetry_qos,
+              endpoint->retained);
+            endpoint->last_viz_publish_ms = now;
+            endpoint->viz_published_once = true;
           }
         } else if (serializer) {
           publish_payload(endpoint->mqtt_topic, serializer(*message), mqtt_.telemetry_qos, endpoint->retained);

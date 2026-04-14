@@ -24,6 +24,7 @@ Current defaults in this repository:
 
 - MQTT root: `/amr`
 - `robot_id`: `burger1`
+- `raw_telemetry_enabled`: `false`
 - broker host: `192.168.61.35`
 - broker port: `1883`
 - QoS: `0`
@@ -437,6 +438,8 @@ Compatibility note:
 
 - TF payloads keep ROS-like `header.frame_id` and `child_frame_id` fields for client compatibility
 - newer control-plane payloads still use the flatter non-ROS schema described above
+- raw binary `telemetry/*` publish is now gated by `mqtt.raw_telemetry_enabled`
+- default repository setting is `false`, which suppresses raw `telemetry/*` binary publish entirely
 
 The current implementation still emits high-volume MQTT topics such as:
 
@@ -454,6 +457,12 @@ The current implementation still emits high-volume MQTT topics such as:
 - `telemetry/observation/runtime/events`
 
 These are still present for compatibility and migration, but they are not the preferred operator-facing control contract.
+
+When `mqtt.raw_telemetry_enabled` is `false`:
+
+- raw binary `telemetry/*` messages are not published
+- JSON `viz/*` messages continue to publish
+- control-plane topics such as `navigation/*`, `pose/*`, `map/*`, `system/*` are unaffected
 
 ## Recommended `ros-rcs` Usage
 
