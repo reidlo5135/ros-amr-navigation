@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
-project(amr_mqtt_server VERSION 0.5.0 LANGUAGES C)
+project(amr_mqtt_server VERSION 0.6.0 LANGUAGES CXX)
 
-if(NOT CMAKE_C_STANDARD)
-  set(CMAKE_C_STANDARD 99)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
@@ -17,81 +17,53 @@ if(NOT PAHO_MQTT_INCLUDE_DIR OR NOT PAHO_MQTT3C_LIBRARY)
     "libpaho-mqtt-dev was not found. Install it with: sudo apt install -y libpaho-mqtt-dev")
 endif()
 
-include_directories(
-  include
-  include/${PROJECT_NAME}
-  ${PAHO_MQTT_INCLUDE_DIR}
-)
-
 find_package(ament_cmake REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(rcl REQUIRED)
-find_package(rcl_action REQUIRED)
-find_package(rclc REQUIRED)
-find_package(rcl_yaml_param_parser REQUIRED)
-find_package(rcutils REQUIRED)
-find_package(rmw REQUIRED)
-find_package(rosidl_runtime_c REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2_msgs REQUIRED)
 
-set(SOURCES
-  src/${PROJECT_NAME}/node.c
-  src/${PROJECT_NAME}/mqtt.c
-  src/main.c
+add_executable(${PROJECT_NAME}
+  src/amr_mqtt_server/node.cpp
+  src/main.cpp
 )
 
-set(DEPENDS
+target_include_directories(${PROJECT_NAME}
+  PRIVATE
+    include
+    ${PAHO_MQTT_INCLUDE_DIR}
+)
+
+target_link_libraries(${PROJECT_NAME}
+  ${PAHO_MQTT3C_LIBRARY}
+  m
+)
+
+ament_target_dependencies(${PROJECT_NAME}
   action_msgs
   amr_msgs
   geometry_msgs
   nav_msgs
-  rcl
-  rcl_action
-  rclc
-  rcl_yaml_param_parser
-  rcutils
-  rmw
-  rosidl_runtime_c
+  rclcpp
+  rclcpp_action
   sensor_msgs
   std_msgs
   tf2_msgs
 )
 
-set(EXEC_NAME
-  ${PROJECT_NAME}
-)
-
-add_executable(${EXEC_NAME}
-  ${SOURCES}
-)
-
-target_link_libraries(${EXEC_NAME}
-  ${PAHO_MQTT3C_LIBRARY}
-  m
-)
-
-ament_target_dependencies(${EXEC_NAME}
-  ${DEPENDS}
-)
-
 install(TARGETS
-  ${EXEC_NAME}
+  ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}
-)
-
-install(DIRECTORY
-  include/
-  DESTINATION include
 )
 
 if(BUILD_TESTING)

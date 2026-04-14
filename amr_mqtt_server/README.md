@@ -2,7 +2,7 @@
 
 Robot-side MQTT API server for the AMR runtime.
 
-`amr_mqtt_server` is the MQTT contract boundary between the on-robot ROS 2 stack and external clients such as `ros-rcs`. It accepts operator-facing commands, publishes navigation lifecycle updates, and still forwards parts of the older data plane while that layer is being refactored.
+`amr_mqtt_server` is the MQTT contract boundary between the on-robot ROS 2 stack and external clients such as `ros-rcs`. It now runs as an `rclcpp`-based node, accepts operator-facing commands, publishes navigation lifecycle updates, and still forwards parts of the older data plane while that layer is being refactored.
 
 ## Role
 
@@ -97,18 +97,14 @@ Example:
   "request_id": "route-001",
   "goal_poses": [
     {
-      "header": { "frame_id": "map" },
-      "pose": {
-        "position": { "x": 1.0, "y": 0.5, "z": 0.0 },
-        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-      }
+      "frame": "map",
+      "position": { "x": 1.0, "y": 0.5, "z": 0.0 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
     },
     {
-      "header": { "frame_id": "map" },
-      "pose": {
-        "position": { "x": 2.0, "y": 1.2, "z": 0.0 },
-        "orientation": { "x": 0.0, "y": 0.0, "z": 0.7071, "w": 0.7071 }
-      }
+      "frame": "map",
+      "position": { "x": 2.0, "y": 1.2, "z": 0.0 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.7071, "w": 0.7071 }
     }
   ]
 }
@@ -141,7 +137,8 @@ Required fields:
 
 Optional fields:
 
-- `frame_id`, default `"map"`
+- `frame`, default `"map"`
+- `frame_id`, still accepted for compatibility
 - `covariance_x`, default `0.25`
 - `covariance_y`, default `0.25`
 - `covariance_yaw`, default `0.06853891945200942`
@@ -151,7 +148,7 @@ Example:
 ```json
 {
   "request_id": "init-001",
-  "frame_id": "map",
+  "frame": "map",
   "pose": {
     "position": { "x": 0.03, "y": -0.10, "z": 0.0 },
     "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
@@ -165,13 +162,17 @@ Legacy compatibility:
 
 ### `map/save`
 
-Current implementation only requires `request_id`.
+Required fields:
+
+- `request_id`
+- `basename`
 
 Example:
 
 ```json
 {
-  "request_id": "map-save-001"
+  "request_id": "map-save-001",
+  "basename": "warehouse_a_001"
 }
 ```
 
@@ -215,18 +216,14 @@ Example:
 {
   "request_id": "segment-001",
   "start": {
-    "header": { "frame_id": "map" },
-    "pose": {
-      "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-    }
+    "frame": "map",
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
   },
   "goal": {
-    "header": { "frame_id": "map" },
-    "pose": {
-      "position": { "x": 1.0, "y": 0.5, "z": 0.0 },
-      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-    }
+    "frame": "map",
+    "position": { "x": 1.0, "y": 0.5, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
   }
 }
 ```
@@ -245,19 +242,15 @@ Example:
 {
   "request_id": "route-plan-001",
   "start": {
-    "header": { "frame_id": "map" },
-    "pose": {
-      "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-    }
+    "frame": "map",
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
   },
   "waypoints": [
     {
-      "header": { "frame_id": "map" },
-      "pose": {
-        "position": { "x": 1.0, "y": 0.5, "z": 0.0 },
-        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-      }
+      "frame": "map",
+      "position": { "x": 1.0, "y": 0.5, "z": 0.0 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
     }
   ]
 }
@@ -332,6 +325,11 @@ Shape:
 
 Published while a route is active.
 
+Notes:
+
+- response payloads no longer expose ROS `header`
+- when frame context matters, a flat `frame` field is used instead
+
 Shape:
 
 ```json
@@ -344,11 +342,9 @@ Shape:
   "navigation_time": { "sec": 12, "nanosec": 0 },
   "estimated_time_remaining": { "sec": 7, "nanosec": 0 },
   "current_pose": {
-    "header": { "frame_id": "map", "stamp": { "sec": 0, "nanosec": 0 } },
-    "pose": {
-      "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
-    }
+    "frame": "map",
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0, "yaw": 0.0 }
   }
 }
 ```

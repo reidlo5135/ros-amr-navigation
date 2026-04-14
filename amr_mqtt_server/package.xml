@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>amr_mqtt_server</name>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
   <description>Robot-side MQTT API server for TurtleBot3 bringup, navigation telemetry, and command transport.</description>
   <maintainer email="reidlo4215@gmail.com">reidlo</maintainer>
   <license>TODO: License declaration</license>
@@ -14,13 +14,8 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>libpaho-mqtt-dev</depend>
-  <depend>rcl</depend>
-  <depend>rcl_action</depend>
-  <depend>rclc</depend>
-  <depend>rcl_yaml_param_parser</depend>
-  <depend>rcutils</depend>
-  <depend>rmw</depend>
-  <depend>rosidl_runtime_c</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>tf2_msgs</depend>
