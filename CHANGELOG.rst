@@ -4,6 +4,15 @@ Changelog
 2026-04-13
 ----------
 
+- Started the ``0.15.4`` patch branch:
+
+  - preparing the next robot-side MQTT direction beyond a thin bridge-only role
+  - evaluating performance-first restructuring around a stronger robot-side API/runtime boundary
+  - renamed the robot-side package direction to ``amr_mqtt_server`` and began moving the control API toward non-ROS-facing topic paths such as ``navigation/command`` and ``pose/set``
+
+2026-04-13
+----------
+
 - Started the ``0.15.3`` patch branch:
 
   - added the initial ``amr_runtime_observation`` package for lightweight runtime summaries and event emission

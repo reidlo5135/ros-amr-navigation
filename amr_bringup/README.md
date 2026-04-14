@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the `0.15.3` AMR stack.
+Central launch and parameter package for the `0.15.4` AMR stack.
 
 ## Main Files
 
@@ -14,7 +14,7 @@ Central launch and parameter package for the `0.15.3` AMR stack.
 `turtlebot3.launch.py` starts:
 1. `turtlebot3_bringup/robot.launch.py`
 2. delayed `localization.launch.py`
-3. delayed `amr_mqtt_bridge.launch.py`
+3. delayed `amr_mqtt_server.launch.py`
 4. delayed `navigation.launch.py`
 
 `mapping_mode:=true` keeps:

@@ -1,4 +1,4 @@
-#include "amr_mqtt_bridge/mqtt.h"
+#include "amr_mqtt_server/mqtt.h"
 
 static int amr_mqtt_bridge_subscribe_command_topics(void)
 {

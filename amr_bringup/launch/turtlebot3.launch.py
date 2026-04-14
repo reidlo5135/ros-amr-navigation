@@ -25,9 +25,9 @@ def generate_launch_description() -> LaunchDescription:
         "robot.launch.py",
     )
     mqtt_bridge_launch = os.path.join(
-        get_package_share_directory("amr_mqtt_bridge"),
+        get_package_share_directory("amr_mqtt_server"),
         "launch",
-        "amr_mqtt_bridge.launch.py",
+        "amr_mqtt_server.launch.py",
     )
 
     mapping_mode = LaunchConfiguration("mapping_mode")
@@ -38,7 +38,7 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(bringup_launch_file("localization.launch.py")),
         launch_arguments={"mapping_mode": mapping_mode}.items(),
     )
-    mqtt_bridge = IncludeLaunchDescription(
+    mqtt_server = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(mqtt_bridge_launch),
         launch_arguments={"params_file": bringup_params}.items(),
     )
@@ -71,7 +71,7 @@ def generate_launch_description() -> LaunchDescription:
                 period=robot_bringup_delay_sec,
                 actions=[
                     localization_launch,
-                    mqtt_bridge,
+                    mqtt_server,
                 ],
             ),
             TimerAction(

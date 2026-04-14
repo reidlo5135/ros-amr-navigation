@@ -2,9 +2,9 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.3` direction:
+Current `0.15.4` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
-- `amr_mqtt_bridge` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
+- `amr_mqtt_server` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - the operator client now lives outside this repo as the desktop app in `ros-rcs`:
   - `https://github.com/reidlo5135/ros-rcs`
 - Recovery and decision flow follow a Nav2-like split:
@@ -16,7 +16,7 @@ Current `0.15.3` direction:
 ```mermaid
 flowchart LR
     Desktop["Operator Desktop App<br/>ros-rcs"] -->|WS MQTT| Broker["Mosquitto Broker"]
-    Broker -->|MQTT command| RobotBridge["amr_mqtt_bridge<br/>robot-side ROS <-> MQTT"]
+    Broker -->|MQTT command| RobotBridge["amr_mqtt_server<br/>robot-side MQTT API server"]
     RobotBridge -->|ROS topics / services / actions| Nav["Localization + Navigation Runtime"]
 
     subgraph TB3["TurtleBot3"]
@@ -53,7 +53,7 @@ flowchart LR
 - `amr_localization`: localization and `map -> odom`
 - `amr_map_server`: official-map lifecycle, evaluation, and save/freeze services
 - `amr_motion_controller`: path tracking, stop logic, and progress checking
-- `amr_mqtt_bridge`: robot-side ROS <-> MQTT bridge
+- `amr_mqtt_server`: robot-side MQTT API server
 - `amr_msgs`: custom messages, services, and actions
 - `amr_runtime_observation`: runtime summary and event aggregation for navigation state
 - `amr_navigation`: metapackage
@@ -69,31 +69,24 @@ These packages are no longer part of the active stack:
 
 ## MQTT Model
 
-Robot-side `amr_mqtt_bridge` publishes:
-- raw ROS-oriented telemetry on `amr/robot/turtlebot3/telemetry/*`
-- web-oriented JSON topics on `amr/robot/turtlebot3/viz/*`
+Robot-side `amr_mqtt_server` publishes:
+- legacy ROS-oriented data streams on `/<root>/<robot_id>/telemetry/*`
+- control and result topics on `/<root>/<robot_id>/<domain>/<channel>`
 
 The external `ros-rcs` desktop client consumes:
-- `amr/robot/turtlebot3/viz/map`
-- `amr/robot/turtlebot3/viz/temp_map/raw`
-- `amr/robot/turtlebot3/viz/temp_map/refined`
-- `amr/robot/turtlebot3/viz/global_costmap`
-- `amr/robot/turtlebot3/viz/local_costmap`
-- `amr/robot/turtlebot3/viz/robot_pose`
-- `amr/robot/turtlebot3/viz/global_path`
-- `amr/robot/turtlebot3/viz/local_path`
-- `amr/robot/turtlebot3/viz/motion_status`
-- `amr/robot/turtlebot3/viz/scan`
-- `amr/robot/turtlebot3/viz/tf`
-- `amr/robot/turtlebot3/viz/tf_static`
-- `amr/robot/turtlebot3/viz/robot_description`
+- `/amr/burger1/navigation/feedback`
+- `/amr/burger1/navigation/status`
+- `/amr/burger1/navigation/result`
+- `/amr/burger1/pose/result`
+- `/amr/burger1/map/result`
+- selected legacy data streams while the heavy data plane is being refactored
 
 Commands are sent on:
-- `amr/command/navigate_to_poses`
-- `amr/command/cancel_navigate_to_poses`
-- `amr/command/set_initial_pose`
+- `/amr/burger1/navigation/command`
+- `/amr/burger1/navigation/cancel`
+- `/amr/burger1/pose/set`
 
-Single-goal navigation also uses `amr/command/navigate_to_poses` with a one-element `goal_poses` array.
+Single-goal navigation also uses `/amr/burger1/navigation/command` with a one-element `goal_poses` array.
 
 ## Launch
 
@@ -120,7 +113,7 @@ colcon build --packages-select \
   amr_bt_navigator \
   amr_runtime_observation \
   amr_lifecycle_manager \
-  amr_mqtt_bridge \
+  amr_mqtt_server \
   amr_bringup \
   amr_navigation
 ```

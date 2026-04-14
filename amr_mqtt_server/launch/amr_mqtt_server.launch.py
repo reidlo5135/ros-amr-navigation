@@ -9,12 +9,12 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument(
                 "params_file",
-                description="Parameter file for amr_mqtt_bridge",
+                description="Parameter file for amr_mqtt_server",
             ),
             Node(
-                package="amr_mqtt_bridge",
-                executable="amr_mqtt_bridge",
-                name="mqtt_bridge",
+                package="amr_mqtt_server",
+                executable="amr_mqtt_server",
+                name="mqtt_server",
                 namespace="amr",
                 output="screen",
                 parameters=[LaunchConfiguration("params_file")],

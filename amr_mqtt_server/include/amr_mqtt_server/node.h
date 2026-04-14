@@ -1,5 +1,5 @@
-#ifndef AMR_MQTT_BRIDGE__NODE_H_
-#define AMR_MQTT_BRIDGE__NODE_H_
+#ifndef AMR_MQTT_SERVER__NODE_H_
+#define AMR_MQTT_SERVER__NODE_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -92,7 +92,7 @@
 #include <rosidl_runtime_c/string_functions.h>
 #include <rosidl_runtime_c/message_type_support_struct.h>
 
-#define AMR_MQTT_BRIDGE_NODE_NAME "mqtt_bridge"
+#define AMR_MQTT_BRIDGE_NODE_NAME "mqtt_server"
 #define AMR_MQTT_BRIDGE_NODE_NAMESPACE "/amr"
 #define AMR_MQTT_BRIDGE_MAX_STRING_LENGTH 512
 #define AMR_MQTT_BRIDGE_MAX_TELEMETRY_ENDPOINTS 21

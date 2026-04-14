@@ -1,5 +1,5 @@
-#ifndef AMR_MQTT_BRIDGE__MQTT_H_
-#define AMR_MQTT_BRIDGE__MQTT_H_
+#ifndef AMR_MQTT_SERVER__MQTT_H_
+#define AMR_MQTT_SERVER__MQTT_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -10,6 +10,6 @@
 #include <MQTTClient.h>
 #include <rcutils/logging_macros.h>
 
-#include "amr_mqtt_bridge/node.h"
+#include "amr_mqtt_server/node.h"
 
-#endif  // AMR_MQTT_BRIDGE__MQTT_H_
+#endif  // AMR_MQTT_SERVER__MQTT_H_

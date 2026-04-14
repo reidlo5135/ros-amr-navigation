@@ -24,7 +24,7 @@
   <exec_depend>amr_runtime_observation</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
   <exec_depend>amr_bringup</exec_depend>
-  <exec_depend>amr_mqtt_bridge</exec_depend>
+  <exec_depend>amr_mqtt_server</exec_depend>
   <exec_depend>behaviortree_cpp_v3</exec_depend>
   <exec_depend>builtin_interfaces</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>

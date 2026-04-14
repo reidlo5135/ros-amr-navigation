@@ -15,7 +15,7 @@ Metapackage for the active AMR navigation stack.
 - `amr_bt_navigator`
 - `amr_lifecycle_manager`
 - `amr_bringup`
-- `amr_mqtt_bridge`
+- `amr_mqtt_server`
 
 ## Notes
 
