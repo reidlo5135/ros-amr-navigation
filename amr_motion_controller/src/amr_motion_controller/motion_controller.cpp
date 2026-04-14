@@ -411,19 +411,25 @@ void MotionController::publish_control()
       const auto goal_distance = this->pose_distance(
         this->current_pose_, this->latest_command_.goal_pose);
       debug_remaining_distance = std::max(local_plan_remaining_distance, goal_distance);
+      const bool distance_reached = goal_distance <= this->distance_tolerance_;
+      const bool align_heading_at_goal = this->latest_command_.align_heading_at_goal;
       const auto goal_yaw = this->quaternion_yaw(this->latest_command_.goal_pose.pose.orientation);
       const auto target_dx =
         tracking_target.pose.position.x - this->current_pose_.pose.position.x;
       const auto target_dy =
         tracking_target.pose.position.y - this->current_pose_.pose.position.y;
-      double target_heading = goal_yaw;
-      if (goal_distance > this->rotate_in_place_goal_distance_) {
-        if ((target_dx * target_dx) + (target_dy * target_dy) > 1e-6) {
-          target_heading = std::atan2(target_dy, target_dx);
-        }
+      double target_heading = current_yaw;
+      if ((target_dx * target_dx) + (target_dy * target_dy) > 1e-6) {
+        target_heading = std::atan2(target_dy, target_dx);
+      }
+      if (align_heading_at_goal && distance_reached) {
+        target_heading = goal_yaw;
       }
       const auto heading_error = this->normalize_angle(target_heading - current_yaw);
       const auto abs_heading_error = std::abs(heading_error);
+      const bool heading_reached =
+        !align_heading_at_goal || abs_heading_error <= this->goal_reach_heading_tolerance_;
+      const bool aligning_in_place = align_heading_at_goal && distance_reached && !heading_reached;
 
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
       status.local_plan_valid = this->has_local_plan_ && !this->latest_local_plan_.poses.empty();
@@ -433,9 +439,7 @@ void MotionController::publish_control()
       status.blocked = status.obstacle_detected;
       status.has_blocked_pose = false;
       status.blocked_pose = geometry_msgs::msg::PoseStamped();
-      status.goal_reached =
-        goal_distance <= this->distance_tolerance_ &&
-        abs_heading_error <= this->goal_reach_heading_tolerance_;
+      status.goal_reached = distance_reached && heading_reached;
       status.remaining_distance = goal_distance;
       status.heading_error = heading_error;
 
@@ -447,6 +451,9 @@ void MotionController::publish_control()
         this->pose_distance(this->current_pose_, this->progress_reference_pose_) >=
         this->progress_required_movement_radius_)
       {
+        this->progress_reference_pose_ = this->current_pose_;
+        this->progress_reference_time_ = this->now();
+      } else if (aligning_in_place) {
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
       } else if (
@@ -494,8 +501,10 @@ void MotionController::publish_control()
           this->max_angular_speed_);
 
         const bool rotate_in_place_only =
+          (aligning_in_place && abs_heading_error > this->goal_heading_tolerance_) ||
+          (align_heading_at_goal &&
           goal_distance <= this->rotate_in_place_goal_distance_ &&
-          abs_heading_error > this->rotate_in_place_threshold_;
+          abs_heading_error > this->rotate_in_place_threshold_);
         if (!rotate_in_place_only) {
           const double base_linear_speed = std::max(
             0.0, std::min(this->linear_speed_, goal_distance));

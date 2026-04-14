@@ -464,6 +464,186 @@ When `mqtt.raw_telemetry_enabled` is `false`:
 - JSON `viz/*` messages continue to publish
 - control-plane topics such as `navigation/*`, `pose/*`, `map/*`, `system/*` are unaffected
 
+## Viz Payload Schemas
+
+`viz/*` topics are derived from `telemetry/*` topics by replacing the `/telemetry/` path segment with `/viz/`.
+
+Example:
+
+```text
+/amr/burger1/telemetry/scan -> /amr/burger1/viz/scan
+```
+
+The sections below describe the current JSON payload shapes emitted by `amr_mqtt_server` for visualization consumers such as `ros-rcs`.
+
+### `viz/robot_pose`
+
+```json
+{
+  "frame": "map",
+  "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+  "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0, "yaw": 0.0 }
+}
+```
+
+### `viz/global_path` and `viz/local_path`
+
+```json
+{
+  "frame": "map",
+  "pose_count": 2,
+  "poses": [
+    {
+      "frame": "map",
+      "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0, "yaw": 0.0 }
+    }
+  ]
+}
+```
+
+### `viz/map`, `viz/global_costmap`, `viz/local_costmap`, `viz/temp_map/raw`, `viz/temp_map/refined`
+
+```json
+{
+  "frame": "map",
+  "info": {
+    "width": 311,
+    "height": 320,
+    "resolution": 0.05,
+    "origin": {
+      "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0, "yaw": 0.0 }
+    }
+  },
+  "data": [0, 0, 100]
+}
+```
+
+### `viz/motion_status`
+
+```json
+{
+  "frame": "map",
+  "command_id": 12,
+  "active": true,
+  "goal_reached": false,
+  "obstacle_detected": false,
+  "blocked": false,
+  "stalled": false,
+  "local_plan_valid": true,
+  "costmap_blocked": false,
+  "safety_gate_blocked": false,
+  "has_blocked_pose": false,
+  "remaining_distance": 1.25,
+  "heading_error": 0.05,
+  "current_pose": {
+    "frame": "map",
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0, "yaw": 0.0 }
+  },
+  "blocked_pose": {
+    "frame": "map",
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0, "yaw": 0.0 }
+  }
+}
+```
+
+### `viz/scan`
+
+```json
+{
+  "frame": "base_scan",
+  "angle_min": 0.0,
+  "angle_max": 6.283185,
+  "angle_increment": 0.01563,
+  "range_min": 0.1,
+  "range_max": 100.0,
+  "ranges_count": 401,
+  "ranges": [1.23, null, 0.0]
+}
+```
+
+Notes:
+
+- `frame` is the sensor frame, typically `base_scan`
+- angles follow ROS `LaserScan` semantics
+- visualization clients must transform scan points from the scan frame into the fixed frame using TF
+
+### `viz/odom`
+
+```json
+{
+  "frame": "odom",
+  "child_frame": "base_link",
+  "pose": {
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+  },
+  "twist": {
+    "linear": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "angular": { "x": 0.0, "y": 0.0, "z": 0.0 }
+  }
+}
+```
+
+### `viz/tf` and `viz/tf_static`
+
+TF payloads intentionally keep ROS-style frame fields for compatibility.
+
+```json
+{
+  "transforms": [
+    {
+      "header": {
+        "stamp": { "sec": 1776131971, "nanosec": 971017774 },
+        "frame_id": "map"
+      },
+      "child_frame_id": "odom",
+      "translation": { "x": -0.23, "y": 0.02, "z": 0.0 },
+      "rotation": { "x": 0.0, "y": 0.0, "z": -0.012, "w": 0.999, "yaw": -0.0245 }
+    }
+  ]
+}
+```
+
+Notes:
+
+- `viz/tf` is incremental and may contain partial updates
+- clients should merge transforms by `child_frame_id`
+- `viz/tf_static` should be treated as persistent static transforms
+
+### `viz/battery_state`
+
+```json
+{
+  "frame": "base_link",
+  "voltage": 11.9,
+  "current": -0.4,
+  "percentage": 70.0,
+  "power_supply_status": 2,
+  "power_supply_health": 1,
+  "power_supply_technology": 3,
+  "present": true
+}
+```
+
+### `viz/robot_description`
+
+```json
+{
+  "data": "<robot ... />",
+  "footprint_polygon": [-0.1, -0.09, 0.1, -0.09, 0.1, 0.09, -0.1, 0.09]
+}
+```
+
+### `viz/slam_graph`, `viz/observation/runtime/summary`, `viz/observation/runtime/events`
+
+These topics forward JSON strings produced by the corresponding ROS publishers.
+
+For these topics, `amr_mqtt_server` does not reshape the payload. Consumers should parse the message body as-is.
+
 ## Recommended `ros-rcs` Usage
 
 For current `ros-rcs` integration, treat these as primary:

@@ -1392,7 +1392,7 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   command.node_id = this->default_node_id_;
   command.plan = plan;
   command.goal_pose = goal_pose;
-  command.align_heading_at_goal = true;
+  command.align_heading_at_goal = false;
   return command;
 }
 
