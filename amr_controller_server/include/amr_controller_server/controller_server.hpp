@@ -127,6 +127,9 @@ private:
     double heading,
     double lateral_sign) const;
   nav_msgs::msg::Path refine_local_plan(const nav_msgs::msg::Path &plan) const;
+  nav_msgs::msg::Path smooth_path_corners(const nav_msgs::msg::Path &plan) const;
+  bool is_path_collision_free(const nav_msgs::msg::Path &plan) const;
+  bool is_pose_collision_free(const geometry_msgs::msg::PoseStamped &pose) const;
   void assign_path_headings(nav_msgs::msg::Path &plan) const;
   geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw) const;
 
@@ -157,6 +160,12 @@ private:
   double path_refiner_interpolate_distance_;
   bool path_refiner_heading_assignment_enabled_;
   bool path_refiner_preserve_goal_orientation_;
+  bool path_refiner_corner_smoothing_enabled_;
+  double path_refiner_corner_smoothing_max_offset_;
+  double path_refiner_corner_smoothing_angle_threshold_;
+  int path_refiner_corner_smoothing_samples_;
+  bool path_refiner_collision_check_enabled_;
+  double path_refiner_collision_sample_distance_;
   bool dynamic_obstacle_enabled_;
   double dynamic_obstacle_replan_lookahead_distance_;
   double dynamic_obstacle_escape_forward_distance_;

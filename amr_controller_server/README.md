@@ -9,7 +9,7 @@ preserving the existing lifecycle node contracts:
 
 - `/amr/local_planner`: builds the short-horizon local plan from the global route.
 - `/amr/motion_controller`: tracks the local plan, applies safety gating, and publishes `cmd_vel`.
-- local path refiner: prunes near-duplicate poses, densifies long segments, and assigns path headings.
+- local path refiner: prunes near-duplicate poses, densifies long segments, smooths safe corners, and assigns path headings.
 - goal checker: separates XY / yaw / hold-time arrival policy from velocity tracking logic.
 
 This mirrors the Nav2-style server file layout with one `controller_server.hpp`,
@@ -26,7 +26,8 @@ ros2 launch amr_controller_server controller.launch.py params_file:=/path/to/amr
 
 ## Parameters
 
-`/amr/local_planner` exposes `path_refiner.*` parameters for safe path post-processing.
+`/amr/local_planner` exposes `path_refiner.*` parameters for safe path post-processing,
+including collision-checked corner smoothing with fallback to the unsmoothed local plan.
 `/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
 
 ## Next Direction

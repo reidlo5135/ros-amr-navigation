@@ -4,6 +4,11 @@ Changelog
 2026-04-20
 ----------
 
+- Started the ``0.15.7`` patch branch:
+
+  - extended the local path refiner with conservative corner smoothing
+  - added path-refiner collision validation so smoothed paths fall back to the unsmoothed plan when unsafe
+
 - Started the ``0.15.6`` patch branch:
 
   - added controller-local ``goal_checker`` parameters for XY / yaw / hold-time arrival policy
