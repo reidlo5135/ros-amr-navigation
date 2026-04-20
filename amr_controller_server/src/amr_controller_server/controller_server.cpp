@@ -378,6 +378,11 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   allow_unknown_(false),
   prevent_corner_cutting_(true),
   turn_penalty_(0.5),
+  path_refiner_enabled_(true),
+  path_refiner_prune_distance_(0.03),
+  path_refiner_interpolate_distance_(0.15),
+  path_refiner_heading_assignment_enabled_(true),
+  path_refiner_preserve_goal_orientation_(true),
   dynamic_obstacle_enabled_(true),
   dynamic_obstacle_replan_lookahead_distance_(1.4),
   dynamic_obstacle_escape_forward_distance_(1.2),
@@ -407,6 +412,13 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter("path_refiner.enabled", this->path_refiner_enabled_);
+  this->declare_parameter("path_refiner.prune_distance", this->path_refiner_prune_distance_);
+  this->declare_parameter("path_refiner.interpolate_distance", this->path_refiner_interpolate_distance_);
+  this->declare_parameter(
+    "path_refiner.heading_assignment_enabled", this->path_refiner_heading_assignment_enabled_);
+  this->declare_parameter(
+    "path_refiner.preserve_goal_orientation", this->path_refiner_preserve_goal_orientation_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->declare_parameter(
@@ -440,6 +452,13 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter("planner.turn_penalty", this->turn_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter("path_refiner.enabled", this->path_refiner_enabled_);
+  this->get_parameter("path_refiner.prune_distance", this->path_refiner_prune_distance_);
+  this->get_parameter("path_refiner.interpolate_distance", this->path_refiner_interpolate_distance_);
+  this->get_parameter(
+    "path_refiner.heading_assignment_enabled", this->path_refiner_heading_assignment_enabled_);
+  this->get_parameter(
+    "path_refiner.preserve_goal_orientation", this->path_refiner_preserve_goal_orientation_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
   this->get_parameter(
@@ -668,7 +687,7 @@ void LocalPlanner::handle_plan_local_escape(
   }
 
   response->success = true;
-  response->plan = escape_plan;
+  response->plan = this->refine_local_plan(escape_plan);
   response->message = "Local escape recovery plan is ready.";
 }
 
@@ -682,7 +701,11 @@ void LocalPlanner::publish_local_plan()
     return;
   }
 
-  const LocalPlanBuildResult build_result = this->build_local_plan(this->latest_command_, this->current_pose_);
+  LocalPlanBuildResult build_result = this->build_local_plan(this->latest_command_, this->current_pose_);
+  if (build_result.local_plan_valid)
+  {
+    build_result.plan = this->refine_local_plan(build_result.plan);
+  }
   this->local_plan_publisher_->publish(build_result.plan);
 
   amr_msgs::msg::LocalPlanStatus status;
@@ -1219,6 +1242,105 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
   return local_plan;
 }
 
+nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &plan) const
+{
+  if (!this->path_refiner_enabled_ || plan.poses.size() < 2U)
+  {
+    return plan;
+  }
+
+  nav_msgs::msg::Path refined_plan;
+  refined_plan.header = plan.header;
+  refined_plan.header.stamp = this->now();
+  refined_plan.poses.reserve(plan.poses.size());
+  refined_plan.poses.push_back(plan.poses.front());
+
+  for (std::size_t index = 1U; index < plan.poses.size(); ++index)
+  {
+    const geometry_msgs::msg::PoseStamped &target_pose = plan.poses[index];
+    const bool final_pose = index == plan.poses.size() - 1U;
+    const geometry_msgs::msg::PoseStamped last_pose = refined_plan.poses.back();
+    const double segment_distance = this->pose_distance(last_pose, target_pose);
+
+    if (!final_pose && segment_distance < this->path_refiner_prune_distance_)
+    {
+      continue;
+    }
+
+    if (
+      this->path_refiner_interpolate_distance_ > 1e-6 &&
+      segment_distance > this->path_refiner_interpolate_distance_)
+    {
+      const int segment_count = static_cast<int>(
+        std::floor(segment_distance / this->path_refiner_interpolate_distance_));
+      for (int segment_index = 1; segment_index <= segment_count; ++segment_index)
+      {
+        const double ratio = std::clamp(
+          (static_cast<double>(segment_index) * this->path_refiner_interpolate_distance_) /
+          segment_distance,
+          0.0,
+          1.0);
+        if (ratio >= 1.0)
+        {
+          continue;
+        }
+        refined_plan.poses.push_back(this->interpolate_pose(last_pose, target_pose, ratio));
+      }
+    }
+
+    refined_plan.poses.push_back(target_pose);
+  }
+
+  if (this->path_refiner_heading_assignment_enabled_)
+  {
+    this->assign_path_headings(refined_plan);
+  }
+
+  return refined_plan;
+}
+
+void LocalPlanner::assign_path_headings(nav_msgs::msg::Path &plan) const
+{
+  if (plan.poses.size() < 2U)
+  {
+    return;
+  }
+
+  const geometry_msgs::msg::Quaternion goal_orientation = plan.poses.back().pose.orientation;
+  for (std::size_t index = 0U; index + 1U < plan.poses.size(); ++index)
+  {
+    const geometry_msgs::msg::PoseStamped &current_pose = plan.poses[index];
+    const geometry_msgs::msg::PoseStamped &next_pose = plan.poses[index + 1U];
+    const double dx = next_pose.pose.position.x - current_pose.pose.position.x;
+    const double dy = next_pose.pose.position.y - current_pose.pose.position.y;
+    if ((dx * dx) + (dy * dy) <= 1e-8)
+    {
+      continue;
+    }
+
+    plan.poses[index].pose.orientation = this->yaw_to_quaternion(std::atan2(dy, dx));
+  }
+
+  if (this->path_refiner_preserve_goal_orientation_)
+  {
+    plan.poses.back().pose.orientation = goal_orientation;
+  }
+  else
+  {
+    plan.poses.back().pose.orientation = plan.poses[plan.poses.size() - 2U].pose.orientation;
+  }
+}
+
+geometry_msgs::msg::Quaternion LocalPlanner::yaw_to_quaternion(const double yaw) const
+{
+  geometry_msgs::msg::Quaternion quaternion;
+  quaternion.x = 0.0;
+  quaternion.y = 0.0;
+  quaternion.z = std::sin(yaw * 0.5);
+  quaternion.w = std::cos(yaw * 0.5);
+  return quaternion;
+}
+
 nav_msgs::msg::Path LocalPlanner::build_source_plan(const amr_msgs::msg::MotionCommand &command) const
 {
   nav_msgs::msg::Path source_plan = command.plan;
@@ -1480,6 +1602,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   distance_tolerance_(0.15),
   goal_heading_tolerance_(0.20),
   goal_reach_heading_tolerance_(0.35),
+  goal_checker_xy_tolerance_(0.15),
+  goal_checker_yaw_tolerance_(0.35),
+  goal_checker_hold_time_sec_(0.0),
+  goal_checker_ignore_yaw_(false),
   rotate_in_place_threshold_(0.6),
   rotate_in_place_goal_distance_(0.35),
   heading_slowdown_threshold_(0.2),
@@ -1496,6 +1622,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   safety_gate_min_points_(3),
   velocity_control_mode_(VelocityControlMode::PID),
   recovery_start_yaw_(0.0),
+  goal_checker_holding_(false),
   has_command_(false),
   has_local_plan_(false),
   has_current_pose_(false),
@@ -1520,6 +1647,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter("control.goal_heading_tolerance", this->goal_heading_tolerance_);
   this->declare_parameter(
     "control.goal_reach_heading_tolerance", this->goal_reach_heading_tolerance_);
+  this->declare_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
+  this->declare_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
+  this->declare_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
+  this->declare_parameter("goal_checker.ignore_yaw", this->goal_checker_ignore_yaw_);
   this->declare_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->declare_parameter(
@@ -1579,6 +1710,10 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("control.goal_heading_tolerance", this->goal_heading_tolerance_);
   this->get_parameter(
     "control.goal_reach_heading_tolerance", this->goal_reach_heading_tolerance_);
+  this->get_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
+  this->get_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
+  this->get_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
+  this->get_parameter("goal_checker.ignore_yaw", this->goal_checker_ignore_yaw_);
   this->get_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->get_parameter(
@@ -1646,6 +1781,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   }
 
   this->reset_velocity_controller_state();
+  this->reset_goal_checker_state();
 
   this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS(),
@@ -1747,6 +1883,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
+  this->reset_goal_checker_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -1773,6 +1910,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->has_latest_scan_ = false;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
+  this->reset_goal_checker_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -1790,6 +1928,7 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
+  this->reset_goal_checker_state();
   this->has_recovery_reference_ = false;
   this->recovery_start_time_ = this->now();
   this->recovery_start_yaw_ = 0.0;
@@ -1874,12 +2013,13 @@ void MotionController::publish_control()
       const geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target();
       const double local_plan_remaining_distance =
         this->estimate_remaining_distance(this->latest_local_plan_);
-      const double goal_distance = this->pose_distance(
-        this->current_pose_, this->latest_command_.goal_pose);
+      const GoalCheckResult goal_check = this->check_goal(
+        this->current_pose_, this->latest_command_.goal_pose, current_yaw);
+      const double goal_distance = goal_check.distance_error;
       debug_remaining_distance = std::max(local_plan_remaining_distance, goal_distance);
-      const bool distance_reached = goal_distance <= this->distance_tolerance_;
-      const bool align_heading_at_goal = this->latest_command_.align_heading_at_goal;
-      const double goal_yaw = this->quaternion_yaw(this->latest_command_.goal_pose.pose.orientation);
+      const bool distance_reached = goal_check.distance_reached;
+      const bool align_heading_at_goal = goal_check.align_heading;
+      const double goal_yaw = goal_check.target_yaw;
       const double target_dx =
         tracking_target.pose.position.x - this->current_pose_.pose.position.x;
       const double target_dy =
@@ -1895,8 +2035,7 @@ void MotionController::publish_control()
       }
       const double heading_error = this->normalize_angle(target_heading - current_yaw);
       const double abs_heading_error = std::abs(heading_error);
-      const bool heading_reached =
-        !align_heading_at_goal || abs_heading_error <= this->goal_reach_heading_tolerance_;
+      const bool heading_reached = goal_check.heading_reached;
       const bool aligning_in_place = align_heading_at_goal && distance_reached && !heading_reached;
 
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
@@ -1907,7 +2046,7 @@ void MotionController::publish_control()
       status.blocked = status.obstacle_detected;
       status.has_blocked_pose = false;
       status.blocked_pose = geometry_msgs::msg::PoseStamped();
-      status.goal_reached = distance_reached && heading_reached;
+      status.goal_reached = goal_check.goal_reached;
       status.remaining_distance = goal_distance;
       status.heading_error = heading_error;
 
@@ -1916,7 +2055,8 @@ void MotionController::publish_control()
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
         this->has_progress_reference_ = true;
-      } else if (
+      }
+      else if (
         this->pose_distance(this->current_pose_, this->progress_reference_pose_) >=
         this->progress_required_movement_radius_)
       {
@@ -1927,7 +2067,13 @@ void MotionController::publish_control()
       {
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
-      } else if (
+      }
+      else if (distance_reached && heading_reached)
+      {
+        this->progress_reference_pose_ = this->current_pose_;
+        this->progress_reference_time_ = this->now();
+      }
+      else if (
         !status.blocked &&
         (this->now() - this->progress_reference_time_).seconds() >=
         this->progress_time_allowance_sec_)
@@ -1943,10 +2089,15 @@ void MotionController::publish_control()
         this->current_twist_ = geometry_msgs::msg::Twist();
         this->reset_velocity_controller_state();
         this->reset_progress_checker_state();
+        this->reset_goal_checker_state();
         RCLCPP_INFO(
           this->get_logger(),
           "Goal reached for command %u",
           status.command_id);
+      }
+      else if (distance_reached && heading_reached)
+      {
+        desired_twist = geometry_msgs::msg::Twist();
       }
       else if (status.blocked || status.stalled)
       {
@@ -2064,6 +2215,7 @@ void MotionController::publish_control()
         this->current_twist_ = geometry_msgs::msg::Twist();
         this->reset_velocity_controller_state();
         this->reset_progress_checker_state();
+        this->reset_goal_checker_state();
         RCLCPP_INFO(
           this->get_logger(),
           "Recovery command %u completed",
@@ -2114,6 +2266,12 @@ void MotionController::reset_progress_checker_state()
   this->recovery_start_yaw_ = 0.0;
   this->has_progress_reference_ = false;
   this->has_recovery_reference_ = false;
+}
+
+void MotionController::reset_goal_checker_state()
+{
+  this->goal_checker_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->goal_checker_holding_ = false;
 }
 
 void MotionController::publish_zero_twist()
@@ -2349,6 +2507,46 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target() const
   }
 
   return this->latest_local_plan_.poses.back();
+}
+
+MotionController::GoalCheckResult MotionController::check_goal(
+  const geometry_msgs::msg::PoseStamped &current_pose,
+  const geometry_msgs::msg::PoseStamped &goal_pose,
+  const double current_yaw)
+{
+  GoalCheckResult result;
+  result.distance_error = this->pose_distance(current_pose, goal_pose);
+  result.distance_reached = result.distance_error <= this->goal_checker_xy_tolerance_;
+  result.align_heading = this->latest_command_.align_heading_at_goal && !this->goal_checker_ignore_yaw_;
+  result.target_yaw = this->quaternion_yaw(goal_pose.pose.orientation);
+  result.heading_error = this->normalize_angle(result.target_yaw - current_yaw);
+  result.heading_reached =
+    !result.align_heading || std::abs(result.heading_error) <= this->goal_checker_yaw_tolerance_;
+
+  const bool reached_now = result.distance_reached && result.heading_reached;
+  if (!reached_now)
+  {
+    this->reset_goal_checker_state();
+    result.goal_reached = false;
+    return result;
+  }
+
+  if (this->goal_checker_hold_time_sec_ <= 1e-6)
+  {
+    result.goal_reached = true;
+    return result;
+  }
+
+  if (!this->goal_checker_holding_)
+  {
+    this->goal_checker_hold_start_time_ = this->now();
+    this->goal_checker_holding_ = true;
+  }
+
+  result.goal_reached =
+    (this->now() - this->goal_checker_hold_start_time_).seconds() >=
+    this->goal_checker_hold_time_sec_;
+  return result;
 }
 
 bool MotionController::is_safety_gate_triggered() const

@@ -126,6 +126,9 @@ private:
     double origin_y,
     double heading,
     double lateral_sign) const;
+  nav_msgs::msg::Path refine_local_plan(const nav_msgs::msg::Path &plan) const;
+  void assign_path_headings(nav_msgs::msg::Path &plan) const;
+  geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw) const;
 
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
@@ -149,6 +152,11 @@ private:
   bool allow_unknown_;
   bool prevent_corner_cutting_;
   double turn_penalty_;
+  bool path_refiner_enabled_;
+  double path_refiner_prune_distance_;
+  double path_refiner_interpolate_distance_;
+  bool path_refiner_heading_assignment_enabled_;
+  bool path_refiner_preserve_goal_orientation_;
   bool dynamic_obstacle_enabled_;
   double dynamic_obstacle_replan_lookahead_distance_;
   double dynamic_obstacle_escape_forward_distance_;
@@ -203,6 +211,17 @@ private:
     bool first_update{true};
   };
 
+  struct GoalCheckResult
+  {
+    bool distance_reached{false};
+    bool heading_reached{true};
+    bool goal_reached{false};
+    bool align_heading{false};
+    double distance_error{0.0};
+    double heading_error{0.0};
+    double target_yaw{0.0};
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -219,6 +238,7 @@ private:
   void publish_control();
   void reset_velocity_controller_state();
   void reset_progress_checker_state();
+  void reset_goal_checker_state();
   void publish_zero_twist();
   VelocityControlMode parse_velocity_control_mode(const std::string &mode) const;
   double apply_axis_controller(
@@ -236,6 +256,10 @@ private:
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
   geometry_msgs::msg::PoseStamped select_tracking_target() const;
+  GoalCheckResult check_goal(
+    const geometry_msgs::msg::PoseStamped &current_pose,
+    const geometry_msgs::msg::PoseStamped &goal_pose,
+    double current_yaw);
   bool is_safety_gate_triggered() const;
   void ensure_recovery_reference_initialized();
   double pose_distance(
@@ -265,6 +289,10 @@ private:
   double distance_tolerance_;
   double goal_heading_tolerance_;
   double goal_reach_heading_tolerance_;
+  double goal_checker_xy_tolerance_;
+  double goal_checker_yaw_tolerance_;
+  double goal_checker_hold_time_sec_;
+  bool goal_checker_ignore_yaw_;
   double rotate_in_place_threshold_;
   double rotate_in_place_goal_distance_;
   double heading_slowdown_threshold_;
@@ -293,7 +321,9 @@ private:
   sensor_msgs::msg::LaserScan latest_scan_;
   rclcpp::Time progress_reference_time_;
   rclcpp::Time recovery_start_time_;
+  rclcpp::Time goal_checker_hold_start_time_;
   double recovery_start_yaw_;
+  bool goal_checker_holding_;
   bool has_command_;
   bool has_local_plan_;
   bool has_current_pose_;

@@ -4,6 +4,11 @@ Changelog
 2026-04-20
 ----------
 
+- Started the ``0.15.6`` patch branch:
+
+  - added controller-local ``goal_checker`` parameters for XY / yaw / hold-time arrival policy
+  - added a conservative local path refiner for duplicate pruning, segment interpolation, and heading assignment
+
 - Started the ``0.15.5`` patch branch:
 
   - introduced ``amr_controller_server`` as the controller-layer aggregation boundary

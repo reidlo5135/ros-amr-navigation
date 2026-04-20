@@ -185,6 +185,12 @@
       prevent_corner_cutting: true
       turn_penalty: 0.5
       nearest_free_search_radius_cells: 4
+    path_refiner:
+      enabled: true
+      prune_distance: 0.03
+      interpolate_distance: 0.15
+      heading_assignment_enabled: true
+      preserve_goal_orientation: true
     dynamic_obstacle:
       enabled: true
       replan_lookahead_distance: 2.0
@@ -215,6 +221,11 @@
       rotate_in_place_goal_distance: 0.18
       heading_slowdown_threshold: 0.2
       min_heading_motion_scale: 0.15
+    goal_checker:
+      xy_tolerance: 0.1
+      yaw_tolerance: 0.30
+      hold_time_sec: 0.0
+      ignore_yaw: false
     safety_gate:
       enabled: true
       allow_rotate_in_place: true
