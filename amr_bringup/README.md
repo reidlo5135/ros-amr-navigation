@@ -1,12 +1,12 @@
 # amr_bringup
 
-Central launch and parameter package for the `0.15.4` AMR stack.
+Central launch and parameter package for the `0.15.5` AMR stack.
 
 ## Main Files
 
 - `params/amr.yaml`: shared runtime parameters
 - `launch/localization.launch.py`: map server, localization, costmap server, global planner
-- `launch/navigation.launch.py`: local planner, motion controller, recovery server, BT navigator
+- `launch/navigation.launch.py`: controller server aggregation, recovery server, BT navigator
 - `launch/turtlebot3.launch.py`: TurtleBot3 bringup + AMR runtime + robot-side MQTT bridge
 
 ## Runtime Layout
@@ -33,8 +33,8 @@ and skips:
 - `/amr/localization`
 - `/amr/costmap_server`
 - `/amr/global_planner`
-- `/amr/local_planner`
-- `/amr/motion_controller`
+- `/amr/local_planner` via `amr_controller_server`
+- `/amr/motion_controller` via `amr_controller_server`
 - `/amr/recovery_server`
 - `/amr/runtime_observation`
 - `/amr/navigator`

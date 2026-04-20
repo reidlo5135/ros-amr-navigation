@@ -16,8 +16,7 @@ BehaviorTree.CPP v3 based navigation decision server.
 Nav2-style responsibility split:
 - `amr_bt_navigator`: decide
 - `amr_global_planner`: global replan
-- `amr_local_planner`: local replan / local escape
-- `amr_motion_controller`: execute
+- `amr_controller_server`: local replan / local escape / execute
 - `amr_recovery_server`: wait / backup / spin commands
 
 ## Important Files

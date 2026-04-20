@@ -9,8 +9,7 @@ Metapackage for the active AMR navigation stack.
 - `amr_localization`
 - `amr_costmap_server`
 - `amr_global_planner`
-- `amr_local_planner`
-- `amr_motion_controller`
+- `amr_controller_server`
 - `amr_recovery_server`
 - `amr_bt_navigator`
 - `amr_lifecycle_manager`

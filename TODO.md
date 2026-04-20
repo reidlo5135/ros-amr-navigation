@@ -256,7 +256,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 ### Control and Recovery
 
-- progress checker and goal checker separation inside `amr_motion_controller`
+- progress checker and goal checker separation inside `amr_controller_server`
 - smoother final heading alignment and stop behavior
 - deterministic recovery sequencing across wait / backup / spin / replan
 - fewer oscillations during recovery exit and global path rejoin
@@ -288,9 +288,9 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - first target is not OHT but Ackermann-capable indoor navigation
 - required order of work:
   1. add vehicle-spec parameters in `amr.yaml`
-  2. generalize `amr_motion_controller` into controller core + vehicle adapter
+  2. generalize `amr_controller_server` into controller core + vehicle adapter
   3. extend `amr_msgs` with vehicle-neutral motion command fields
-  4. split `amr_local_planner` by vehicle type or strategy
+  4. split controller-server local planning by vehicle type or strategy
   5. add global path smoothing for non-diff-drive vehicles
   6. upgrade footprint collision from radius approximation to exact polygon checks
   7. only then consider curvature-constrained global planning
@@ -331,7 +331,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - 일반 indoor AMR route 주행에서는 goal orientation을 기본 요구사항으로 두지 않는 방향 검토
   - `x, y` 안전 도달을 기본 성공 조건으로 두고, yaw 정렬은 task-specific pose constraint일 때만 활성화하는 정책 정리
   - 현재 goal yaw를 항상 강하게 요구하는 구조는 AMR보다 AGV에 가까운 제약이라는 점을 기준으로 재검토
-- `amr_motion_controller` goal reached 정책 조정 검토
+- `amr_controller_server` goal reached 정책 조정 검토
   - `distance_tolerance` 만족 시 우선 도달로 보고, heading은 optional 후처리 또는 별도 단계로 다루는 구조 비교
   - near-goal yaw mismatch 때문에 제자리 회전 반복 후 `aborted`로 끝나는 케이스를 줄이는 방향 검토
   - `rotate_in_place_goal_distance`, `goal_reach_heading_tolerance`, `rotate_in_place_threshold`가 실제 AMR 운영 철학과 맞는지 재점검
@@ -471,11 +471,11 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 - 완료: exact footprint collision 1차 적용
   - `amr_geometry` 공용 geometry 유틸 분리
-  - `amr_global_planner`, `amr_local_planner`에 exact polygon collision 반영
+  - `amr_global_planner`, `amr_controller_server`에 exact polygon collision 반영
   - `amr_viz`에 exact footprint overlay / collision debug layer 추가
 - 진행: local costmap authority 강화
   - controller 직접 authority 부여 시 straight case를 해쳐 일단 revert
-  - 대신 `amr_local_planner -> LocalPlanStatus -> amr_bt_navigator` 경로로 1차 반영
+  - 대신 `amr_controller_server -> LocalPlanStatus -> amr_bt_navigator` 경로로 1차 반영
   - `LocalPlanStatus`를 decision semantics 중심으로 확장해 planner가 recovery rationale을 먼저 말하도록 2차 반영 완료
   - 현재 `DECISION_OK`, `DECISION_GOAL_PROXIMITY_BLOCKED`, `DECISION_GLOBAL_REPLAN_REQUIRED`, `DECISION_HARD_BLOCKED` 기준으로 BT가 recovery 절차를 선택
   - 남은 과제는 recovery 진입 기준을 더 다듬고, corridor에서 false blocked를 줄이는 것
@@ -551,14 +551,14 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - dynamic obstacle escaping 고도화
   - 현재 local replan이 escape보다 기존 global plan 복귀를 너무 빨리 시도해 어색한 주행이 발생함
   - 목표 동작은 `dynamic obstacle 감지 -> dynamic inflation 반영 -> global A* detour replan -> local plan은 obstacle release 전까지 escaping 수행 -> detour 경유 후 goal 복귀` 흐름으로 재정의
-  - `amr_bt_navigator`가 dynamic obstacle 상황에서 global detour replan을 트리거하고, `amr_local_planner`는 release 조건 전까지 escape-centric local plan을 유지하도록 역할 정리
+  - `amr_bt_navigator`가 dynamic obstacle 상황에서 global detour replan을 트리거하고, `amr_controller_server`는 release 조건 전까지 escape-centric local plan을 유지하도록 역할 정리
   - dynamic obstacle이 해제되기 전에는 기존 global corridor로 즉시 재복귀하지 않도록 조건과 hysteresis 추가 검토
 - `0.3.1` R&R refactoring continuation
   - `amr_bt_navigator`가 obstacle report를 바탕으로 wait / local replan / global replan / recovery를 실제로 판단하도록 확장
-  - `amr_motion_controller`를 path tracking + 최종 근접 safety gate만 남기는 방향으로 추가 축소
-  - `amr_global_planner`, `amr_local_planner`에서 남아 있는 legacy self-costmap 가정 완전 제거
+  - `amr_controller_server`를 path tracking + 최종 근접 safety gate 중심으로 추가 정리
+  - `amr_global_planner`, `amr_controller_server`에서 남아 있는 legacy self-costmap 가정 완전 제거
   - `amr_costmap_server`를 기준으로 fixed/dynamic obstacle layer 정책 정교화
-- `amr_motion_controller` local plan tracking issue 해결
+- `amr_controller_server` local plan tracking issue 해결
   - local plan 마지막 점만 따라가며 corner cutting 하는 현상 수정
   - 현재 위치 기준 nearest point 이후의 lookahead target 추종 방식 적용
   - 실제 odom 궤적이 local/global costmap clearance를 유지하도록 보정

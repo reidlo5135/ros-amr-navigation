@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-04-20
+----------
+
+- Started the ``0.15.5`` patch branch:
+
+  - introduced ``amr_controller_server`` as the controller-layer aggregation boundary
+  - moved the local planner and motion controller runtime source into a Nav2-style ``controller_server.hpp`` / ``controller_server.cpp`` / ``main.cpp`` layout while preserving the existing ``/amr/local_planner`` and ``/amr/motion_controller`` lifecycle nodes
+  - aligned the package dependency surface toward a Nav2-style controller boundary without changing motion-control behavior
+
 2026-04-13
 ----------
 

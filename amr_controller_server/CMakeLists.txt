@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(amr_local_planner VERSION 0.1.0 LANGUAGES C CXX)
+project(amr_controller_server VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,11 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
-
-include_directories(
-  include
-  include/${PROJECT_NAME}
-)
 
 find_package(ament_cmake REQUIRED)
 find_package(amr_geometry REQUIRED)
@@ -21,12 +16,16 @@ find_package(lifecycle_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_executable(${PROJECT_NAME}
-  src/${PROJECT_NAME}/local_planner.cpp
+  src/amr_controller_server/controller_server.cpp
   src/main.cpp
 )
-
+target_include_directories(${PROJECT_NAME}
+  PRIVATE
+    include
+)
 ament_target_dependencies(${PROJECT_NAME}
   amr_geometry
   amr_msgs
@@ -35,11 +34,17 @@ ament_target_dependencies(${PROJECT_NAME}
   nav_msgs
   rclcpp
   rclcpp_lifecycle
+  sensor_msgs
 )
 
 install(TARGETS
   ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.4` direction:
+Current `0.15.5` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_server` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - the operator client now lives outside this repo as the desktop app in `ros-rcs`:
@@ -26,8 +26,7 @@ flowchart LR
         Localization["amr_localization"]
         Costmap["amr_costmap_server"]
         GlobalPlanner["amr_global_planner"]
-        LocalPlanner["amr_local_planner"]
-        Motion["amr_motion_controller"]
+        Controller["amr_controller_server<br/>local planner + motion controller"]
         Recovery["amr_recovery_server"]
         Navigator["amr_bt_navigator"]
         Lifecycle["amr_lifecycle_manager"]
@@ -35,11 +34,11 @@ flowchart LR
         MapServer --> Localization
         Localization --> Costmap
         Costmap --> GlobalPlanner
-        Costmap --> LocalPlanner
+        Costmap --> Controller
         GlobalPlanner --> Navigator
-        LocalPlanner --> Navigator
+        Controller --> Navigator
         Recovery --> Navigator
-        Navigator --> Motion
+        Navigator --> Controller
     end
 ```
 
@@ -47,12 +46,11 @@ flowchart LR
 
 - `amr_bringup`: central launch files and `amr.yaml`
 - `amr_bt_navigator`: BT-based goal orchestration and recovery decisions
+- `amr_controller_server`: local planner and motion controller lifecycle nodes
 - `amr_costmap_server`: static global costmap + scan-based dynamic local costmap
 - `amr_global_planner`: A* planner on the global costmap
-- `amr_local_planner`: local slicing, local replan, and local escape service
 - `amr_localization`: localization and `map -> odom`
 - `amr_map_server`: official-map lifecycle, evaluation, and save/freeze services
-- `amr_motion_controller`: path tracking, stop logic, and progress checking
 - `amr_mqtt_server`: robot-side MQTT API server
 - `amr_msgs`: custom messages, services, and actions
 - `amr_runtime_observation`: runtime summary and event aggregation for navigation state
@@ -107,8 +105,7 @@ colcon build --packages-select \
   amr_localization \
   amr_costmap_server \
   amr_global_planner \
-  amr_local_planner \
-  amr_motion_controller \
+  amr_controller_server \
   amr_recovery_server \
   amr_bt_navigator \
   amr_runtime_observation \
