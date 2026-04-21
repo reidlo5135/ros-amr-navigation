@@ -301,6 +301,7 @@ private:
   double goal_checker_xy_tolerance_;
   double goal_checker_yaw_tolerance_;
   double goal_checker_hold_time_sec_;
+  bool goal_checker_respect_goal_yaw_;
   bool goal_checker_ignore_yaw_;
   double rotate_in_place_threshold_;
   double rotate_in_place_goal_distance_;

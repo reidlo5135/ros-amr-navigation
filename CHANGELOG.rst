@@ -4,6 +4,10 @@ Changelog
 2026-04-20
 ----------
 
+- Started the ``0.15.8`` patch branch:
+
+  - changed goal checking to respect incoming goal yaw by default with a loose Nav2-style yaw tolerance
+
 - Started the ``0.15.7`` patch branch:
 
   - extended the local path refiner with conservative corner smoothing

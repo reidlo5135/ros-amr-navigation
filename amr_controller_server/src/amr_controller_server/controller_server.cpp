@@ -1817,8 +1817,9 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   goal_heading_tolerance_(0.20),
   goal_reach_heading_tolerance_(0.35),
   goal_checker_xy_tolerance_(0.15),
-  goal_checker_yaw_tolerance_(0.35),
+  goal_checker_yaw_tolerance_(0.7853981633974483),
   goal_checker_hold_time_sec_(0.0),
+  goal_checker_respect_goal_yaw_(true),
   goal_checker_ignore_yaw_(false),
   rotate_in_place_threshold_(0.6),
   rotate_in_place_goal_distance_(0.35),
@@ -1864,6 +1865,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
   this->declare_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->declare_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
+  this->declare_parameter("goal_checker.respect_goal_yaw", this->goal_checker_respect_goal_yaw_);
   this->declare_parameter("goal_checker.ignore_yaw", this->goal_checker_ignore_yaw_);
   this->declare_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
@@ -1927,6 +1929,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
   this->get_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->get_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
+  this->get_parameter("goal_checker.respect_goal_yaw", this->goal_checker_respect_goal_yaw_);
   this->get_parameter("goal_checker.ignore_yaw", this->goal_checker_ignore_yaw_);
   this->get_parameter(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
@@ -2731,7 +2734,9 @@ MotionController::GoalCheckResult MotionController::check_goal(
   GoalCheckResult result;
   result.distance_error = this->pose_distance(current_pose, goal_pose);
   result.distance_reached = result.distance_error <= this->goal_checker_xy_tolerance_;
-  result.align_heading = this->latest_command_.align_heading_at_goal && !this->goal_checker_ignore_yaw_;
+  result.align_heading =
+    (this->goal_checker_respect_goal_yaw_ || this->latest_command_.align_heading_at_goal) &&
+    !this->goal_checker_ignore_yaw_;
   result.target_yaw = this->quaternion_yaw(goal_pose.pose.orientation);
   result.heading_error = this->normalize_angle(result.target_yaw - current_yaw);
   result.heading_reached =
