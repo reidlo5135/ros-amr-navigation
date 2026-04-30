@@ -165,7 +165,7 @@ int8_t RuntimeObservation::resolve_action_status() const
   return action_msgs::msg::GoalStatus::STATUS_UNKNOWN;
 }
 
-std::string RuntimeObservation::resolve_recovery_reason(bool progress_stalled) const
+std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) const
 {
   if (this->has_local_plan_status_ && this->latest_local_plan_status_.recovery_required)
   {
@@ -182,17 +182,14 @@ std::string RuntimeObservation::resolve_recovery_reason(bool progress_stalled) c
     }
   }
 
-  if (this->has_motion_status_ && this->latest_motion_status_.blocked)
+  if (this->has_motion_status_ && this->latest_motion_status_.safety_gate_blocked)
   {
-    if (this->latest_motion_status_.safety_gate_blocked)
-    {
-      return "motion_safety_gate_blocked";
-    }
-    if (this->latest_motion_status_.costmap_blocked)
-    {
-      return "motion_costmap_blocked";
-    }
-    return "motion_blocked";
+    return "motion_safety_gate_blocked";
+  }
+
+  if (this->has_motion_status_ && this->latest_motion_status_.costmap_blocked)
+  {
+    return "motion_costmap_blocked";
   }
 
   if (this->has_motion_status_ && this->latest_motion_status_.stalled)
@@ -205,7 +202,38 @@ std::string RuntimeObservation::resolve_recovery_reason(bool progress_stalled) c
     return "progress_stalled";
   }
 
-  return "none";
+  return "clear";
+}
+
+std::string RuntimeObservation::resolve_recovery_reason(bool progress_stalled) const
+{
+  const std::string blocked_context = this->resolve_blocked_context(progress_stalled);
+  return blocked_context == "clear" ? "none" : blocked_context;
+}
+
+std::string RuntimeObservation::resolve_recovery_phase(
+  bool route_active,
+  bool recovery_triggered) const
+{
+  if (!route_active)
+  {
+    return "idle";
+  }
+
+  if (
+    this->has_motion_status_ &&
+    this->latest_motion_status_.active &&
+    this->latest_motion_status_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE)
+  {
+    return "recovery_executing";
+  }
+
+  if (recovery_triggered)
+  {
+    return "recovery_requested";
+  }
+
+  return "navigating";
 }
 
 std::string RuntimeObservation::resolve_runtime_state(
@@ -269,8 +297,12 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   }
 
   snapshot.action_status = this->resolve_action_status();
+  snapshot.blocked_context = this->resolve_blocked_context(snapshot.progress_stalled);
   snapshot.recovery_reason = this->resolve_recovery_reason(snapshot.progress_stalled);
   snapshot.recovery_triggered = snapshot.recovery_reason != "none";
+  snapshot.recovery_phase = this->resolve_recovery_phase(
+    snapshot.route_active,
+    snapshot.recovery_triggered);
   snapshot.runtime_state = this->resolve_runtime_state(
     snapshot.route_active,
     snapshot.progress_stalled);
@@ -298,6 +330,10 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot & snapshot, cons
   if (snapshot.number_of_recoveries != this->previous_snapshot_.number_of_recoveries) {
     this->publish_event("recovery_count_changed", "number_of_recoveries_changed", snapshot, now);
   }
+  if (snapshot.blocked_context != this->previous_snapshot_.blocked_context)
+  {
+    this->publish_event("blocked_context_changed", "blocked_context_changed", snapshot, now);
+  }
   if (snapshot.recovery_triggered != this->previous_snapshot_.recovery_triggered)
   {
     this->publish_event("recovery_trigger_changed", "recovery_trigger_changed", snapshot, now);
@@ -305,6 +341,10 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot & snapshot, cons
   if (snapshot.recovery_reason != this->previous_snapshot_.recovery_reason)
   {
     this->publish_event("recovery_reason_changed", "recovery_reason_changed", snapshot, now);
+  }
+  if (snapshot.recovery_phase != this->previous_snapshot_.recovery_phase)
+  {
+    this->publish_event("recovery_phase_changed", "recovery_phase_changed", snapshot, now);
   }
   if (snapshot.planner_decision != this->previous_snapshot_.planner_decision) {
     this->publish_event("planner_decision_changed", "local_plan_decision_changed", snapshot, now);
@@ -367,8 +407,10 @@ std::string RuntimeObservation::build_summary_json(
   stream << "\"current_goal_index\":" << snapshot.current_goal_index << ",";
   stream << "\"goal_count\":" << snapshot.goal_count << ",";
   stream << "\"number_of_recoveries\":" << snapshot.number_of_recoveries << ",";
+  stream << "\"blocked_context\":\"" << escape_json(snapshot.blocked_context) << "\",";
   stream << "\"recovery_triggered\":" << snapshot.recovery_triggered << ",";
   stream << "\"recovery_reason\":\"" << escape_json(snapshot.recovery_reason) << "\",";
+  stream << "\"recovery_phase\":\"" << escape_json(snapshot.recovery_phase) << "\",";
   stream << "\"motion\":{";
   stream << "\"has_status\":" << this->has_motion_status_ << ",";
   stream << "\"active\":" << (this->has_motion_status_ ? this->latest_motion_status_.active : false) << ",";
@@ -423,8 +465,10 @@ std::string RuntimeObservation::build_event_json(
   stream << "\"current_goal_index\":" << snapshot.current_goal_index << ",";
   stream << "\"goal_count\":" << snapshot.goal_count << ",";
   stream << "\"number_of_recoveries\":" << snapshot.number_of_recoveries << ",";
+  stream << "\"blocked_context\":\"" << escape_json(snapshot.blocked_context) << "\",";
   stream << "\"recovery_triggered\":" << snapshot.recovery_triggered << ",";
   stream << "\"recovery_reason\":\"" << escape_json(snapshot.recovery_reason) << "\",";
+  stream << "\"recovery_phase\":\"" << escape_json(snapshot.recovery_phase) << "\",";
   stream << "\"action_status\":" << static_cast<int>(snapshot.action_status) << ",";
   stream << "\"action_status_label\":\"" << escape_json(this->action_status_label(snapshot.action_status)) << "\",";
   stream << "\"planner_decision\":" << static_cast<int>(snapshot.planner_decision) << ",";

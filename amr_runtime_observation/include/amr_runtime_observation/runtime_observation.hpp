@@ -6,6 +6,7 @@
 #include "action_msgs/msg/goal_status_array.hpp"
 #include "amr_msgs/action/navigate_to_poses.hpp"
 #include "amr_msgs/msg/local_plan_status.hpp"
+#include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -37,7 +38,9 @@ private:
     uint8_t planner_decision{amr_msgs::msg::LocalPlanStatus::DECISION_OK};
     int8_t action_status{action_msgs::msg::GoalStatus::STATUS_UNKNOWN};
     bool recovery_triggered{false};
+    std::string blocked_context{"clear"};
     std::string recovery_reason{"none"};
+    std::string recovery_phase{"idle"};
     std::string runtime_state{"idle"};
   };
 
@@ -50,7 +53,9 @@ private:
   bool is_route_active(const rclcpp::Time & now) const;
   bool is_progress_stalled(const rclcpp::Time & now) const;
   int8_t resolve_action_status() const;
+  std::string resolve_blocked_context(bool progress_stalled) const;
   std::string resolve_recovery_reason(bool progress_stalled) const;
+  std::string resolve_recovery_phase(bool route_active, bool recovery_triggered) const;
   std::string resolve_runtime_state(bool route_active, bool progress_stalled) const;
   Snapshot make_snapshot(const rclcpp::Time & now) const;
   void publish_event_if_needed(const Snapshot & snapshot, const rclcpp::Time & now);

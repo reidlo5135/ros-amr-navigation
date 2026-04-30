@@ -4,6 +4,15 @@ Changelog
 2026-04-30
 ----------
 
+- Started the ``0.15.10`` patch branch:
+
+  - kept ``amr_controller_server`` focused on executing BT-dispatched motion commands instead of mirroring planner-side blocked semantics into motion status
+  - expanded ``amr_runtime_observation`` with stable ``blocked_context`` and ``recovery_phase`` fields that synthesize planner, controller, and route-layer signals without pushing planner ownership into motion control
+  - kept ``0.15.10`` focused on recovery-phase semantics and blocked-state interpretation ahead of future recovery-policy changes
+
+2026-04-30
+----------
+
 - Started the ``0.15.9`` patch branch:
 
   - aligned the workspace docs and bringup docs onto the active ``0.15.9`` runtime baseline

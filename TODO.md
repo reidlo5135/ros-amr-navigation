@@ -41,6 +41,7 @@ timeline
     0.15.x : navigation runtime hardening
            : recovery observability and regression baselines
            : 0.15.9 recovery trigger visibility and structured diagnosis
+           : 0.15.10 recovery phase semantics and blocked-context interpretation
            : stable robot-side MQTT/web operator loop
     0.16.x : local escape-first recovery refinement
            : planner-local escape first wiring
@@ -318,6 +319,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
+| `2026-04-30` | `0.15.10` recovery phase 상태 고정, motion controller는 BT 실행 책임만 유지, observation의 blocked context / recovery phase schema 추가 |
 | `2026-04-30` | `0.15.9` 기준선 반영, recovery trigger/reason 가시성 강화, runtime observation summary/event schema 정리, `local_escape-first` 복구 흐름은 다음 패치 라인으로 이관 |
 | `2026-04-14` | AMR 기본 goal semantics 재정의, `x/y` 우선 도달 정책, goal yaw optional화, `ros-rcs` yaw 입력/표시 축소 검토, `amr_mqtt_bridge` 성능 최적화 및 MQTT payload 경량화 검토, 프로토콜/API 명세 최신화, MQTT 통신 암호화 설계 검토 |
 | `2026-03-31` | `amr_slam_mapper` live map 기반 nav 연계 검토, raw/refined map layer 분리 후속, loop/revisit 기반 refined cleanup 설계 |

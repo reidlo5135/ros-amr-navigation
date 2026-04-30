@@ -54,6 +54,24 @@ recovery visibility.
 This keeps `0.15.9` focused on observable recovery diagnosis. Recovery policy changes such as
 `local_escape-first` stay outside this patch line.
 
+## 0.15.10 Observation Baseline
+
+`0.15.10` extends the baseline from "why recovery was triggered" to "what stage recovery is in"
+and "which blocked layer is currently authoritative".
+
+- summary payload now exposes `blocked_context`
+- summary payload now exposes `recovery_phase`
+- event payload now emits:
+  - `blocked_context_changed`
+  - `recovery_phase_changed`
+- recovery phase labels are fixed to:
+  - `idle`
+  - `navigating`
+  - `recovery_requested`
+  - `recovery_executing`
+- blocked context is synthesized in observation from planner, controller, and route signals
+  while keeping planner ownership out of `MotionController`
+
 ## Launch
 
 This node is started from `amr_bringup/launch/navigation.launch.py`.
