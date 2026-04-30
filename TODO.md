@@ -147,19 +147,25 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - simpler topic-header configuration
   - relative map image path resolution fix for YAML-backed map loading
 
-## 0.15.x Planned Focus
+## 0.15.x Frozen Baseline
 
-- lock the post-`0.14.x` runtime into a measurable navigation baseline before opening more large feature branches
-- add scenario-driven regression routines for narrow corridor, doorway, dynamic obstacle crossing, and goal-near blockage cases
-- make recovery reasoning easier to inspect end-to-end
+- post-`0.14.x` runtime is now treated as the frozen navigation-hardening baseline
+- recovery reasoning is exposed through the current observation layer
   - planner decision
-  - BT recovery selection
-  - controller blocked / stalled state
-  - operator-visible goal lifecycle
-- tighten robot-side MQTT/web operating stability
-  - reconnect behavior
-  - snapshot / retained telemetry expectations
-  - request / response traceability for operator commands
+  - recovery trigger / reason
+  - blocked context
+  - recovery phase
+- robot-side MQTT/web operator loop remains on the `0.15.x` contract while higher-risk
+  recovery-policy work moves to `0.16.x`
+- recent manual confidence checks include stable dynamic interrupt behavior in the current
+  operator flow
+
+## 0.15.x Exit Notes
+
+- `0.15.9` fixed the operator-facing recovery diagnosis boundary
+- `0.15.10` fixed the recovery-phase / blocked-context observation boundary
+- this line is now frozen so `0.16.x` can change recovery policy without moving the
+  interpretation baseline underneath it
 
 ## 0.16.x Planned Focus
 
@@ -319,6 +325,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
+| `2026-04-30` | `0.15.x` freeze: `0.15.10`을 runtime-hardening 기준선으로 동결, recovery observation/dynamic interrupt 확인 후 다음 구현 축을 `0.16.x`로 이관 |
 | `2026-04-30` | `0.15.10` recovery phase 상태 고정, motion controller는 BT 실행 책임만 유지, observation의 blocked context / recovery phase schema 추가 |
 | `2026-04-30` | `0.15.9` 기준선 반영, recovery trigger/reason 가시성 강화, runtime observation summary/event schema 정리, `local_escape-first` 복구 흐름은 다음 패치 라인으로 이관 |
 | `2026-04-14` | AMR 기본 goal semantics 재정의, `x/y` 우선 도달 정책, goal yaw optional화, `ros-rcs` yaw 입력/표시 축소 검토, `amr_mqtt_bridge` 성능 최적화 및 MQTT payload 경량화 검토, 프로토콜/API 명세 최신화, MQTT 통신 암호화 설계 검토 |

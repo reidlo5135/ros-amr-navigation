@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.10` direction:
+Current `0.15.x` frozen baseline (`0.15.10`):
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_server` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - the operator client now lives outside this repo as the desktop app in `ros-rcs`:
@@ -10,6 +10,12 @@ Current `0.15.10` direction:
 - Recovery and decision flow follow a Nav2-like split:
   - `amr_bt_navigator` decides
   - planner / controller / recovery packages execute
+- `0.15.x` is now treated as the frozen runtime-hardening baseline before `0.16.x`
+  recovery-policy refinement begins.
+- Recent freeze-point confidence includes:
+  - recovery trigger / reason visibility through `amr_runtime_observation`
+  - blocked-context / recovery-phase observation fields
+  - dynamic interrupt behavior that looked stable in the current operator flow
 
 ## Architecture
 

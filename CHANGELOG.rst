@@ -4,6 +4,15 @@ Changelog
 2026-04-30
 ----------
 
+- Froze the ``0.15.x`` runtime-hardening line at ``0.15.10``:
+
+  - kept the stack on the measured runtime-hardening baseline after confirming recovery observation and dynamic interrupt behavior looked stable enough for the freeze point
+  - closed ``0.15.x`` as the handoff line for documentation, diagnosis fields, and current operator/runtime semantics
+  - moved the next active implementation direction to ``0.16.x`` recovery-policy refinement
+
+2026-04-30
+----------
+
 - Started the ``0.15.10`` patch branch:
 
   - kept ``amr_controller_server`` focused on executing BT-dispatched motion commands instead of mirroring planner-side blocked semantics into motion status
