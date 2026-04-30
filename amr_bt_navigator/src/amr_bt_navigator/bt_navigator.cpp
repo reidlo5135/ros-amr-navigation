@@ -814,7 +814,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           !navigator->request_global_plan(
             current_pose, goal_pose, replanned_path, error_message, cancel_requested))
         {
-          if (cancel_requested()) {
+          if (cancel_requested())
+          {
             return finish_canceled();
           }
           blackboard->set("status_message", error_message);
@@ -837,11 +838,14 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         if (!navigator->request_recovery_command(
             "wait", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
-          if (cancel_requested()) {
+          if (cancel_requested())
+          {
             return finish_canceled();
           }
           blackboard->set("status_message", error_message);
-        } else {
+        }
+        else
+        {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
@@ -849,21 +853,27 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               error_message,
               cancel_requested))
           {
-            if (cancel_requested()) {
+            if (cancel_requested())
+            {
               return finish_canceled();
             }
             blackboard->set("status_message", error_message);
           }
         }
-      } else if (attempt_index == 0) {
+      }
+      else if (attempt_index == 0)
+      {
         if (!navigator->request_recovery_command(
             "wait", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
-          if (cancel_requested()) {
+          if (cancel_requested())
+          {
             return finish_canceled();
           }
           blackboard->set("status_message", error_message);
-        } else {
+        }
+        else
+        {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
@@ -871,21 +881,27 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               error_message,
               cancel_requested))
           {
-            if (cancel_requested()) {
+            if (cancel_requested())
+            {
               return finish_canceled();
             }
             blackboard->set("status_message", error_message);
           }
         }
-      } else if (attempt_index == 1) {
+      }
+      else if (attempt_index == 1)
+      {
         if (!navigator->request_recovery_command(
             "backup", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
-          if (cancel_requested()) {
+          if (cancel_requested())
+          {
             return finish_canceled();
           }
           blackboard->set("status_message", error_message);
-        } else {
+        }
+        else
+        {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
@@ -893,21 +909,27 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               error_message,
               cancel_requested))
           {
-            if (cancel_requested()) {
+            if (cancel_requested())
+            {
               return finish_canceled();
             }
             blackboard->set("status_message", error_message);
           }
         }
-      } else {
+      }
+      else
+      {
         if (!navigator->request_recovery_command(
             "spin", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
         {
-          if (cancel_requested()) {
+          if (cancel_requested())
+          {
             return finish_canceled();
           }
           blackboard->set("status_message", error_message);
-        } else {
+        }
+        else
+        {
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
@@ -915,7 +937,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               error_message,
               cancel_requested))
           {
-            if (cancel_requested()) {
+            if (cancel_requested())
+            {
               return finish_canceled();
             }
             blackboard->set("status_message", error_message);

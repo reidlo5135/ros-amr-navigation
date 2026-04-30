@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-04-30
+----------
+
+- Started the ``0.15.9`` patch branch:
+
+  - aligned the workspace docs and bringup docs onto the active ``0.15.9`` runtime baseline
+  - expanded ``amr_runtime_observation`` summary/event payloads with structured recovery trigger and reason labels for easier operator diagnosis
+  - kept ``0.15.9`` scoped to recovery trigger visibility and structured diagnosis while deferring local-escape-first recovery flow changes to the next patch line
+
 2026-04-20
 ----------
 

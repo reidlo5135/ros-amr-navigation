@@ -36,6 +36,8 @@ private:
     int16_t number_of_recoveries{0};
     uint8_t planner_decision{amr_msgs::msg::LocalPlanStatus::DECISION_OK};
     int8_t action_status{action_msgs::msg::GoalStatus::STATUS_UNKNOWN};
+    bool recovery_triggered{false};
+    std::string recovery_reason{"none"};
     std::string runtime_state{"idle"};
   };
 
@@ -48,6 +50,7 @@ private:
   bool is_route_active(const rclcpp::Time & now) const;
   bool is_progress_stalled(const rclcpp::Time & now) const;
   int8_t resolve_action_status() const;
+  std::string resolve_recovery_reason(bool progress_stalled) const;
   std::string resolve_runtime_state(bool route_active, bool progress_stalled) const;
   Snapshot make_snapshot(const rclcpp::Time & now) const;
   void publish_event_if_needed(const Snapshot & snapshot, const rclcpp::Time & now);

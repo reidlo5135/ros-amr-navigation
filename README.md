@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.5` direction:
+Current `0.15.9` direction:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_mqtt_server` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
 - the operator client now lives outside this repo as the desktop app in `ros-rcs`:

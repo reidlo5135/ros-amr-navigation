@@ -165,6 +165,49 @@ int8_t RuntimeObservation::resolve_action_status() const
   return action_msgs::msg::GoalStatus::STATUS_UNKNOWN;
 }
 
+std::string RuntimeObservation::resolve_recovery_reason(bool progress_stalled) const
+{
+  if (this->has_local_plan_status_ && this->latest_local_plan_status_.recovery_required)
+  {
+    switch (this->latest_local_plan_status_.decision)
+    {
+      case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+        return "planner_goal_proximity_blocked";
+      case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+        return "planner_global_replan_required";
+      case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+        return "planner_hard_blocked";
+      default:
+        return "planner_recovery_required";
+    }
+  }
+
+  if (this->has_motion_status_ && this->latest_motion_status_.blocked)
+  {
+    if (this->latest_motion_status_.safety_gate_blocked)
+    {
+      return "motion_safety_gate_blocked";
+    }
+    if (this->latest_motion_status_.costmap_blocked)
+    {
+      return "motion_costmap_blocked";
+    }
+    return "motion_blocked";
+  }
+
+  if (this->has_motion_status_ && this->latest_motion_status_.stalled)
+  {
+    return "motion_stalled";
+  }
+
+  if (progress_stalled)
+  {
+    return "progress_stalled";
+  }
+
+  return "none";
+}
+
 std::string RuntimeObservation::resolve_runtime_state(
   bool route_active,
   bool progress_stalled) const
@@ -226,6 +269,8 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   }
 
   snapshot.action_status = this->resolve_action_status();
+  snapshot.recovery_reason = this->resolve_recovery_reason(snapshot.progress_stalled);
+  snapshot.recovery_triggered = snapshot.recovery_reason != "none";
   snapshot.runtime_state = this->resolve_runtime_state(
     snapshot.route_active,
     snapshot.progress_stalled);
@@ -252,6 +297,14 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot & snapshot, cons
   }
   if (snapshot.number_of_recoveries != this->previous_snapshot_.number_of_recoveries) {
     this->publish_event("recovery_count_changed", "number_of_recoveries_changed", snapshot, now);
+  }
+  if (snapshot.recovery_triggered != this->previous_snapshot_.recovery_triggered)
+  {
+    this->publish_event("recovery_trigger_changed", "recovery_trigger_changed", snapshot, now);
+  }
+  if (snapshot.recovery_reason != this->previous_snapshot_.recovery_reason)
+  {
+    this->publish_event("recovery_reason_changed", "recovery_reason_changed", snapshot, now);
   }
   if (snapshot.planner_decision != this->previous_snapshot_.planner_decision) {
     this->publish_event("planner_decision_changed", "local_plan_decision_changed", snapshot, now);
@@ -314,6 +367,8 @@ std::string RuntimeObservation::build_summary_json(
   stream << "\"current_goal_index\":" << snapshot.current_goal_index << ",";
   stream << "\"goal_count\":" << snapshot.goal_count << ",";
   stream << "\"number_of_recoveries\":" << snapshot.number_of_recoveries << ",";
+  stream << "\"recovery_triggered\":" << snapshot.recovery_triggered << ",";
+  stream << "\"recovery_reason\":\"" << escape_json(snapshot.recovery_reason) << "\",";
   stream << "\"motion\":{";
   stream << "\"has_status\":" << this->has_motion_status_ << ",";
   stream << "\"active\":" << (this->has_motion_status_ ? this->latest_motion_status_.active : false) << ",";
@@ -368,6 +423,8 @@ std::string RuntimeObservation::build_event_json(
   stream << "\"current_goal_index\":" << snapshot.current_goal_index << ",";
   stream << "\"goal_count\":" << snapshot.goal_count << ",";
   stream << "\"number_of_recoveries\":" << snapshot.number_of_recoveries << ",";
+  stream << "\"recovery_triggered\":" << snapshot.recovery_triggered << ",";
+  stream << "\"recovery_reason\":\"" << escape_json(snapshot.recovery_reason) << "\",";
   stream << "\"action_status\":" << static_cast<int>(snapshot.action_status) << ",";
   stream << "\"action_status_label\":\"" << escape_json(this->action_status_label(snapshot.action_status)) << "\",";
   stream << "\"planner_decision\":" << static_cast<int>(snapshot.planner_decision) << ",";
