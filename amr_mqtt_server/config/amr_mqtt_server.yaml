@@ -1,0 +1,62 @@
+/amr/mqtt_server:
+  ros__parameters:
+    footprint:
+      polygon:
+        [
+          -0.10, -0.09,
+           0.10, -0.09,
+           0.10,  0.09,
+          -0.10,  0.09
+        ]
+    broker:
+      host: "192.168.253.223"
+      port: 1883
+      client_id: "amr_mqtt_server"
+      keep_alive_sec: 300
+      clean_session: false
+      username: ""
+      password: ""
+    mqtt:
+      robot_id: "burger2"
+      raw_telemetry_enabled: false
+      qos:
+        telemetry: 0
+        command: 0
+        service: 0
+      topics:
+        header: "/amr"
+    ros:
+      topics:
+        map: "/amr/map/data"
+        temp_map: "/slam/map/temp/refined"
+        temp_map_raw: "/slam/map/temp/raw"
+        robot_pose: "/amr/localization/pose"
+        mapping_pose: "/slam/mapper/pose"
+        global_path: "/amr/planner/global"
+        local_path: "/amr/planner/local"
+        global_costmap: "/amr/costmap/global"
+        local_costmap: "/amr/costmap/local"
+        motion_status: "/amr/motion/status"
+        scan: "/scan"
+        odom: "/odom"
+        imu: "/imu"
+        tf: "/tf"
+        tf_static: "/tf_static"
+        joint_states: "/joint_states"
+        robot_description: "/robot_description"
+        battery_state: "/battery_state"
+        slam_graph: "/slam/mapper/graph_debug"
+        observation_runtime_summary: "/amr/observation/runtime/summary"
+        observation_runtime_events: "/amr/observation/runtime/events"
+        cmd_vel: "/cmd_vel"
+        initial_pose: "/amr/localization/initial_pose"
+        navigate_feedback_poses: "/amr/navigator/navigate_to_poses/feedback"
+        navigate_status_poses: "/amr/navigator/navigate_to_poses/status"
+      services:
+        plan_segment: "/amr/global_planner/plan_segment"
+        plan_route: "/amr/global_planner/plan_route"
+      actions:
+        navigate_to_poses: "/amr/navigator/navigate_to_poses"
+      save:
+        directory: "/home/rnc/ws/data/maps"
+  

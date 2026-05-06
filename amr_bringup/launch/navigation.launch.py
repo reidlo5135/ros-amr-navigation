@@ -21,12 +21,6 @@ def bringup_launch_file(filename: str) -> str:
 
 def generate_launch_description() -> LaunchDescription:
     bringup_params = bringup_params_file()
-    mqtt_bridge_launch = os.path.join(
-        get_package_share_directory("amr_mqtt_server"),
-        "launch",
-        "amr_mqtt_server.launch.py",
-    )
-
     mapping_mode = LaunchConfiguration("mapping_mode")
     navigation_only = LaunchConfiguration("navigation_only")
     robot_bringup_delay_sec = LaunchConfiguration("robot_bringup_delay_sec")
@@ -44,12 +38,6 @@ def generate_launch_description() -> LaunchDescription:
                 "launch",
                 "controller.launch.py",
             )
-        ),
-        launch_arguments={"params_file": bringup_params}.items(),
-    )
-    mqtt_server_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            mqtt_bridge_launch
         ),
         launch_arguments={"params_file": bringup_params}.items(),
     )
@@ -112,7 +100,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "robot_bringup_delay_sec",
                 default_value="0.0",
-                description="Delay before localization and MQTT bringup.",
+                description="Delay before localization bringup.",
             ),
             DeclareLaunchArgument(
                 "navigation_start_delay_sec",
@@ -123,7 +111,6 @@ def generate_launch_description() -> LaunchDescription:
                 period=robot_bringup_delay_sec,
                 actions=[
                     localization_launch,
-                    mqtt_server_launch,
                 ],
                 condition=UnlessCondition(navigation_only),
             ),
