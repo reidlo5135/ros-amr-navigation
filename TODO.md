@@ -72,6 +72,41 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - clear package responsibilities across mapping, navigation, recovery, and operator tooling
 - predictable behavior in narrow corridors, dynamic obstacles, and long-running indoor operation
 
+## 260507
+
+- `amr_light.rviz` test profile did not reproduce the remote-subscriber crash path.
+- Current hypothesis:
+  `rviz2` / `amr_mqtt_server` full-data remote subscription is the trigger, not bare navigation.
+
+- `amr_rviz` package promotion
+  - split the lightweight RViz/operator tooling into a dedicated `amr_rviz` package
+  - move the current test RViz profile into the new package as the baseline
+  - include an `rviz2` launch entrypoint inside the package
+
+- action-to-topic bridge for RViz operator flow
+  - add bridge support for `/amr/navigator/navigate_to_pose`
+  - add bridge support for `/amr/navigator/navigate_to_poses`
+  - make `2D Goal Pose` usable from RViz without relying on direct action CLI during tests
+
+- RViz UI/UX cleanup
+  - improve the current operator layout and interaction flow
+  - clean up naming, grouping, and default enabled displays
+  - make the profile usable as a real test console instead of a debug scratch file
+
+- RViz display scope expansion
+  - keep `raw map`, `TF`, `initial pose`, and `send goal`
+  - add `global plan`
+  - add `local plan`
+
+- QoS alignment audit
+  - unify QoS assumptions between `tb3_bringup`, AMR stack, and RViz consumers
+  - explicitly document which topics must remain `SensorDataQoS`, transient local, or reliable
+
+- multi-goal driving quality fix
+  - current `NavigateToPoses` behavior appears to treat middle goals too literally for final yaw
+  - for middle waypoints, treat them as pass-through poses and derive heading from the upcoming goal
+  - avoid the current pattern where the robot rotates to match a middle-goal yaw, then turns back and resumes forward motion
+
 ## Version Journey
 
 | Version | Focus | Result |
