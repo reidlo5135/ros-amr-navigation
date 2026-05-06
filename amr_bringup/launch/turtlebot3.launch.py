@@ -44,6 +44,10 @@ def generate_launch_description() -> LaunchDescription:
     )
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(bringup_launch_file("navigation.launch.py")),
+        launch_arguments={
+            "mapping_mode": mapping_mode,
+            "navigation_only": "true",
+        }.items(),
         condition=UnlessCondition(mapping_mode),
     )
 

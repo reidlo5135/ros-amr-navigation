@@ -2,8 +2,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 
 
@@ -12,8 +14,28 @@ def bringup_params_file() -> str:
     return os.path.join(package_share_directory, "params", "amr.yaml")
 
 
+def bringup_launch_file(filename: str) -> str:
+    package_share_directory = get_package_share_directory("amr_bringup")
+    return os.path.join(package_share_directory, "launch", filename)
+
+
 def generate_launch_description() -> LaunchDescription:
-    ld = LaunchDescription()
+    bringup_params = bringup_params_file()
+    mqtt_bridge_launch = os.path.join(
+        get_package_share_directory("amr_mqtt_server"),
+        "launch",
+        "amr_mqtt_server.launch.py",
+    )
+
+    mapping_mode = LaunchConfiguration("mapping_mode")
+    navigation_only = LaunchConfiguration("navigation_only")
+    robot_bringup_delay_sec = LaunchConfiguration("robot_bringup_delay_sec")
+    navigation_start_delay_sec = LaunchConfiguration("navigation_start_delay_sec")
+
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(bringup_launch_file("localization.launch.py")),
+        launch_arguments={"mapping_mode": mapping_mode}.items(),
+    )
 
     controller_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -23,7 +45,13 @@ def generate_launch_description() -> LaunchDescription:
                 "controller.launch.py",
             )
         ),
-        launch_arguments={"params_file": bringup_params_file()}.items(),
+        launch_arguments={"params_file": bringup_params}.items(),
+    )
+    mqtt_server_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            mqtt_bridge_launch
+        ),
+        launch_arguments={"params_file": bringup_params}.items(),
     )
     recovery_server = LifecycleNode(
         package="amr_recovery_server",
@@ -31,7 +59,7 @@ def generate_launch_description() -> LaunchDescription:
         name="recovery_server",
         namespace="amr",
         output="screen",
-        parameters=[bringup_params_file()],
+        parameters=[bringup_params],
     )
     bt_navigator = LifecycleNode(
         package="amr_bt_navigator",
@@ -39,7 +67,7 @@ def generate_launch_description() -> LaunchDescription:
         name="navigator",
         namespace="amr",
         output="screen",
-        parameters=[bringup_params_file()],
+        parameters=[bringup_params],
     )
     runtime_observation = Node(
         package="amr_runtime_observation",
@@ -47,7 +75,7 @@ def generate_launch_description() -> LaunchDescription:
         name="runtime_observation",
         namespace="amr",
         output="screen",
-        parameters=[bringup_params_file()],
+        parameters=[bringup_params],
     )
     navigation_manager = Node(
         package="amr_lifecycle_manager",
@@ -56,7 +84,7 @@ def generate_launch_description() -> LaunchDescription:
         namespace="amr",
         output="screen",
         parameters=[
-            bringup_params_file(),
+            bringup_params,
             {
                 "managed_nodes": [
                     "/amr/local_planner",
@@ -69,9 +97,48 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    ld.add_action(controller_launch)
-    ld.add_action(recovery_server)
-    ld.add_action(bt_navigator)
-    ld.add_action(runtime_observation)
-    ld.add_action(navigation_manager)
-    return ld
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "mapping_mode",
+                default_value="false",
+                description="Run pure SLAM mapping mode and skip navigation bringup.",
+            ),
+            DeclareLaunchArgument(
+                "navigation_only",
+                default_value="false",
+                description="When true, start only controller/recovery/navigator nodes. Use this when localization and MQTT are already started elsewhere.",
+            ),
+            DeclareLaunchArgument(
+                "robot_bringup_delay_sec",
+                default_value="0.0",
+                description="Delay before localization and MQTT bringup.",
+            ),
+            DeclareLaunchArgument(
+                "navigation_start_delay_sec",
+                default_value="3.0",
+                description="Additional delay before navigation starts after localization bringup.",
+            ),
+            TimerAction(
+                period=robot_bringup_delay_sec,
+                actions=[
+                    localization_launch,
+                    mqtt_server_launch,
+                ],
+                condition=UnlessCondition(navigation_only),
+            ),
+            TimerAction(
+                period=PythonExpression(
+                    [robot_bringup_delay_sec, " + ", navigation_start_delay_sec]
+                ),
+                actions=[
+                    controller_launch,
+                    recovery_server,
+                    bt_navigator,
+                    runtime_observation,
+                    navigation_manager,
+                ],
+                condition=UnlessCondition(mapping_mode),
+            ),
+        ]
+    )

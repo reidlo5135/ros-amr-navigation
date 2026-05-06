@@ -6,8 +6,15 @@ Central launch and parameter package for the frozen `0.15.x` baseline (`0.15.10`
 
 - `params/amr.yaml`: shared runtime parameters
 - `launch/localization.launch.py`: map server, localization, costmap server, global planner
-- `launch/navigation.launch.py`: controller server aggregation, recovery server, BT navigator
+- `launch/navigation.launch.py`: Ubuntu-side AMR bringup without `turtlebot3_bringup`
 - `launch/turtlebot3.launch.py`: TurtleBot3 bringup + AMR runtime + robot-side MQTT bridge
+
+`navigation.launch.py` starts the full AMR stack by default:
+- delayed `localization.launch.py`
+- delayed `amr_mqtt_server.launch.py`
+- delayed controller / recovery / BT navigation nodes
+
+Set `navigation_only:=true` only when localization and MQTT are already started elsewhere.
 
 ## Runtime Layout
 
@@ -44,6 +51,18 @@ and skips:
 
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py
+```
+
+Ubuntu-side AMR bringup for a robot whose `turtlebot3_bringup` is already running elsewhere:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py
+```
+
+Navigation-only bringup when localization and MQTT are already running:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py navigation_only:=true
 ```
 
 Mapping mode:

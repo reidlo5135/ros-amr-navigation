@@ -2555,6 +2555,14 @@ double MotionController::apply_axis_controller(
   const double max_step,
   const double dt) const
 {
+  if (std::abs(target) <= 1e-6)
+  {
+    state.integral = 0.0;
+    state.previous_error = 0.0;
+    state.first_update = false;
+    return 0.0;
+  }
+
   const double error = target - current;
   double derivative = 0.0;
 
@@ -2602,12 +2610,6 @@ double MotionController::apply_axis_controller(
   else
   {
     next = std::max(next, target);
-  }
-
-  if (std::abs(target) <= 1e-6 && std::abs(error) <= max_step)
-  {
-    next = 0.0;
-    state.integral = 0.0;
   }
 
   state.previous_error = error;
