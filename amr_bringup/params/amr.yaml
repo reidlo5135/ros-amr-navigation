@@ -1,7 +1,7 @@
 /amr/map_server:
   ros__parameters:
     files:
-      yaml: "/home/burger1/ws/data/maps/map_office_260310.yaml"
+      yaml: "/home/rnc/ws/data/maps/map_office_260310.yaml"
     mode:
       mapping: false
     frames:
@@ -16,7 +16,7 @@
       evaluate: "/amr/map_server/evaluate_temporary_map"
       save: "/amr/map_server/save_temporary_map"
     save:
-      directory: "/home/burger1/ws/data/maps"
+      directory: "/home/rnc/ws/data/maps"
       basename: "amr_temporary_map"
     quality:
       min_known_ratio: 0.35
@@ -368,4 +368,4 @@
       actions:
         navigate_to_poses: "/amr/navigator/navigate_to_poses"
       save:
-        directory: "/home/burger1/ws/data/maps"
+        directory: "/home/rnc/ws/data/maps"
