@@ -11,6 +11,8 @@ Metapackage for the active AMR navigation stack.
 - `amr_global_planner`
 - `amr_controller_server`
 - `amr_recovery_server`
+- `amr_rviz`
+- `amr_visualization`
 - `amr_bt_navigator`
 - `amr_lifecycle_manager`
 - `amr_bringup`
@@ -20,4 +22,4 @@ Metapackage for the active AMR navigation stack.
 
 - `amr_obstacle_detection` is no longer used.
 - `amr_rviz_plugins` is no longer used.
-- the operator UI now lives in the external `ros-rcs` desktop app repository.
+- the ROS-native local operator UI lives in `amr_visualization`.

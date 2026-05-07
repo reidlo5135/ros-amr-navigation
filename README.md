@@ -4,8 +4,9 @@ ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
 Current `0.15.x` frozen baseline (`0.15.10`):
 - TurtleBot3 runs the full navigation runtime on-robot.
-- `amr_mqtt_server` runs on the robot and publishes ROS telemetry and web-friendly viz topics to MQTT.
-- the operator client now lives outside this repo as the desktop app in `ros-rcs`:
+- `amr_visualization` starts the in-repo ROS-native Qt6 operator app lane.
+- `amr_mqtt_server` remains available for remote-client telemetry and command bridging.
+- the external `ros-rcs` app remains a separate remote-client reference:
   - `https://github.com/reidlo5135/ros-rcs`
 - Recovery and decision flow follow a Nav2-like split:
   - `amr_bt_navigator` decides
@@ -21,7 +22,8 @@ Current `0.15.x` frozen baseline (`0.15.10`):
 
 ```mermaid
 flowchart LR
-    Desktop["Operator Desktop App<br/>ros-rcs"] -->|WS MQTT| Broker["Mosquitto Broker"]
+    LocalUI["Local Operator App<br/>amr_visualization"] -->|ROS topics / services / actions| Nav
+    Desktop["Remote Client<br/>ros-rcs"] -->|WS MQTT| Broker["Mosquitto Broker"]
     Broker -->|MQTT command| RobotBridge["amr_mqtt_server<br/>robot-side MQTT API server"]
     RobotBridge -->|ROS topics / services / actions| Nav["Localization + Navigation Runtime"]
 
@@ -60,6 +62,7 @@ flowchart LR
 - `amr_mqtt_server`: robot-side MQTT API server
 - `amr_msgs`: custom messages, services, and actions
 - `amr_rviz`: dedicated RViz profiles plus RViz-to-action bridge tooling
+- `amr_visualization`: ROS-native Qt6 operator visualization app
 - `amr_runtime_observation`: runtime summary and event aggregation for navigation state
 - `amr_navigation`: metapackage
 - `amr_recovery_server`: wait / backup / spin recovery command generation
@@ -107,7 +110,18 @@ RViz-based local operator test console:
 ros2 launch amr_rviz rviz.launch.py
 ```
 
-Operator desktop UI is developed and packaged in the external `ros-rcs` repository.
+ROS-native Qt6 operator visualization app:
+
+```bash
+ros2 launch amr_visualization amr_visualization.launch.py
+```
+
+`amr_visualization` subscribes to the static map, pose, paths, and runtime status by default.
+Global/local costmap layers are opt-in from the UI because full costmap streams can be heavy on
+TurtleBot3-class hardware.
+
+The ROS-native local operator UI lives in `amr_visualization`. The external `ros-rcs`
+line remains useful as a separate remote-client reference.
 
 ## Build
 
@@ -125,6 +139,7 @@ colcon build --packages-select \
   amr_lifecycle_manager \
   amr_mqtt_server \
   amr_rviz \
+  amr_visualization \
   amr_bringup \
   amr_navigation
 ```

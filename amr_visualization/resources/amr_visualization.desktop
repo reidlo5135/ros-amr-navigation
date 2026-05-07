@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=AMR Visualization
+Comment=ROS-native Qt6 operator visualization app
+Exec=amr_visualization
+Icon=amr_visualization
+StartupWMClass=amr_visualization
+Terminal=false
+Categories=Development;Robotics;
+StartupNotify=true

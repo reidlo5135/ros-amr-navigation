@@ -20,6 +20,7 @@
   <exec_depend>amr_controller_server</exec_depend>
   <exec_depend>amr_recovery_server</exec_depend>
   <exec_depend>amr_rviz</exec_depend>
+  <exec_depend>amr_visualization</exec_depend>
   <exec_depend>amr_bt_navigator</exec_depend>
   <exec_depend>amr_runtime_observation</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>

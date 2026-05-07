@@ -12,13 +12,13 @@ timeline
     0.3.x : Dynamic obstacle split
           : centralized costmap ownership
           : total bringup stabilization
-    0.4.x : Web viz scaffold
-    0.5.x : MQTT architecture transition
-          : robot/server bridge split
-          : raw ROS mirroring
-    0.6.x : Direct MQTT web viz
+    0.4.x : Early visualization scaffold
+    0.5.x : operator tooling transition
+          : robot/operator role split
+          : visualization contract cleanup
+    0.6.x : direct operator visualization
           : interactive control panel
-    0.7.x : MQTT session recovery
+    0.7.x : operator session recovery
           : TF/rendering stabilization
     0.8.x : Footprint-aware inflation
           : planning safety refinement
@@ -42,11 +42,12 @@ timeline
            : recovery observability and regression baselines
            : 0.15.9 recovery trigger visibility and structured diagnosis
            : 0.15.10 recovery phase semantics and blocked-context interpretation
-           : stable robot-side MQTT/web operator loop
+           : stable operator workflow baseline
     0.16.x : local escape-first recovery refinement
            : planner-local escape first wiring
            : corridor / doorway blocked-state tuning
            : final-approach stability cleanup
+           : ROS + Qt6 `amr_visualization` app start
     0.17.x : planner/controller quality uplift
            : path smoothing and blocked semantics refinement
            : recovery exit and path rejoin quality
@@ -54,7 +55,7 @@ timeline
            : mapping-ready / nav-ready state model
            : map lifecycle and transition cleanup
     0.19.x : multi-robot and deployment readiness
-           : MQTT topic / command stability
+           : operator command / state stability
            : operator diagnostics and long-run operation polish
     1.0.0 : indoor AMR runtime stabilization
           : reliable recovery, footprint collision, operator UX
@@ -67,8 +68,8 @@ timeline
 ## Product Direction
 
 This project is building toward a self-owned indoor AMR stack for TurtleBot3-class robots with:
-- on-robot localization, planning, control, recovery, and MQTT telemetry
-- browser-based operations and visualization
+- on-robot localization, planning, control, recovery, and observability
+- ROS-native operator operations and visualization through a Qt6 desktop app
 - clear package responsibilities across mapping, navigation, recovery, and operator tooling
 - predictable behavior in narrow corridors, dynamic obstacles, and long-running indoor operation
 
@@ -76,7 +77,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 - `amr_light.rviz` test profile did not reproduce the remote-subscriber crash path.
 - Current hypothesis:
-  `rviz2` / `amr_mqtt_server` full-data remote subscription is the trigger, not bare navigation.
+  full-data remote subscription is the trigger, not bare navigation.
 
 - `amr_rviz` package promotion
   - split the lightweight RViz/operator tooling into a dedicated `amr_rviz` package
@@ -107,6 +108,14 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - for middle waypoints, treat them as pass-through poses and derive heading from the upcoming goal
   - avoid the current pattern where the robot rotates to match a middle-goal yaw, then turns back and resumes forward motion
 
+- costmap source overload hypothesis
+  - current issue appears to come from `amr_costmap_server` source behavior more than the overall robot/PC split topology
+  - current implementation rebuilds and republishes both `global` and `local` full-size `OccupancyGrid` outputs on every `/scan`
+  - `local_costmap` is currently derived from the full global-sized grid, not a small rolling/local window
+  - both publishers are using `transient_local + reliable`, which likely amplifies DDS delivery cost once remote visualization subscribers attach
+  - next validation target:
+    decouple `global` publish from `/scan`, keep scan-driven updates local-only, and shrink `local_costmap` toward a true local window
+
 ## Version Journey
 
 | Version | Focus | Result |
@@ -114,19 +123,19 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `0.1.x` | MVP navigation core | A* global planning, AMCL-lite localization, PID-based motion loop, first runtime bringup |
 | `0.2.x` | Mapping and replanning | costmap-based replanning, RViz goal bridge, SLAM-lite mapping workflow, lifecycle management |
 | `0.3.x` | Obstacle/costmap ownership | dynamic obstacle split, centralized costmap ownership, total bringup refinement |
-| `0.4.x` | Web visualization start | `amr_viz` web scaffold and runtime scripts |
-| `0.5.x` | MQTT-first architecture | ROS-MQTT transport, command bridge, robot/server role split, raw ROS serialization |
-| `0.6.x` | Direct web operations | direct MQTT web visualization, web control panel, reduced visualization latency |
-| `0.7.x` | Viz/operator polish | interactive map control, URDF-based rendering attempts, MQTT reconnect hardening |
+| `0.4.x` | Visualization start | early `amr_viz` scaffold and runtime scripts |
+| `0.5.x` | Operator architecture transition | command bridge cleanup, robot/operator role split, visualization responsibility refinement |
+| `0.6.x` | Direct operator tooling | direct visualization/control workflow and reduced operator friction |
+| `0.7.x` | Viz/operator polish | interactive map control, URDF-based rendering attempts, session recovery hardening |
 | `0.8.x` | Planning safety | footprint-aware inflation and planner safety tuning |
 | `0.9.x` | Behavior-based orchestration | BT navigator skeleton, escape/detour recovery flow, better goal/result reporting |
 | `0.10.x` | Runtime role cleanup | recovery server responsibilities, local costmap-driven dynamic handling, unused package removal |
 | `0.11.x` | Consolidation and quality uplift | package normalization, include hygiene, documentation refresh, next-stage planner/controller quality work |
-| `0.12.x` | Stable navigation baseline | exact footprint collision, final-approach/recovery cleanup, richer `amr_viz`, MQTT battery/ping/goal visibility, `0.12.4` stable operator baseline |
+| `0.12.x` | Stable navigation baseline | exact footprint collision, final-approach/recovery cleanup, richer `amr_viz`, broader operator state visibility, `0.12.4` stable operator baseline |
 | `0.13.x` | ARL / GL experimental branch | active relocalization, scan-first candidates, ARL probing, candidate viz, then deprecated after shared-path regression risk |
 | `0.14.x` | Mapping line reboot | reset mainline to `0.12.4`, add `amr_slam_mapper`, split mapping mode from nav mode, raw/refined temp SLAM maps, mapping observability and save flows |
-| `0.15.x` | Runtime hardening | scenario-based regression baselines, clearer recovery diagnostics, robot-side MQTT/web operation stabilization, safer operational baseline after the mapping reboot |
-| `0.16.x` | Recovery refinement | local escape-first recovery flow, narrower-corridor tuning, cleaner blocked semantics, reduced false recovery entry near doors and goal approach |
+| `0.15.x` | Runtime hardening | scenario-based regression baselines, clearer recovery diagnostics, safer operational baseline after the mapping reboot |
+| `0.16.x` | Recovery refinement + Qt6 operator app start | local escape-first recovery flow, narrower-corridor tuning, cleaner blocked semantics, reduced false recovery entry near doors and goal approach, early `amr_visualization` package work |
 | `0.17.x` | Planner/controller quality | global path smoothing, motion-controller approach quality, recovery-exit stability, lower oscillation during path rejoin and final heading alignment |
 | `0.18.x` | Live SLAM navigation bridge | temporary refined map consumption by nav runtime, `ready_for_nav` vs `ready_for_save` mapping criteria, smoother mapping-to-navigation transition without static-save-first workflow |
 | `0.19.x` | Operations and deployment readiness | robot-id / multi-robot topic discipline, stronger reconnect and retained-data behavior, richer operator diagnostics, longer unattended runtime confidence before `1.0.0` |
@@ -144,8 +153,8 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - re-established the navigation stack around exact footprint collision instead of radius-only safety checks
 - improved local planner / motion controller / BT navigator interaction for approach, blocked-state, and recovery sequencing
 - expanded `amr_viz` from a simple viewer into the main operator console
-  - richer goal lifecycle, collision overlays, battery telemetry, MQTT ping state, cleaner panel layout
-  - React app/features modularization and direct MQTT operator flow polish
+  - richer goal lifecycle, collision overlays, battery telemetry, and cleaner panel layout
+  - operator app/features modularization and direct operator flow polish
 - ended the line with `0.12.4` as the last clean navigation-first baseline before ARL/GL experiments
 
 ## 0.13.x Experimental Notes
@@ -177,9 +186,9 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - joystick teleop for mapping
   - map save controls
   - raw / refined temp SLAM map layers
-- improved MQTT fleet-readiness on the robot side
-  - robot-id-scoped topics
-  - simpler topic-header configuration
+- improved operator/runtime integration discipline on the robot side
+  - clearer package boundaries for operator-facing data
+  - simpler operator-facing configuration expectations
   - relative map image path resolution fix for YAML-backed map loading
 
 ## 0.15.x Frozen Baseline
@@ -190,7 +199,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - recovery trigger / reason
   - blocked context
   - recovery phase
-- robot-side MQTT/web operator loop remains on the `0.15.x` contract while higher-risk
+- current operator workflow remains on the `0.15.x` interpretation baseline while higher-risk
   recovery-policy work moves to `0.16.x`
 - recent manual confidence checks include stable dynamic interrupt behavior in the current
   operator flow
@@ -209,6 +218,14 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - reduce corridor and doorway false-blocked cases
 - stabilize final approach when a goal is close but local obstacle evidence is noisy
 - clarify recovery entry / hold / exit conditions so `wait`, `backup`, `spin`, and re-dispatch behave deterministically
+- introduce `amr_visualization` as a standalone ROS + Qt6 operator app package
+- treat `amr_visualization` as the next operator lane after the current `amr_rviz` bridge/test console
+- keep the first visualization scope tightly coupled to navigation operations
+  - occupancy grid and robot pose rendering
+  - global / local plan overlays
+  - initial pose, single-goal, and multi-goal route interaction
+  - runtime summary, recovery state, and event visibility
+- keep the app ROS-native on Ubuntu instead of preserving older remote-operator assumptions
 
 ## 0.17.x Planned Focus
 
@@ -230,12 +247,12 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 ## 0.19.x Planned Focus
 
-- harden MQTT and operator workflows for longer-running and multi-robot-style deployment
-- keep robot identity, topic scoping, and command routing stable under reconnect and robot-id changes
+- harden operator workflows for longer-running and multi-robot-style deployment
+- keep robot identity, topic scoping, and command routing stable as multi-robot discipline grows
 - improve operator diagnostics so `accepted`, `running`, `recovering`, `canceling`, `aborted`, and `reached` are all unambiguous
 - tighten deployment-facing behaviors
-  - retained static data policy
-  - reconnect recovery policy
+  - static-data lifetime policy
+  - operator reconnect / resubscribe policy
   - response semantics for command, planner request, and map-save actions
 
 ## Immediate Candidate Tracks After 0.14.x
@@ -246,7 +263,8 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - bring local escape and recovery quality to an operationally trustworthy state before widening the planning surface
 - evaluate `live SLAM temp map -> costmap/planner` integration only after the current navigation baseline is stable enough to compare against
   - instead of forcing `save static map first -> navigate later`
-- continue tightening MQTT robot identity and multi-robot readiness
+- start `amr_visualization` as the ROS-native Qt6 operator lane once `0.15.x` remains stable enough to serve as the interpretation baseline
+- continue tightening robot identity and multi-robot readiness
   - the next higher-level work after AMR is ACS / fleet integration
 - improve `amr_slam_mapper` only when the scope is clear
   - scan matcher quality
@@ -260,7 +278,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - exact footprint-aware planning and collision checks
 - stable final-approach behavior with low oscillation near goal
 - recovery stack with wait / backup / spin / replan / clear-costmap policies
-- MQTT/web operations that remain responsive during continuous motion
+- ROS-native operator operations that remain responsive during continuous motion
 - map lifecycle that supports create, freeze, save, load, and reuse without manual recovery
 - vehicle-spec parameter model introduction
   - `vehicle.type: diff_drive | ackermann | oht`
@@ -316,15 +334,15 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - practical mapping-mode and navigation-mode transition
 - better map lifecycle procedures for save/load/freeze/reuse
 
-### MQTT and Operations
+### Operator Application and ROS Integration
 
-- robot-side MQTT transport remains the single telemetry source
-- leaner visualization payloads for web consumers
-- robust reconnect, retained static data, and low-latency live telemetry
+- `amr_visualization` as the primary ROS-native operator app on Ubuntu
+- leaner operator-facing state models for maps, paths, goals, and recovery context
+- robust reconnect, state resubscribe, and low-latency live telemetry inside the ROS desktop workflow
 - operator visibility into recovery state, goal state, and planner/controller health
 - vehicle-type-aware command transport
-  - operator and MQTT command schema should move toward vehicle-neutral motion intent
-  - robot-side bridge should translate the common command model into vehicle-specific ROS topics
+  - operator command schema should move toward vehicle-neutral motion intent
+  - robot-side adapters should translate the common command model into vehicle-specific ROS topics
   - avoid hard-coding `/cmd_vel` as the only long-term motion interface
 
 ## Ackermann Expansion Notes
@@ -363,13 +381,13 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `2026-04-30` | `0.15.x` freeze: `0.15.10`을 runtime-hardening 기준선으로 동결, recovery observation/dynamic interrupt 확인 후 다음 구현 축을 `0.16.x`로 이관 |
 | `2026-04-30` | `0.15.10` recovery phase 상태 고정, motion controller는 BT 실행 책임만 유지, observation의 blocked context / recovery phase schema 추가 |
 | `2026-04-30` | `0.15.9` 기준선 반영, recovery trigger/reason 가시성 강화, runtime observation summary/event schema 정리, `local_escape-first` 복구 흐름은 다음 패치 라인으로 이관 |
-| `2026-04-14` | AMR 기본 goal semantics 재정의, `x/y` 우선 도달 정책, goal yaw optional화, `ros-rcs` yaw 입력/표시 축소 검토, `amr_mqtt_bridge` 성능 최적화 및 MQTT payload 경량화 검토, 프로토콜/API 명세 최신화, MQTT 통신 암호화 설계 검토 |
+| `2026-04-14` | AMR 기본 goal semantics 재정의, `x/y` 우선 도달 정책, goal yaw optional화, operator goal 입력/표시 단순화 검토, ROS API 명세 최신화 |
 | `2026-03-31` | `amr_slam_mapper` live map 기반 nav 연계 검토, raw/refined map layer 분리 후속, loop/revisit 기반 refined cleanup 설계 |
 | `2026-03-26` | kidnapped 대응용 global localization 설계, offline/disconnect 재초기화 흐름 검토 |
 | `2026-03-25` | exact footprint collision 완료, local planner decision semantics 반영, recovery/final approach 1차 안정화, viz 운영성 강화 |
 | `2026-03-24` | `amr_costmap_server` footprint polygon 고도화, local escaping replan 명확화, `amr_bt_navigator` 실질 BT 책임 강화 |
-| `2026-03-23` | `amr_viz` React + MQTT 완전 전환, `amr_mqtt_bridge` 소스 구조 개편 |
-| `2026-03-20` | MQTT-first 웹 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
+| `2026-03-23` | `amr_viz` 운영 화면 구조 개편, visualization/control/data-flow 기준 재정리 |
+| `2026-03-20` | 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
 
 ## 2026-04-14
@@ -386,7 +404,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - 지금은 기본적으로 `true`로 실려 들어가는 흐름을 뒤집고, 기본값을 `false`로 두는 방향 검토
   - 정말 heading 정렬이 필요한 경우만 explicit하게 켜는 task-level 옵션으로 내리는 구조 비교
   - 중간 waypoint는 yaw 무시, 마지막 goal도 기본은 yaw 무시, 특수 task만 heading align 허용하는 정책 검토
-- `ros-rcs` goal 입력 UX 단순화 검토
+- operator goal 입력 UX 단순화 검토
   - 일반 route 작성 시 goal yaw 입력을 기본 UI에서 제거하거나 숨기는 방향 검토
   - operator가 위치 이동과 pose alignment를 다른 intent로 이해할 수 있게 goal 입력 모델을 분리할지 검토
   - initial pose는 orientation이 필요하지만, navigation goal은 기본적으로 position intent 중심으로 다루는 UX 비교
@@ -396,30 +414,10 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - docking, station facing, sensor-facing alignment 같은 경우만 별도 command/profile로 분리
   - regression scenario에 `x,y 도달 후 yaw mismatch`, `final spin abort`, `route waypoint yaw ignored` 케이스 추가 검토
 - 프로토콜 / API 명세 최신화
-  - 최근 `NavigateToPoses`, runtime observation, structured initial pose payload, cancel semantics 변경까지 반영해 MQTT/ROS API 명세를 최신 기준으로 재정리
-  - `amr_mqtt_bridge/README.md` 중심 명세와 실제 구현 사이 드리프트가 없는지 점검
-  - command / response / feedback / status / viz topic의 payload schema를 운영 기준으로 다시 고정
-  - `ros-rcs`가 소비하는 topic, field, request/response correlation 규칙도 함께 문서화
-- MQTT 통신 암호화 검토 / 설계
-  - 현재 평문 TCP MQTT 기준 운영을 TLS 기반 구조로 올릴지 검토
-  - broker-side TLS, username/password, topic ACL, 필요 시 mutual TLS까지 단계별 도입 방안 정리
-  - robot-side `amr_mqtt_bridge`, broker, `ros-rcs` client 각각에 필요한 파라미터 / 인증서 / 배포 절차 설계
-  - 현장 운영 난이도와 보안 이득을 같이 비교해 `TLS only`와 `mTLS` 중 현실적인 1차 목표안 도출
-- `amr_mqtt_bridge` 성능 최적화 / 실시간성 보장 검토
-  - 현재 `amr_mqtt_bridge` CPU 사용량이 on-board에서 대략 `30%~100%`, VBox `mosquitto`도 평균 `20%~30%`까지 상승하는 상황을 기준으로 병목 분석
-  - 기존에는 낮은 점유율이던 broker까지 크게 오르는 만큼, raw telemetry / JSON viz payload / publish 빈도 / serialization 경로를 함께 재점검
-  - `ros-rcs` 실시간성이 떨어지는 원인을 bridge-side serialization 과다, 불필요한 full payload publish, broker-side fanout 부담 관점에서 분석
-- MQTT API / JSON payload 경량화 방향 검토
-  - 대용량 map / costmap / scan / path / observation payload에서 full-state push를 계속 보내는 방식이 적절한지 재검토
-  - topic별로 `raw telemetry`, `operator viz`, `high-rate control`, `low-rate status`를 다시 분리해 필요한 데이터만 보내는 정책 비교
-  - JSON field 축소, 숫자 정밀도 축소, delta/snapshot 분리, rate limiting, throttling, change-only publish 적용 가능성 검토
-  - `ros-rcs`는 실시간 운영에 필요한 최소 시계열/상태 위주로 받고, 무거운 debug payload는 opt-in 구독으로 내리는 구조 비교
-- 구현 후보 방향 메모
-  - `amr_mqtt_bridge` endpoint별 publish rate / payload size / serialization cost 계측 먼저 추가
-  - `scan`, `costmap`, `path`, `tf` 계열은 기본 viz payload를 축약본으로 재정의하고 full payload는 필요 시 별도 topic으로 분리
-  - `std_msgs/String` JSON passthrough도 크기와 주기를 같이 관리하도록 정리
-  - broker와 client 모두 부담이 큰 topic은 binary/raw 유지 + viz summary 분리 구조로 재정렬
-  - 목표는 `amr_mqtt_bridge` CPU 부담을 낮추고, broker fanout을 줄이며, `ros-rcs` 체감 실시간성을 최대한 보장하는 것
+  - 최근 `NavigateToPoses`, runtime observation, structured initial pose payload, cancel semantics 변경까지 반영해 ROS API 명세를 최신 기준으로 재정리
+  - operator app이 소비하는 topic, field, request/response correlation 규칙도 함께 문서화
+  - command / response / feedback / status / visualization state schema를 운영 기준으로 다시 고정
+  - `amr_visualization` 초기 요구사항과 실제 런타임 인터페이스 사이 드리프트가 없는지 점검
 
 ## 2026-03-31
 
@@ -469,10 +467,10 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
     - `manual initial pose`와 `automatic global relocalize`를 같은 리셋 경로로 합칠지 검토
 - offline / disconnect 환경에서도 동작 가능한 onboard 재초기화 설계
   - ACS, 외부 서버, operator UI 연결이 없어도 robot-side에서 스스로 global relocalization 수행 가능해야 함
-  - MQTT 단절 시에도 localization runtime 자체는 독립적으로 동작하도록 경계 명확화
+  - operator app 단절 시에도 localization runtime 자체는 독립적으로 동작하도록 경계 명확화
   - `lost localization -> stop -> relocalize -> resume or abort` 흐름을 onboard 기준으로 설계
   - 검토 관점
-    - relocalization 수행 중 MQTT, ACS, viz는 optional observer이고 핵심 제어 흐름은 robot 내부에서 닫혀 있어야 함
+    - relocalization 수행 중 operator app, ACS, viz는 optional observer이고 핵심 제어 흐름은 robot 내부에서 닫혀 있어야 함
     - BT / planner / controller는 localization confidence가 무너지면 주행보다 정지를 우선하고 relocalize 결과를 기다리게 할지 검토
     - reconnect 이후 operator에게는 결과만 동기화하면 되는 구조가 적절한지 검토
 - 기존 localization과의 책임 분리 검토
@@ -534,7 +532,6 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - 남은 과제는 final approach oscillation과 recovery primitive 튜닝 정리
 - 완료: 운영성 중심 `amr_viz` 개선
   - Goal lifecycle을 request 단위로 동기화해 이전 goal의 `Rejected / Reached / Aborted`가 새 goal 상태를 덮지 않도록 수정
-  - `amr/command/ping` / `amr/response/ping` 기반 MQTT RTT 표시 추가
   - 배터리 상태 API 및 topbar 표시 추가
   - 배터리 잔량 색상 단계화
   - Displays 메뉴를 `Global Plan / Local Plan` 분리, 반응형 패널 레이아웃 및 이벤트 패널 스크롤 구조 정리
@@ -561,35 +558,21 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 ## 2026-03-23
 
-- `amr_viz` React + MQTT 완전 전환
-  - 현재 과도기적 viz/bridge 흔적 정리
-  - browser 기반 운영 화면을 MQTT client 전제로 재구성
+- `amr_viz` 운영 화면 구조 개편
+  - 과도기적 viz/bridge 흔적 정리
   - `goal`, `status`, `feedback`, `map`, `path`, `costmap` 확인 흐름 재정리
-- `amr_mqtt_bridge` 소스 구조 개편
-  - `rcl` 관련 로직과 `MQTT` 관련 로직을 별도 `.h/.c` 파일로 분리
-  - 예시: `node.h`, `node.c`, `mqtt.h`, `mqtt.c`
-  - 직렬화/역직렬화, topic routing, ROS interface init/fini 책임도 파일 단위로 분리
+  - 이후 전용 operator app으로 분리 가능한 상태 모델 경계 초안 형성
 
 ## 2026-03-20
 
-- `amr_viz`를 순수 React Web 프로젝트로 전환
-  - Electron 관련 shell / 실행 경로 제거
-  - host PC 브라우저 접속 기준 운영 viz 구조로 정리
-  - visualization UI와 ROS bridge 책임 완전 분리
-- `amr_mqtt_bridge` 신규 ROS 2 패키지 추가
-  - `amr_viz` 내부 bridge 구현을 별도 패키지로 분리
-  - viz 전용이 아닌 범용 ROS <-> MQTT bridge 역할로 설계
-  - 향후 다른 UI / 운영 툴 / 외부 시스템에서도 재사용 가능하도록 패키지 경계 정의
-- `amr_navigation` 인터페이스를 MQTT 기준으로 재모델링
-  - 기존 ROS topic / service / action을 그대로 노출하지 말고 필요한 데이터만 선별
-  - visualization / control / telemetry 용 메시지 스키마 별도 정의
-  - publish / subscribe 채널 구조, topic naming, QoS 대응 전략 설계
-- React Web client를 MQTT 기반 통신 구조로 전환
-  - WebSocket direct bridge 대신 MQTT client 사용
-  - low-latency 상태 갱신, command 송신, initial pose / goal / status 흐름 재정리
-  - host browser 렌더링 + VM/Ubuntu Server bridge/hosting 역할 분리 유지
+- 운영 화면 구조 전환
+  - visualization UI와 runtime interface 책임 분리
+  - 운영에 필요한 상태 모델과 디버그용 표시를 분리하는 방향 정리
+- `amr_navigation` 인터페이스 재모델링
+  - 기존 ROS topic / service / action을 그대로 나열하지 말고 필요한 데이터만 선별
+  - visualization / control / telemetry 용 상태 모델 정의
+  - publish / subscribe 채널 구조와 QoS 대응 전략 설계
 - 성능 고도화 최우선
-  - Python bridge 고CPU 문제 제거
   - launch / logging / serialization overhead 최소화
   - 실사용 기준으로 RViz 대비 가벼운 운영 viz 목표 재설정
 
