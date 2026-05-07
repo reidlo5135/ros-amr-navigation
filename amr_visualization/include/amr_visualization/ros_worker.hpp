@@ -51,6 +51,7 @@ Q_SIGNALS:
   void connectionStateChanged(const QString & state);
   void mapChanged(const amr::visualization::GridMap & map);
   void tfFramesChanged(const QVector<amr::visualization::FrameVisual> & frames);
+  void robotModelChanged(const QVector<amr::visualization::RobotVisual> & visuals);
   void globalCostmapChanged(const amr::visualization::GridMap & map);
   void localCostmapChanged(const amr::visualization::GridMap & map);
   void scanChanged(const amr::visualization::ScanData & scan);
@@ -65,6 +66,14 @@ Q_SIGNALS:
   void eventReceived(const QString & event);
 
 private:
+  struct RobotJoint
+  {
+    QString parent_frame;
+    QString child_frame;
+    Pose2D origin;
+    bool valid{false};
+  };
+
   using NavigateToPose = amr_msgs::action::NavigateToPose;
   using NavigateToPoses = amr_msgs::action::NavigateToPoses;
 
@@ -83,6 +92,9 @@ private:
   ScanData convert_scan(const sensor_msgs::msg::LaserScan & message) const;
   geometry_msgs::msg::PoseStamped to_pose_stamped(const Pose2D & pose) const;
   RuntimeSummary parse_runtime_summary(const std::string & payload) const;
+  QVector<RobotVisual> parse_robot_description(const std::string & payload);
+  QVector<RobotVisual> build_robot_visuals() const;
+  Pose2D resolve_robot_link_pose(const QString & link_frame) const;
   QVector<FrameVisual> build_frame_visuals() const;
   static Pose2D compose_pose(const Pose2D & parent, const Pose2D & child);
   Pose2D resolve_frame_pose(const std::string & child_frame) const;
@@ -103,6 +115,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr runtime_summary_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr runtime_event_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_subscription_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_description_subscription_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_subscription_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_static_subscription_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_publisher_;
@@ -123,17 +136,20 @@ private:
   std::string runtime_summary_topic_{"/amr/observation/runtime/summary"};
   std::string runtime_event_topic_{"/amr/observation/runtime/events"};
   std::string battery_state_topic_{"/battery_state"};
+  std::string robot_description_topic_{"/robot_description"};
   std::string scan_topic_{"/scan"};
   std::string tf_topic_{"/tf"};
   std::string tf_static_topic_{"/tf_static"};
   std::string navigate_to_pose_action_{"/amr/navigator/navigate_to_pose"};
   std::string navigate_to_poses_action_{"/amr/navigator/navigate_to_poses"};
-  bool subscribe_global_costmap_{false};
-  bool subscribe_local_costmap_{false};
+  bool subscribe_global_costmap_{true};
+  bool subscribe_local_costmap_{true};
   bool subscribe_scan_{true};
   int costmap_emit_period_ms_{1000};
   std::map<std::string, FrameVisual> dynamic_frames_;
   std::map<std::string, FrameVisual> static_frames_;
+  QVector<RobotVisual> robot_description_visuals_;
+  std::map<std::string, RobotJoint> robot_joints_;
 };
 
 }  // namespace amr::visualization

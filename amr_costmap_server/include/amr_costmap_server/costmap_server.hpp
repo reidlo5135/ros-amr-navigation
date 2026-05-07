@@ -39,10 +39,20 @@ private:
   void handle_clear_costmap(
     const std::shared_ptr<amr_msgs::srv::ClearCostmap::Request> request,
     std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response);
-  void rebuild_costmaps();
+  void rebuild_global_costmap();
+  void rebuild_local_costmap();
+  void publish_global_costmap();
+  void publish_local_costmap();
   void publish_costmaps();
   void update_footprint_metrics();
+  bool should_publish_local_costmap();
   bool world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const;
+  bool world_to_costmap_grid(
+    const nav_msgs::msg::OccupancyGrid & costmap,
+    double world_x,
+    double world_y,
+    int & grid_x,
+    int & grid_y) const;
   bool has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const;
 
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
@@ -66,9 +76,14 @@ private:
   double dynamic_max_distance_;
   double dynamic_forward_angle_deg_;
   int dynamic_static_clearance_cells_;
+  bool publish_global_on_scan_;
+  int local_publish_min_period_ms_;
+  bool local_window_enabled_;
+  double local_window_radius_;
   std::vector<double> footprint_polygon_;
   double footprint_padding_;
   double footprint_circumscribed_radius_;
+  rclcpp::Time last_local_publish_time_;
   nav_msgs::msg::OccupancyGrid::SharedPtr map_;
   nav_msgs::msg::OccupancyGrid global_costmap_;
   nav_msgs::msg::OccupancyGrid local_costmap_;

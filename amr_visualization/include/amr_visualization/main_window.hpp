@@ -36,10 +36,16 @@ private Q_SLOTS:
   void sendGoal();
 
 private:
+  struct LayerCheckRow
+  {
+    QWidget * row{nullptr};
+    QCheckBox * check{nullptr};
+  };
+
   QWidget * makeLeftPanel();
   QWidget * makeRightPanel();
   QWidget * makeTopBar();
-  QCheckBox * makeLayerCheckBox(const QString & label, const QColor & color, bool checked);
+  LayerCheckRow makeLayerCheckBox(const QString & label, const QString & icon_name, bool checked);
   void appendStatusRow(QVBoxLayout * layout, const QString & label, QLabel * value);
   void applyStyle();
 

@@ -6,12 +6,16 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QListWidget>
 #include <QPainter>
+#include <QPixmap>
 #include <QProgressBar>
+#include <QSize>
 #include <QSizePolicy>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -35,6 +39,101 @@ QFrame * line()
   frame->setFrameShape(QFrame::HLine);
   frame->setObjectName("separator");
   return frame;
+}
+
+QPixmap make_layer_icon(const QString & name, const QSize & size)
+{
+  QPixmap pixmap(size);
+  pixmap.fill(Qt::transparent);
+  QPainter painter(&pixmap);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+
+  const auto pen = [&](const QColor & color, qreal width = 1.6) {
+    painter.setPen(QPen(color, width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+  };
+
+  if (name == "grid") {
+    pen(QColor("#5f83ff"), 1.4);
+    for (int pos : {4, 8, 12}) {
+      painter.drawLine(QPointF(pos, 2), QPointF(pos, 14));
+      painter.drawLine(QPointF(2, pos), QPointF(14, pos));
+    }
+  } else if (name == "map") {
+    pen(QColor("#b57cff"), 2.1);
+    painter.drawPolyline(QPolygonF{
+      QPointF(2.5, 11.0), QPointF(5.0, 8.5), QPointF(8.0, 11.0),
+      QPointF(11.0, 5.0), QPointF(14.0, 7.0)});
+    pen(QColor("#b57cff"), 1.2);
+    painter.drawLine(QPointF(5.0, 2.5), QPointF(5.0, 13.5));
+    painter.drawLine(QPointF(11.0, 2.5), QPointF(11.0, 13.5));
+  } else if (name == "global_costmap") {
+    pen(QColor("#00e4ef"), 1.7);
+    painter.drawRect(QRectF(3.0, 3.0, 10.0, 10.0));
+    painter.fillRect(QRectF(5.0, 5.0, 2.0, 2.0), QColor("#00e4ef"));
+    painter.fillRect(QRectF(9.0, 5.0, 2.0, 2.0), QColor("#00e4ef"));
+    painter.fillRect(QRectF(5.0, 9.0, 2.0, 2.0), QColor("#00e4ef"));
+    painter.fillRect(QRectF(9.0, 9.0, 2.0, 2.0), QColor("#00e4ef"));
+  } else if (name == "local_costmap") {
+    pen(QColor("#ff3cf7"), 1.7);
+    painter.drawRect(QRectF(4.5, 4.5, 7.0, 7.0));
+    painter.fillRect(QRectF(7.0, 7.0, 2.0, 2.0), QColor("#ff3cf7"));
+  } else if (name == "footprint") {
+    pen(QColor("#65a4ff"), 2.1);
+    painter.drawPolyline(QPolygonF{QPointF(3.0, 6.0), QPointF(7.0, 8.5), QPointF(13.0, 4.5)});
+    painter.drawLine(QPointF(7.0, 8.5), QPointF(9.0, 12.0));
+  } else if (name == "robot") {
+    pen(QColor("#cfd9e6"), 1.5);
+    painter.drawRect(QRectF(6.0, 3.0, 4.0, 10.0));
+    painter.drawRect(QRectF(3.0, 6.0, 10.0, 4.0));
+    pen(QColor("#8fa4c3"), 1.4);
+    painter.drawLine(QPointF(2.0, 8.0), QPointF(5.0, 8.0));
+    painter.drawLine(QPointF(11.0, 8.0), QPointF(14.0, 8.0));
+    painter.drawLine(QPointF(8.0, 2.0), QPointF(8.0, 5.0));
+    painter.drawLine(QPointF(8.0, 11.0), QPointF(8.0, 14.0));
+  } else if (name == "global_plan") {
+    pen(QColor("#10c8ff"), 1.8);
+    painter.drawPolyline(QPolygonF{
+      QPointF(2.5, 12.5), QPointF(5.5, 9.5), QPointF(7.5, 10.0),
+      QPointF(10.5, 6.0), QPointF(13.5, 3.5)});
+    painter.setBrush(QColor("#10c8ff"));
+    painter.drawEllipse(QPointF(2.5, 12.5), 1.3, 1.3);
+    painter.drawEllipse(QPointF(13.5, 3.5), 1.3, 1.3);
+  } else if (name == "local_plan") {
+    pen(QColor("#8cff3a"), 1.8);
+    painter.drawPolyline(QPolygonF{
+      QPointF(2.5, 11.5), QPointF(5.0, 10.5), QPointF(6.5, 7.5),
+      QPointF(9.5, 7.0), QPointF(12.5, 4.0)});
+    painter.setBrush(QColor("#8cff3a"));
+    painter.drawEllipse(QPointF(2.5, 11.5), 1.2, 1.2);
+    painter.drawEllipse(QPointF(12.5, 4.0), 1.2, 1.2);
+  } else if (name == "laser_scan") {
+    pen(QColor("#66ff54"), 1.5);
+    painter.drawArc(QRectF(4.0, 5.0, 12.0, 12.0), 90 * 16, 90 * 16);
+    painter.drawLine(QPointF(4.0, 11.0), QPointF(10.0, 11.0));
+    painter.drawLine(QPointF(4.0, 11.0), QPointF(8.0, 7.0));
+    painter.setBrush(QColor("#66ff54"));
+    painter.drawEllipse(QPointF(4.0, 11.0), 1.3, 1.3);
+  } else if (name == "tf") {
+    pen(QColor("#b47cff"), 1.6);
+    painter.drawLine(QPointF(5.0, 12.0), QPointF(5.0, 4.0));
+    painter.drawLine(QPointF(5.0, 12.0), QPointF(12.0, 12.0));
+    pen(QColor("#b47cff"), 1.3);
+    painter.drawLine(QPointF(5.0, 4.0), QPointF(3.0, 6.0));
+    painter.drawLine(QPointF(5.0, 4.0), QPointF(7.0, 6.0));
+    painter.drawLine(QPointF(12.0, 12.0), QPointF(10.0, 10.0));
+    painter.drawLine(QPointF(12.0, 12.0), QPointF(10.0, 14.0));
+  } else if (name == "settings") {
+    pen(QColor("#8fa4c3"), 1.4);
+    painter.drawEllipse(QPointF(8.0, 8.0), 3.2, 3.2);
+    painter.drawEllipse(QPointF(8.0, 8.0), 1.1, 1.1);
+    for (const QPointF & p : {
+        QPointF(8.0, 2.0), QPointF(8.0, 14.0), QPointF(2.0, 8.0), QPointF(14.0, 8.0)}) {
+      painter.drawPoint(p);
+    }
+  }
+
+  return pixmap;
 }
 
 QString pose_text(const Pose2D & pose)
@@ -142,6 +241,7 @@ MainWindow::MainWindow(QWidget * parent)
   });
   connect(ros_worker_.get(), &RosWorker::mapChanged, scene_, &SceneWidget::setMap);
   connect(ros_worker_.get(), &RosWorker::tfFramesChanged, scene_, &SceneWidget::setTfFrames);
+  connect(ros_worker_.get(), &RosWorker::robotModelChanged, scene_, &SceneWidget::setRobotModel);
   connect(ros_worker_.get(), &RosWorker::globalCostmapChanged, scene_, &SceneWidget::setGlobalCostmap);
   connect(ros_worker_.get(), &RosWorker::localCostmapChanged, scene_, &SceneWidget::setLocalCostmap);
   connect(ros_worker_.get(), &RosWorker::scanChanged, scene_, &SceneWidget::setScan);
@@ -296,41 +396,70 @@ QWidget * MainWindow::makeLeftPanel()
   auto * visualization_layout = new QVBoxLayout(visualization_panel);
   visualization_layout->setContentsMargins(0, 0, 0, 0);
   visualization_layout->setSpacing(6);
+  auto * visualization_header = new QWidget;
+  auto * visualization_header_layout = new QHBoxLayout(visualization_header);
+  visualization_header_layout->setContentsMargins(0, 0, 0, 0);
+  visualization_header_layout->setSpacing(0);
   auto * visualization = new QLabel("VISUALIZATION");
   visualization->setObjectName("sectionTitle");
-  visualization_layout->addWidget(visualization);
+  auto * visualization_settings = new QToolButton;
+  visualization_settings->setObjectName("panelIconButton");
+  visualization_settings->setIcon(QIcon(make_layer_icon("settings", QSize(16, 16))));
+  visualization_settings->setIconSize(QSize(16, 16));
+  visualization_settings->setAutoRaise(true);
+  visualization_header_layout->addWidget(visualization);
+  visualization_header_layout->addStretch(1);
+  visualization_header_layout->addWidget(visualization_settings);
+  visualization_layout->addWidget(visualization_header);
 
-  auto * grid = makeLayerCheckBox("Grid", QColor("#5f83ff"), true);
-  auto * map = makeLayerCheckBox("Map", QColor("#9b5cff"), true);
-  auto * global_costmap = makeLayerCheckBox("Global Costmap", QColor("#00d0c2"), false);
-  auto * local_costmap = makeLayerCheckBox("Local Costmap", QColor("#ff3cf7"), false);
-  auto * scan = makeLayerCheckBox("LaserScan", QColor("#9dff57"), true);
-  auto * tf = makeLayerCheckBox("TF", QColor("#f4f7f2"), true);
-  auto * global_path = makeLayerCheckBox("Global Plan", QColor("#1ec7ff"), true);
-  auto * local_path = makeLayerCheckBox("Local Plan", QColor("#8cff3a"), true);
-  visualization_layout->addWidget(grid, 1);
-  visualization_layout->addWidget(map, 1);
-  visualization_layout->addWidget(global_costmap, 1);
-  visualization_layout->addWidget(local_costmap, 1);
-  visualization_layout->addWidget(scan, 1);
-  visualization_layout->addWidget(tf, 1);
-  visualization_layout->addWidget(global_path, 1);
-  visualization_layout->addWidget(local_path, 1);
-  connect(grid, &QCheckBox::toggled, scene_, &SceneWidget::setGridVisible);
-  connect(map, &QCheckBox::toggled, scene_, &SceneWidget::setMapVisible);
-  connect(global_costmap, &QCheckBox::toggled, scene_, &SceneWidget::setGlobalCostmapVisible);
-  connect(local_costmap, &QCheckBox::toggled, scene_, &SceneWidget::setLocalCostmapVisible);
+  auto grid =
+    makeLayerCheckBox("Grid", "grid", true);
+  auto map =
+    makeLayerCheckBox("Map", "map", true);
+  auto global_costmap =
+    makeLayerCheckBox("Global Costmap", "global_costmap", true);
+  auto local_costmap =
+    makeLayerCheckBox("Local Costmap", "local_costmap", true);
+  auto footprint =
+    makeLayerCheckBox("Exact Footprint", "footprint", true);
+  auto robot =
+    makeLayerCheckBox("Robot", "robot", true);
+  auto global_path =
+    makeLayerCheckBox("Global Plan", "global_plan", true);
+  auto local_path =
+    makeLayerCheckBox("Local Plan", "local_plan", true);
+  auto scan =
+    makeLayerCheckBox("LaserScan", "laser_scan", true);
+  auto tf =
+    makeLayerCheckBox("TF", "tf", true);
+  visualization_layout->addWidget(grid.row, 1);
+  visualization_layout->addWidget(map.row, 1);
+  visualization_layout->addWidget(global_costmap.row, 1);
+  visualization_layout->addWidget(local_costmap.row, 1);
+  visualization_layout->addWidget(footprint.row, 1);
+  visualization_layout->addWidget(robot.row, 1);
+  visualization_layout->addWidget(global_path.row, 1);
+  visualization_layout->addWidget(local_path.row, 1);
+  visualization_layout->addWidget(scan.row, 1);
+  visualization_layout->addWidget(tf.row, 1);
+  connect(grid.check, &QCheckBox::toggled, scene_, &SceneWidget::setGridVisible);
+  connect(map.check, &QCheckBox::toggled, scene_, &SceneWidget::setMapVisible);
+  connect(global_costmap.check, &QCheckBox::toggled, scene_, &SceneWidget::setGlobalCostmapVisible);
+  connect(local_costmap.check, &QCheckBox::toggled, scene_, &SceneWidget::setLocalCostmapVisible);
   connect(
-    global_costmap, &QCheckBox::toggled,
+    global_costmap.check, &QCheckBox::toggled,
     ros_worker_.get(), &RosWorker::setGlobalCostmapSubscriptionEnabled);
   connect(
-    local_costmap, &QCheckBox::toggled,
+    local_costmap.check, &QCheckBox::toggled,
     ros_worker_.get(), &RosWorker::setLocalCostmapSubscriptionEnabled);
-  connect(scan, &QCheckBox::toggled, scene_, &SceneWidget::setScanVisible);
-  connect(scan, &QCheckBox::toggled, ros_worker_.get(), &RosWorker::setScanSubscriptionEnabled);
-  connect(tf, &QCheckBox::toggled, scene_, &SceneWidget::setTfVisible);
-  connect(global_path, &QCheckBox::toggled, scene_, &SceneWidget::setGlobalPathVisible);
-  connect(local_path, &QCheckBox::toggled, scene_, &SceneWidget::setLocalPathVisible);
+  connect(scan.check, &QCheckBox::toggled, scene_, &SceneWidget::setScanVisible);
+  connect(scan.check, &QCheckBox::toggled, ros_worker_.get(), &RosWorker::setScanSubscriptionEnabled);
+  connect(footprint.check, &QCheckBox::toggled, scene_, &SceneWidget::setFootprintVisible);
+  connect(robot.check, &QCheckBox::toggled, scene_, &SceneWidget::setRobotVisible);
+  connect(tf.check, &QCheckBox::toggled, scene_, &SceneWidget::setTfVisible);
+  connect(global_path.check, &QCheckBox::toggled, scene_, &SceneWidget::setGlobalPathVisible);
+  connect(local_path.check, &QCheckBox::toggled, scene_, &SceneWidget::setLocalPathVisible);
+  visualization_layout->addStretch(1);
   layout->addWidget(visualization_panel, 2);
   return panel;
 }
@@ -384,13 +513,37 @@ QWidget * MainWindow::makeRightPanel()
   return panel;
 }
 
-QCheckBox * MainWindow::makeLayerCheckBox(const QString & label, const QColor & color, bool checked)
+MainWindow::LayerCheckRow MainWindow::makeLayerCheckBox(
+  const QString & label,
+  const QString & icon_name,
+  bool checked)
 {
-  auto * check = new QCheckBox(label);
+  auto * row = new QWidget;
+  row->setObjectName("layerRow");
+  row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+  auto * row_layout = new QHBoxLayout(row);
+  row_layout->setContentsMargins(0, 0, 0, 0);
+  row_layout->setSpacing(8);
+
+  auto * check = new QCheckBox;
   check->setChecked(checked);
-  check->setProperty("accent", color.name());
-  check->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-  return check;
+  check->setObjectName("layerCheckBox");
+  check->setFixedSize(14, 18);
+
+  auto * icon = new QLabel;
+  icon->setObjectName("layerIcon");
+  icon->setFixedSize(16, 16);
+  icon->setPixmap(make_layer_icon(icon_name, QSize(16, 16)));
+
+  auto * text = new QLabel(label);
+  text->setObjectName("layerLabel");
+  text->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+
+  row_layout->addWidget(check);
+  row_layout->addWidget(icon);
+  row_layout->addWidget(text, 1);
+  return {row, check};
 }
 
 void MainWindow::appendStatusRow(QVBoxLayout * layout, const QString & label, QLabel * value)
@@ -618,13 +771,37 @@ void MainWindow::applyStyle()
       background: #20252d;
       color: #b5c1c0;
     }
-    QCheckBox {
-      spacing: 8px;
-      padding: 3px 0;
+    #layerRow {
+      min-height: 26px;
     }
-    QCheckBox::indicator {
+    #layerRow:hover {
+      background: #111817;
+    }
+    #layerLabel {
+      color: #b8c5c0;
+      font-size: 13px;
+    }
+    #layerRow:hover #layerLabel {
+      color: #e2ece8;
+    }
+    #layerIcon {
+      background: transparent;
+    }
+    #layerCheckBox::indicator {
       width: 13px;
       height: 13px;
+    }
+    #panelIconButton {
+      border: none;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      min-width: 20px;
+      min-height: 20px;
+    }
+    #panelIconButton:hover {
+      background: #162021;
+      border-radius: 3px;
     }
     #separator {
       color: #4c5654;

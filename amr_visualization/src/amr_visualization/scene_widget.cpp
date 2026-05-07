@@ -23,6 +23,7 @@ QColor with_alpha(QColor color, int alpha)
 constexpr int k_rviz_background = 48;
 constexpr int k_rviz_grid_alpha = 64;
 constexpr double k_half_pi = 1.5707963267948966;
+constexpr double k_rad_to_deg = 57.29577951308232;
 
 }  // namespace
 
@@ -68,19 +69,23 @@ void SceneWidget::setTfFrames(const QVector<amr::visualization::FrameVisual> & f
   update();
 }
 
+void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> & visuals)
+{
+  robot_visuals_ = visuals;
+  update();
+}
+
 void SceneWidget::setGlobalCostmap(const GridMap & map)
 {
   global_costmap_ = map;
-  global_costmap_image_ =
-    makeGridImage(global_costmap_, QColor("#ff6040"), QColor(0, 0, 0, 0));
+  global_costmap_image_ = makeCostmapImage(global_costmap_);
   update();
 }
 
 void SceneWidget::setLocalCostmap(const GridMap & map)
 {
   local_costmap_ = map;
-  local_costmap_image_ =
-    makeGridImage(local_costmap_, QColor("#00c8ff"), QColor(0, 0, 0, 0));
+  local_costmap_image_ = makeCostmapImage(local_costmap_);
   update();
 }
 
@@ -112,6 +117,7 @@ void SceneWidget::setGridVisible(bool visible) { show_grid_ = visible; update();
 void SceneWidget::setMapVisible(bool visible) { show_map_ = visible; update(); }
 void SceneWidget::setGlobalCostmapVisible(bool visible) { show_global_costmap_ = visible; update(); }
 void SceneWidget::setLocalCostmapVisible(bool visible) { show_local_costmap_ = visible; update(); }
+void SceneWidget::setFootprintVisible(bool visible) { show_footprint_ = visible; update(); }
 void SceneWidget::setRobotVisible(bool visible) { show_robot_ = visible; update(); }
 void SceneWidget::setTfVisible(bool visible) { show_tf_ = visible; update(); }
 void SceneWidget::setScanVisible(bool visible) { show_scan_ = visible; update(); }
@@ -209,14 +215,17 @@ void SceneWidget::paintEvent(QPaintEvent *)
   if (show_map_) {
     drawGridLayer(painter, map_, map_image_, 1.0);
   }
+  if (show_global_costmap_) {
+    drawGridLayer(painter, global_costmap_, global_costmap_image_, 0.74);
+  }
+  if (show_local_costmap_) {
+    drawGridLayer(painter, local_costmap_, local_costmap_image_, 0.82);
+  }
   if (show_grid_) {
     drawGrid(painter);
   }
-  if (show_global_costmap_) {
-    drawGridLayer(painter, global_costmap_, global_costmap_image_, 0.45);
-  }
-  if (show_local_costmap_) {
-    drawGridLayer(painter, local_costmap_, local_costmap_image_, 0.45);
+  if (show_scan_) {
+    drawScan(painter);
   }
   if (show_global_path_) {
     drawPath(painter, global_path_, QColor(255, 96, 64), 3.5);
@@ -224,17 +233,20 @@ void SceneWidget::paintEvent(QPaintEvent *)
   if (show_local_path_) {
     drawPath(painter, local_path_, QColor(0, 200, 255), 3.5);
   }
-  if (show_tf_) {
-    drawTfFrames(painter);
+  if (show_footprint_) {
+    drawExactFootprint(painter);
   }
-  if (show_scan_) {
-    drawScan(painter);
+  if (show_robot_) {
+    drawRobotModel(painter);
   }
 
   drawWaypointRoute(painter);
   drawWaypoints(painter);
   if (aim_pose_.valid) {
     drawPose(painter, aim_pose_, QColor(255, 180, 0));
+  }
+  if (show_tf_) {
+    drawTfFrames(painter);
   }
 }
 
@@ -351,6 +363,40 @@ QImage SceneWidget::makeGridImage(
   return image;
 }
 
+QImage SceneWidget::makeCostmapImage(const GridMap & map) const
+{
+  if (!map.valid) {
+    return {};
+  }
+
+  QImage image(map.width, map.height, QImage::Format_ARGB32_Premultiplied);
+  image.fill(Qt::transparent);
+
+  for (int y = 0; y < map.height; ++y) {
+    QRgb * row = reinterpret_cast<QRgb *>(image.scanLine(map.height - 1 - y));
+    for (int x = 0; x < map.width; ++x) {
+      const int index = (y * map.width) + x;
+      const int value = map.cells[index];
+      if (value < 0) {
+        row[x] = QColor(Qt::transparent).rgba();
+      } else if (value >= 99) {
+        row[x] = QColor(0, 252, 252, 245).rgba();
+      } else if (value >= 85) {
+        row[x] = QColor(0, 235, 255, 220).rgba();
+      } else if (value >= 70) {
+        row[x] = QColor(255, 126, 150, 205).rgba();
+      } else if (value >= 50) {
+        row[x] = QColor(244, 151, 178, 178).rgba();
+      } else if (value > 0) {
+        row[x] = QColor(184, 160, 232, 145).rgba();
+      } else {
+        row[x] = QColor(Qt::transparent).rgba();
+      }
+    }
+  }
+  return image;
+}
+
 void SceneWidget::drawGrid(QPainter & painter) const
 {
   const QPointF top_left = screenToWorld(QPointF(0.0, 0.0));
@@ -440,6 +486,81 @@ void SceneWidget::drawPose(QPainter & painter, const Pose2D & pose, const QColor
   painter.drawPolygon(arrow);
 }
 
+void SceneWidget::drawExactFootprint(QPainter & painter) const
+{
+  Pose2D pose = robot_pose_;
+  for (const auto & frame : tf_frames_) {
+    if (frame.child_frame == "base_footprint" && frame.pose.valid) {
+      pose = frame.pose;
+      break;
+    }
+  }
+  if (!pose.valid) {
+    return;
+  }
+
+  const QPointF center = worldToScreen(QPointF(pose.x, pose.y));
+  painter.save();
+  painter.translate(center);
+  painter.rotate(-pose.yaw * k_rad_to_deg);
+
+  const QRectF footprint(-0.10 * scale_, -0.09 * scale_, 0.20 * scale_, 0.18 * scale_);
+  painter.setPen(QPen(QColor(88, 150, 255, 210), 1.5, Qt::DashLine));
+  painter.setBrush(Qt::NoBrush);
+  painter.drawRect(footprint);
+  painter.restore();
+}
+
+void SceneWidget::drawRobotModel(QPainter & painter) const
+{
+  if (robot_visuals_.isEmpty()) {
+    return;
+  }
+
+  painter.save();
+  painter.setRenderHint(QPainter::Antialiasing, true);
+
+  for (const auto & visual : robot_visuals_) {
+    if (!visual.valid) {
+      continue;
+    }
+
+    const QPointF center = worldToScreen(QPointF(visual.pose.x, visual.pose.y));
+    painter.save();
+    painter.translate(center);
+    painter.rotate(-visual.pose.yaw * k_rad_to_deg);
+
+    switch (visual.type) {
+      case RobotGeometryType::Box: {
+        const QRectF body(
+          -(visual.size_x * scale_ * 0.5),
+          -(visual.size_y * scale_ * 0.5),
+          visual.size_x * scale_,
+          visual.size_y * scale_);
+        painter.setPen(QPen(QColor(52, 56, 60, 220), 1.5));
+        painter.setBrush(QColor(205, 209, 214, 110));
+        painter.drawRoundedRect(body, 3.0, 3.0);
+        break;
+      }
+      case RobotGeometryType::Cylinder:
+      case RobotGeometryType::Sphere: {
+        const double radius = std::max(visual.radius * scale_, 2.5);
+        painter.setPen(QPen(QColor(64, 68, 72, 220), 1.5));
+        painter.setBrush(
+          visual.type == RobotGeometryType::Cylinder ?
+          QColor(182, 188, 196, 105) :
+          QColor(168, 196, 224, 112));
+        painter.drawEllipse(QPointF(0.0, 0.0), radius, radius);
+        break;
+      }
+    }
+
+    painter.restore();
+  }
+
+  painter.restore();
+}
+
 void SceneWidget::drawTfFrames(QPainter & painter) const
 {
   painter.save();
@@ -481,43 +602,6 @@ void SceneWidget::drawScan(QPainter & painter) const
     const QPointF center = worldToScreen(point);
     painter.drawPoint(center);
   }
-  painter.restore();
-}
-
-void SceneWidget::drawRobotProxy(QPainter & painter) const
-{
-  const FrameVisual * base_frame = nullptr;
-  const FrameVisual * body_frame = nullptr;
-  for (const auto & frame : tf_frames_) {
-    if (frame.child_frame == "base_footprint") {
-      base_frame = &frame;
-    } else if (frame.child_frame == "base_link") {
-      body_frame = &frame;
-    }
-  }
-
-  const Pose2D pose = body_frame ? body_frame->pose :
-    (base_frame ? base_frame->pose : robot_pose_);
-  if (!pose.valid) {
-    return;
-  }
-
-  const QPointF center = worldToScreen(QPointF(pose.x, pose.y));
-  const QPointF forward(std::cos(pose.yaw), -std::sin(pose.yaw));
-  const QPointF lateral(-forward.y(), forward.x());
-  const double half_length = 14.0;
-  const double half_width = 10.0;
-
-  QPolygonF body;
-  body << center + (forward * half_length) + (lateral * half_width)
-       << center + (forward * half_length) - (lateral * half_width)
-       << center - (forward * half_length) - (lateral * half_width)
-       << center - (forward * half_length) + (lateral * half_width);
-
-  painter.save();
-  painter.setPen(QPen(QColor(220, 220, 220, 180), 1.5));
-  painter.setBrush(QColor(110, 110, 112, 70));
-  painter.drawPolygon(body);
   painter.restore();
 }
 

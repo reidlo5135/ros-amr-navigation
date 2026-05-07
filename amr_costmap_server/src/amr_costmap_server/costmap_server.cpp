@@ -27,9 +27,14 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   dynamic_max_distance_(1.8),
   dynamic_forward_angle_deg_(100.0),
   dynamic_static_clearance_cells_(4),
+  publish_global_on_scan_(false),
+  local_publish_min_period_ms_(100),
+  local_window_enabled_(true),
+  local_window_radius_(2.5),
   footprint_polygon_(),
   footprint_padding_(0.02),
   footprint_circumscribed_radius_(0.0),
+  last_local_publish_time_(0, 0, RCL_ROS_TIME),
   map_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_map_(false),
   has_pose_(false),
@@ -49,6 +54,10 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("dynamic.max_distance", this->dynamic_max_distance_);
   this->declare_parameter("dynamic.forward_angle_deg", this->dynamic_forward_angle_deg_);
   this->declare_parameter("dynamic.static_clearance_cells", this->dynamic_static_clearance_cells_);
+  this->declare_parameter("publish.global_on_scan", this->publish_global_on_scan_);
+  this->declare_parameter("publish.local_min_period_ms", this->local_publish_min_period_ms_);
+  this->declare_parameter("local_window.enabled", this->local_window_enabled_);
+  this->declare_parameter("local_window.radius", this->local_window_radius_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_);
   this->declare_parameter("footprint.padding", this->footprint_padding_);
 }
@@ -71,6 +80,10 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   this->get_parameter("dynamic.max_distance", this->dynamic_max_distance_);
   this->get_parameter("dynamic.forward_angle_deg", this->dynamic_forward_angle_deg_);
   this->get_parameter("dynamic.static_clearance_cells", this->dynamic_static_clearance_cells_);
+  this->get_parameter("publish.global_on_scan", this->publish_global_on_scan_);
+  this->get_parameter("publish.local_min_period_ms", this->local_publish_min_period_ms_);
+  this->get_parameter("local_window.enabled", this->local_window_enabled_);
+  this->get_parameter("local_window.radius", this->local_window_radius_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_);
   this->get_parameter("footprint.padding", this->footprint_padding_);
   this->update_footprint_metrics();
@@ -123,7 +136,7 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured costmap server with map='%s', pose='%s', scan='%s', global='%s', local='%s', clear='%s', footprint_radius=%.3f m padding=%.3f m",
+    "Configured costmap server with map='%s', pose='%s', scan='%s', global='%s', local='%s', clear='%s', footprint_radius=%.3f m padding=%.3f m, global_on_scan=%s, local_min_period_ms=%d, local_window=%s radius=%.2f m",
     this->map_topic_.c_str(),
     this->pose_topic_.c_str(),
     this->scan_topic_.c_str(),
@@ -131,7 +144,11 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
     this->local_costmap_topic_.c_str(),
     this->clear_costmap_service_name_.c_str(),
     this->footprint_circumscribed_radius_,
-    this->footprint_padding_);
+    this->footprint_padding_,
+    this->publish_global_on_scan_ ? "true" : "false",
+    this->local_publish_min_period_ms_,
+    this->local_window_enabled_ ? "true" : "false",
+    this->local_window_radius_);
   return CallbackReturn::SUCCESS;
 }
 
@@ -194,7 +211,8 @@ void CostmapServer::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mes
 {
   this->map_ = message;
   this->has_map_ = true;
-  this->rebuild_costmaps();
+  this->rebuild_global_costmap();
+  this->rebuild_local_costmap();
   this->publish_costmaps();
 }
 
@@ -210,8 +228,16 @@ void CostmapServer::handle_scan(
 {
   this->latest_scan_ = *message;
   this->has_scan_ = true;
-  this->rebuild_costmaps();
-  this->publish_costmaps();
+  if (this->publish_global_on_scan_) {
+    this->rebuild_global_costmap();
+  }
+  this->rebuild_local_costmap();
+  if (this->publish_global_on_scan_) {
+    this->publish_global_costmap();
+  }
+  if (this->should_publish_local_costmap()) {
+    this->publish_local_costmap();
+  }
 }
 
 void CostmapServer::handle_clear_costmap(
@@ -228,7 +254,7 @@ void CostmapServer::handle_clear_costmap(
     this->latest_scan_ = sensor_msgs::msg::LaserScan();
     this->has_scan_ = false;
     this->local_costmap_ = this->global_costmap_;
-    this->publish_costmaps();
+    this->publish_local_costmap();
     response->success = true;
     response->message = "Cleared local dynamic obstacle layer.";
     return;
@@ -236,13 +262,14 @@ void CostmapServer::handle_clear_costmap(
 
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->has_scan_ = false;
-  this->rebuild_costmaps();
+  this->rebuild_global_costmap();
+  this->rebuild_local_costmap();
   this->publish_costmaps();
   response->success = true;
   response->message = "Rebuilt global and local costmaps from the static map.";
 }
 
-void CostmapServer::rebuild_costmaps()
+void CostmapServer::rebuild_global_costmap()
 {
   if (!this->has_map_ || !this->map_) {
     return;
@@ -300,14 +327,88 @@ void CostmapServer::rebuild_costmaps()
     }
   }
 
-  this->local_costmap_ = this->global_costmap_;
+}
+
+void CostmapServer::rebuild_local_costmap()
+{
+  if (this->global_costmap_.data.empty()) {
+    this->rebuild_global_costmap();
+  }
+  if (this->global_costmap_.data.empty()) {
+    return;
+  }
+
+  const int global_width = static_cast<int>(this->global_costmap_.info.width);
+  const int global_height = static_cast<int>(this->global_costmap_.info.height);
+  const double resolution = static_cast<double>(this->global_costmap_.info.resolution);
+
+  if (
+    !this->local_window_enabled_ || !this->has_pose_ || resolution <= 0.0 ||
+    global_width <= 0 || global_height <= 0)
+  {
+    this->local_costmap_ = this->global_costmap_;
+  } else {
+    int center_x = 0;
+    int center_y = 0;
+    if (!this->world_to_grid(
+        this->latest_pose_.pose.position.x,
+        this->latest_pose_.pose.position.y,
+        center_x,
+        center_y))
+    {
+      this->local_costmap_ = this->global_costmap_;
+    } else {
+      const int radius_cells = std::max(
+        1,
+        static_cast<int>(std::ceil(this->local_window_radius_ / resolution)));
+      const int local_width = (radius_cells * 2) + 1;
+      const int local_height = (radius_cells * 2) + 1;
+      const int start_x = center_x - radius_cells;
+      const int start_y = center_y - radius_cells;
+
+      this->local_costmap_ = nav_msgs::msg::OccupancyGrid();
+      this->local_costmap_.header = this->global_costmap_.header;
+      this->local_costmap_.header.stamp = this->now();
+      this->local_costmap_.info = this->global_costmap_.info;
+      this->local_costmap_.info.width = static_cast<uint32_t>(local_width);
+      this->local_costmap_.info.height = static_cast<uint32_t>(local_height);
+      this->local_costmap_.info.origin.position.x =
+        this->global_costmap_.info.origin.position.x + (static_cast<double>(start_x) * resolution);
+      this->local_costmap_.info.origin.position.y =
+        this->global_costmap_.info.origin.position.y + (static_cast<double>(start_y) * resolution);
+      this->local_costmap_.data.assign(
+        static_cast<std::size_t>(local_width * local_height),
+        static_cast<int8_t>(kUnknownCellValue));
+
+      for (int y = 0; y < local_height; ++y) {
+        const int source_y = start_y + y;
+        if (source_y < 0 || source_y >= global_height) {
+          continue;
+        }
+        for (int x = 0; x < local_width; ++x) {
+          const int source_x = start_x + x;
+          if (source_x < 0 || source_x >= global_width) {
+            continue;
+          }
+          const int source_index = (source_y * global_width) + source_x;
+          const int local_index = (y * local_width) + x;
+          this->local_costmap_.data[static_cast<std::size_t>(local_index)] =
+            this->global_costmap_.data[static_cast<std::size_t>(source_index)];
+        }
+      }
+    }
+  }
+
+  const int width = static_cast<int>(this->local_costmap_.info.width);
+  const int height = static_cast<int>(this->local_costmap_.info.height);
 
   if (!this->has_pose_ || !this->has_scan_)
   {
     return;
   }
 
-  const double resolution = static_cast<double>(this->local_costmap_.info.resolution);
+  const double footprint_effective_radius =
+    this->footprint_circumscribed_radius_ + this->footprint_padding_;
   const double local_effective_radius =
     std::max(this->local_dynamic_inflation_radius_, footprint_effective_radius);
   const int dynamic_radius_cells = std::max(
@@ -345,11 +446,19 @@ void CostmapServer::rebuild_costmaps()
 
     int grid_x = 0;
     int grid_y = 0;
-    if (!this->world_to_grid(world_x, world_y, grid_x, grid_y)) {
+    if (!this->world_to_costmap_grid(this->local_costmap_, world_x, world_y, grid_x, grid_y)) {
       continue;
     }
 
-    if (this->has_static_obstacle_near(grid_x, grid_y, this->dynamic_static_clearance_cells_)) {
+    int static_grid_x = 0;
+    int static_grid_y = 0;
+    if (
+      !this->world_to_grid(world_x, world_y, static_grid_x, static_grid_y) ||
+      this->has_static_obstacle_near(
+        static_grid_x,
+        static_grid_y,
+        this->dynamic_static_clearance_cells_))
+    {
       continue;
     }
 
@@ -398,6 +507,28 @@ bool CostmapServer::world_to_grid(double world_x, double world_y, int & grid_x, 
     grid_y >= 0 && grid_y < static_cast<int>(this->map_->info.height);
 }
 
+bool CostmapServer::world_to_costmap_grid(
+  const nav_msgs::msg::OccupancyGrid & costmap,
+  double world_x,
+  double world_y,
+  int & grid_x,
+  int & grid_y) const
+{
+  const double resolution = static_cast<double>(costmap.info.resolution);
+  if (resolution <= 0.0) {
+    return false;
+  }
+
+  grid_x = static_cast<int>(
+    std::floor((world_x - costmap.info.origin.position.x) / resolution));
+  grid_y = static_cast<int>(
+    std::floor((world_y - costmap.info.origin.position.y) / resolution));
+
+  return
+    grid_x >= 0 && grid_x < static_cast<int>(costmap.info.width) &&
+    grid_y >= 0 && grid_y < static_cast<int>(costmap.info.height);
+}
+
 bool CostmapServer::has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const
 {
   if (!this->map_ || this->map_->data.empty()) {
@@ -429,12 +560,44 @@ void CostmapServer::publish_costmaps()
   if (!this->has_map_ || this->global_costmap_.data.empty() || this->local_costmap_.data.empty()) {
     return;
   }
-  if (this->global_costmap_publisher_ && this->global_costmap_publisher_->is_activated()) {
-    this->global_costmap_publisher_->publish(this->global_costmap_);
+  this->publish_global_costmap();
+  this->publish_local_costmap();
+}
+
+void CostmapServer::publish_global_costmap()
+{
+  if (
+    !this->has_map_ || this->global_costmap_.data.empty() ||
+    !this->global_costmap_publisher_ || !this->global_costmap_publisher_->is_activated())
+  {
+    return;
   }
-  if (this->local_costmap_publisher_ && this->local_costmap_publisher_->is_activated()) {
-    this->local_costmap_publisher_->publish(this->local_costmap_);
+  this->global_costmap_publisher_->publish(this->global_costmap_);
+}
+
+void CostmapServer::publish_local_costmap()
+{
+  if (
+    !this->has_map_ || this->local_costmap_.data.empty() ||
+    !this->local_costmap_publisher_ || !this->local_costmap_publisher_->is_activated())
+  {
+    return;
   }
+  this->local_costmap_publisher_->publish(this->local_costmap_);
+  this->last_local_publish_time_ = this->now();
+}
+
+bool CostmapServer::should_publish_local_costmap()
+{
+  if (this->local_publish_min_period_ms_ <= 0) {
+    return true;
+  }
+  const rclcpp::Time now = this->now();
+  if (this->last_local_publish_time_.nanoseconds() == 0) {
+    return true;
+  }
+  const double elapsed_ms = (now - this->last_local_publish_time_).seconds() * 1000.0;
+  return elapsed_ms >= static_cast<double>(this->local_publish_min_period_ms_);
 }
 
 void CostmapServer::update_footprint_metrics()

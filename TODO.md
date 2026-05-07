@@ -73,49 +73,6 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - clear package responsibilities across mapping, navigation, recovery, and operator tooling
 - predictable behavior in narrow corridors, dynamic obstacles, and long-running indoor operation
 
-## 260507
-
-- `amr_light.rviz` test profile did not reproduce the remote-subscriber crash path.
-- Current hypothesis:
-  full-data remote subscription is the trigger, not bare navigation.
-
-- `amr_rviz` package promotion
-  - split the lightweight RViz/operator tooling into a dedicated `amr_rviz` package
-  - move the current test RViz profile into the new package as the baseline
-  - include an `rviz2` launch entrypoint inside the package
-
-- action-to-topic bridge for RViz operator flow
-  - add bridge support for `/amr/navigator/navigate_to_pose`
-  - add bridge support for `/amr/navigator/navigate_to_poses`
-  - make `2D Goal Pose` usable from RViz without relying on direct action CLI during tests
-
-- RViz UI/UX cleanup
-  - improve the current operator layout and interaction flow
-  - clean up naming, grouping, and default enabled displays
-  - make the profile usable as a real test console instead of a debug scratch file
-
-- RViz display scope expansion
-  - keep `raw map`, `TF`, `initial pose`, and `send goal`
-  - add `global plan`
-  - add `local plan`
-
-- QoS alignment audit
-  - unify QoS assumptions between `tb3_bringup`, AMR stack, and RViz consumers
-  - explicitly document which topics must remain `SensorDataQoS`, transient local, or reliable
-
-- multi-goal driving quality fix
-  - current `NavigateToPoses` behavior appears to treat middle goals too literally for final yaw
-  - for middle waypoints, treat them as pass-through poses and derive heading from the upcoming goal
-  - avoid the current pattern where the robot rotates to match a middle-goal yaw, then turns back and resumes forward motion
-
-- costmap source overload hypothesis
-  - current issue appears to come from `amr_costmap_server` source behavior more than the overall robot/PC split topology
-  - current implementation rebuilds and republishes both `global` and `local` full-size `OccupancyGrid` outputs on every `/scan`
-  - `local_costmap` is currently derived from the full global-sized grid, not a small rolling/local window
-  - both publishers are using `transient_local + reliable`, which likely amplifies DDS delivery cost once remote visualization subscribers attach
-  - next validation target:
-    decouple `global` publish from `/scan`, keep scan-driven updates local-only, and shrink `local_costmap` toward a true local window
-
 ## Version Journey
 
 | Version | Focus | Result |
@@ -389,6 +346,51 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `2026-03-23` | `amr_viz` 운영 화면 구조 개편, visualization/control/data-flow 기준 재정리 |
 | `2026-03-20` | 운영 구조 전환, bridge 패키지 분리, visualization/control/telemetry 기준 재모델링 |
 | `2026-03-18` | dynamic obstacle escaping 고도화, custom mapping workflow 확장, global localization 검토 |
+
+## 2026-05-07
+
+- `amr_light.rviz` test profile did not reproduce the remote-subscriber crash path.
+- Current hypothesis:
+  full-data remote subscription is the trigger, not bare navigation.
+
+- `amr_rviz` package promotion
+  - split the lightweight RViz/operator tooling into a dedicated `amr_rviz` package
+  - move the current test RViz profile into the new package as the baseline
+  - include an `rviz2` launch entrypoint inside the package
+
+- action-to-topic bridge for RViz operator flow
+  - add bridge support for `/amr/navigator/navigate_to_pose`
+  - add bridge support for `/amr/navigator/navigate_to_poses`
+  - make `2D Goal Pose` usable from RViz without relying on direct action CLI during tests
+
+- RViz UI/UX cleanup
+  - improve the current operator layout and interaction flow
+  - clean up naming, grouping, and default enabled displays
+  - make the profile usable as a real test console instead of a debug scratch file
+
+- RViz display scope expansion
+  - keep `raw map`, `TF`, `initial pose`, and `send goal`
+  - add `global plan`
+  - add `local plan`
+
+- QoS alignment audit
+  - unify QoS assumptions between `tb3_bringup`, AMR stack, and RViz consumers
+  - explicitly document which topics must remain `SensorDataQoS`, transient local, or reliable
+
+- multi-goal driving quality fix
+  - current `NavigateToPoses` behavior appears to treat middle goals too literally for final yaw
+  - for middle waypoints, treat them as pass-through poses and derive heading from the upcoming goal
+  - avoid the current pattern where the robot rotates to match a middle-goal yaw, then turns back and resumes forward motion
+
+- costmap source overload hypothesis
+  - current issue appears to come from `amr_costmap_server` source behavior more than the overall robot/PC split topology
+  - current implementation rebuilds and republishes both `global` and `local` full-size `OccupancyGrid` outputs on every `/scan`
+  - `local_costmap` is currently derived from the full global-sized grid, not a small rolling/local window
+  - both publishers are using `transient_local + reliable`, which likely amplifies DDS delivery cost once remote visualization subscribers attach
+  - first mitigation:
+    decouple `global` rebuild/publish from `/scan`, keep scan-driven updates local-only, throttle local costmap publishing, and publish local costmap as a robot-centered window
+  - next validation target:
+    verify remote RViz / `amr_visualization` costmap display stability and local planner behavior with `local_window.enabled=true`
 
 ## 2026-04-14
 

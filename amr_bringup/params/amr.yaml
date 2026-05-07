@@ -113,6 +113,12 @@
       max_distance: 1.8
       forward_angle_deg: 100.0
       static_clearance_cells: 4
+    publish:
+      global_on_scan: false
+      local_min_period_ms: 100
+    local_window:
+      enabled: true
+      radius: 2.5
 
 /amr/navigation_manager:
   ros__parameters:
@@ -310,4 +316,3 @@
       route_stale_timeout_ms: 1500
       progress_stall_window_sec: 3.0
       progress_epsilon: 0.05
-

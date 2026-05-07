@@ -2,6 +2,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QXmlStreamReader>
 
 #include <chrono>
 #include <cmath>
@@ -25,6 +26,90 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   orientation.z = std::sin(yaw * 0.5);
   orientation.w = std::cos(yaw * 0.5);
   return orientation;
+}
+
+QVector<double> parse_scalar_list(const QString & text, int expected_count)
+{
+  QVector<double> values;
+  const QStringList tokens = text.split(' ', Qt::SkipEmptyParts);
+  values.reserve(tokens.size());
+  for (const auto & token : tokens) {
+    bool ok = false;
+    const double value = token.toDouble(&ok);
+    if (!ok) {
+      return {};
+    }
+    values.push_back(value);
+  }
+  if (expected_count > 0 && values.size() != expected_count) {
+    return {};
+  }
+  return values;
+}
+
+Pose2D parse_origin_attributes(const QXmlStreamAttributes & attributes)
+{
+  Pose2D pose;
+  pose.valid = true;
+  const QVector<double> xyz = parse_scalar_list(attributes.value("xyz").toString(), 3);
+  if (xyz.size() == 3) {
+    pose.x = xyz[0];
+    pose.y = xyz[1];
+  }
+  const QVector<double> rpy = parse_scalar_list(attributes.value("rpy").toString(), 3);
+  if (rpy.size() == 3) {
+    pose.yaw = rpy[2];
+  }
+  return pose;
+}
+
+bool parse_geometry(
+  QXmlStreamReader & reader,
+  const QString & frame_id,
+  const Pose2D & origin,
+  RobotVisual & visual)
+{
+  while (reader.readNextStartElement()) {
+    const auto name = reader.name();
+    visual = RobotVisual();
+    visual.frame_id = frame_id;
+    visual.pose = origin;
+    visual.pose.valid = true;
+    visual.valid = true;
+
+    if (name == QLatin1String("box")) {
+      const QVector<double> size =
+        parse_scalar_list(reader.attributes().value("size").toString(), 3);
+      reader.skipCurrentElement();
+      if (size.size() != 3) {
+        return false;
+      }
+      visual.type = RobotGeometryType::Box;
+      visual.size_x = size[0];
+      visual.size_y = size[1];
+      visual.size_z = size[2];
+      return visual.size_x > 0.0 && visual.size_y > 0.0;
+    }
+    if (name == QLatin1String("cylinder")) {
+      bool radius_ok = false;
+      bool length_ok = false;
+      visual.type = RobotGeometryType::Cylinder;
+      visual.radius = reader.attributes().value("radius").toDouble(&radius_ok);
+      visual.length = reader.attributes().value("length").toDouble(&length_ok);
+      reader.skipCurrentElement();
+      return radius_ok && length_ok && visual.radius > 0.0;
+    }
+    if (name == QLatin1String("sphere")) {
+      bool radius_ok = false;
+      visual.type = RobotGeometryType::Sphere;
+      visual.radius = reader.attributes().value("radius").toDouble(&radius_ok);
+      reader.skipCurrentElement();
+      return radius_ok && visual.radius > 0.0;
+    }
+
+    reader.skipCurrentElement();
+  }
+  return false;
 }
 
 }  // namespace
@@ -103,6 +188,8 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<std::string>("runtime_event_topic", runtime_event_topic_);
   battery_state_topic_ =
     node_->declare_parameter<std::string>("battery_state_topic", battery_state_topic_);
+  robot_description_topic_ =
+    node_->declare_parameter<std::string>("robot_description_topic", robot_description_topic_);
   scan_topic_ = node_->declare_parameter<std::string>("scan_topic", scan_topic_);
   tf_topic_ = node_->declare_parameter<std::string>("tf_topic", tf_topic_);
   tf_static_topic_ = node_->declare_parameter<std::string>("tf_static_topic", tf_static_topic_);
@@ -193,6 +280,14 @@ void RosWorker::configure_ros_interfaces()
       }
       Q_EMIT batteryStateChanged(percentage, message->present);
     });
+  robot_description_subscription_ = node_->create_subscription<std_msgs::msg::String>(
+    robot_description_topic_, latched_map_qos,
+    [this](const std_msgs::msg::String::SharedPtr message) {
+      robot_description_visuals_ = parse_robot_description(message->data);
+      Q_EMIT robotModelChanged(build_robot_visuals());
+      Q_EMIT eventReceived(
+        QString("Robot description loaded: %1 visual(s)").arg(robot_description_visuals_.size()));
+    });
   tf_subscription_ = node_->create_subscription<tf2_msgs::msg::TFMessage>(
     tf_topic_, live_qos, [this](const tf2_msgs::msg::TFMessage::SharedPtr message) {
       handle_tf_message(*message, false);
@@ -231,6 +326,7 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage & message, bool
     storage[transform.child_frame_id] = frame;
   }
   Q_EMIT tfFramesChanged(build_frame_visuals());
+  Q_EMIT robotModelChanged(build_robot_visuals());
 }
 
 QVector<FrameVisual> RosWorker::build_frame_visuals() const
@@ -308,7 +404,7 @@ void RosWorker::update_global_costmap_subscription()
     return;
   }
 
-  const auto costmap_qos = rclcpp::QoS(1).best_effort().durability_volatile();
+  const auto costmap_qos = rclcpp::QoS(1).reliable().transient_local();
   global_costmap_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
     global_costmap_topic_, costmap_qos,
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
@@ -472,6 +568,162 @@ RuntimeSummary RosWorker::parse_runtime_summary(const std::string & payload) con
   summary.recovery_reason = object.value("recovery_reason").toString(summary.recovery_reason);
   summary.action_status = object.value("action_status").toString(summary.action_status);
   return summary;
+}
+
+QVector<RobotVisual> RosWorker::parse_robot_description(const std::string & payload)
+{
+  robot_joints_.clear();
+  QVector<RobotVisual> visuals;
+  QXmlStreamReader reader(QString::fromStdString(payload));
+
+  while (reader.readNextStartElement()) {
+    if (reader.name() != QLatin1String("robot")) {
+      reader.skipCurrentElement();
+      continue;
+    }
+
+    while (reader.readNextStartElement()) {
+      if (reader.name() != QLatin1String("link")) {
+        reader.skipCurrentElement();
+        continue;
+      }
+
+      const QString frame_id = reader.attributes().value("name").toString();
+      QVector<RobotVisual> link_visuals;
+      QVector<RobotVisual> link_collisions;
+
+      while (reader.readNextStartElement()) {
+        const bool is_visual = reader.name() == QLatin1String("visual");
+        const bool is_collision = reader.name() == QLatin1String("collision");
+        if (!is_visual && !is_collision) {
+          reader.skipCurrentElement();
+          continue;
+        }
+
+        Pose2D origin;
+        origin.valid = true;
+        RobotVisual visual;
+        bool parsed = false;
+
+        while (reader.readNextStartElement()) {
+          if (reader.name() == QLatin1String("origin")) {
+            origin = parse_origin_attributes(reader.attributes());
+            reader.skipCurrentElement();
+            continue;
+          }
+          if (reader.name() == QLatin1String("geometry")) {
+            parsed = parse_geometry(reader, frame_id, origin, visual);
+            continue;
+          }
+          reader.skipCurrentElement();
+        }
+
+        if (parsed) {
+          if (is_visual) {
+            link_visuals.push_back(visual);
+          } else {
+            link_collisions.push_back(visual);
+          }
+        }
+      }
+
+      if (!link_visuals.isEmpty()) {
+        visuals += link_visuals;
+      } else {
+        visuals += link_collisions;
+      }
+      continue;
+    }
+
+    if (reader.name() == QLatin1String("joint")) {
+      RobotJoint joint;
+      joint.child_frame.clear();
+      joint.parent_frame.clear();
+      joint.origin.valid = true;
+
+      while (reader.readNextStartElement()) {
+        if (reader.name() == QLatin1String("parent")) {
+          joint.parent_frame = reader.attributes().value("link").toString();
+          reader.skipCurrentElement();
+          continue;
+        }
+        if (reader.name() == QLatin1String("child")) {
+          joint.child_frame = reader.attributes().value("link").toString();
+          reader.skipCurrentElement();
+          continue;
+        }
+        if (reader.name() == QLatin1String("origin")) {
+          joint.origin = parse_origin_attributes(reader.attributes());
+          reader.skipCurrentElement();
+          continue;
+        }
+        reader.skipCurrentElement();
+      }
+
+      joint.valid = !joint.parent_frame.isEmpty() && !joint.child_frame.isEmpty();
+      if (joint.valid) {
+        robot_joints_[joint.child_frame.toStdString()] = joint;
+      }
+      continue;
+    }
+
+    reader.skipCurrentElement();
+  }
+
+  return visuals;
+}
+
+QVector<RobotVisual> RosWorker::build_robot_visuals() const
+{
+  QVector<RobotVisual> visuals;
+  visuals.reserve(robot_description_visuals_.size());
+
+  for (const auto & source_visual : robot_description_visuals_) {
+    const Pose2D frame_pose = resolve_robot_link_pose(source_visual.frame_id);
+    if (!frame_pose.valid) {
+      continue;
+    }
+
+    RobotVisual visual = source_visual;
+    visual.pose = compose_pose(frame_pose, source_visual.pose);
+    visual.valid = visual.pose.valid;
+    visuals.push_back(visual);
+  }
+
+  return visuals;
+}
+
+Pose2D RosWorker::resolve_robot_link_pose(const QString & link_frame) const
+{
+  const Pose2D tf_pose = resolve_frame_pose(link_frame.toStdString());
+  if (tf_pose.valid) {
+    return tf_pose;
+  }
+
+  std::function<Pose2D(const QString &, int)> resolve =
+    [this, &resolve](const QString & frame_name, int depth) -> Pose2D {
+      if (depth > 32) {
+        return {};
+      }
+
+      const Pose2D direct_tf_pose = resolve_frame_pose(frame_name.toStdString());
+      if (direct_tf_pose.valid) {
+        return direct_tf_pose;
+      }
+
+      const auto joint_it = robot_joints_.find(frame_name.toStdString());
+      if (joint_it == robot_joints_.end() || !joint_it->second.valid) {
+        return {};
+      }
+
+      const Pose2D parent_pose = resolve(joint_it->second.parent_frame, depth + 1);
+      if (!parent_pose.valid) {
+        return {};
+      }
+      return compose_pose(parent_pose, joint_it->second.origin);
+    };
+
+  return resolve(link_frame, 0);
 }
 
 Pose2D RosWorker::resolve_frame_pose(const std::string & child_frame) const

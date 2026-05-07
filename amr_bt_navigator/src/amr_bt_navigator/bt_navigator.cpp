@@ -24,6 +24,36 @@ std::string get_default_behavior_tree_xml_path()
   }
 }
 
+geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw)
+{
+  geometry_msgs::msg::Quaternion orientation;
+  orientation.x = 0.0;
+  orientation.y = 0.0;
+  orientation.z = std::sin(yaw * 0.5);
+  orientation.w = std::cos(yaw * 0.5);
+  return orientation;
+}
+
+geometry_msgs::msg::PoseStamped make_route_goal_pose(
+  const std::vector<geometry_msgs::msg::PoseStamped> & goal_poses,
+  std::size_t index)
+{
+  geometry_msgs::msg::PoseStamped goal_pose = goal_poses[index];
+  if (index + 1U >= goal_poses.size()) {
+    return goal_pose;
+  }
+
+  const auto & next_goal = goal_poses[index + 1U];
+  const double dx = next_goal.pose.position.x - goal_pose.pose.position.x;
+  const double dy = next_goal.pose.position.y - goal_pose.pose.position.y;
+  if ((dx * dx) + (dy * dy) <= 1e-8) {
+    return goal_pose;
+  }
+
+  goal_pose.pose.orientation = yaw_to_quaternion(std::atan2(dy, dx));
+  return goal_pose;
+}
+
 }  // namespace
 
 Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
@@ -461,8 +491,9 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
       return;
     }
 
+    const auto route_goal_pose = make_route_goal_pose(goal->goal_poses, index);
     const auto waypoint_result = this->execute_goal_pose(
-      goal->goal_poses[index],
+      route_goal_pose,
       "navigate_to_poses",
       [goal_handle]() { return goal_handle->is_canceling(); },
       [goal_handle, index, goal_count, this](

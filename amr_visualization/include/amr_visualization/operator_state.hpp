@@ -27,6 +27,26 @@ struct FrameVisual
   bool is_static{false};
 };
 
+enum class RobotGeometryType
+{
+  Box,
+  Cylinder,
+  Sphere,
+};
+
+struct RobotVisual
+{
+  QString frame_id;
+  Pose2D pose;
+  RobotGeometryType type{RobotGeometryType::Box};
+  double size_x{0.0};
+  double size_y{0.0};
+  double size_z{0.0};
+  double radius{0.0};
+  double length{0.0};
+  bool valid{false};
+};
+
 struct GridMap
 {
   int width{0};
@@ -80,11 +100,13 @@ double quaternion_to_yaw(double x, double y, double z, double w);
 
 Q_DECLARE_METATYPE(amr::visualization::Pose2D)
 Q_DECLARE_METATYPE(amr::visualization::FrameVisual)
+Q_DECLARE_METATYPE(amr::visualization::RobotVisual)
 Q_DECLARE_METATYPE(amr::visualization::GridMap)
 Q_DECLARE_METATYPE(amr::visualization::PathData)
 Q_DECLARE_METATYPE(amr::visualization::ScanData)
 Q_DECLARE_METATYPE(amr::visualization::MotionStatusData)
 Q_DECLARE_METATYPE(amr::visualization::RuntimeSummary)
 Q_DECLARE_METATYPE(QVector<amr::visualization::FrameVisual>)
+Q_DECLARE_METATYPE(QVector<amr::visualization::RobotVisual>)
 
 #endif  // AMR_VISUALIZATION__OPERATOR_STATE_HPP_

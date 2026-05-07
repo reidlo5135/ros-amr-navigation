@@ -26,6 +26,7 @@ public:
 public Q_SLOTS:
   void setMap(const amr::visualization::GridMap & map);
   void setTfFrames(const QVector<amr::visualization::FrameVisual> & frames);
+  void setRobotModel(const QVector<amr::visualization::RobotVisual> & visuals);
   void setGlobalCostmap(const amr::visualization::GridMap & map);
   void setLocalCostmap(const amr::visualization::GridMap & map);
   void setScan(const amr::visualization::ScanData & scan);
@@ -36,6 +37,7 @@ public Q_SLOTS:
   void setMapVisible(bool visible);
   void setGlobalCostmapVisible(bool visible);
   void setLocalCostmapVisible(bool visible);
+  void setFootprintVisible(bool visible);
   void setRobotVisible(bool visible);
   void setTfVisible(bool visible);
   void setScanVisible(bool visible);
@@ -68,13 +70,15 @@ private:
   QPointF worldToScreen(const QPointF & point) const;
   QPointF screenToWorld(const QPointF & point) const;
   QImage makeGridImage(const GridMap & map, const QColor & occupied, const QColor & free) const;
+  QImage makeCostmapImage(const GridMap & map) const;
   void drawGrid(QPainter & painter) const;
   void drawGridLayer(QPainter & painter, const GridMap & map, const QImage & image, qreal opacity);
   void drawPath(QPainter & painter, const PathData & path, const QColor & color, qreal width) const;
   void drawPose(QPainter & painter, const Pose2D & pose, const QColor & color) const;
+  void drawExactFootprint(QPainter & painter) const;
+  void drawRobotModel(QPainter & painter) const;
   void drawTfFrames(QPainter & painter) const;
   void drawScan(QPainter & painter) const;
-  void drawRobotProxy(QPainter & painter) const;
   void drawWaypointRoute(QPainter & painter) const;
   void drawWaypoints(QPainter & painter) const;
   int waypointAt(const QPointF & screen_position) const;
@@ -87,6 +91,7 @@ private:
   QImage global_costmap_image_;
   QImage local_costmap_image_;
   QVector<FrameVisual> tf_frames_;
+  QVector<RobotVisual> robot_visuals_;
   ScanData scan_;
   Pose2D robot_pose_;
   Pose2D aim_pose_;
@@ -97,8 +102,9 @@ private:
 
   bool show_grid_{true};
   bool show_map_{true};
-  bool show_global_costmap_{false};
-  bool show_local_costmap_{false};
+  bool show_global_costmap_{true};
+  bool show_local_costmap_{true};
+  bool show_footprint_{true};
   bool show_robot_{true};
   bool show_tf_{true};
   bool show_scan_{true};
