@@ -59,6 +59,7 @@ flowchart LR
 - `amr_map_server`: official-map lifecycle, evaluation, and save/freeze services
 - `amr_mqtt_server`: robot-side MQTT API server
 - `amr_msgs`: custom messages, services, and actions
+- `amr_rviz`: dedicated RViz profiles plus RViz-to-action bridge tooling
 - `amr_runtime_observation`: runtime summary and event aggregation for navigation state
 - `amr_navigation`: metapackage
 - `amr_recovery_server`: wait / backup / spin recovery command generation
@@ -100,6 +101,12 @@ TB3 full runtime:
 ros2 launch amr_bringup turtlebot3.launch.py
 ```
 
+RViz-based local operator test console:
+
+```bash
+ros2 launch amr_rviz rviz.launch.py
+```
+
 Operator desktop UI is developed and packaged in the external `ros-rcs` repository.
 
 ## Build
@@ -117,6 +124,59 @@ colcon build --packages-select \
   amr_runtime_observation \
   amr_lifecycle_manager \
   amr_mqtt_server \
+  amr_rviz \
   amr_bringup \
   amr_navigation
 ```
+
+## QoS Reference
+
+### `turtlebot3_bringup`
+
+| Interface | Kind | QoS | Notes |
+| --- | --- | --- | --- |
+| `/scan` | topic | `SensorDataQoS` (`keep_last`, `best_effort`, `volatile`) | LDS lidar stream; AMR consumers use `SensorDataQoS` |
+| `/odom` | topic | `SystemDefaultsQoS` / reliable-default | diff-drive odometry from `turtlebot3_node` |
+| `/imu` | topic | `SensorDataQoS` expectation | IMU is enabled in TB3 diff-drive config (`use_imu: true`); AMR telemetry treats it as sensor-data profile |
+| `/cmd_vel` | topic | reliable-default | velocity command ingress to robot base |
+| `/tf` | topic | reliable-default, `volatile` | dynamic transform stream |
+| `/tf_static` | topic | reliable-default, `transient_local` | static transforms must remain latched/persistent |
+
+### `amr_navigation`
+
+| Interface | Kind | QoS | Owner / Notes |
+| --- | --- | --- | --- |
+| `/amr/map/data` | topic | `keep_last(1)`, `reliable`, `transient_local` | official map from `amr_map_server`; late joiners must receive last map |
+| `/amr/localization/initial_pose` | topic | `SystemDefaultsQoS` | initial pose ingress/echo between RViz, lifecycle manager, localization |
+| `/amr/localization/pose` | topic | `SystemDefaultsQoS` | estimated robot pose from `amr_localization` |
+| `/amr/localization/odometry` | topic | `SystemDefaultsQoS` | localization-derived odometry output |
+| `/amr/costmap/global` | topic | `keep_last(1)`, `reliable`, `transient_local` | global costmap from `amr_costmap_server` |
+| `/amr/costmap/local` | topic | `keep_last(1)`, `reliable`, `transient_local` | local costmap from `amr_costmap_server` |
+| `/amr/planner/global` | topic | `SystemDefaultsQoS` | global path from `amr_global_planner` |
+| `/amr/planner/local` | topic | `SystemDefaultsQoS` | local path from `amr/local_planner` |
+| `/amr/planner/local_status` | topic | `SystemDefaultsQoS` | local planner status/blocked context |
+| `/amr/motion/command` | topic | `SystemDefaultsQoS` | navigator/recovery -> local planner / motion controller command lane |
+| `/amr/motion/status` | topic | `SystemDefaultsQoS` | motion controller runtime status |
+| `/amr/observation/runtime/summary` | topic | `SystemDefaultsQoS` | operator-facing condensed runtime summary |
+| `/amr/observation/runtime/events` | topic | `SystemDefaultsQoS` | operator-facing runtime event stream |
+| `/amr/rviz/goal` | topic | reliable-default, `volatile` | RViz 2D Goal Pose ingress; bridged into `NavigateToPose` |
+| `/amr/rviz/goals` | topic | reliable-default, `volatile` | reserved RViz/operator multi-goal ingress; bridged into `NavigateToPoses` |
+| `/amr/global_planner/plan_segment` | service | n/a | segment planning service |
+| `/amr/global_planner/plan_route` | service | n/a | route planning service |
+| `/amr/local_planner/plan_local_escape` | service | n/a | local escape planning service |
+| `/amr/costmap_server/clear_costmap` | service | n/a | explicit costmap clear request |
+| `/amr/recovery_server/plan_recovery` | service | n/a | recovery command generation |
+| `/amr/map_server/get_map` | service | n/a | retrieve current official map |
+| `/amr/map_server/freeze_temporary_map` | service | n/a | freeze temporary SLAM map |
+| `/amr/map_server/evaluate_temporary_map` | service | n/a | temporary map quality evaluation |
+| `/amr/map_server/save_temporary_map` | service | n/a | save promoted temporary map |
+| `/amr/navigator/navigate_to_pose` | action | action transport defaults | single-goal navigation |
+| `/amr/navigator/navigate_to_poses` | action | action transport defaults | waypoint route navigation |
+| `/amr/navigator/navigate_to_poses/_action/feedback` | topic | `SystemDefaultsQoS` | consumed by `amr_runtime_observation` |
+| `/amr/navigator/navigate_to_poses/_action/status` | topic | `SystemDefaultsQoS` | consumed by `amr_runtime_observation` and `amr_mqtt_server` |
+
+Notes:
+
+- In this repository, `SensorDataQoS` is intentionally used for raw sensor feeds such as `/scan`, and should remain the default expectation for high-rate hardware topics.
+- `transient_local + reliable` is reserved for map-like latched data that late subscribers must immediately receive.
+- Most internal `/amr/**` status/plan/command lanes currently use `SystemDefaultsQoS`; keep publisher/subscriber defaults aligned unless there is a concrete reason to specialize them.
