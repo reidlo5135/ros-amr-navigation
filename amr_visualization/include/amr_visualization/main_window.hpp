@@ -48,6 +48,7 @@ private:
   LayerCheckRow makeLayerCheckBox(const QString & label, const QString & icon_name, bool checked);
   void appendStatusRow(QVBoxLayout * layout, const QString & label, QLabel * value);
   void applyStyle();
+  void setWaypointEditingLocked(bool locked);
 
   std::unique_ptr<RosWorker> ros_worker_;
   SceneWidget * scene_{nullptr};
@@ -65,7 +66,9 @@ private:
   QLabel * recovery_label_{nullptr};
   QListWidget * waypoint_list_{nullptr};
   QListWidget * event_list_{nullptr};
+  QPushButton * add_waypoint_button_{nullptr};
   QPushButton * send_button_{nullptr};
+  bool waypoint_editing_locked_{false};
 };
 
 }  // namespace amr::visualization

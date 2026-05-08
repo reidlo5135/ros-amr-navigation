@@ -1,8 +1,18 @@
 #include "amr_visualization/scene_widget.hpp"
 
+#include <QDataStream>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
+#include <QResizeEvent>
+#include <QStyle>
+#include <QTransform>
+#include <QUrl>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -23,7 +33,10 @@ QColor with_alpha(QColor color, int alpha)
 constexpr int k_rviz_background = 48;
 constexpr int k_rviz_grid_alpha = 64;
 constexpr double k_half_pi = 1.5707963267948966;
-constexpr double k_rad_to_deg = 57.29577951308232;
+constexpr double k_pi = 3.14159265358979323846;
+constexpr double k_min_camera_pitch = 0.15;
+constexpr double k_max_camera_pitch = k_half_pi;
+constexpr bool k_enable_sync_mesh_rendering = false;
 
 }  // namespace
 
@@ -32,6 +45,24 @@ SceneWidget::SceneWidget(QWidget * parent)
 {
   setMouseTracking(true);
   setMinimumSize(640, 480);
+
+  camera_controls_ = new QWidget(this);
+  camera_controls_->setObjectName("cameraControls");
+  auto * controls_layout = new QHBoxLayout(camera_controls_);
+  controls_layout->setContentsMargins(4, 4, 4, 4);
+  controls_layout->setSpacing(4);
+
+  follow_robot_button_ =
+    makeCameraButton(style()->standardIcon(QStyle::SP_ArrowForward), "F", "Follow robot", true);
+  reset_view_button_ =
+    makeCameraButton(style()->standardIcon(QStyle::SP_BrowserReload), "R", "Reset camera", false);
+  controls_layout->addWidget(follow_robot_button_);
+  controls_layout->addWidget(reset_view_button_);
+
+  connect(follow_robot_button_, &QToolButton::toggled, this, &SceneWidget::setFollowRobotEnabled);
+  connect(reset_view_button_, &QToolButton::clicked, this, &SceneWidget::resetView);
+  updateCameraControlState();
+  updateCameraControlsGeometry();
 }
 
 Pose2D SceneWidget::aimPose() const
@@ -49,10 +80,20 @@ int SceneWidget::selectedWaypointIndex() const
   return selected_waypoint_index_;
 }
 
+bool SceneWidget::followRobotEnabled() const
+{
+  return follow_robot_;
+}
+
 void SceneWidget::resetView()
 {
   scale_ = 90.0;
-  pan_ = QPointF(0.0, 0.0);
+  focal_point_ = QVector3D(0.0F, 0.0F, 0.0F);
+  camera_yaw_ = 0.0;
+  camera_pitch_ = k_half_pi;
+  camera_distance_ = 8.0;
+  follow_robot_ = false;
+  updateCameraControlState();
   update();
 }
 
@@ -98,6 +139,9 @@ void SceneWidget::setScan(const amr::visualization::ScanData & scan)
 void SceneWidget::setRobotPose(const Pose2D & pose)
 {
   robot_pose_ = pose;
+  if (follow_robot_) {
+    centerViewOnRobot();
+  }
   update();
 }
 
@@ -132,6 +176,8 @@ void SceneWidget::addAimAsWaypoint()
   }
   waypoints_.push_back(aim_pose_);
   selected_waypoint_index_ = waypoints_.size() - 1;
+  aim_pose_ = {};
+  Q_EMIT aimPoseChanged(aim_pose_);
   emitWaypointState();
   update();
 }
@@ -161,6 +207,16 @@ void SceneWidget::clearNavigationOverlays()
   clearSchedule();
 }
 
+void SceneWidget::clearAimPose()
+{
+  if (!aim_pose_.valid) {
+    return;
+  }
+  aim_pose_ = {};
+  Q_EMIT aimPoseChanged(aim_pose_);
+  update();
+}
+
 void SceneWidget::removeSelectedWaypoint()
 {
   if (selected_waypoint_index_ < 0 || selected_waypoint_index_ >= waypoints_.size()) {
@@ -173,6 +229,7 @@ void SceneWidget::removeSelectedWaypoint()
     selected_waypoint_index_ =
       std::min(selected_waypoint_index_, static_cast<int>(waypoints_.size()) - 1);
   }
+  clearAimPose();
   emitWaypointState();
   update();
 }
@@ -203,6 +260,16 @@ void SceneWidget::selectWaypoint(int index)
 {
   selected_waypoint_index_ = index >= 0 && index < waypoints_.size() ? index : -1;
   Q_EMIT selectedWaypointChanged(selected_waypoint_index_);
+  update();
+}
+
+void SceneWidget::setFollowRobotEnabled(bool enabled)
+{
+  follow_robot_ = enabled;
+  if (follow_robot_) {
+    centerViewOnRobot();
+  }
+  updateCameraControlState();
   update();
 }
 
@@ -252,8 +319,19 @@ void SceneWidget::paintEvent(QPaintEvent *)
 
 void SceneWidget::mousePressEvent(QMouseEvent * event)
 {
-  if (event->button() == Qt::RightButton || event->button() == Qt::MiddleButton) {
+  if (event->modifiers() & Qt::ShiftModifier) {
+    orbiting_camera_ = true;
+    last_mouse_position_ = event->pos();
+    return;
+  }
+
+  if (
+    event->button() == Qt::RightButton || event->button() == Qt::MiddleButton ||
+    (event->button() == Qt::LeftButton && !add_waypoint_mode_))
+  {
     panning_ = true;
+    follow_robot_ = false;
+    updateCameraControlState();
     last_mouse_position_ = event->pos();
     return;
   }
@@ -278,6 +356,20 @@ void SceneWidget::mousePressEvent(QMouseEvent * event)
 
 void SceneWidget::mouseMoveEvent(QMouseEvent * event)
 {
+  if (orbiting_camera_) {
+    const QPoint delta = event->pos() - last_mouse_position_;
+    camera_yaw_ = std::fmod(
+      camera_yaw_ - (static_cast<double>(delta.x()) * 0.006) + (2.0 * k_pi),
+      2.0 * k_pi);
+    camera_pitch_ = std::clamp(
+      camera_pitch_ + (static_cast<double>(delta.y()) * 0.006),
+      k_min_camera_pitch,
+      k_max_camera_pitch);
+    last_mouse_position_ = event->pos();
+    update();
+    return;
+  }
+
   if (setting_aim_heading_ && aim_pose_.valid) {
     const QPointF world = screenToWorld(event->position());
     aim_pose_.yaw = std::atan2(world.y() - aim_pose_.y, world.x() - aim_pose_.x);
@@ -290,7 +382,7 @@ void SceneWidget::mouseMoveEvent(QMouseEvent * event)
     return;
   }
   const QPoint delta = event->pos() - last_mouse_position_;
-  pan_ += QPointF(delta.x(), delta.y());
+  panCameraByPixels(delta);
   last_mouse_position_ = event->pos();
   update();
 }
@@ -301,9 +393,17 @@ void SceneWidget::mouseReleaseEvent(QMouseEvent * event)
     panning_ = false;
   }
   if (event->button() == Qt::LeftButton) {
+    panning_ = false;
+  }
+  if (orbiting_camera_) {
+    orbiting_camera_ = false;
+  }
+  if (event->button() == Qt::LeftButton) {
     if (setting_aim_heading_ && add_waypoint_mode_ && aim_pose_.valid) {
       waypoints_.push_back(aim_pose_);
       selected_waypoint_index_ = waypoints_.size() - 1;
+      aim_pose_ = {};
+      Q_EMIT aimPoseChanged(aim_pose_);
       emitWaypointState();
     }
     setting_aim_heading_ = false;
@@ -315,21 +415,140 @@ void SceneWidget::wheelEvent(QWheelEvent * event)
 {
   const double factor = event->angleDelta().y() > 0 ? 1.12 : 0.89;
   scale_ = std::clamp(scale_ * factor, 18.0, 540.0);
+  camera_distance_ = std::clamp(camera_distance_ / factor, 1.0, 80.0);
+  if (follow_robot_) {
+    centerViewOnRobot();
+  }
   update();
+}
+
+void SceneWidget::resizeEvent(QResizeEvent * event)
+{
+  QWidget::resizeEvent(event);
+  updateCameraControlsGeometry();
+  if (follow_robot_) {
+    centerViewOnRobot();
+  }
 }
 
 QPointF SceneWidget::worldToScreen(const QPointF & point) const
 {
+  return worldToScreen3D(point.x(), point.y(), 0.0);
+}
+
+QPointF SceneWidget::worldToScreen3D(const double x, const double y, const double z) const
+{
+  const QVector3D point(
+    static_cast<float>(x),
+    static_cast<float>(y),
+    static_cast<float>(z));
+  const QVector3D relative = point - focal_point_;
   return QPointF(
-    (width() * 0.5) + pan_.x() + (point.x() * scale_),
-    (height() * 0.5) + pan_.y() - (point.y() * scale_));
+    (width() * 0.5) + (QVector3D::dotProduct(relative, cameraRight()) * scale_),
+    (height() * 0.5) - (QVector3D::dotProduct(relative, cameraUp()) * scale_));
+}
+
+QVector3D SceneWidget::cameraRight() const
+{
+  return QVector3D(
+    static_cast<float>(std::cos(camera_yaw_)),
+    static_cast<float>(std::sin(camera_yaw_)),
+    0.0F).normalized();
+}
+
+QVector3D SceneWidget::cameraForward() const
+{
+  const QVector3D ground_up(
+    static_cast<float>(-std::sin(camera_yaw_)),
+    static_cast<float>(std::cos(camera_yaw_)),
+    0.0F);
+  return QVector3D(
+    (ground_up.x() * static_cast<float>(std::cos(camera_pitch_))),
+    (ground_up.y() * static_cast<float>(std::cos(camera_pitch_))),
+    static_cast<float>(-std::sin(camera_pitch_))).normalized();
+}
+
+QVector3D SceneWidget::cameraUp() const
+{
+  return QVector3D::crossProduct(cameraRight(), cameraForward()).normalized();
 }
 
 QPointF SceneWidget::screenToWorld(const QPointF & point) const
 {
-  return QPointF(
-    (point.x() - (width() * 0.5) - pan_.x()) / scale_,
-    -((point.y() - (height() * 0.5) - pan_.y()) / scale_));
+  const QVector3D origin =
+    focal_point_ +
+    (cameraRight() * static_cast<float>((point.x() - (width() * 0.5)) / scale_)) -
+    (cameraUp() * static_cast<float>((point.y() - (height() * 0.5)) / scale_)) -
+    (cameraForward() * static_cast<float>(camera_distance_));
+  const QVector3D direction = cameraForward();
+  if (std::abs(direction.z()) < 1e-5F) {
+    return QPointF(focal_point_.x(), focal_point_.y());
+  }
+  const float t = -origin.z() / direction.z();
+  const QVector3D world = origin + (direction * t);
+  return QPointF(world.x(), world.y());
+}
+
+void SceneWidget::panCameraByPixels(const QPoint & delta)
+{
+  QVector3D ground_up(cameraUp().x(), cameraUp().y(), 0.0F);
+  if (ground_up.lengthSquared() < 1e-6F) {
+    ground_up = QVector3D(
+      static_cast<float>(-std::cos(camera_yaw_)),
+      static_cast<float>(-std::sin(camera_yaw_)),
+      0.0F);
+  }
+  ground_up.normalize();
+  focal_point_ -= cameraRight() * static_cast<float>(delta.x() / scale_);
+  focal_point_ += ground_up * static_cast<float>(delta.y() / scale_);
+  focal_point_.setZ(0.0F);
+}
+
+void SceneWidget::centerViewOnRobot()
+{
+  if (!robot_pose_.valid) {
+    return;
+  }
+  focal_point_ = QVector3D(
+    static_cast<float>(robot_pose_.x),
+    static_cast<float>(robot_pose_.y),
+    static_cast<float>(robot_pose_.z));
+}
+
+void SceneWidget::updateCameraControlsGeometry()
+{
+  if (!camera_controls_) {
+    return;
+  }
+  camera_controls_->adjustSize();
+  const QSize size = camera_controls_->sizeHint();
+  camera_controls_->setGeometry(width() - size.width() - 12, 12, size.width(), size.height());
+}
+
+void SceneWidget::updateCameraControlState()
+{
+  if (follow_robot_button_ && follow_robot_button_->isChecked() != follow_robot_) {
+    follow_robot_button_->blockSignals(true);
+    follow_robot_button_->setChecked(follow_robot_);
+    follow_robot_button_->blockSignals(false);
+  }
+}
+
+QToolButton * SceneWidget::makeCameraButton(
+  const QIcon & icon,
+  const QString & text,
+  const QString & tooltip,
+  const bool checkable)
+{
+  auto * button = new QToolButton(camera_controls_);
+  button->setObjectName("cameraToolButton");
+  button->setIcon(icon);
+  button->setText(text);
+  button->setToolTip(tooltip);
+  button->setCheckable(checkable);
+  button->setFixedSize(32, 32);
+  button->setAutoRaise(false);
+  return button;
 }
 
 QImage SceneWidget::makeGridImage(
@@ -399,23 +618,23 @@ QImage SceneWidget::makeCostmapImage(const GridMap & map) const
 
 void SceneWidget::drawGrid(QPainter & painter) const
 {
-  const QPointF top_left = screenToWorld(QPointF(0.0, 0.0));
-  const QPointF bottom_right = screenToWorld(QPointF(width(), height()));
   const double step = scale_ > 150.0 ? 0.5 : 1.0;
-  const int x_start = static_cast<int>(std::floor(top_left.x() / step)) - 1;
-  const int x_end = static_cast<int>(std::ceil(bottom_right.x() / step)) + 1;
-  const int y_start = static_cast<int>(std::floor(bottom_right.y() / step)) - 1;
-  const int y_end = static_cast<int>(std::ceil(top_left.y() / step)) + 1;
+  const double view_span =
+    std::max(width(), height()) / std::max(scale_, 1.0) + camera_distance_ + 2.0;
+  const int x_start = static_cast<int>(std::floor((focal_point_.x() - view_span) / step)) - 1;
+  const int x_end = static_cast<int>(std::ceil((focal_point_.x() + view_span) / step)) + 1;
+  const int y_start = static_cast<int>(std::floor((focal_point_.y() - view_span) / step)) - 1;
+  const int y_end = static_cast<int>(std::ceil((focal_point_.y() + view_span) / step)) + 1;
 
   painter.setPen(QPen(QColor(160, 160, 164, k_rviz_grid_alpha), 1));
   for (int x = x_start; x <= x_end; ++x) {
-    const QPointF a = worldToScreen(QPointF(x * step, bottom_right.y()));
-    const QPointF b = worldToScreen(QPointF(x * step, top_left.y()));
+    const QPointF a = worldToScreen(QPointF(x * step, y_start * step));
+    const QPointF b = worldToScreen(QPointF(x * step, y_end * step));
     painter.drawLine(a, b);
   }
   for (int y = y_start; y <= y_end; ++y) {
-    const QPointF a = worldToScreen(QPointF(top_left.x(), y * step));
-    const QPointF b = worldToScreen(QPointF(bottom_right.x(), y * step));
+    const QPointF a = worldToScreen(QPointF(x_start * step, y * step));
+    const QPointF b = worldToScreen(QPointF(x_end * step, y * step));
     painter.drawLine(a, b);
   }
 }
@@ -432,12 +651,30 @@ void SceneWidget::drawGridLayer(
 
   const QPointF top_left =
     worldToScreen(QPointF(map.origin_x, map.origin_y + (map.height * map.resolution)));
+  const QPointF top_right =
+    worldToScreen(QPointF(
+      map.origin_x + (map.width * map.resolution),
+      map.origin_y + (map.height * map.resolution)));
   const QPointF bottom_right =
     worldToScreen(QPointF(map.origin_x + (map.width * map.resolution), map.origin_y));
-  const QRectF target(top_left, bottom_right);
+  const QPointF bottom_left = worldToScreen(QPointF(map.origin_x, map.origin_y));
+
+  QPolygonF source;
+  source << QPointF(0.0, 0.0)
+         << QPointF(image.width(), 0.0)
+         << QPointF(image.width(), image.height())
+         << QPointF(0.0, image.height());
+  QPolygonF target;
+  target << top_left << top_right << bottom_right << bottom_left;
+  QTransform transform;
+  if (!QTransform::quadToQuad(source, target, transform)) {
+    return;
+  }
+
   painter.save();
   painter.setOpacity(opacity);
-  painter.drawImage(target.normalized(), image);
+  painter.setTransform(transform, true);
+  painter.drawImage(QPointF(0.0, 0.0), image);
   painter.restore();
 }
 
@@ -461,25 +698,31 @@ void SceneWidget::drawPath(
 
 void SceneWidget::drawPose(QPainter & painter, const Pose2D & pose, const QColor & color) const
 {
-  const QPointF center = worldToScreen(QPointF(pose.x, pose.y));
-  const double length = pose.valid && &pose == &robot_pose_ ? 34.0 : 28.0;
-  const double shaft = length * 0.58;
-  const double half_width = 5.0;
-  const double head_width = 11.0;
-  const QPointF forward(std::cos(pose.yaw), -std::sin(pose.yaw));
-  const QPointF lateral(-forward.y(), forward.x());
-  const QPointF tail = center - (forward * (length * 0.36));
-  const QPointF neck = tail + (forward * shaft);
-  const QPointF tip = tail + (forward * length);
+  const double c = std::cos(pose.yaw);
+  const double s = std::sin(pose.yaw);
+  auto point = [&](const double lx, const double ly) {
+      return worldToScreen3D(
+        pose.x + (c * lx) - (s * ly),
+        pose.y + (s * lx) + (c * ly),
+        pose.z + 0.03);
+    };
+
+  const QPointF tip = point(0.22, 0.0);
+  const QPointF rear_left = point(-0.08, 0.035);
+  const QPointF rear_right = point(-0.08, -0.035);
+  const QPointF neck_left = point(0.12, 0.035);
+  const QPointF neck_right = point(0.12, -0.035);
+  const QPointF head_left = point(0.12, 0.08);
+  const QPointF head_right = point(0.12, -0.08);
 
   QPolygonF arrow;
   arrow << tip
-        << neck + (lateral * head_width)
-        << neck + (lateral * half_width)
-        << tail + (lateral * half_width)
-        << tail - (lateral * half_width)
-        << neck - (lateral * half_width)
-        << neck - (lateral * head_width);
+        << head_left
+        << neck_left
+        << rear_left
+        << rear_right
+        << neck_right
+        << head_right;
 
   painter.setPen(QPen(color, 2));
   painter.setBrush(with_alpha(color, 120));
@@ -499,16 +742,23 @@ void SceneWidget::drawExactFootprint(QPainter & painter) const
     return;
   }
 
-  const QPointF center = worldToScreen(QPointF(pose.x, pose.y));
-  painter.save();
-  painter.translate(center);
-  painter.rotate(-pose.yaw * k_rad_to_deg);
+  const double c = std::cos(pose.yaw);
+  const double s = std::sin(pose.yaw);
+  auto corner = [&](const double lx, const double ly) {
+      return worldToScreen3D(
+        pose.x + (c * lx) - (s * ly),
+        pose.y + (s * lx) + (c * ly),
+        pose.z + 0.01);
+    };
 
-  const QRectF footprint(-0.10 * scale_, -0.09 * scale_, 0.20 * scale_, 0.18 * scale_);
+  QPolygonF footprint;
+  footprint << corner(-0.10, -0.09)
+            << corner(0.10, -0.09)
+            << corner(0.10, 0.09)
+            << corner(-0.10, 0.09);
   painter.setPen(QPen(QColor(88, 150, 255, 210), 1.5, Qt::DashLine));
   painter.setBrush(Qt::NoBrush);
-  painter.drawRect(footprint);
-  painter.restore();
+  painter.drawPolygon(footprint);
 }
 
 void SceneWidget::drawRobotModel(QPainter & painter) const
@@ -520,37 +770,69 @@ void SceneWidget::drawRobotModel(QPainter & painter) const
   painter.save();
   painter.setRenderHint(QPainter::Antialiasing, true);
 
-  for (const auto & visual : robot_visuals_) {
+  QVector<RobotVisual> ordered_visuals = robot_visuals_;
+  std::sort(
+    ordered_visuals.begin(), ordered_visuals.end(),
+    [](const RobotVisual & lhs, const RobotVisual & rhs) {
+      return lhs.pose.z < rhs.pose.z;
+    });
+
+  for (const auto & visual : ordered_visuals) {
     if (!visual.valid) {
       continue;
     }
 
-    const QPointF center = worldToScreen(QPointF(visual.pose.x, visual.pose.y));
+    const QPointF ground_center = worldToScreen3D(visual.pose.x, visual.pose.y, 0.0);
+    const QPointF center = worldToScreen3D(visual.pose.x, visual.pose.y, visual.pose.z);
     painter.save();
-    painter.translate(center);
-    painter.rotate(-visual.pose.yaw * k_rad_to_deg);
+    if (std::abs(visual.pose.z) > 0.02) {
+      painter.setPen(QPen(QColor(62, 110, 255, 120), 1.2, Qt::DashLine));
+      painter.drawLine(ground_center, center);
+    }
 
     switch (visual.type) {
       case RobotGeometryType::Box: {
-        const QRectF body(
-          -(visual.size_x * scale_ * 0.5),
-          -(visual.size_y * scale_ * 0.5),
-          visual.size_x * scale_,
-          visual.size_y * scale_);
-        painter.setPen(QPen(QColor(52, 56, 60, 220), 1.5));
-        painter.setBrush(QColor(205, 209, 214, 110));
-        painter.drawRoundedRect(body, 3.0, 3.0);
+        drawBox3D(
+          painter,
+          visual.pose,
+          std::max(visual.size_x, 0.02),
+          std::max(visual.size_y, 0.02),
+          std::max(visual.size_z, 0.02),
+          QColor(205, 209, 214, 130));
         break;
       }
       case RobotGeometryType::Cylinder:
       case RobotGeometryType::Sphere: {
-        const double radius = std::max(visual.radius * scale_, 2.5);
-        painter.setPen(QPen(QColor(64, 68, 72, 220), 1.5));
-        painter.setBrush(
-          visual.type == RobotGeometryType::Cylinder ?
-          QColor(182, 188, 196, 105) :
-          QColor(168, 196, 224, 112));
-        painter.drawEllipse(QPointF(0.0, 0.0), radius, radius);
+        drawCylinderProxy3D(
+          painter,
+          visual.pose,
+          std::max(visual.radius, 0.02),
+          visual.type == RobotGeometryType::Cylinder ? std::max(visual.length, 0.02) :
+          std::max(visual.radius * 2.0, 0.02),
+          visual.type == RobotGeometryType::Cylinder ? QColor(182, 188, 196, 120) :
+          QColor(168, 196, 224, 130));
+        break;
+      }
+      case RobotGeometryType::Mesh: {
+        const QString key = (visual.frame_id + " " + visual.mesh_filename).toLower();
+        if (k_enable_sync_mesh_rendering && drawMesh3D(painter, visual, QColor(74, 78, 84, 230))) {
+          break;
+        }
+        if (key.contains("wheel")) {
+          drawWheelProxy3D(painter, visual.pose, QColor(24, 28, 32, 235));
+        } else if (key.contains("scan") || key.contains("lidar") || key.contains("lds")) {
+          Pose2D scan_pose = visual.pose;
+          scan_pose.x += std::cos(scan_pose.yaw) * 0.015;
+          scan_pose.y += std::sin(scan_pose.yaw) * 0.015;
+          scan_pose.z -= 0.0065;
+          drawCylinderProxy3D(painter, scan_pose, 0.055, 0.0315, QColor(24, 28, 32, 235));
+        } else if (key.contains("caster")) {
+          drawCylinderProxy3D(painter, visual.pose, 0.025, 0.025, QColor(42, 46, 50, 220));
+        } else if (key.contains("base") || key.contains("body") || key.contains("plate")) {
+          drawBurgerBaseProxy3D(painter, visual.pose);
+        } else {
+          drawBox3D(painter, visual.pose, 0.10, 0.08, 0.05, QColor(84, 90, 96, 190));
+        }
         break;
       }
     }
@@ -561,25 +843,438 @@ void SceneWidget::drawRobotModel(QPainter & painter) const
   painter.restore();
 }
 
+void SceneWidget::drawBox3D(
+  QPainter & painter,
+  const Pose2D & pose,
+  const double size_x,
+  const double size_y,
+  const double size_z,
+  const QColor & color) const
+{
+  const double c = std::cos(pose.yaw);
+  const double s = std::sin(pose.yaw);
+  auto corner = [&](const double lx, const double ly, const double lz) {
+      const double wx = pose.x + (c * lx) - (s * ly);
+      const double wy = pose.y + (s * lx) + (c * ly);
+      return worldToScreen3D(wx, wy, pose.z + lz);
+    };
+
+  const double hx = size_x * 0.5;
+  const double hy = size_y * 0.5;
+  const double hz = size_z * 0.5;
+  const QPointF b0 = corner(-hx, -hy, -hz);
+  const QPointF b1 = corner(hx, -hy, -hz);
+  const QPointF b2 = corner(hx, hy, -hz);
+  const QPointF b3 = corner(-hx, hy, -hz);
+  const QPointF t0 = corner(-hx, -hy, hz);
+  const QPointF t1 = corner(hx, -hy, hz);
+  const QPointF t2 = corner(hx, hy, hz);
+  const QPointF t3 = corner(-hx, hy, hz);
+
+  QColor side_color = color;
+  side_color.setAlpha(std::max(70, color.alpha() - 45));
+  QColor top_color = color;
+  top_color.setAlpha(std::min(255, color.alpha() + 20));
+
+  painter.setPen(QPen(QColor(12, 15, 18, 220), 1.2));
+  painter.setBrush(side_color);
+  QPolygonF face;
+  face << b0 << b1 << t1 << t0;
+  painter.drawPolygon(face);
+  face.clear();
+  face << b1 << b2 << t2 << t1;
+  painter.drawPolygon(face);
+  face.clear();
+  face << b2 << b3 << t3 << t2;
+  painter.drawPolygon(face);
+  face.clear();
+  face << b3 << b0 << t0 << t3;
+  painter.drawPolygon(face);
+  painter.setBrush(top_color);
+  face.clear();
+  face << t0 << t1 << t2 << t3;
+  painter.drawPolygon(face);
+}
+
+void SceneWidget::drawCylinderProxy3D(
+  QPainter & painter,
+  const Pose2D & pose,
+  const double radius,
+  const double height,
+  const QColor & color) const
+{
+  constexpr int k_segments = 18;
+  QPolygonF bottom;
+  QPolygonF top;
+  bottom.reserve(k_segments);
+  top.reserve(k_segments);
+  for (int i = 0; i < k_segments; ++i) {
+    const double angle = (2.0 * k_pi * i) / k_segments;
+    const double wx = pose.x + (std::cos(angle) * radius);
+    const double wy = pose.y + (std::sin(angle) * radius);
+    bottom << worldToScreen3D(wx, wy, pose.z - (height * 0.5));
+    top << worldToScreen3D(wx, wy, pose.z + (height * 0.5));
+  }
+
+  QColor side_color = color;
+  side_color.setAlpha(std::max(70, color.alpha() - 45));
+  QColor top_color = color;
+  top_color.setAlpha(std::min(255, color.alpha() + 25));
+
+  painter.setPen(QPen(QColor(12, 15, 18, 220), 1.2));
+  painter.setBrush(side_color);
+  for (int i = 0; i < k_segments; ++i) {
+    const int next = (i + 1) % k_segments;
+    QPolygonF face;
+    face << bottom[i] << bottom[next] << top[next] << top[i];
+    painter.drawPolygon(face);
+  }
+  painter.setBrush(top_color);
+  painter.drawPolygon(top);
+}
+
+void SceneWidget::drawBurgerBaseProxy3D(QPainter & painter, const Pose2D & pose) const
+{
+  Pose2D lower_plate = pose;
+  lower_plate.z += 0.012;
+  drawBox3D(painter, lower_plate, 0.140, 0.140, 0.012, QColor(48, 52, 56, 215));
+
+  Pose2D upper_plate = pose;
+  upper_plate.z += 0.135;
+  drawBox3D(painter, upper_plate, 0.125, 0.125, 0.012, QColor(64, 68, 72, 210));
+
+  const double pillar_offsets[4][2] = {
+    {0.052, 0.052},
+    {0.052, -0.052},
+    {-0.052, 0.052},
+    {-0.052, -0.052},
+  };
+  for (const auto & offset : pillar_offsets) {
+    Pose2D pillar = pose;
+    const double c = std::cos(pose.yaw);
+    const double s = std::sin(pose.yaw);
+    pillar.x += (c * offset[0]) - (s * offset[1]);
+    pillar.y += (s * offset[0]) + (c * offset[1]);
+    pillar.z += 0.074;
+    drawCylinderProxy3D(painter, pillar, 0.006, 0.120, QColor(34, 38, 42, 210));
+  }
+}
+
+void SceneWidget::drawWheelProxy3D(
+  QPainter & painter,
+  const Pose2D & pose,
+  const QColor & color) const
+{
+  constexpr int k_segments = 18;
+  constexpr double k_radius = 0.036;
+  constexpr double k_half_width = 0.018;
+  const double c = std::cos(pose.yaw);
+  const double s = std::sin(pose.yaw);
+  auto point = [&](const double lx, const double ly, const double lz) {
+      return worldToScreen3D(
+        pose.x + (c * lx) - (s * ly),
+        pose.y + (s * lx) + (c * ly),
+        pose.z + lz);
+    };
+
+  QPolygonF left_face;
+  QPolygonF right_face;
+  left_face.reserve(k_segments);
+  right_face.reserve(k_segments);
+  for (int i = 0; i < k_segments; ++i) {
+    const double angle = (2.0 * k_pi * i) / k_segments;
+    const double lx = std::cos(angle) * k_radius;
+    const double lz = std::sin(angle) * k_radius;
+    left_face << point(lx, -k_half_width, lz);
+    right_face << point(lx, k_half_width, lz);
+  }
+
+  QColor side_color = color;
+  side_color.setAlpha(std::max(90, color.alpha() - 35));
+  QColor face_color = color;
+  face_color.setAlpha(std::min(255, color.alpha() + 10));
+
+  painter.setPen(QPen(QColor(8, 10, 12, 230), 1.1));
+  painter.setBrush(side_color);
+  for (int i = 0; i < k_segments; ++i) {
+    const int next = (i + 1) % k_segments;
+    QPolygonF side;
+    side << left_face[i] << left_face[next] << right_face[next] << right_face[i];
+    painter.drawPolygon(side);
+  }
+  painter.setBrush(face_color);
+  painter.drawPolygon(left_face);
+  painter.drawPolygon(right_face);
+}
+
+bool SceneWidget::drawMesh3D(
+  QPainter & painter,
+  const RobotVisual & visual,
+  const QColor & color) const
+{
+  const MeshCacheEntry * mesh = meshForVisual(visual);
+  if (!mesh || mesh->triangles.isEmpty()) {
+    return false;
+  }
+
+  const QString key = (visual.frame_id + " " + visual.mesh_filename).toLower();
+  QColor base_color = color;
+  base_color = QColor(24, 28, 32, 235);
+  // if (key.contains("wheel")) {
+  //   base_color = QColor(24, 28, 32, 235);
+  // } else if (key.contains("scan") || key.contains("lidar") || key.contains("lds")) {
+  //   base_color = QColor(80, 204, 220, 210);
+  // }
+
+  struct ProjectedFace
+  {
+    QPolygonF polygon;
+    double depth{0.0};
+    QColor color;
+  };
+
+  constexpr int k_max_faces = 4200;
+  const int triangle_count = static_cast<int>(mesh->triangles.size());
+  const int stride = std::max(1, triangle_count / k_max_faces);
+  QVector<ProjectedFace> faces;
+  faces.reserve(std::min(triangle_count, k_max_faces));
+  const QVector3D light_direction = (-cameraForward() + QVector3D(0.15F, -0.25F, 0.35F)).normalized();
+
+  for (int i = 0; i < triangle_count; i += stride) {
+    const auto & triangle = mesh->triangles[i];
+    const QVector3D a = meshPointToWorld(visual, triangle.a);
+    const QVector3D b = meshPointToWorld(visual, triangle.b);
+    const QVector3D c = meshPointToWorld(visual, triangle.c);
+    QVector3D normal = QVector3D::crossProduct(b - a, c - a);
+    if (normal.lengthSquared() < 1e-9F) {
+      continue;
+    }
+    normal.normalize();
+
+    ProjectedFace face;
+    face.polygon << worldToScreen3D(a.x(), a.y(), a.z())
+                 << worldToScreen3D(b.x(), b.y(), b.z())
+                 << worldToScreen3D(c.x(), c.y(), c.z());
+    face.depth =
+      (QVector3D::dotProduct(a - focal_point_, cameraForward()) +
+      QVector3D::dotProduct(b - focal_point_, cameraForward()) +
+      QVector3D::dotProduct(c - focal_point_, cameraForward())) / 3.0;
+
+    const double shade =
+      std::clamp(0.52 + (std::abs(QVector3D::dotProduct(normal, light_direction)) * 0.38), 0.35, 1.0);
+    face.color = QColor(
+      static_cast<int>(std::clamp(base_color.red() * shade, 0.0, 255.0)),
+      static_cast<int>(std::clamp(base_color.green() * shade, 0.0, 255.0)),
+      static_cast<int>(std::clamp(base_color.blue() * shade, 0.0, 255.0)),
+      base_color.alpha());
+    faces.push_back(face);
+  }
+
+  std::sort(
+    faces.begin(), faces.end(),
+    [](const ProjectedFace & lhs, const ProjectedFace & rhs) {
+      return lhs.depth > rhs.depth;
+    });
+
+  painter.setPen(QPen(QColor(8, 10, 12, 70), 0.6));
+  for (const auto & face : faces) {
+    painter.setBrush(face.color);
+    painter.drawPolygon(face.polygon);
+  }
+  return true;
+}
+
+QString SceneWidget::resolveMeshPath(const QString & uri) const
+{
+  if (uri.isEmpty()) {
+    return {};
+  }
+
+  if (uri.startsWith("file://")) {
+    const QString path = QUrl(uri).toLocalFile();
+    return QFileInfo::exists(path) ? path : QString();
+  }
+
+  if (QFileInfo::exists(uri)) {
+    return QFileInfo(uri).absoluteFilePath();
+  }
+
+  if (!uri.startsWith("package://")) {
+    return {};
+  }
+
+  const QString package_path = uri.mid(QString("package://").size());
+  const int slash_index = package_path.indexOf('/');
+  if (slash_index <= 0) {
+    return {};
+  }
+
+  const QString package = package_path.left(slash_index);
+  const QString relative_path = package_path.mid(slash_index + 1);
+  QStringList prefixes =
+    QString::fromLocal8Bit(qgetenv("AMENT_PREFIX_PATH")).split(':', Qt::SkipEmptyParts);
+  prefixes += QString::fromLocal8Bit(qgetenv("COLCON_PREFIX_PATH")).split(':', Qt::SkipEmptyParts);
+  prefixes.removeDuplicates();
+  for (const QString & prefix : prefixes) {
+    const QString candidate = QDir(prefix).filePath("share/" + package + "/" + relative_path);
+    if (QFileInfo::exists(candidate)) {
+      return QFileInfo(candidate).absoluteFilePath();
+    }
+  }
+  return {};
+}
+
+const SceneWidget::MeshCacheEntry * SceneWidget::meshForVisual(const RobotVisual & visual) const
+{
+  const QString path = resolveMeshPath(visual.mesh_filename);
+  if (path.isEmpty()) {
+    return nullptr;
+  }
+
+  auto it = mesh_cache_.find(path);
+  if (it == mesh_cache_.end()) {
+    MeshCacheEntry entry;
+    entry.attempted = true;
+    loadStlMesh(path, entry);
+    it = mesh_cache_.insert(path, entry);
+  }
+  if (!it->attempted || it->triangles.isEmpty()) {
+    return nullptr;
+  }
+  return &(*it);
+}
+
+bool SceneWidget::loadStlMesh(const QString & path, MeshCacheEntry & entry) const
+{
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    return false;
+  }
+
+  const qint64 file_size = file.size();
+  if (file_size >= 84) {
+    file.seek(80);
+    QDataStream stream(&file);
+    stream.setByteOrder(QDataStream::LittleEndian);
+    quint32 triangle_count = 0;
+    stream >> triangle_count;
+    const qint64 expected_size = 84 + (static_cast<qint64>(triangle_count) * 50);
+    if (triangle_count > 0 && expected_size == file_size) {
+      entry.triangles.reserve(static_cast<int>(std::min<quint32>(triangle_count, 200000U)));
+      for (quint32 i = 0; i < triangle_count && !stream.atEnd(); ++i) {
+        float nx = 0.0F;
+        float ny = 0.0F;
+        float nz = 0.0F;
+        float ax = 0.0F;
+        float ay = 0.0F;
+        float az = 0.0F;
+        float bx = 0.0F;
+        float by = 0.0F;
+        float bz = 0.0F;
+        float cx = 0.0F;
+        float cy = 0.0F;
+        float cz = 0.0F;
+        quint16 attribute = 0;
+        stream >> nx >> ny >> nz >> ax >> ay >> az >> bx >> by >> bz >> cx >> cy >> cz >> attribute;
+        (void)nx;
+        (void)ny;
+        (void)nz;
+        entry.triangles.push_back(
+          MeshTriangle{QVector3D(ax, ay, az), QVector3D(bx, by, bz), QVector3D(cx, cy, cz)});
+      }
+      return !entry.triangles.isEmpty();
+    }
+  }
+
+  file.seek(0);
+  const QString content = QString::fromLatin1(file.readAll());
+  QVector<QVector3D> vertices;
+  vertices.reserve(3);
+  const QStringList lines = content.split('\n');
+  for (const QString & line : lines) {
+    const QString normalized = line.simplified();
+    if (!normalized.startsWith("vertex ")) {
+      continue;
+    }
+    const QStringList tokens = normalized.split(' ', Qt::SkipEmptyParts);
+    if (tokens.size() != 4) {
+      continue;
+    }
+    bool ok_x = false;
+    bool ok_y = false;
+    bool ok_z = false;
+    const float x = tokens[1].toFloat(&ok_x);
+    const float y = tokens[2].toFloat(&ok_y);
+    const float z = tokens[3].toFloat(&ok_z);
+    if (!ok_x || !ok_y || !ok_z) {
+      continue;
+    }
+    vertices.push_back(QVector3D(x, y, z));
+    if (vertices.size() == 3) {
+      entry.triangles.push_back(MeshTriangle{vertices[0], vertices[1], vertices[2]});
+      vertices.clear();
+    }
+  }
+  return !entry.triangles.isEmpty();
+}
+
+QVector3D SceneWidget::meshPointToWorld(const RobotVisual & visual, const QVector3D & point) const
+{
+  const double c = std::cos(visual.pose.yaw);
+  const double s = std::sin(visual.pose.yaw);
+  const double local_x = point.x() * visual.mesh_scale_x;
+  const double local_y = point.y() * visual.mesh_scale_y;
+  const double local_z = point.z() * visual.mesh_scale_z;
+  return QVector3D(
+    static_cast<float>(visual.pose.x + (c * local_x) - (s * local_y)),
+    static_cast<float>(visual.pose.y + (s * local_x) + (c * local_y)),
+    static_cast<float>(visual.pose.z + local_z));
+}
+
 void SceneWidget::drawTfFrames(QPainter & painter) const
 {
   painter.save();
+  auto find_frame_pose = [this](const QString & child_frame) -> Pose2D {
+      for (const auto & frame : tf_frames_) {
+        if (frame.child_frame == child_frame && frame.pose.valid) {
+          return frame.pose;
+        }
+      }
+      return {};
+    };
+
+  const Pose2D map_pose = find_frame_pose("map");
+  const Pose2D odom_pose = find_frame_pose("odom");
+  const Pose2D base_footprint_pose = find_frame_pose("base_footprint");
+  if (map_pose.valid && odom_pose.valid) {
+    drawTfChainLine(painter, map_pose, odom_pose);
+  }
+  if (odom_pose.valid && base_footprint_pose.valid) {
+    drawTfChainLine(painter, odom_pose, base_footprint_pose);
+  }
+
   for (const auto & frame : tf_frames_) {
     if (!frame.pose.valid) {
       continue;
     }
-    const QPointF center = worldToScreen(QPointF(frame.pose.x, frame.pose.y));
-    const QPointF x_axis(
-      center.x() + std::cos(frame.pose.yaw) * 18.0,
-      center.y() - std::sin(frame.pose.yaw) * 18.0);
-    const QPointF y_axis(
-      center.x() + std::cos(frame.pose.yaw + k_half_pi) * 18.0,
-      center.y() - std::sin(frame.pose.yaw + k_half_pi) * 18.0);
+    const double axis_length = 0.18;
+    const QPointF center = worldToScreen3D(frame.pose.x, frame.pose.y, frame.pose.z);
+    const QPointF x_axis = worldToScreen3D(
+      frame.pose.x + (std::cos(frame.pose.yaw) * axis_length),
+      frame.pose.y + (std::sin(frame.pose.yaw) * axis_length),
+      frame.pose.z);
+    const QPointF y_axis = worldToScreen3D(
+      frame.pose.x + (std::cos(frame.pose.yaw + k_half_pi) * axis_length),
+      frame.pose.y + (std::sin(frame.pose.yaw + k_half_pi) * axis_length),
+      frame.pose.z);
+    const QPointF z_axis = worldToScreen3D(frame.pose.x, frame.pose.y, frame.pose.z + axis_length);
 
     painter.setPen(QPen(QColor(230, 60, 48), 4, Qt::SolidLine, Qt::RoundCap));
     painter.drawLine(center, x_axis);
     painter.setPen(QPen(QColor(80, 190, 96), 4, Qt::SolidLine, Qt::RoundCap));
     painter.drawLine(center, y_axis);
+    painter.setPen(QPen(QColor(62, 110, 255), 4, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(center, z_axis);
     painter.setPen(Qt::NoPen);
     painter.setBrush(QColor(70, 125, 255, 220));
     painter.drawEllipse(center, 4.5, 4.5);
@@ -588,6 +1283,34 @@ void SceneWidget::drawTfFrames(QPainter & painter) const
     painter.drawText(center + QPointF(8.0, -8.0), frame.child_frame);
   }
   painter.restore();
+}
+
+void SceneWidget::drawTfChainLine(QPainter & painter, const Pose2D & from, const Pose2D & to) const
+{
+  const QPointF start = worldToScreen3D(from.x, from.y, from.z);
+  const QPointF end = worldToScreen3D(to.x, to.y, to.z);
+  const QPointF delta = end - start;
+  const double length = std::hypot(delta.x(), delta.y());
+  QPointF normal(0.0, 0.0);
+  if (length > 1e-3) {
+    normal = QPointF(-delta.y() / length, delta.x() / length);
+  }
+
+  const struct
+  {
+    QColor color;
+    double offset;
+  } lines[] = {
+    {QColor(230, 60, 48, 150), -1.2},
+    {QColor(80, 190, 96, 150), 0.0},
+    {QColor(62, 110, 255, 150), 1.2},
+  };
+
+  for (const auto & line : lines) {
+    const QPointF offset = normal * line.offset;
+    painter.setPen(QPen(line.color, 1.0, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(start + offset, end + offset);
+  }
 }
 
 void SceneWidget::drawScan(QPainter & painter) const
@@ -632,14 +1355,15 @@ void SceneWidget::drawWaypointRoute(QPainter & painter) const
 void SceneWidget::drawWaypoints(QPainter & painter) const
 {
   for (int i = 0; i < waypoints_.size(); ++i) {
-    const QPointF center = worldToScreen(QPointF(waypoints_[i].x, waypoints_[i].y));
+    const QPointF center = worldToScreen3D(waypoints_[i].x, waypoints_[i].y, waypoints_[i].z);
     const bool selected = i == selected_waypoint_index_;
     painter.setPen(QPen(selected ? QColor(255, 180, 0) : QColor(255, 96, 64), selected ? 3 : 2));
     painter.setBrush(selected ? QColor(255, 180, 0, 80) : QColor(255, 96, 64, 60));
     painter.drawEllipse(center, 7.0, 7.0);
-    const QPointF heading(
-      center.x() + std::cos(waypoints_[i].yaw) * 18.0,
-      center.y() - std::sin(waypoints_[i].yaw) * 18.0);
+    const QPointF heading = worldToScreen3D(
+      waypoints_[i].x + (std::cos(waypoints_[i].yaw) * 0.22),
+      waypoints_[i].y + (std::sin(waypoints_[i].yaw) * 0.22),
+      waypoints_[i].z);
     painter.drawLine(center, heading);
     painter.drawText(center + QPointF(10.0, -8.0), QString::number(i + 1));
   }

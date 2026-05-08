@@ -139,12 +139,12 @@ QPixmap make_layer_icon(const QString & name, const QSize & size)
 QString pose_text(const Pose2D & pose)
 {
   if (!pose.valid) {
-    return "Pose --, --, --";
+    return "Pose x --, y --, z --";
   }
-  return QString("Pose %1, %2, %3")
+  return QString("Pose x %1, y %2, z %3")
     .arg(pose.x, 0, 'f', 2)
     .arg(pose.y, 0, 'f', 2)
-    .arg(pose.yaw, 0, 'f', 2);
+    .arg(pose.z, 0, 'f', 2);
 }
 
 void set_label_if_changed(QLabel * label, const QString & text)
@@ -231,7 +231,6 @@ MainWindow::MainWindow(QWidget * parent)
   root_layout->addWidget(content, 1);
   setCentralWidget(root);
 
-  connect(scene_, &SceneWidget::aimPoseChanged, this, &MainWindow::updateAimPose);
   connect(scene_, &SceneWidget::waypointsChanged, this, &MainWindow::updateWaypointList);
   connect(scene_, &SceneWidget::selectedWaypointChanged, this, [this](int index) {
     if (!waypoint_list_) {
@@ -250,24 +249,42 @@ MainWindow::MainWindow(QWidget * parent)
   connect(ros_worker_.get(), &RosWorker::localCostmapChanged, scene_, &SceneWidget::setLocalCostmap);
   connect(ros_worker_.get(), &RosWorker::scanChanged, scene_, &SceneWidget::setScan);
   connect(ros_worker_.get(), &RosWorker::robotPoseChanged, scene_, &SceneWidget::setRobotPose);
+  connect(ros_worker_.get(), &RosWorker::robotPoseChanged, this, &MainWindow::updateAimPose);
   connect(ros_worker_.get(), &RosWorker::globalPathChanged, scene_, &SceneWidget::setGlobalPath);
   connect(ros_worker_.get(), &RosWorker::localPathChanged, scene_, &SceneWidget::setLocalPath);
   connect(ros_worker_.get(), &RosWorker::motionStatusChanged, this, &MainWindow::updateMotionStatus);
   connect(ros_worker_.get(), &RosWorker::runtimeSummaryChanged, this, &MainWindow::updateRuntimeSummary);
   connect(ros_worker_.get(), &RosWorker::batteryStateChanged, this, [this](double percentage, bool present) {
+    auto refresh_battery_style = [this](const QString & level) {
+        battery_bar_->setProperty("level", level);
+        battery_label_->setProperty("level", level);
+        battery_bar_->style()->unpolish(battery_bar_);
+        battery_bar_->style()->polish(battery_bar_);
+        battery_label_->style()->unpolish(battery_label_);
+        battery_label_->style()->polish(battery_label_);
+      };
     if (!present || percentage < 0.0) {
       battery_bar_->setValue(0);
       battery_label_->setText("--%");
+      refresh_battery_style("unknown");
       return;
     }
-    const int rounded = static_cast<int>(std::round(percentage));
-    battery_bar_->setValue(std::clamp(rounded, 0, 100));
+    const int rounded = std::clamp(static_cast<int>(std::round(percentage)), 0, 100);
+    battery_bar_->setValue(rounded);
     battery_label_->setText(QString("%1%").arg(rounded));
+    if (rounded >= 80) {
+      refresh_battery_style("high");
+    } else if (rounded >= 30) {
+      refresh_battery_style("mid");
+    } else {
+      refresh_battery_style("low");
+    }
   });
   connect(ros_worker_.get(), &RosWorker::goalStateChanged, this, [this](const QString & state) {
     goal_label_->setText(state);
   });
   connect(ros_worker_.get(), &RosWorker::navigationCompleted, this, [this](bool succeeded) {
+    setWaypointEditingLocked(false);
     if (succeeded) {
       scene_->clearNavigationOverlays();
       appendEvent("Navigation overlays cleared");
@@ -296,7 +313,7 @@ QWidget * MainWindow::makeTopBar()
   title->setObjectName("brandLabel");
   frame_label_ = new QLabel("Fixed Frame: map");
   frame_label_->setObjectName("pill");
-  aim_label_ = new QLabel("Pose --, --, --");
+  aim_label_ = new QLabel("Pose x --, y --, z --");
   aim_label_->setObjectName("pill");
   mode_label_ = new QLabel("MANUAL");
   mode_label_->setObjectName("modePill");
@@ -345,11 +362,11 @@ QWidget * MainWindow::makeLeftPanel()
   command->setObjectName("sectionTitle");
   command_layout->addWidget(command);
 
-  auto * add_waypoint = new QPushButton("+ Add Waypoint");
-  add_waypoint->setObjectName("routeButton");
-  add_waypoint->setCheckable(true);
-  connect(add_waypoint, &QPushButton::toggled, scene_, &SceneWidget::setAddWaypointMode);
-  command_layout->addWidget(add_waypoint);
+  add_waypoint_button_ = new QPushButton("+ Add Waypoint");
+  add_waypoint_button_->setObjectName("routeButton");
+  add_waypoint_button_->setCheckable(true);
+  connect(add_waypoint_button_, &QPushButton::toggled, scene_, &SceneWidget::setAddWaypointMode);
+  command_layout->addWidget(add_waypoint_button_);
 
   waypoint_list_ = new QListWidget;
   waypoint_list_->setObjectName("waypointList");
@@ -388,7 +405,10 @@ QWidget * MainWindow::makeLeftPanel()
   command_grid->addWidget(initial_pose_button, 1, 1);
   command_layout->addLayout(command_grid);
   connect(send_button_, &QPushButton::clicked, this, &MainWindow::sendGoal);
-  connect(cancel_button, &QPushButton::clicked, ros_worker_.get(), &RosWorker::cancelNavigation);
+  connect(cancel_button, &QPushButton::clicked, this, [this]() {
+    ros_worker_->cancelNavigation();
+    setWaypointEditingLocked(false);
+  });
   connect(clear_button, &QPushButton::clicked, scene_, &SceneWidget::clearSchedule);
   connect(initial_pose_button, &QPushButton::clicked, this, [this]() {
     ros_worker_->publishInitialPose(scene_->aimPose());
@@ -578,6 +598,9 @@ void MainWindow::updateMotionStatus(const MotionStatusData & status)
   } else if (status.active) {
     motion_state = "Running";
   }
+  const bool navigation_running =
+    status.active && !status.goal_reached && !status.command_completed;
+  setWaypointEditingLocked(navigation_running);
 
   set_label_if_changed(motion_label_, motion_state);
   set_label_if_changed(
@@ -632,12 +655,30 @@ void MainWindow::appendEvent(const QString & event)
 
 void MainWindow::sendGoal()
 {
+  if (add_waypoint_button_ && add_waypoint_button_->isChecked()) {
+    add_waypoint_button_->setChecked(false);
+  }
   const auto waypoints = scene_->waypoints();
   if (!waypoints.empty()) {
     ros_worker_->sendRoute(waypoints);
     return;
   }
   ros_worker_->sendSingleGoal(scene_->aimPose());
+}
+
+void MainWindow::setWaypointEditingLocked(bool locked)
+{
+  if (waypoint_editing_locked_ == locked) {
+    return;
+  }
+  waypoint_editing_locked_ = locked;
+  if (!add_waypoint_button_) {
+    return;
+  }
+  if (locked && add_waypoint_button_->isChecked()) {
+    add_waypoint_button_->setChecked(false);
+  }
+  add_waypoint_button_->setEnabled(!locked);
 }
 
 void MainWindow::applyStyle()
@@ -694,6 +735,18 @@ void MainWindow::applyStyle()
       color: #cfd7e3;
       min-width: 30px;
     }
+    #batteryText[level="high"] {
+      color: #62f58b;
+    }
+    #batteryText[level="mid"] {
+      color: #ffd65a;
+    }
+    #batteryText[level="low"] {
+      color: #ff6b6b;
+    }
+    #batteryText[level="unknown"] {
+      color: #cfd7e3;
+    }
     #batteryBar {
       border: 1px solid #7f91a8;
       border-radius: 2px;
@@ -703,6 +756,18 @@ void MainWindow::applyStyle()
     #batteryBar::chunk {
       background: #d7dde6;
       border-radius: 1px;
+    }
+    #batteryBar[level="high"]::chunk {
+      background: #2ee66f;
+    }
+    #batteryBar[level="mid"]::chunk {
+      background: #f0c83a;
+    }
+    #batteryBar[level="low"]::chunk {
+      background: #ef4b4b;
+    }
+    #batteryBar[level="unknown"]::chunk {
+      background: #d7dde6;
     }
     #topMetric {
       min-width: 92px;
@@ -806,6 +871,29 @@ void MainWindow::applyStyle()
     #panelIconButton:hover {
       background: #162021;
       border-radius: 3px;
+    }
+    #cameraControls {
+      background: rgba(8, 12, 16, 186);
+      border: 1px solid #38505f;
+      border-radius: 5px;
+    }
+    #cameraToolButton {
+      background: #132028;
+      border: 1px solid #4a6575;
+      border-radius: 4px;
+      color: #dce8ee;
+      font-size: 17px;
+      font-weight: 700;
+      padding: 0;
+    }
+    #cameraToolButton:hover {
+      background: #1c3340;
+      border-color: #79a9bd;
+    }
+    #cameraToolButton:checked {
+      background: #14443d;
+      border-color: #45b899;
+      color: #eafff7;
     }
     #separator {
       color: #4c5654;

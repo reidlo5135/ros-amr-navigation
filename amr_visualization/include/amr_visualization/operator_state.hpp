@@ -15,6 +15,7 @@ struct Pose2D
 {
   double x{0.0};
   double y{0.0};
+  double z{0.0};
   double yaw{0.0};
   bool valid{false};
 };
@@ -32,6 +33,7 @@ enum class RobotGeometryType
   Box,
   Cylinder,
   Sphere,
+  Mesh,
 };
 
 struct RobotVisual
@@ -44,6 +46,10 @@ struct RobotVisual
   double size_z{0.0};
   double radius{0.0};
   double length{0.0};
+  QString mesh_filename;
+  double mesh_scale_x{1.0};
+  double mesh_scale_y{1.0};
+  double mesh_scale_z{1.0};
   bool valid{false};
 };
 
