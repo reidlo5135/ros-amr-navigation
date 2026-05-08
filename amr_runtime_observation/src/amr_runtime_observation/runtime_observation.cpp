@@ -11,6 +11,7 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions & options)
 : rclcpp::Node("runtime_observation", options)
 {
   this->declare_parameter("topics.motion_status", "/amr/motion/status");
+  this->declare_parameter("topics.motion_command", "/amr/motion/command");
   this->declare_parameter("topics.local_plan_status", "/amr/planner/local_status");
   this->declare_parameter("actions.navigate_to_poses", "/amr/navigator/navigate_to_poses");
   this->declare_parameter("topics.observation_summary", "/amr/observation/runtime/summary");
@@ -21,6 +22,7 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions & options)
   this->declare_parameter("observation.progress_epsilon", 0.05);
 
   this->get_parameter("topics.motion_status", this->motion_status_topic_);
+  this->get_parameter("topics.motion_command", this->motion_command_topic_);
   this->get_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->get_parameter("actions.navigate_to_poses", this->navigate_to_poses_action_name_);
   this->get_parameter("topics.observation_summary", this->observation_summary_topic_);
@@ -33,6 +35,10 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions & options)
   const std::string feedback_topic = this->navigate_to_poses_action_name_ + "/_action/feedback";
   const std::string status_topic = this->navigate_to_poses_action_name_ + "/_action/status";
 
+  this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
+    this->motion_command_topic_,
+    rclcpp::SystemDefaultsQoS(),
+    std::bind(&RuntimeObservation::handle_motion_command, this, std::placeholders::_1));
   this->motion_status_subscription_ = this->create_subscription<amr_msgs::msg::MotionStatus>(
     this->motion_status_topic_,
     rclcpp::SystemDefaultsQoS(),
@@ -68,8 +74,9 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions & options)
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured runtime observation with motion_status='%s', local_plan_status='%s', "
+    "Configured runtime observation with motion_command='%s', motion_status='%s', local_plan_status='%s', "
     "navigate_feedback='%s', navigate_status='%s', summary='%s', events='%s'",
+    this->motion_command_topic_.c_str(),
     this->motion_status_topic_.c_str(),
     this->local_plan_status_topic_.c_str(),
     feedback_topic.c_str(),
@@ -78,11 +85,49 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions & options)
     this->observation_event_topic_.c_str());
 }
 
+void RuntimeObservation::handle_motion_command(
+  const amr_msgs::msg::MotionCommand::SharedPtr message)
+{
+  this->latest_motion_command_ = *message;
+  this->has_motion_command_ = true;
+  this->last_motion_command_time_ = this->now();
+
+  const bool planner_recovery_context =
+    this->has_local_plan_status_ &&
+    this->latest_local_plan_status_.recovery_required &&
+    this->latest_local_plan_status_.decision !=
+      amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
+
+  if (message->mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE && planner_recovery_context) {
+    this->local_escape_command_id_ = message->command_id;
+    this->local_escape_command_active_ = true;
+    return;
+  }
+
+  if (message->mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE) {
+    this->local_escape_command_id_ = 0U;
+    this->local_escape_command_active_ = false;
+    return;
+  }
+
+  if (!planner_recovery_context) {
+    this->local_escape_command_id_ = 0U;
+    this->local_escape_command_active_ = false;
+  }
+}
+
 void RuntimeObservation::handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message)
 {
   this->latest_motion_status_ = *message;
   this->has_motion_status_ = true;
   this->last_motion_status_time_ = this->now();
+
+  if (this->local_escape_command_active_ && message->command_id != this->local_escape_command_id_) {
+    this->local_escape_command_active_ = false;
+  }
+  if (this->local_escape_command_active_ && (!message->active || message->command_completed)) {
+    this->local_escape_command_active_ = false;
+  }
 }
 
 void RuntimeObservation::handle_local_plan_status(
@@ -221,6 +266,16 @@ std::string RuntimeObservation::resolve_recovery_phase(
   }
 
   if (
+    this->local_escape_command_active_ &&
+    this->has_motion_status_ &&
+    this->latest_motion_status_.active &&
+    this->latest_motion_status_.mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE &&
+    this->latest_motion_status_.command_id == this->local_escape_command_id_)
+  {
+    return "local_escape_executing";
+  }
+
+  if (
     this->has_motion_status_ &&
     this->latest_motion_status_.active &&
     this->latest_motion_status_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE)
@@ -300,6 +355,12 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   snapshot.blocked_context = this->resolve_blocked_context(snapshot.progress_stalled);
   snapshot.recovery_reason = this->resolve_recovery_reason(snapshot.progress_stalled);
   snapshot.recovery_triggered = snapshot.recovery_reason != "none";
+  snapshot.local_escape_active =
+    this->local_escape_command_active_ &&
+    this->has_motion_status_ &&
+    this->latest_motion_status_.active &&
+    this->latest_motion_status_.mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE &&
+    this->latest_motion_status_.command_id == this->local_escape_command_id_;
   snapshot.recovery_phase = this->resolve_recovery_phase(
     snapshot.route_active,
     snapshot.recovery_triggered);
@@ -345,6 +406,10 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot & snapshot, cons
   if (snapshot.recovery_phase != this->previous_snapshot_.recovery_phase)
   {
     this->publish_event("recovery_phase_changed", "recovery_phase_changed", snapshot, now);
+  }
+  if (snapshot.local_escape_active != this->previous_snapshot_.local_escape_active)
+  {
+    this->publish_event("local_escape_state_changed", "local_escape_state_changed", snapshot, now);
   }
   if (snapshot.planner_decision != this->previous_snapshot_.planner_decision) {
     this->publish_event("planner_decision_changed", "local_plan_decision_changed", snapshot, now);
@@ -410,6 +475,7 @@ std::string RuntimeObservation::build_summary_json(
   stream << "\"blocked_context\":\"" << escape_json(snapshot.blocked_context) << "\",";
   stream << "\"recovery_triggered\":" << snapshot.recovery_triggered << ",";
   stream << "\"recovery_reason\":\"" << escape_json(snapshot.recovery_reason) << "\",";
+  stream << "\"local_escape_active\":" << snapshot.local_escape_active << ",";
   stream << "\"recovery_phase\":\"" << escape_json(snapshot.recovery_phase) << "\",";
   stream << "\"motion\":{";
   stream << "\"has_status\":" << this->has_motion_status_ << ",";
@@ -468,6 +534,7 @@ std::string RuntimeObservation::build_event_json(
   stream << "\"blocked_context\":\"" << escape_json(snapshot.blocked_context) << "\",";
   stream << "\"recovery_triggered\":" << snapshot.recovery_triggered << ",";
   stream << "\"recovery_reason\":\"" << escape_json(snapshot.recovery_reason) << "\",";
+  stream << "\"local_escape_active\":" << snapshot.local_escape_active << ",";
   stream << "\"recovery_phase\":\"" << escape_json(snapshot.recovery_phase) << "\",";
   stream << "\"action_status\":" << static_cast<int>(snapshot.action_status) << ",";
   stream << "\"action_status_label\":\"" << escape_json(this->action_status_label(snapshot.action_status)) << "\",";

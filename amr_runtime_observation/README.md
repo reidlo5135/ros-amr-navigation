@@ -10,6 +10,7 @@ Runtime observation package for the AMR navigation stack.
 
 ## Inputs
 
+- `/amr/motion/command`
 - `/amr/motion/status`
 - `/amr/planner/local_status`
 - `/amr/navigator/navigate_to_poses/_action/feedback`
@@ -52,7 +53,7 @@ recovery visibility.
 - route-level progress fallback remains `progress_stalled`
 
 This keeps `0.15.9` focused on observable recovery diagnosis. Recovery policy changes such as
-`local_escape-first` stay outside this patch line.
+`local_escape-first` were intentionally left for the next patch line.
 
 ## 0.15.10 Observation Baseline
 
@@ -71,6 +72,17 @@ and "which blocked layer is currently authoritative".
   - `recovery_executing`
 - blocked context is synthesized in observation from planner, controller, and route signals
   while keeping planner ownership out of `MotionController`
+
+## 0.16.x Observation Extension
+
+`0.16.x` adds visibility for planner-local escape before heavier recovery behaviors.
+
+- summary payload now exposes `local_escape_active`
+- event payload now emits `local_escape_state_changed`
+- `recovery_phase` can now report:
+  - `local_escape_executing`
+- local escape is inferred from a `MODE_NAVIGATE` motion-command re-dispatch that occurs while
+  planner-owned recovery is active and the planner has not escalated to `global_replan_required`
 
 ## Launch
 

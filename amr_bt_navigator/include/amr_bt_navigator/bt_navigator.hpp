@@ -29,6 +29,7 @@
 #include "amr_msgs/msg/motion_command.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
 #include "amr_msgs/srv/clear_costmap.hpp"
+#include "amr_msgs/srv/plan_local_escape.hpp"
 #include "amr_msgs/srv/plan_recovery.hpp"
 #include "amr_msgs/srv/plan_segment.hpp"
 
@@ -112,6 +113,12 @@ private:
     amr_msgs::msg::MotionCommand & command,
     std::string & error_message,
     const std::function<bool()> & is_cancel_requested = {});
+  bool request_local_escape_plan(
+    const geometry_msgs::msg::PoseStamped & current_pose,
+    const nav_msgs::msg::Path & source_plan,
+    nav_msgs::msg::Path & escape_plan,
+    std::string & error_message,
+    const std::function<bool()> & is_cancel_requested = {});
   bool clear_local_costmap(
     std::string & error_message,
     const std::function<bool()> & is_cancel_requested = {});
@@ -131,6 +138,7 @@ private:
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
   rclcpp_action::Server<NavigateToPoses>::SharedPtr action_server_poses_;
   rclcpp::Client<amr_msgs::srv::PlanRecovery>::SharedPtr plan_recovery_client_;
+  rclcpp::Client<amr_msgs::srv::PlanLocalEscape>::SharedPtr plan_local_escape_client_;
   rclcpp::Client<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_client_;
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
@@ -144,6 +152,7 @@ private:
   std::string motion_status_topic_;
   std::string local_plan_status_topic_;
   std::string plan_recovery_service_;
+  std::string plan_local_escape_service_;
   std::string clear_costmap_service_;
   std::string plan_segment_service_;
   std::string behavior_tree_xml_path_;

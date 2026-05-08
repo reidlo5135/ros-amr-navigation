@@ -19,6 +19,10 @@ Nav2-style responsibility split:
 - `amr_controller_server`: local replan / local escape / execute
 - `amr_recovery_server`: wait / backup / spin commands
 
+Current `0.16.x` recovery policy starts with one planner-local escape attempt before
+falling back to heavier recovery behaviors or global replanning when the local planner
+still reports a blocked path.
+
 ## Important Files
 
 - `config/navigate_to_pose.xml`
@@ -29,6 +33,7 @@ Nav2-style responsibility split:
 - `/amr/localization/pose`
 - `/amr/motion/status`
 - `/amr/global_planner/plan_segment`
+- `/amr/local_planner/plan_local_escape`
 - `/amr/recovery_server/plan_recovery`
 - `/amr/costmap_server/clear_costmap`
 

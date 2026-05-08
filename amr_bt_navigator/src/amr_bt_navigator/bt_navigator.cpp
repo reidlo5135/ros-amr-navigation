@@ -65,6 +65,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   motion_status_topic_(""),
   local_plan_status_topic_(""),
   plan_recovery_service_("/amr/recovery_server/plan_recovery"),
+  plan_local_escape_service_("/amr/local_planner/plan_local_escape"),
   clear_costmap_service_("/amr/costmap_server/clear_costmap"),
   plan_segment_service_("/amr/global_planner/plan_segment"),
   behavior_tree_xml_path_(""),
@@ -87,6 +88,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("topics.status", this->motion_status_topic_);
   this->declare_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_);
+  this->declare_parameter("services.local_escape", this->plan_local_escape_service_);
   this->declare_parameter("services.clear_costmap", this->clear_costmap_service_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
   this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
@@ -110,6 +112,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("topics.status", this->motion_status_topic_);
   this->get_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->get_parameter("services.plan_recovery", this->plan_recovery_service_);
+  this->get_parameter("services.local_escape", this->plan_local_escape_service_);
   this->get_parameter("services.clear_costmap", this->clear_costmap_service_);
   this->get_parameter("services.segment", this->plan_segment_service_);
   this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
@@ -151,6 +154,8 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->command_topic_, rclcpp::SystemDefaultsQoS());
   this->plan_recovery_client_ = this->create_client<amr_msgs::srv::PlanRecovery>(
     this->plan_recovery_service_);
+  this->plan_local_escape_client_ = this->create_client<amr_msgs::srv::PlanLocalEscape>(
+    this->plan_local_escape_service_);
   this->clear_costmap_client_ = this->create_client<amr_msgs::srv::ClearCostmap>(
     this->clear_costmap_service_);
   this->plan_segment_client_ = this->create_client<amr_msgs::srv::PlanSegment>(
@@ -207,7 +212,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with actions='%s'/'%s', command='%s', pose='%s', status='%s', local_plan_status='%s', recovery='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
+    "Configured navigator with actions='%s'/'%s', command='%s', pose='%s', status='%s', local_plan_status='%s', recovery='%s', local_escape='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->navigate_poses_action_name_.c_str(),
     this->command_topic_.c_str(),
@@ -215,6 +220,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->motion_status_topic_.c_str(),
     this->local_plan_status_topic_.c_str(),
     this->plan_recovery_service_.c_str(),
+    this->plan_local_escape_service_.c_str(),
     this->clear_costmap_service_.c_str(),
     this->plan_segment_service_.c_str(),
     this->behavior_tree_xml_path_.c_str());
@@ -248,6 +254,7 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   this->action_server_.reset();
   this->action_server_poses_.reset();
   this->plan_recovery_client_.reset();
+  this->plan_local_escape_client_.reset();
   this->clear_costmap_client_.reset();
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
@@ -272,6 +279,7 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   this->action_server_.reset();
   this->action_server_poses_.reset();
   this->plan_recovery_client_.reset();
+  this->plan_local_escape_client_.reset();
   this->clear_costmap_client_.reset();
   this->plan_segment_client_.reset();
   this->current_pose_subscription_.reset();
@@ -581,6 +589,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   blackboard->set("active_command", amr_msgs::msg::MotionCommand());
   blackboard->set("active_command_dispatch_ns", static_cast<int64_t>(0));
   blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+  blackboard->set("local_escape_dispatched", false);
   blackboard->set("status_message", std::string("Behavior tree is running."));
   blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
   blackboard->set("recovery_attempts", 0);
@@ -676,6 +685,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       blackboard->set("active_command", command);
       blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
       blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+      blackboard->set("local_escape_dispatched", false);
       blackboard->set("recovery_attempts", 0);
       blackboard->set("status_message", std::string("Motion command dispatched."));
       return BT::NodeStatus::SUCCESS;
@@ -795,6 +805,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
+      const auto planned_path = blackboard->get<nav_msgs::msg::Path>("planned_path");
+      const bool local_escape_dispatched = blackboard->get<bool>("local_escape_dispatched");
       const auto local_plan_status = navigator->get_local_plan_status_copy();
       auto attempts = blackboard->get<int>("recovery_attempts");
       std::string error_message;
@@ -836,6 +848,37 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         RCLCPP_WARN(
           navigator->get_logger(),
           "BT: clear local costmap failed: %s",
+          error_message.c_str());
+      }
+
+      const bool local_escape_candidate =
+        !planned_path.poses.empty() &&
+        !local_escape_dispatched &&
+        planner_decision != amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
+      if (local_escape_candidate) {
+        nav_msgs::msg::Path escape_plan;
+        if (navigator->request_local_escape_plan(
+            current_pose, planned_path, escape_plan, error_message, cancel_requested))
+        {
+          auto command = navigator->build_motion_command(goal_pose, route_id, escape_plan);
+          navigator->publish_motion_command(command);
+          blackboard->set("active_command", command);
+          blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+          blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+          blackboard->set("local_escape_dispatched", true);
+          blackboard->set("planned_path", escape_plan);
+          blackboard->set(
+            "status_message",
+            std::string("Local escape plan dispatched before heavier recovery behaviors."));
+          return BT::NodeStatus::SUCCESS;
+        }
+
+        if (cancel_requested()) {
+          return finish_canceled();
+        }
+        RCLCPP_WARN(
+          navigator->get_logger(),
+          "BT: local escape planning failed, falling back to recovery behaviors: %s",
           error_message.c_str());
       }
 
@@ -1007,6 +1050,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       blackboard->set("active_command", command);
       blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
       blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+      blackboard->set("local_escape_dispatched", false);
       blackboard->set("planned_path", replanned_path);
       blackboard->set(
         "status_message",
@@ -1161,7 +1205,8 @@ bool Btnavigator::is_navigator_ready(std::string & error_message) const
 {
   if (
     !this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated() ||
-    !this->plan_segment_client_ || !this->plan_recovery_client_ || !this->clear_costmap_client_)
+    !this->plan_segment_client_ || !this->plan_recovery_client_ || !this->plan_local_escape_client_ ||
+    !this->clear_costmap_client_)
   {
     error_message = "Navigator is not active.";
     return false;
@@ -1209,7 +1254,7 @@ bool Btnavigator::wait_for_recovery_services(
     return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
   };
 
-  if (!this->plan_recovery_client_ || !this->clear_costmap_client_) {
+  if (!this->plan_recovery_client_ || !this->plan_local_escape_client_ || !this->clear_costmap_client_) {
     error_message = "Recovery clients are not configured.";
     return false;
   }
@@ -1228,6 +1273,23 @@ bool Btnavigator::wait_for_recovery_services(
   }
   if (elapsed_ms >= this->planner_wait_timeout_ms_) {
     error_message = "Recovery planner service is not available.";
+    return false;
+  }
+
+  elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    const int wait_ms = std::min(100, this->planner_wait_timeout_ms_ - elapsed_ms);
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (this->plan_local_escape_client_->wait_for_service(std::chrono::milliseconds(wait_ms))) {
+      break;
+    }
+    elapsed_ms += wait_ms;
+  }
+  if (elapsed_ms >= this->planner_wait_timeout_ms_) {
+    error_message = "Local escape planner service is not available.";
     return false;
   }
 
@@ -1350,6 +1412,51 @@ bool Btnavigator::request_recovery_command(
   command.header.frame_id =
     current_pose.header.frame_id.empty() ? std::string("map") : current_pose.header.frame_id;
   command.command_id = this->next_command_id_++;
+  error_message.clear();
+  return true;
+}
+
+bool Btnavigator::request_local_escape_plan(
+  const geometry_msgs::msg::PoseStamped & current_pose,
+  const nav_msgs::msg::Path & source_plan,
+  nav_msgs::msg::Path & escape_plan,
+  std::string & error_message,
+  const std::function<bool()> & is_cancel_requested)
+{
+  auto request = std::make_shared<amr_msgs::srv::PlanLocalEscape::Request>();
+  auto cancel_requested = [&is_cancel_requested]() {
+    return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
+  };
+
+  request->current_pose = current_pose;
+  request->source_plan = source_plan;
+
+  auto future = this->plan_local_escape_client_->async_send_request(request);
+  int elapsed_ms = 0;
+  while (elapsed_ms < this->planner_wait_timeout_ms_) {
+    if (cancel_requested()) {
+      error_message = "Navigation canceled.";
+      return false;
+    }
+    if (future.wait_for(std::chrono::milliseconds(50)) == std::future_status::ready) {
+      break;
+    }
+    elapsed_ms += 50;
+  }
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+    future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
+  {
+    error_message = "Timed out while waiting for a local escape plan.";
+    return false;
+  }
+
+  const auto response = future.get();
+  if (!response->success) {
+    error_message = response->message;
+    return false;
+  }
+
+  escape_plan = response->plan;
   error_message.clear();
   return true;
 }

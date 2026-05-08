@@ -38,12 +38,14 @@ private:
     uint8_t planner_decision{amr_msgs::msg::LocalPlanStatus::DECISION_OK};
     int8_t action_status{action_msgs::msg::GoalStatus::STATUS_UNKNOWN};
     bool recovery_triggered{false};
+    bool local_escape_active{false};
     std::string blocked_context{"clear"};
     std::string recovery_reason{"none"};
     std::string recovery_phase{"idle"};
     std::string runtime_state{"idle"};
   };
 
+  void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
   void handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message);
   void handle_local_plan_status(const amr_msgs::msg::LocalPlanStatus::SharedPtr message);
   void handle_navigate_feedback(const NavigateToPosesFeedbackMessage::SharedPtr message);
@@ -74,6 +76,7 @@ private:
   std::string action_status_label(int8_t status) const;
   static std::string escape_json(const std::string & value);
 
+  rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
   rclcpp::Subscription<amr_msgs::msg::LocalPlanStatus>::SharedPtr local_plan_status_subscription_;
   rclcpp::Subscription<NavigateToPosesFeedbackMessage>::SharedPtr navigate_feedback_subscription_;
@@ -82,6 +85,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr observation_event_publisher_;
   rclcpp::TimerBase::SharedPtr publish_timer_;
 
+  std::string motion_command_topic_;
   std::string motion_status_topic_;
   std::string local_plan_status_topic_;
   std::string navigate_to_poses_action_name_;
@@ -92,14 +96,17 @@ private:
   double progress_stall_window_sec_;
   double progress_epsilon_;
 
+  amr_msgs::msg::MotionCommand latest_motion_command_;
   amr_msgs::msg::MotionStatus latest_motion_status_;
   amr_msgs::msg::LocalPlanStatus latest_local_plan_status_;
   NavigateToPosesFeedbackMessage latest_navigate_feedback_;
   action_msgs::msg::GoalStatusArray latest_navigate_status_;
+  bool has_motion_command_{false};
   bool has_motion_status_{false};
   bool has_local_plan_status_{false};
   bool has_navigate_feedback_{false};
   bool has_navigate_status_{false};
+  rclcpp::Time last_motion_command_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_motion_status_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_local_plan_status_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_navigate_feedback_time_{0, 0, RCL_ROS_TIME};
@@ -107,6 +114,8 @@ private:
   rclcpp::Time best_progress_time_{0, 0, RCL_ROS_TIME};
   float best_distance_remaining_{0.0f};
   bool has_progress_baseline_{false};
+  uint32_t local_escape_command_id_{0U};
+  bool local_escape_command_active_{false};
   Snapshot previous_snapshot_;
   bool has_previous_snapshot_{false};
 };

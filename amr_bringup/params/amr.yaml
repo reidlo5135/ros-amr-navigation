@@ -276,6 +276,7 @@
     services:
       segment: "/amr/global_planner/plan_segment"
       plan_recovery: "/amr/recovery_server/plan_recovery"
+      local_escape: "/amr/local_planner/plan_local_escape"
       clear_costmap: "/amr/costmap_server/clear_costmap"
     actions:
       navigate_to_pose: "/amr/navigator/navigate_to_pose"
@@ -305,6 +306,7 @@
 /amr/runtime_observation:
   ros__parameters:
     topics:
+      motion_command: "/amr/motion/command"
       motion_status: "/amr/motion/status"
       local_plan_status: "/amr/planner/local_status"
       observation_summary: "/amr/observation/runtime/summary"

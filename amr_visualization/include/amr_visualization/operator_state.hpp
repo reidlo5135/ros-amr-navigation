@@ -92,6 +92,7 @@ struct RuntimeSummary
   QString recovery_phase{"idle"};
   QString recovery_reason{"none"};
   QString action_status{"unknown"};
+  bool local_escape_active{false};
 };
 
 double quaternion_to_yaw(double x, double y, double z, double w);

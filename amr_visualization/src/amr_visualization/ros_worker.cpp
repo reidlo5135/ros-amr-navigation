@@ -567,6 +567,7 @@ RuntimeSummary RosWorker::parse_runtime_summary(const std::string & payload) con
   summary.recovery_phase = object.value("recovery_phase").toString(summary.recovery_phase);
   summary.recovery_reason = object.value("recovery_reason").toString(summary.recovery_reason);
   summary.action_status = object.value("action_status").toString(summary.action_status);
+  summary.local_escape_active = object.value("local_escape_active").toBool(summary.local_escape_active);
   return summary;
 }
 

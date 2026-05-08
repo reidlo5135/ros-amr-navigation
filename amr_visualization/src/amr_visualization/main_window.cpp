@@ -166,6 +166,7 @@ QString summarize_event_payload(const QString & event)
   const QString runtime_state = object.value("runtime_state").toString();
   const QString blocked_context = object.value("blocked_context").toString();
   const QString recovery_phase = object.value("recovery_phase").toString();
+  const bool local_escape_active = object.value("local_escape_active").toBool(false);
   const QString action_status_label = object.value("action_status_label").toString();
   const int current_goal_index = object.value("current_goal_index").toInt(0);
   const int goal_count = object.value("goal_count").toInt(0);
@@ -189,6 +190,9 @@ QString summarize_event_payload(const QString & event)
   }
   if (!recovery_phase.isEmpty() && recovery_phase != "idle") {
     parts << recovery_phase;
+  }
+  if (local_escape_active) {
+    parts << "local_escape";
   }
   if (recoveries > 0) {
     parts << QString("recoveries %1").arg(recoveries);

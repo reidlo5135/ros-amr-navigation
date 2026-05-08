@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2026-05-08
+----------
+
+- Started the ``0.16.2`` patch branch:
+
+  - wired ``amr_bt_navigator`` to try planner-local escape before heavier recovery behaviors when the local planner reports a blocked path
+  - added escalation guards so one local-escape re-dispatch does not loop indefinitely before fallback recovery behaviors or replanning
+  - extended ``amr_runtime_observation`` and ``amr_visualization`` with ``local_escape_active`` and ``local_escape_executing`` visibility for operator-side diagnosis
+
 2026-04-30
 ----------
 
