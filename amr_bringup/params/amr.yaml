@@ -209,6 +209,8 @@
       escape_forward_distance: 0.55
       escape_lateral_distance: 0.22
       goal_proximity_disable_distance: 0.45
+      recovery_confirm_cycles: 3
+      goal_proximity_confirm_cycles: 2
 
 /amr/motion_controller:
   ros__parameters:
@@ -221,18 +223,20 @@
       velocity: "/cmd_vel"
     control:
       frequency: 10.0
-      linear_speed: 0.075
-      min_linear_speed: 0.05
+      linear_speed: 0.10
+      min_linear_speed: 0.06
       tracking_lookahead_distance: 0.18
-      angular_gain: 2.0
-      max_angular_speed: 0.65
+      angular_gain: 2.6
+      max_angular_speed: 0.85
       distance_tolerance: 0.1
       goal_heading_tolerance: 0.12
-      goal_reach_heading_tolerance: 0.30
+      goal_reach_heading_tolerance: 0.05
+      final_align_max_angular_speed: 0.75
+      tracking_heading_deadband: 0.05
       rotate_in_place_threshold: 0.45
       rotate_in_place_goal_distance: 0.18
       heading_slowdown_threshold: 0.12
-      min_heading_motion_scale: 0.10
+      min_heading_motion_scale: 0.20
     progress_checker:
       required_movement_radius: 0.03
       time_allowance_sec: 4.0
@@ -240,7 +244,7 @@
       xy_tolerance: 0.1
       yaw_tolerance: 0.7853981633974483
       hold_time_sec: 0.0
-      respect_goal_yaw: true
+      respect_goal_yaw: false
       ignore_yaw: false
     safety_gate:
       enabled: true
@@ -261,7 +265,7 @@
         ki: 0.00
         kd: 0.02
         integral_limit: 0.30
-      max_linear_accel: 0.09
+      max_linear_accel: 0.10
       max_angular_accel: 0.8
 
 /amr/navigator:

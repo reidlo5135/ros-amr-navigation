@@ -121,6 +121,8 @@ private:
   bool find_first_blocked_pose_on_plan(
     const nav_msgs::msg::Path &plan,
     geometry_msgs::msg::PoseStamped &blocked_pose) const;
+  void reset_dynamic_blocked_state();
+  bool confirm_dynamic_recovery_decision(uint8_t decision);
   double sample_lateral_occupancy(
     double origin_x,
     double origin_y,
@@ -171,10 +173,14 @@ private:
   double dynamic_obstacle_escape_forward_distance_;
   double dynamic_obstacle_escape_lateral_distance_;
   double dynamic_obstacle_goal_proximity_disable_distance_;
+  int dynamic_obstacle_recovery_confirm_cycles_;
+  int dynamic_obstacle_goal_proximity_confirm_cycles_;
   int nearest_free_search_radius_cells_;
   std::vector<double> footprint_polygon_param_;
   amr::geometry::FootprintPolygon footprint_polygon_;
   uint32_t last_command_id_;
+  uint8_t dynamic_blocked_decision_;
+  int dynamic_blocked_streak_;
   std::size_t last_progress_index_;
   amr_msgs::msg::MotionCommand latest_command_;
   geometry_msgs::msg::PoseStamped current_pose_;
@@ -298,6 +304,7 @@ private:
   double distance_tolerance_;
   double goal_heading_tolerance_;
   double goal_reach_heading_tolerance_;
+  double final_align_max_angular_speed_;
   double goal_checker_xy_tolerance_;
   double goal_checker_yaw_tolerance_;
   double goal_checker_hold_time_sec_;
@@ -305,6 +312,7 @@ private:
   bool goal_checker_ignore_yaw_;
   double rotate_in_place_threshold_;
   double rotate_in_place_goal_distance_;
+  double tracking_heading_deadband_;
   double heading_slowdown_threshold_;
   double min_heading_motion_scale_;
   double max_linear_accel_;

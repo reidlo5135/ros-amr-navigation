@@ -4,6 +4,15 @@ Changelog
 2026-05-08
 ----------
 
+- Started the ``0.16.3`` patch branch:
+
+  - reduced false blocked-state escalation in corridor and doorway cases by requiring short persistence before dynamic obstacle recovery decisions trigger
+  - kept ``NavigateToPoses`` intermediate waypoints heading-free while reserving explicit final yaw alignment for the last goal
+  - tightened final yaw settle behavior and suppressed tiny straight-line heading corrections that made nominal path tracking visibly wag
+
+2026-05-08
+----------
+
 - Started the ``0.16.2`` patch branch:
 
   - wired ``amr_bt_navigator`` to try planner-local escape before heavier recovery behaviors when the local planner reports a blocked path

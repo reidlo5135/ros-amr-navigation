@@ -425,6 +425,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   const auto result = this->execute_goal_pose(
     goal->goal_pose,
     "navigate_to_pose",
+    true,
     [goal_handle]() { return goal_handle->is_canceling(); },
     [goal_handle, this](
       const geometry_msgs::msg::PoseStamped & pose,
@@ -500,9 +501,11 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
     }
 
     const auto route_goal_pose = make_route_goal_pose(goal->goal_poses, index);
+    const bool align_heading_at_goal = (index + 1U) >= goal->goal_poses.size();
     const auto waypoint_result = this->execute_goal_pose(
       route_goal_pose,
       "navigate_to_poses",
+      align_heading_at_goal,
       [goal_handle]() { return goal_handle->is_canceling(); },
       [goal_handle, index, goal_count, this](
         const geometry_msgs::msg::PoseStamped & pose,
@@ -564,6 +567,7 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
 Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   const geometry_msgs::msg::PoseStamped & goal_pose,
   const std::string & route_id,
+  const bool align_heading_at_goal,
   const std::function<bool()> & is_cancel_requested,
   const std::function<void(
     const geometry_msgs::msg::PoseStamped &,
@@ -584,6 +588,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   blackboard->set("navigator", this);
   blackboard->set("goal_pose", goal_pose);
   blackboard->set("route_id", route_id);
+  blackboard->set("align_heading_at_goal", align_heading_at_goal);
   blackboard->set("is_cancel_requested", is_cancel_requested);
   blackboard->set("planned_path", nav_msgs::msg::Path());
   blackboard->set("active_command", amr_msgs::msg::MotionCommand());
@@ -674,8 +679,9 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto * navigator = blackboard->get<Btnavigator *>("navigator");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
+      const bool align_heading_at_goal = blackboard->get<bool>("align_heading_at_goal");
       const auto plan = blackboard->get<nav_msgs::msg::Path>("planned_path");
-      auto command = navigator->build_motion_command(goal_pose, route_id, plan);
+      auto command = navigator->build_motion_command(goal_pose, route_id, plan, align_heading_at_goal);
       navigator->publish_motion_command(command);
       RCLCPP_INFO(
         navigator->get_logger(),
@@ -805,6 +811,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
+      const bool align_heading_at_goal = blackboard->get<bool>("align_heading_at_goal");
       const auto planned_path = blackboard->get<nav_msgs::msg::Path>("planned_path");
       const bool local_escape_dispatched = blackboard->get<bool>("local_escape_dispatched");
       const auto local_plan_status = navigator->get_local_plan_status_copy();
@@ -860,7 +867,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         if (navigator->request_local_escape_plan(
             current_pose, planned_path, escape_plan, error_message, cancel_requested))
         {
-          auto command = navigator->build_motion_command(goal_pose, route_id, escape_plan);
+          auto command = navigator->build_motion_command(
+            goal_pose, route_id, escape_plan, align_heading_at_goal);
           navigator->publish_motion_command(command);
           blackboard->set("active_command", command);
           blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
@@ -894,7 +902,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           }
           blackboard->set("status_message", error_message);
         } else {
-          auto command = navigator->build_motion_command(goal_pose, route_id, replanned_path);
+          auto command = navigator->build_motion_command(
+            goal_pose, route_id, replanned_path, align_heading_at_goal);
           navigator->publish_motion_command(command);
           blackboard->set("active_command", command);
           blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
@@ -1045,7 +1054,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         return BT::NodeStatus::SUCCESS;
       }
 
-      auto command = navigator->build_motion_command(goal_pose, route_id, replanned_path);
+      auto command = navigator->build_motion_command(
+        goal_pose, route_id, replanned_path, align_heading_at_goal);
       navigator->publish_motion_command(command);
       blackboard->set("active_command", command);
       blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
@@ -1541,7 +1551,8 @@ bool Btnavigator::has_active_goal() const
 amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   const geometry_msgs::msg::PoseStamped & goal_pose,
   const std::string & route_id,
-  const nav_msgs::msg::Path & plan)
+  const nav_msgs::msg::Path & plan,
+  const bool align_heading_at_goal)
 {
   amr_msgs::msg::MotionCommand command;
   command.header.stamp = this->now();
@@ -1553,7 +1564,7 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   command.node_id = this->default_node_id_;
   command.plan = plan;
   command.goal_pose = goal_pose;
-  command.align_heading_at_goal = false;
+  command.align_heading_at_goal = align_heading_at_goal;
   return command;
 }
 

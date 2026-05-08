@@ -81,6 +81,7 @@ private:
   ExecutionResult execute_goal_pose(
     const geometry_msgs::msg::PoseStamped & goal_pose,
     const std::string & route_id,
+    bool align_heading_at_goal,
     const std::function<bool()> & is_cancel_requested,
     const std::function<void(
       const geometry_msgs::msg::PoseStamped &,
@@ -131,7 +132,8 @@ private:
   amr_msgs::msg::MotionCommand build_motion_command(
     const geometry_msgs::msg::PoseStamped & goal_pose,
     const std::string & route_id,
-    const nav_msgs::msg::Path & plan);
+    const nav_msgs::msg::Path & plan,
+    bool align_heading_at_goal);
   void publish_motion_command(const amr_msgs::msg::MotionCommand & command);
   void publish_stop_command();
 

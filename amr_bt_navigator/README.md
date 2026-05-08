@@ -22,6 +22,8 @@ Nav2-style responsibility split:
 Current `0.16.x` recovery policy starts with one planner-local escape attempt before
 falling back to heavier recovery behaviors or global replanning when the local planner
 still reports a blocked path.
+For `NavigateToPoses`, intermediate waypoint goals keep heading-free execution while only the
+final goal requests explicit heading alignment at arrival.
 
 ## Important Files
 

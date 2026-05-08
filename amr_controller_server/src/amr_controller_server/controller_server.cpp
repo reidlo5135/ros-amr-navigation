@@ -394,8 +394,12 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   dynamic_obstacle_escape_forward_distance_(1.2),
   dynamic_obstacle_escape_lateral_distance_(0.55),
   dynamic_obstacle_goal_proximity_disable_distance_(0.45),
+  dynamic_obstacle_recovery_confirm_cycles_(3),
+  dynamic_obstacle_goal_proximity_confirm_cycles_(2),
   nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
+  dynamic_blocked_decision_(amr_msgs::msg::LocalPlanStatus::DECISION_OK),
+  dynamic_blocked_streak_(0),
   last_progress_index_(0U),
   map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_command_(false),
@@ -449,6 +453,12 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   this->declare_parameter(
     "dynamic_obstacle.goal_proximity_disable_distance",
     this->dynamic_obstacle_goal_proximity_disable_distance_);
+  this->declare_parameter(
+    "dynamic_obstacle.recovery_confirm_cycles",
+    this->dynamic_obstacle_recovery_confirm_cycles_);
+  this->declare_parameter(
+    "dynamic_obstacle.goal_proximity_confirm_cycles",
+    this->dynamic_obstacle_goal_proximity_confirm_cycles_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State &state)
@@ -502,6 +512,12 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter(
     "dynamic_obstacle.goal_proximity_disable_distance",
     this->dynamic_obstacle_goal_proximity_disable_distance_);
+  this->get_parameter(
+    "dynamic_obstacle.recovery_confirm_cycles",
+    this->dynamic_obstacle_recovery_confirm_cycles_);
+  this->get_parameter(
+    "dynamic_obstacle.goal_proximity_confirm_cycles",
+    this->dynamic_obstacle_goal_proximity_confirm_cycles_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
@@ -612,6 +628,8 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
   this->last_command_id_ = 0U;
+  this->dynamic_blocked_decision_ = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
+  this->dynamic_blocked_streak_ = 0;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
@@ -635,6 +653,8 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
   this->last_command_id_ = 0U;
+  this->dynamic_blocked_decision_ = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
+  this->dynamic_blocked_streak_ = 0;
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
@@ -648,6 +668,7 @@ void LocalPlanner::handle_motion_command(const amr_msgs::msg::MotionCommand::Sha
   {
     this->last_progress_index_ = 0U;
     this->last_command_id_ = message->command_id;
+    this->reset_dynamic_blocked_state();
   }
   this->latest_command_ = *message;
   this->has_command_ = true;
@@ -780,6 +801,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
 
   if (source_plan.poses.empty())
   {
+    this->reset_dynamic_blocked_state();
     result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
     return result;
   }
@@ -788,6 +810,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   const double goal_distance = this->pose_distance(current_pose, goal_pose);
   if (this->pose_distance(current_pose, goal_pose) <= this->goal_tolerance_)
   {
+    this->reset_dynamic_blocked_state();
     this->last_progress_index_ = source_plan.poses.size() - 1U;
     result.plan.poses.push_back(goal_pose);
     result.local_plan_valid = true;
@@ -824,14 +847,23 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
       geometry_msgs::msg::PoseStamped final_blocked_pose;
       if (this->find_first_blocked_pose_on_plan(result.plan, final_blocked_pose))
       {
-        result.recovery_required = true;
-        result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
+        const uint8_t blocked_decision =
+          goal_distance <= this->dynamic_obstacle_goal_proximity_disable_distance_ ?
+          amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED :
+          amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
+        result.decision = blocked_decision;
         result.has_blocked_pose = true;
         result.blocked_pose = final_blocked_pose;
         result.blocked_distance = this->pose_distance(current_pose, final_blocked_pose);
+        result.recovery_required = this->confirm_dynamic_recovery_decision(blocked_decision);
+        if (!result.recovery_required)
+        {
+          result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
+        }
       }
       else if (obstacle_active)
       {
+        this->reset_dynamic_blocked_state();
         result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
         result.has_blocked_pose = true;
         result.blocked_pose = blocked_pose;
@@ -839,6 +871,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
       }
       else
       {
+        this->reset_dynamic_blocked_state();
         result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
       }
       return result;
@@ -853,6 +886,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
 
   if (!obstacle_active)
   {
+    this->reset_dynamic_blocked_state();
     result.plan = this->build_sliced_local_plan_with_lookahead(
       source_plan,
       current_pose,
@@ -867,14 +901,19 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
 
   result.plan = sliced_plan;
   result.local_plan_valid = !result.plan.poses.empty();
-  result.recovery_required = true;
-  result.decision =
+  const uint8_t blocked_decision =
     goal_distance <= this->dynamic_obstacle_goal_proximity_disable_distance_ ?
     amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED :
     amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
+  result.decision = blocked_decision;
   result.has_blocked_pose = true;
   result.blocked_pose = blocked_pose;
   result.blocked_distance = this->pose_distance(current_pose, blocked_pose);
+  result.recovery_required = this->confirm_dynamic_recovery_decision(blocked_decision);
+  if (!result.recovery_required)
+  {
+    result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
+  }
   return result;
 }
 
@@ -1157,6 +1196,37 @@ bool LocalPlanner::find_first_blocked_pose_on_plan(
   }
 
   return false;
+}
+
+void LocalPlanner::reset_dynamic_blocked_state()
+{
+  this->dynamic_blocked_decision_ = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
+  this->dynamic_blocked_streak_ = 0;
+}
+
+bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision)
+{
+  if (decision == amr_msgs::msg::LocalPlanStatus::DECISION_OK)
+  {
+    this->reset_dynamic_blocked_state();
+    return false;
+  }
+
+  if (decision != this->dynamic_blocked_decision_)
+  {
+    this->dynamic_blocked_decision_ = decision;
+    this->dynamic_blocked_streak_ = 1;
+  }
+  else
+  {
+    this->dynamic_blocked_streak_ += 1;
+  }
+
+  const int required_cycles =
+    decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED ?
+    std::max(1, this->dynamic_obstacle_goal_proximity_confirm_cycles_) :
+    std::max(1, this->dynamic_obstacle_recovery_confirm_cycles_);
+  return this->dynamic_blocked_streak_ >= required_cycles;
 }
 
 double LocalPlanner::sample_lateral_occupancy(
@@ -1816,6 +1886,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   distance_tolerance_(0.15),
   goal_heading_tolerance_(0.20),
   goal_reach_heading_tolerance_(0.35),
+  final_align_max_angular_speed_(0.35),
   goal_checker_xy_tolerance_(0.15),
   goal_checker_yaw_tolerance_(0.7853981633974483),
   goal_checker_hold_time_sec_(0.0),
@@ -1823,6 +1894,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   goal_checker_ignore_yaw_(false),
   rotate_in_place_threshold_(0.6),
   rotate_in_place_goal_distance_(0.35),
+  tracking_heading_deadband_(0.05),
   heading_slowdown_threshold_(0.2),
   min_heading_motion_scale_(0.15),
   max_linear_accel_(0.08),
@@ -1862,6 +1934,8 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter("control.goal_heading_tolerance", this->goal_heading_tolerance_);
   this->declare_parameter(
     "control.goal_reach_heading_tolerance", this->goal_reach_heading_tolerance_);
+  this->declare_parameter(
+    "control.final_align_max_angular_speed", this->final_align_max_angular_speed_);
   this->declare_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
   this->declare_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->declare_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
@@ -1871,6 +1945,8 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->declare_parameter(
     "control.rotate_in_place_goal_distance", this->rotate_in_place_goal_distance_);
+  this->declare_parameter(
+    "control.tracking_heading_deadband", this->tracking_heading_deadband_);
   this->declare_parameter(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->declare_parameter(
@@ -1926,6 +2002,8 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("control.goal_heading_tolerance", this->goal_heading_tolerance_);
   this->get_parameter(
     "control.goal_reach_heading_tolerance", this->goal_reach_heading_tolerance_);
+  this->get_parameter(
+    "control.final_align_max_angular_speed", this->final_align_max_angular_speed_);
   this->get_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
   this->get_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->get_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
@@ -1935,6 +2013,8 @@ MotionController::CallbackReturn MotionController::on_configure(
     "control.rotate_in_place_threshold", this->rotate_in_place_threshold_);
   this->get_parameter(
     "control.rotate_in_place_goal_distance", this->rotate_in_place_goal_distance_);
+  this->get_parameter(
+    "control.tracking_heading_deadband", this->tracking_heading_deadband_);
   this->get_parameter(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->get_parameter(
@@ -2254,6 +2334,17 @@ void MotionController::publish_control()
       const double abs_heading_error = std::abs(heading_error);
       const bool heading_reached = goal_check.heading_reached;
       const bool aligning_in_place = align_heading_at_goal && distance_reached && !heading_reached;
+      const bool final_align_phase =
+        align_heading_at_goal &&
+        (distance_reached || goal_distance <= this->rotate_in_place_goal_distance_);
+      const bool suppress_small_heading_correction =
+        !final_align_phase &&
+        abs_heading_error <= this->tracking_heading_deadband_;
+      const double steering_heading_error = suppress_small_heading_correction ? 0.0 : heading_error;
+      const double steering_abs_heading_error = std::abs(steering_heading_error);
+      const double angular_speed_limit = final_align_phase ?
+        std::min(this->max_angular_speed_, this->final_align_max_angular_speed_) :
+        this->max_angular_speed_;
 
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
       status.local_plan_valid = this->has_local_plan_ && !this->latest_local_plan_.poses.empty();
@@ -2326,8 +2417,8 @@ void MotionController::publish_control()
         {
           desired_twist.angular.z = this->clamp(
             this->angular_gain_ * heading_error,
-            -this->max_angular_speed_,
-            this->max_angular_speed_);
+            -angular_speed_limit,
+            angular_speed_limit);
         }
         RCLCPP_INFO_THROTTLE(
           this->get_logger(),
@@ -2340,12 +2431,12 @@ void MotionController::publish_control()
       else
       {
         desired_twist.angular.z = this->clamp(
-          this->angular_gain_ * heading_error,
-          -this->max_angular_speed_,
-          this->max_angular_speed_);
+          this->angular_gain_ * steering_heading_error,
+          -angular_speed_limit,
+          angular_speed_limit);
 
         const bool rotate_in_place_only =
-          (aligning_in_place && abs_heading_error > this->goal_heading_tolerance_) ||
+          aligning_in_place ||
           (align_heading_at_goal &&
           goal_distance <= this->rotate_in_place_goal_distance_ &&
           abs_heading_error > this->rotate_in_place_threshold_);
@@ -2354,13 +2445,13 @@ void MotionController::publish_control()
           const double base_linear_speed = std::max(
             0.0, std::min(this->linear_speed_, goal_distance));
           double scale = 1.0;
-          if (abs_heading_error > this->heading_slowdown_threshold_)
+          if (steering_abs_heading_error > this->heading_slowdown_threshold_)
           {
             const double scale_window = std::max(
               3.14159265358979323846 - this->heading_slowdown_threshold_,
               1e-6);
             scale = 1.0 - (
-              (abs_heading_error - this->heading_slowdown_threshold_) /
+              (steering_abs_heading_error - this->heading_slowdown_threshold_) /
               scale_window);
           }
 
@@ -2741,8 +2832,11 @@ MotionController::GoalCheckResult MotionController::check_goal(
     !this->goal_checker_ignore_yaw_;
   result.target_yaw = this->quaternion_yaw(goal_pose.pose.orientation);
   result.heading_error = this->normalize_angle(result.target_yaw - current_yaw);
+  const double heading_tolerance = result.align_heading ?
+    this->goal_reach_heading_tolerance_ :
+    this->goal_checker_yaw_tolerance_;
   result.heading_reached =
-    !result.align_heading || std::abs(result.heading_error) <= this->goal_checker_yaw_tolerance_;
+    !result.align_heading || std::abs(result.heading_error) <= heading_tolerance;
 
   const bool reached_now = result.distance_reached && result.heading_reached;
   if (!reached_now)

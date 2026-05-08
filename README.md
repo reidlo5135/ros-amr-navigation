@@ -13,8 +13,8 @@ Current `0.15.x` frozen baseline (`0.15.10`):
   - planner / controller / recovery packages execute
 - `0.15.x` is now treated as the frozen runtime-hardening baseline before `0.16.x`
   recovery-policy refinement begins.
-- the active `0.16.2` patch line is currently focused on local-escape-first recovery wiring
-  and operator-side recovery visibility.
+- the active `0.16.3` patch line is currently focused on corridor/doorway blocked-state
+  tuning plus smoother final-approach and heading-alignment behavior.
 - Recent freeze-point confidence includes:
   - recovery trigger / reason visibility through `amr_runtime_observation`
   - blocked-context / recovery-phase observation fields

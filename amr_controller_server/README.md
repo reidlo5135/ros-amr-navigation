@@ -29,8 +29,14 @@ ros2 launch amr_controller_server controller.launch.py params_file:=/path/to/amr
 `/amr/local_planner` exposes `path_refiner.*` parameters for safe path post-processing,
 including collision-checked corner smoothing with fallback to the unsmoothed local plan.
 `/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
-By default, the checker respects the incoming goal yaw with a loose Nav2-style tolerance,
-while `ignore_yaw` can still disable yaw checking for loose waypoint-style goals.
+By default, waypoint-style goals can stay heading-free while command-driven final heading align
+still uses a separate tighter tolerance near the goal.
+When heading alignment is active near the goal, `control.goal_reach_heading_tolerance` and
+`control.final_align_max_angular_speed` tune the final in-place yaw settle behavior separately
+from the looser general waypoint-style yaw tolerance.
+For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
+corrections on straight segments so the robot does not visibly wag with small localization
+or path-sampling noise.
 
 ## Next Direction
 
