@@ -1,52 +1,209 @@
-Repo: /home/reidlo/ws/src/ros-amr-navigation
-Focus only on amr_slam_mapper-related work.
+다음 GitHub 저장소를 기준으로 `ROS AMR Navigation Stack v0.17.0 Software Design Document`를 작성해줘.
 
-Current branch:
-- humble/develop/0.14.4
+Repository:
+- `/home/rnc/ws/src/ros-amr-navigation`
 
-Current status:
-- amr_slam_mapper has recently improved a lot from 0.14.3 to 0.14.4.
-- Straight-line drift was reduced by:
-  1. removing full IMU yaw override
-  2. making IMU heading optional
-  3. using IMU only as limited rotation-time hint
-  4. suppressing rotation-only keyframe overgeneration
-- A loop descriptor improvement was attempted and then reverted because it caused false loop closures and map corruption.
-- Current loop descriptor commit was reverted already, so do NOT assume it is active.
+Primary goal:
+- 이 문서는 단순 README 요약이 아니라, 현업 소프트웨어 스택 설계문서 수준의 Word 문서 초안이어야 한다.
+- 대상 버전은 `0.17.0` 기준이다.
+- 현재 구현 기준선은 `0.16.x`가 거의 마무리된 상태이며, `0.17.x`는 planner/controller quality uplift 라인으로 진입하는 시점이다.
 
-Important recent commits:
-- b92fcfb tune: make slam mapper imu heading optional
-- 7e97341 tune: limit slam mapper rotation keyframes and imu heading
-- d07b3c6 Revert "feat: improve slam mapper loop descriptor matching"
-- 02f6d8e docs: explain slam mapper imu and localization roles
+Output style requirements:
+- 한국어로 작성해줘.
+- Word 문서에 바로 옮겨붙일 수 있는 형식으로 써줘.
+- 목차 번호는 `1.`, `1.1`, `1.2` 형식을 사용해줘.
+- 문체는 설계문서답게 차분하고 기술적으로 정확하게 써줘.
+- README를 늘려 쓴 느낌이 아니라, “제품 목표 -> 시스템 컨텍스트 -> 아키텍처 -> 상세 설계 -> 인터페이스 -> 운영/검증” 흐름으로 써줘.
+- 과도한 마케팅 문구는 빼고, 설계 의도 / 책임 분리 / 운영 의미론 / trade-off를 분명히 써줘.
 
-Current observed behavior:
-- Straight-line mapping is much better than before.
-- However, after making a large loop and returning, the trajectory/map can still tilt in +Y direction.
-- This now looks less like pure IMU prior failure and more like loop correction / global heading stabilization weakness.
-- False loop closures must be avoided very conservatively.
+Very important diagram instruction:
+- Mermaid 코드 블록을 절대 출력하지 마.
+- 다이어그램이 필요한 위치에는 아래처럼 “이미지 삽입 자리표시자”로 써줘:
+  - `[그림 1. 시스템 컨텍스트 다이어그램 삽입]`
+  - `[그림 2. 전체 아키텍처 다이어그램 삽입]`
+  - `[그림 3. 단일 목표 내비게이션 시퀀스 다이어그램 삽입]`
+- 즉, 문서에는 mermaid source가 아니라 “렌더링된 그림이 들어갈 자리”만 표시해야 한다.
 
-Important context:
-- User does NOT want to rush into slam_toolbox integration because it would force broad ROS/MQTT/Viz contract changes.
-- Preferred direction is to keep improving our own slam mapper incrementally.
-- External algorithm/library adoption is still on the table, but only selectively and carefully.
-- We discussed possibly promoting amr_slam_mapper into a more independent package/repo later, likely under a name like ros-slam-mapper.
+Scope and intent:
+- `0.17.0` 설계문서이므로, 현재 `0.16.x`에서 확정된 recovery 구조를 기준선으로 삼고 그 위에서 `0.17.x` 목표를 설명해줘.
+- `0.18.x`, `0.19.x`, `1.0.0` 방향도 로드맵/릴리즈 게이트 관점에서 반영해줘.
+- 단, `0.18.x`는 더 이상 “live SLAM temp map navigation integration” 중심이 아니고, `safety + task-layer navigation operations` 중심이다.
+- `0.19.x`는 더 이상 “multi-robot readiness” 중심이 아니라, `docking and deployment readiness` 중심이다.
+- `1.0.0`은 fleet/multi-robot이 아니라 single-robot indoor AMR operational closure 기준으로 설명해줘.
 
-Constraints / preferences:
-- Keep changes narrow and testable.
-- Avoid breaking existing AMR contracts.
-- Be conservative with loop closure logic.
-- If trying a new loop-related idea, define explicit fail/pass criteria first.
-- Use Korean in user-facing explanations.
+Please inspect these files first:
+- `README.md`
+- `TODO.md`
+- `CHANGELOG.rst`
+- `amr_bringup/README.md`
+- `amr_bt_navigator/README.md`
+- `amr_controller_server/README.md`
+- `amr_costmap_server/README.md`
+- `amr_global_planner/README.md`
+- `amr_localization/README.md`
+- `amr_map_server/README.md`
+- `amr_mqtt_server/README.md`
+- `amr_msgs/README.md`
+- `amr_navigation/README.md`
+- `amr_recovery_server/README.md`
+- `amr_runtime_observation/README.md`
+- `amr_bringup/params/amr.yaml`
+- `amr_bringup/launch/navigation.launch.py`
+- `amr_bringup/launch/turtlebot3.launch.py`
+- `amr_controller_server/src/amr_controller_server/controller_server.cpp`
+- `amr_bt_navigator/src/amr_bt_navigator/bt_navigator.cpp`
+- `amr_global_planner/src/amr_global_planner/planner_server.cpp`
+- `amr_global_planner/src/amr_global_planner/a_star.cpp`
 
-Please begin by reading:
-- amr_slam_mapper/TODO.md
-- amr_slam_mapper/README.md
-- amr_slam_mapper/src/amr_slam_mapper/slam_mapper.cpp
-- amr_slam_mapper/include/amr_slam_mapper/slam_mapper.hpp
-- amr_bringup/params/amr.yaml
+Current architecture facts that must be reflected correctly:
+- Runtime split is Nav2-like:
+  - `amr_bt_navigator` decides
+  - `amr_global_planner` computes global paths
+  - `amr_controller_server` hosts `/amr/local_planner` and `/amr/motion_controller`
+  - `amr_recovery_server` generates `wait / backup / spin` recovery commands
+  - `amr_runtime_observation` aggregates operator-facing runtime summary/events
+- `amr_visualization` is the in-repo ROS-native Qt6 local operator UI lane.
+- `amr_mqtt_server` is the robot-side MQTT API boundary for remote clients such as `ros-rcs`.
+- `navigation.launch.py` starts navigation runtime nodes, but `amr_mqtt_server` is started by `turtlebot3.launch.py`, not by `navigation.launch.py`.
+- `amr_runtime_observation` currently consumes `NavigateToPoses` action feedback/status as the primary route-level action lane.
 
-Suggested next investigation:
-- Why the map still tilts in +Y after large loop return even though straight-line prior improved
-- Whether optimizer anchor strategy / submap direction / loop acceptance policy should be revisited
-- Do NOT reintroduce aggressive rotation-invariant loop descriptor matching without strong anti-false-loop guards
+Current `0.16.x` baseline facts that must be reflected correctly:
+- `planner-local escape first wiring` is effectively complete.
+- `local escape-first recovery policy` has been fixed into a deterministic policy:
+  - `DECISION_HARD_BLOCKED`: one local escape attempt, then `backup`, then `spin`, then fresh global replan
+  - `DECISION_GOAL_PROXIMITY_BLOCKED`: skip local escape, `wait`, then re-dispatch the current plan
+  - `DECISION_GLOBAL_REPLAN_REQUIRED`: skip intermediate recovery commands and go straight to fresh global replan
+  - controller-owned `blocked/stalled`: deterministic `wait -> backup -> spin -> fresh global replan`
+- corridor/doorway false blocked tuning has started:
+  - blocked-distance-aware confirmation logic
+  - `dynamic_obstacle.corridor_relax_distance`
+  - `dynamic_obstacle.corridor_confirm_cycles`
+- final-approach behavior has been improved enough that `0.17.x` can focus on path quality rather than emergency stabilization.
+
+Important interpretation guidance:
+- Do not present this stack as “just using Nav2”.
+- Explain clearly which parts intentionally mirror Nav2 concepts and which parts are custom:
+  - lifecycle split
+  - BT navigator role
+  - controller-server style boundary
+  - runtime observation layer
+  - MQTT bridge / Qt6 operator lane
+- Also explain why some future steps should follow a Nav2-like maturity order:
+  - `0.17.x`: planner/controller quality and path-shape quality
+  - `0.18.x`: safety lane + task-layer operations
+  - `0.19.x`: docking + deployment closure
+  - `1.0.0`: single-robot indoor AMR operational release
+
+Please use this recommended table of contents and expand it into a complete document:
+
+1. 문서 개요
+1.1 목적
+1.2 범위
+1.3 대상 독자
+1.4 기준 버전과 문서 상태
+1.5 용어 정의
+
+2. 제품 목표와 시스템 요구사항
+2.1 해결하려는 운영 문제
+2.2 시스템 목표
+2.3 비기능 요구사항
+2.4 제외 범위
+
+3. 시스템 컨텍스트
+3.1 운영 시나리오 개요
+3.2 외부 시스템과의 관계
+3.3 로봇 / 운영자 / 원격 클라이언트 관계
+3.4 시스템 컨텍스트 다이어그램
+
+4. 아키텍처 개요
+4.1 전체 소프트웨어 스택 개요
+4.2 런타임 책임 분할 원칙
+4.3 핵심 데이터 흐름
+4.4 주요 설계 결정
+4.5 전체 아키텍처 다이어그램
+
+5. 패키지 및 런타임 구성
+5.1 패키지 구성
+5.2 런타임 노드 구성
+5.3 Lifecycle 관리 구조
+5.4 Launch 구성과 실행 모드
+5.5 패키지/노드 책임 매트릭스
+
+6. 핵심 설계 상세
+6.1 Localization
+6.2 Map lifecycle
+6.3 Costmap
+6.4 Global planning
+6.5 Local planning and path refinement
+6.6 Motion control and goal checking
+6.7 BT navigation and recovery orchestration
+6.8 Runtime observation
+6.9 Operator visualization
+6.10 MQTT bridge / remote client integration
+
+7. 핵심 시나리오별 동작
+7.1 Full runtime bringup
+7.2 Single-goal navigation
+7.3 Multi-goal route navigation
+7.4 Dynamic obstacle and blocked-state handling
+7.5 Recovery flow
+7.6 Final approach and goal completion
+7.7 Map freeze / evaluate / save flow
+7.8 Remote command and operator monitoring flow
+
+8. 인터페이스 설계
+8.1 ROS Topic / Service / Action API 원칙
+8.2 핵심 인터페이스 목록
+8.3 메시지/서비스 계약 요약
+8.4 QoS 정책
+8.5 MQTT 계약
+
+9. 상태 모델과 운영 의미론
+9.1 Navigation state model
+9.2 Goal / route lifecycle
+9.3 Recovery phase semantics
+9.4 Blocked-context semantics
+9.5 Operator-facing state interpretation
+
+10. 설계 결정과 트레이드오프
+10.1 Nav2와 유사하게 가져간 부분
+10.2 자체 구현을 유지한 이유
+10.3 현재 구조의 장점
+10.4 현재 구조의 제약
+10.5 향후 변경 가능성이 큰 지점
+
+11. 장애 대응과 관측성
+11.1 주요 실패 모드
+11.2 진단 가능한 신호
+11.3 로그 / observation / operator UI 역할 분담
+11.4 현 운영에서의 디버깅 포인트
+
+12. 배포와 운영 고려사항
+12.1 TurtleBot3 on-robot runtime
+12.2 Ubuntu operator station
+12.3 네트워크 / MQTT / reconnect
+12.4 설정 파일과 환경 의존성
+12.5 운영 절차 요약
+
+13. 검증 전략
+13.1 빌드 및 정적 검증
+13.2 시나리오 기반 기능 검증
+13.3 회귀 테스트 포인트
+13.4 버전 승격 기준
+
+14. 향후 로드맵
+14.1 0.17.x 목표
+14.2 0.18.x 목표
+14.3 0.19.x 목표
+14.4 1.0.0 release gate
+
+15. 부록
+15.1 패키지별 파라미터 표
+15.2 Topic / Service / Action 전체 표
+15.3 다이어그램 목록
+15.4 참고 링크
+
+Important quality bar:
+- 문서는 “지금 구현이 어떤 상태인지”와 “왜 이렇게 설계했는지”를 함께 설명해야 한다.
+- 기능 나열만 하지 말고, 책임 경계와 운영 의미론을 명확히 드러내야 한다.
+- `0.17.0` 이후 왜 `0.18.0 -> 0.19.0 -> 1.0.0` 순서가 자연스러운지도 분명히 설명해줘.

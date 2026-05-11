@@ -28,6 +28,9 @@ ros2 launch amr_controller_server controller.launch.py params_file:=/path/to/amr
 
 `/amr/local_planner` exposes `path_refiner.*` parameters for safe path post-processing,
 including collision-checked corner smoothing with fallback to the unsmoothed local plan.
+It also exposes `dynamic_obstacle.*` parameters for local escape generation and blocked-state
+confirmation, including the current corridor/doorway relaxation controls used by the `0.16.x`
+recovery-tuning line.
 `/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
 By default, waypoint-style goals can stay heading-free while command-driven final heading align
 still uses a separate tighter tolerance near the goal.
@@ -37,6 +40,16 @@ from the looser general waypoint-style yaw tolerance.
 For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
 corrections on straight segments so the robot does not visibly wag with small localization
 or path-sampling noise.
+
+## Important Interfaces
+
+- topic in: `/amr/motion/command`
+- topic in: `/amr/localization/pose`
+- topic in: `/amr/costmap/local`
+- topic out: `/amr/planner/local`
+- topic out: `/amr/planner/local_status`
+- topic out: `/amr/motion/status`
+- service: `/amr/local_planner/plan_local_escape`
 
 ## Next Direction
 

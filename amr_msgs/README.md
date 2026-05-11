@@ -8,8 +8,10 @@ Custom ROS interfaces used by the AMR stack.
   - `NavigateToPose`
   - `NavigateToPoses`
 - messages:
+  - `LocalPlanStatus`
   - `MotionCommand`
   - `MotionStatus`
+  - `ObstacleReport`
 - services:
   - `PlanSegment`
   - `PlanRoute`

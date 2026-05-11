@@ -14,7 +14,7 @@ Robot-side MQTT API server for the AMR runtime.
 
 ## Parameter Section
 
-Use the central parameter block in [amr.yaml](/home/reidlo/ws/src/ros-amr-navigation/amr_bringup/params/amr.yaml):
+Use the central parameter block in [amr.yaml](/home/rnc/ws/src/ros-amr-navigation/amr_bringup/params/amr.yaml):
 
 ```yaml
 /amr/mqtt_server:
@@ -28,6 +28,7 @@ Current defaults in this repository:
 - broker host: `192.168.61.35`
 - broker port: `1883`
 - QoS: `0`
+- node name / namespace: `/amr/mqtt_server`
 
 ## Topic Shape
 

@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the frozen `0.15.x` baseline (`0.15.10`).
+Central launch and parameter package for the active `0.16.x` line.
 
 ## Main Files
 
@@ -9,10 +9,12 @@ Central launch and parameter package for the frozen `0.15.x` baseline (`0.15.10`
 - `launch/navigation.launch.py`: Ubuntu-side AMR bringup without `turtlebot3_bringup`
 - `launch/turtlebot3.launch.py`: TurtleBot3 bringup + AMR runtime + robot-side MQTT bridge
 
-`navigation.launch.py` starts the full AMR stack by default:
+`navigation.launch.py` starts the navigation runtime by default:
 - delayed `localization.launch.py`
-- delayed `amr_mqtt_server.launch.py`
 - delayed controller / recovery / BT navigation nodes
+- delayed runtime observation and lifecycle manager nodes
+
+`amr_mqtt_server` is started by `turtlebot3.launch.py`, not by `navigation.launch.py`.
 
 Set `navigation_only:=true` only when localization and MQTT are already started elsewhere.
 
@@ -45,7 +47,7 @@ and skips:
 - `/amr/recovery_server`
 - `/amr/runtime_observation`
 - `/amr/navigator`
-- `/amr/mqtt_bridge`
+- `/amr/mqtt_server`
 
 ## Launch
 
@@ -77,3 +79,10 @@ In mapping mode, `amr_bringup` consumes external SLAM topics such as:
 - `/slam/mapper/odometry`
 - `/slam/mapper/pose`
 - `/slam/mapper/graph_debug`
+
+`navigation.launch.py` starts:
+- `/amr/recovery_server`
+- `/amr/navigator`
+- `/amr/runtime_observation`
+- `/amr/navigation_manager`
+- `amr_controller_server` launch, which hosts `/amr/local_planner` and `/amr/motion_controller`

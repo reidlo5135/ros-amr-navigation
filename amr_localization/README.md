@@ -12,5 +12,5 @@ Localization node for the AMR stack.
 ## Outputs
 
 - `/amr/localization/pose`
-- `/amr/localization/odom`
+- `/amr/localization/odometry`
 - TF `map -> odom`

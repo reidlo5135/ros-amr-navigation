@@ -2,7 +2,7 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.15.x` frozen baseline (`0.15.10`):
+Current `0.16.x` line:
 - TurtleBot3 runs the full navigation runtime on-robot.
 - `amr_visualization` starts the in-repo ROS-native Qt6 operator app lane.
 - `amr_mqtt_server` remains available for remote-client telemetry and command bridging.
@@ -11,14 +11,13 @@ Current `0.15.x` frozen baseline (`0.15.10`):
 - Recovery and decision flow follow a Nav2-like split:
   - `amr_bt_navigator` decides
   - planner / controller / recovery packages execute
-- `0.15.x` is now treated as the frozen runtime-hardening baseline before `0.16.x`
-  recovery-policy refinement begins.
-- the active `0.16.3` patch line is currently focused on corridor/doorway blocked-state
-  tuning plus smoother final-approach and heading-alignment behavior.
-- Recent freeze-point confidence includes:
-  - recovery trigger / reason visibility through `amr_runtime_observation`
-  - blocked-context / recovery-phase observation fields
-  - dynamic interrupt behavior that looked stable in the current operator flow
+- `0.15.x` remains the frozen runtime-hardening interpretation baseline.
+- `0.16.x` closes the local-escape-first recovery policy, corridor/doorway blocked-state
+  tuning pass, and the first in-repo `amr_visualization` operator lane.
+- `0.17.x` is the next quality line:
+  - path-shape / smoothing quality
+  - blocked semantics and recovery-exit quality
+  - controller path rejoin and final-approach polish
 
 ## Architecture
 
@@ -197,3 +196,4 @@ Notes:
 - In this repository, `SensorDataQoS` is intentionally used for raw sensor feeds such as `/scan`, and should remain the default expectation for high-rate hardware topics.
 - `transient_local + reliable` is reserved for map-like latched data that late subscribers must immediately receive.
 - Most internal `/amr/**` status/plan/command lanes currently use `SystemDefaultsQoS`; keep publisher/subscriber defaults aligned unless there is a concrete reason to specialize them.
+- `amr_runtime_observation` currently consumes `NavigateToPoses` action feedback/status for route-level observation; single-goal navigation is still visible indirectly through motion and planner status lanes.

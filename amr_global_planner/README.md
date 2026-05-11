@@ -6,6 +6,8 @@ Global A* planner on the inflated global costmap.
 
 - consumes `/amr/costmap/global`
 - computes route segments and full routes
+- uses exact-footprint collision checks on the inflated global costmap
+- supports path simplification and turn-penalty tuning through `amr.yaml`
 - publishes the currently computed global path
 
 ## Services

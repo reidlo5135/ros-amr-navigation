@@ -11,6 +11,7 @@ Metapackage for the active AMR navigation stack.
 - `amr_global_planner`
 - `amr_controller_server`
 - `amr_recovery_server`
+- `amr_runtime_observation`
 - `amr_rviz`
 - `amr_visualization`
 - `amr_bt_navigator`

@@ -83,6 +83,9 @@ and "which blocked layer is currently authoritative".
   - `local_escape_executing`
 - local escape is inferred from a `MODE_NAVIGATE` motion-command re-dispatch that occurs while
   planner-owned recovery is active and the planner has not escalated to `global_replan_required`
+- current observation still treats `NavigateToPoses` as the primary route-level action lane;
+  single-goal `NavigateToPose` remains observable mainly through motion/planner state until a
+  separate single-goal action summary path is added
 
 ## Launch
 
