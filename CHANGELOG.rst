@@ -1,6 +1,27 @@
 Changelog
 =========
 
+2026-05-11
+----------
+
+- Completed the remaining ``0.16.x`` planner-local escape wiring cleanup:
+
+  - restricted local escape re-dispatch to planner-owned recovery for the currently active motion command so stale planner state does not hijack controller-only blocked or stalled cases
+  - normalized ``/amr/local_planner/plan_local_escape`` responses onto stable reason labels for map-unavailable, empty-source-plan, and no-valid-path failures
+  - surfaced local escape rejection context into the BT status message before fallback recovery behaviors continue
+
+- Fixed the ``0.16.x`` local-escape-first recovery policy:
+
+  - hard-blocked planner recovery now tries one local escape, then `backup`, then `spin`, before escalating to a fresh global replan
+  - near-goal blocked planner recovery now skips local escape, uses `wait`, and re-dispatches the current plan before stronger escalation
+  - planner-owned `global_replan_required` now bypasses intermediate recovery commands and consumes a bounded recovery attempt
+  - controller-owned blocked/stalled recovery keeps a deterministic `wait -> backup -> spin -> fresh global replan` sequence
+
+- Started the ``0.16.x`` corridor / doorway blocked-state tuning pass:
+
+  - made dynamic-obstacle recovery confirmation depend on blocked distance so farther-ahead corridor and doorway collisions need longer persistence before escalating
+  - added separate `dynamic_obstacle.corridor_relax_distance` and `dynamic_obstacle.corridor_confirm_cycles` parameters to preserve quicker near-field reactions while reducing false blocked decisions deeper in narrow lanes
+
 2026-05-08
 ----------
 

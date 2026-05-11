@@ -812,6 +812,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
       const bool align_heading_at_goal = blackboard->get<bool>("align_heading_at_goal");
+      const auto active_command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
       const auto planned_path = blackboard->get<nav_msgs::msg::Path>("planned_path");
       const bool local_escape_dispatched = blackboard->get<bool>("local_escape_dispatched");
       const auto local_plan_status = navigator->get_local_plan_status_copy();
@@ -848,6 +849,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
 
       const int attempt_index = attempts % 3;
       const uint8_t planner_decision = local_plan_status.decision;
+      const bool planner_owned_recovery =
+        navigator->has_planner_owned_recovery(active_command, local_plan_status);
       if (!navigator->clear_local_costmap(error_message, cancel_requested)) {
         if (cancel_requested()) {
           return finish_canceled();
@@ -859,9 +862,11 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       }
 
       const bool local_escape_candidate =
-        !planned_path.poses.empty() &&
-        !local_escape_dispatched &&
-        planner_decision != amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED;
+        navigator->should_try_local_escape(
+          active_command,
+          local_plan_status,
+          planned_path,
+          local_escape_dispatched);
       if (local_escape_candidate) {
         nav_msgs::msg::Path escape_plan;
         if (navigator->request_local_escape_plan(
@@ -888,9 +893,16 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           navigator->get_logger(),
           "BT: local escape planning failed, falling back to recovery behaviors: %s",
           error_message.c_str());
+        blackboard->set(
+          "status_message",
+          std::string("Local escape was rejected; falling back to heavier recovery behaviors. ") +
+          error_message);
       }
 
-      if (planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED) {
+      if (
+        planner_owned_recovery &&
+        planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED)
+      {
         nav_msgs::msg::Path replanned_path;
         if (!navigator->wait_for_planner_service(error_message, cancel_requested) ||
           !navigator->request_global_plan(
@@ -902,108 +914,43 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           }
           blackboard->set("status_message", error_message);
         } else {
+          attempts += 1;
+          blackboard->set("recovery_attempts", attempts);
+          if (attempts >= navigator->recovery_max_retries_) {
+            navigator->publish_stop_command();
+            blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+            blackboard->set(
+              "status_message",
+              std::string("Recovery retries exceeded before another global replan could be dispatched."));
+            return BT::NodeStatus::SUCCESS;
+          }
           auto command = navigator->build_motion_command(
             goal_pose, route_id, replanned_path, align_heading_at_goal);
           navigator->publish_motion_command(command);
           blackboard->set("active_command", command);
           blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
           blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+          blackboard->set("local_escape_dispatched", false);
           blackboard->set("planned_path", replanned_path);
           blackboard->set(
             "status_message",
             std::string("Planner requested global replanning. Motion command re-dispatched."));
           return BT::NodeStatus::SUCCESS;
         }
-      } else if (
-        planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED &&
-        attempt_index < 2)
-      {
-        if (!navigator->request_recovery_command(
-            "wait", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
-        {
-          if (cancel_requested())
-          {
-            return finish_canceled();
-          }
-          blackboard->set("status_message", error_message);
-        }
-        else
-        {
-          navigator->publish_motion_command(recovery_command);
-          if (!navigator->wait_for_command_completion(
-              recovery_command.command_id,
-              std::max(navigator->feedback_period_ms_ * 10, navigator->recovery_retry_delay_ms_),
-              error_message,
-              cancel_requested))
-          {
-            if (cancel_requested())
-            {
-              return finish_canceled();
-            }
-            blackboard->set("status_message", error_message);
-          }
-        }
-      }
-      else if (attempt_index == 0)
-      {
-        if (!navigator->request_recovery_command(
-            "wait", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
-        {
-          if (cancel_requested())
-          {
-            return finish_canceled();
-          }
-          blackboard->set("status_message", error_message);
-        }
-        else
-        {
-          navigator->publish_motion_command(recovery_command);
-          if (!navigator->wait_for_command_completion(
-              recovery_command.command_id,
-              std::max(navigator->feedback_period_ms_ * 10, navigator->recovery_retry_delay_ms_),
-              error_message,
-              cancel_requested))
-          {
-            if (cancel_requested())
-            {
-              return finish_canceled();
-            }
-            blackboard->set("status_message", error_message);
-          }
-        }
-      }
-      else if (attempt_index == 1)
-      {
-        if (!navigator->request_recovery_command(
-            "backup", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
-        {
-          if (cancel_requested())
-          {
-            return finish_canceled();
-          }
-          blackboard->set("status_message", error_message);
-        }
-        else
-        {
-          navigator->publish_motion_command(recovery_command);
-          if (!navigator->wait_for_command_completion(
-              recovery_command.command_id,
-              std::max(2000, navigator->recovery_retry_delay_ms_ + 1000),
-              error_message,
-              cancel_requested))
-          {
-            if (cancel_requested())
-            {
-              return finish_canceled();
-            }
-            blackboard->set("status_message", error_message);
-          }
-        }
       }
       else
       {
-        if (!navigator->request_recovery_command(
-            "spin", current_pose, goal_pose, recovery_command, error_message, cancel_requested))
+        const std::string recovery_behavior =
+          navigator->select_recovery_behavior(active_command, local_plan_status, attempt_index);
+        if (recovery_behavior.empty())
+        {
+          blackboard->set(
+            "status_message",
+            std::string("Recovery policy selected direct replanning without a recovery command."));
+        }
+        else if (!navigator->request_recovery_command(
+            recovery_behavior, current_pose, goal_pose, recovery_command, error_message,
+            cancel_requested))
         {
           if (cancel_requested())
           {
@@ -1016,7 +963,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
-              std::max(2500, navigator->recovery_retry_delay_ms_ + 1200),
+              navigator->recovery_behavior_timeout_ms(recovery_behavior),
               error_message,
               cancel_requested))
           {
@@ -1025,6 +972,49 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               return finish_canceled();
             }
             blackboard->set("status_message", error_message);
+          }
+          else
+          {
+            const bool redispatch_existing_plan =
+              navigator->should_redispatch_existing_plan_after_recovery(
+              active_command,
+              local_plan_status,
+              recovery_behavior);
+            if (redispatch_existing_plan)
+            {
+              attempts += 1;
+              blackboard->set("recovery_attempts", attempts);
+              if (attempts >= navigator->recovery_max_retries_) {
+                navigator->publish_stop_command();
+                blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
+                blackboard->set(
+                  "status_message",
+                  std::string("Recovery retries exceeded before the current plan could be re-dispatched."));
+                return BT::NodeStatus::SUCCESS;
+              }
+              auto command = navigator->build_motion_command(
+                goal_pose, route_id, planned_path, align_heading_at_goal);
+              navigator->publish_motion_command(command);
+              blackboard->set("active_command", command);
+              blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+              blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+              blackboard->set(
+                "status_message",
+                navigator->describe_recovery_policy(
+                  active_command,
+                  local_plan_status,
+                  recovery_behavior,
+                  true));
+              return BT::NodeStatus::SUCCESS;
+            }
+
+            blackboard->set(
+              "status_message",
+              navigator->describe_recovery_policy(
+                active_command,
+                local_plan_status,
+                recovery_behavior,
+                false));
           }
         }
       }
@@ -1064,7 +1054,9 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       blackboard->set("planned_path", replanned_path);
       blackboard->set(
         "status_message",
-        std::string("Recovery behavior completed. Motion command re-dispatched."));
+        planner_owned_recovery ?
+        std::string("Planner-owned recovery policy completed; a fresh global plan was dispatched.") :
+        std::string("Controller-owned recovery policy completed; a fresh global plan was dispatched."));
       return BT::NodeStatus::SUCCESS;
     });
 
@@ -1462,13 +1454,149 @@ bool Btnavigator::request_local_escape_plan(
 
   const auto response = future.get();
   if (!response->success) {
-    error_message = response->message;
+    error_message = this->describe_local_escape_failure(response->message);
     return false;
   }
 
   escape_plan = response->plan;
   error_message.clear();
   return true;
+}
+
+bool Btnavigator::should_try_local_escape(
+  const amr_msgs::msg::MotionCommand & active_command,
+  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+  const nav_msgs::msg::Path & planned_path,
+  bool local_escape_dispatched) const
+{
+  if (local_escape_dispatched || planned_path.poses.empty()) {
+    return false;
+  }
+
+  if (!this->has_planner_owned_recovery(active_command, local_plan_status)) {
+    return false;
+  }
+
+  switch (local_plan_status.decision) {
+    case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+      return true;
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+    case amr_msgs::msg::LocalPlanStatus::DECISION_OK:
+      return false;
+    default:
+      return true;
+  }
+}
+
+bool Btnavigator::has_planner_owned_recovery(
+  const amr_msgs::msg::MotionCommand & active_command,
+  const amr_msgs::msg::LocalPlanStatus & local_plan_status) const
+{
+  return
+    local_plan_status.command_id == active_command.command_id &&
+    local_plan_status.active &&
+    local_plan_status.recovery_required;
+}
+
+std::string Btnavigator::select_recovery_behavior(
+  const amr_msgs::msg::MotionCommand & active_command,
+  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+  int attempt_index) const
+{
+  if (!this->has_planner_owned_recovery(active_command, local_plan_status)) {
+    switch (attempt_index) {
+      case 0:
+        return "wait";
+      case 1:
+        return "backup";
+      default:
+        return "spin";
+    }
+  }
+
+  switch (local_plan_status.decision) {
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+      return attempt_index < 2 ? "wait" : "backup";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+      return attempt_index == 0 ? "backup" : "spin";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+      return "";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_OK:
+    default:
+      switch (attempt_index) {
+        case 0:
+          return "wait";
+        case 1:
+          return "backup";
+        default:
+          return "spin";
+      }
+  }
+}
+
+bool Btnavigator::should_redispatch_existing_plan_after_recovery(
+  const amr_msgs::msg::MotionCommand & active_command,
+  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+  const std::string & executed_behavior) const
+{
+  if (!this->has_planner_owned_recovery(active_command, local_plan_status)) {
+    return false;
+  }
+
+  return
+    local_plan_status.decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED &&
+    executed_behavior == "wait";
+}
+
+int Btnavigator::recovery_behavior_timeout_ms(const std::string & behavior) const
+{
+  if (behavior == "wait") {
+    return std::max(this->feedback_period_ms_ * 10, this->recovery_retry_delay_ms_);
+  }
+  if (behavior == "backup") {
+    return std::max(2000, this->recovery_retry_delay_ms_ + 1000);
+  }
+  if (behavior == "spin") {
+    return std::max(2500, this->recovery_retry_delay_ms_ + 1200);
+  }
+  return std::max(this->feedback_period_ms_ * 10, this->recovery_retry_delay_ms_);
+}
+
+std::string Btnavigator::describe_local_escape_failure(const std::string & planner_message) const
+{
+  if (planner_message.empty()) {
+    return "Local escape planner failed without a reason label.";
+  }
+
+  return "Local escape planner failed: " + planner_message;
+}
+
+std::string Btnavigator::describe_recovery_policy(
+  const amr_msgs::msg::MotionCommand & active_command,
+  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+  const std::string & behavior,
+  bool redispatch_existing_plan) const
+{
+  if (redispatch_existing_plan) {
+    return "Near-goal blocked policy: waited briefly, then re-dispatched the current plan.";
+  }
+
+  if (!this->has_planner_owned_recovery(active_command, local_plan_status)) {
+    return "Controller-owned blocked policy executed " + behavior + " before a fresh global replan.";
+  }
+
+  switch (local_plan_status.decision) {
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+      return "Near-goal blocked policy executed " + behavior + " before continuing recovery.";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+      return "Hard-blocked corridor policy executed " + behavior + " before a fresh global replan.";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+      return "Planner requested a direct global replan without an intermediate recovery command.";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_OK:
+    default:
+      return "Fallback recovery policy executed " + behavior + " before a fresh global replan.";
+  }
 }
 
 bool Btnavigator::clear_local_costmap(

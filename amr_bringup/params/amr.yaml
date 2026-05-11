@@ -209,8 +209,10 @@
       escape_forward_distance: 0.55
       escape_lateral_distance: 0.22
       goal_proximity_disable_distance: 0.45
+      corridor_relax_distance: 0.75
       recovery_confirm_cycles: 3
       goal_proximity_confirm_cycles: 2
+      corridor_confirm_cycles: 5
 
 /amr/motion_controller:
   ros__parameters:

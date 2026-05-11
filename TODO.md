@@ -1,5 +1,12 @@
 # ROAD MAP
 
+echo '
+Package: *
+Pin: release o=LP-PPA-mozillateam
+Pin-Priority: 1001
+' | sudo tee /etc/apt/preferences.d/mozilla-firefox
+
+
 ```mermaid
 timeline
     title ROS AMR Navigation Road Map
@@ -49,17 +56,18 @@ timeline
            : final-approach stability cleanup
            : ROS + Qt6 `amr_visualization` app start
     0.17.x : planner/controller quality uplift
-           : path smoothing and blocked semantics refinement
-           : recovery exit and path rejoin quality
-    0.18.x : live SLAM temp map navigation integration
-           : mapping-ready / nav-ready state model
-           : map lifecycle and transition cleanup
-    0.19.x : multi-robot and deployment readiness
-           : operator command / state stability
-           : operator diagnostics and long-run operation polish
+           : smoother/path-handler style path quality
+           : blocked semantics and recovery-exit / path-rejoin quality
+    0.18.x : safety + task-layer navigation operations
+           : collision-monitor / detector style near-field safety lane
+           : route / waypoint / operator command-state contract maturity
+           : application-level BT and operator UX stabilization
+    0.19.x : docking and deployment readiness
+           : dock / undock and mission-end lifecycle closure
+           : startup/shutdown / reconnect / diagnostics / long-run polish
     1.0.0 : indoor AMR runtime stabilization
-          : reliable recovery, footprint collision, operator UX
-          : vehicle-spec abstraction start
+          : reliable single-robot navigation, recovery, safety, docking, operator UX
+          : deployment-grade map / lifecycle / diagnostics closure
     2.0.0 : fleet-ready operation model
           : Ackermann-ready planning/control architecture
           : mission workflows, docking, battery, map lifecycle
@@ -93,9 +101,9 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `0.14.x` | Mapping line reboot | reset mainline to `0.12.4`, add `amr_slam_mapper`, split mapping mode from nav mode, raw/refined temp SLAM maps, mapping observability and save flows |
 | `0.15.x` | Runtime hardening | scenario-based regression baselines, clearer recovery diagnostics, safer operational baseline after the mapping reboot |
 | `0.16.x` | Recovery refinement + Qt6 operator app start | local escape-first recovery flow, narrower-corridor tuning, cleaner blocked semantics, reduced false recovery entry near doors and goal approach, early `amr_visualization` package work |
-| `0.17.x` | Planner/controller quality | global path smoothing, motion-controller approach quality, recovery-exit stability, lower oscillation during path rejoin and final heading alignment |
-| `0.18.x` | Live SLAM navigation bridge | temporary refined map consumption by nav runtime, `ready_for_nav` vs `ready_for_save` mapping criteria, smoother mapping-to-navigation transition without static-save-first workflow |
-| `0.19.x` | Operations and deployment readiness | robot-id / multi-robot topic discipline, stronger reconnect and retained-data behavior, richer operator diagnostics, longer unattended runtime confidence before `1.0.0` |
+| `0.17.x` | Planner/controller quality | Nav2-style smoother/path-quality work, blocked semantics refinement, cleaner recovery exit, lower oscillation during path rejoin and final heading alignment |
+| `0.18.x` | Safety and task-layer ops | collision-monitor/detector-style near-field safety lane, route/waypoint task execution maturity, stronger operator command/state contract, app-level BT and Qt6 operator workflow closure |
+| `0.19.x` | Docking and deployment readiness | dock/undock lifecycle, startup/shutdown and reconnect discipline, richer diagnostics and long-run unattended confidence, single-robot deployment closure before `1.0.0` |
 
 ## 0.11.x Focus
 
@@ -187,30 +195,35 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 ## 0.17.x Planned Focus
 
 - improve planner/controller quality after the recovery flow is more trustworthy
-- add path smoothing ahead of future non-diff-drive expansion
+- add a clearer path-smoothing lane instead of overloading planner and controller heuristics
+- move toward a Nav2-style split where path quality, path handling, and goal checking are explicit responsibilities
 - refine blocked-state semantics between local planner, motion controller, and BT navigator
 - improve recovery exit quality so the robot rejoins the global path without sharp oscillation
 - reduce low-speed final heading jitter and stop/start thrash near the goal
+- keep this line focused on navigation quality itself, not yet on deployment or map-lifecycle expansion
 
 ## 0.18.x Planned Focus
 
-- connect live SLAM temporary maps to the navigation runtime in a controlled way
-- define explicit mapping readiness states instead of treating every temporary map as equally usable
-  - `mapping_bootstrap`
-  - `ready_for_nav`
-  - `ready_for_save`
-- evaluate costmap / planner behavior on live refined maps, especially around unknown space and graph correction jumps
-- clean up the workflow from mapping mode to navigation mode so operators do not have to rely on ad-hoc manual steps
+- add a near-field safety lane comparable to Nav2's collision monitor / detector direction
+  - emergency-stop / slowdown style logic should be explicitly separated from planner recovery semantics
+  - operator-facing obstacle/safety state should become more deterministic than a generic blocked flag
+- mature the task layer above point-to-point navigation
+  - route / waypoint execution quality
+  - action/result semantics for single-goal vs multi-goal work
+  - stronger operator command/state contract in `amr_visualization`
+- keep application-level autonomy in the BT / operator-app lane rather than mixing it into low-level controller logic
+- treat live SLAM temp-map navigation as a later integration track, not as the mainline blocker before `1.0.0`
 
 ## 0.19.x Planned Focus
 
-- harden operator workflows for longer-running and multi-robot-style deployment
-- keep robot identity, topic scoping, and command routing stable as multi-robot discipline grows
-- improve operator diagnostics so `accepted`, `running`, `recovering`, `canceling`, `aborted`, and `reached` are all unambiguous
-- tighten deployment-facing behaviors
-  - static-data lifetime policy
-  - operator reconnect / resubscribe policy
-  - response semantics for command, planner request, and map-save actions
+- close the last single-robot operational gaps before `1.0.0`
+  - dock / undock primitive
+  - mission-end and battery-aware return flow hooks
+  - startup / shutdown / reconnect / retained-state discipline
+- harden operator workflows for longer-running deployment
+- improve operator diagnostics so `accepted`, `running`, `recovering`, `canceling`, `aborted`, `reached`, `docking`, and `docked` are all unambiguous
+- keep robot identity, topic scoping, and command routing stable enough that later multi-robot work can build on a clean baseline
+- defer true fleet / multi-robot maturity until after the single-robot `1.0.0` line is operationally closed
 
 ## Immediate Candidate Tracks After 0.14.x
 
@@ -218,11 +231,16 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
   - do not re-mix ARL/GL into the stable nav runtime path
 - spend the first post-`0.14.x` cycle on runtime hardening and regression visibility, not on broad new feature branching
 - bring local escape and recovery quality to an operationally trustworthy state before widening the planning surface
-- evaluate `live SLAM temp map -> costmap/planner` integration only after the current navigation baseline is stable enough to compare against
-  - instead of forcing `save static map first -> navigate later`
+- prioritize navigation quality, safety, task semantics, and docking before `live SLAM temp map -> costmap/planner` integration
+  - treat live-temp-map navigation as a later comparison track, not as the gating path to `1.0.0`
 - start `amr_visualization` as the ROS-native Qt6 operator lane once `0.15.x` remains stable enough to serve as the interpretation baseline
-- continue tightening robot identity and multi-robot readiness
-  - the next higher-level work after AMR is ACS / fleet integration
+- follow a stage order closer to mature Nav2 deployments:
+  - planner/controller quality
+  - safety and task-layer operations
+  - docking and deployment closure
+  - only then wider fleet / multi-robot expansion
+- continue tightening robot identity and deployment discipline
+  - the next higher-level work after single-robot AMR closure is ACS / fleet integration
 - improve `amr_slam_mapper` only when the scope is clear
   - scan matcher quality
   - loop descriptor quality
@@ -235,12 +253,23 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - exact footprint-aware planning and collision checks
 - stable final-approach behavior with low oscillation near goal
 - recovery stack with wait / backup / spin / replan / clear-costmap policies
+- a dedicated near-field safety lane instead of overloading planner recovery for every close obstacle case
 - ROS-native operator operations that remain responsive during continuous motion
+- route / waypoint task execution that is predictable enough to act as the base for app-level autonomy
+- dock / undock closure for mission-end or low-battery workflows
 - map lifecycle that supports create, freeze, save, load, and reuse without manual recovery
+- startup / shutdown / reconnect / retained-state behavior that does not surprise operators during deployment
 - vehicle-spec parameter model introduction
   - `vehicle.type: diff_drive | ackermann | oht`
   - shared `footprint`, speed/acceleration limits, and per-vehicle geometry fields
   - central `amr.yaml` vehicle section that all planning/control packages consume
+
+## `1.0.0` Release Gate
+
+- `0.17.x` must close planner/controller quality enough that recovery is no longer masking basic path-quality problems
+- `0.18.x` must close safety and task-layer behavior enough that operator commands and runtime state are predictable
+- `0.19.x` must close docking and deployment behavior enough that a single robot can run real indoor work for long sessions without ad-hoc operator recovery
+- true fleet / multi-robot maturity is not required for `1.0.0`; it belongs after the single-robot line is operationally closed
 
 ## Toward 2.0.0
 

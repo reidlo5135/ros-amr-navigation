@@ -128,6 +128,29 @@ private:
     int timeout_ms,
     std::string & error_message,
     const std::function<bool()> & is_cancel_requested = {});
+  bool has_planner_owned_recovery(
+    const amr_msgs::msg::MotionCommand & active_command,
+    const amr_msgs::msg::LocalPlanStatus & local_plan_status) const;
+  bool should_try_local_escape(
+    const amr_msgs::msg::MotionCommand & active_command,
+    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+    const nav_msgs::msg::Path & planned_path,
+    bool local_escape_dispatched) const;
+  std::string select_recovery_behavior(
+    const amr_msgs::msg::MotionCommand & active_command,
+    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+    int attempt_index) const;
+  bool should_redispatch_existing_plan_after_recovery(
+    const amr_msgs::msg::MotionCommand & active_command,
+    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+    const std::string & executed_behavior) const;
+  int recovery_behavior_timeout_ms(const std::string & behavior) const;
+  std::string describe_local_escape_failure(const std::string & planner_message) const;
+  std::string describe_recovery_policy(
+    const amr_msgs::msg::MotionCommand & active_command,
+    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+    const std::string & behavior,
+    bool redispatch_existing_plan) const;
   bool has_active_goal() const;
   amr_msgs::msg::MotionCommand build_motion_command(
     const geometry_msgs::msg::PoseStamped & goal_pose,

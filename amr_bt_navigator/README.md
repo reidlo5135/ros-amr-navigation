@@ -24,6 +24,18 @@ falling back to heavier recovery behaviors or global replanning when the local p
 still reports a blocked path.
 For `NavigateToPoses`, intermediate waypoint goals keep heading-free execution while only the
 final goal requests explicit heading alignment at arrival.
+The BT now limits local escape attempts to planner-owned recovery requests for the currently
+active motion command, so controller-only blocked/stalled reports do not spuriously re-dispatch
+an escape plan from stale planner state.
+The fixed recovery policy is now:
+- `DECISION_HARD_BLOCKED`: one planner-local escape attempt, then `backup`, then `spin`, then fresh global replan
+- `DECISION_GOAL_PROXIMITY_BLOCKED`: skip local escape, `wait`, and re-dispatch the current plan before escalating further
+- `DECISION_GLOBAL_REPLAN_REQUIRED`: skip intermediate recovery commands and go straight to fresh global replanning
+- controller-owned `blocked/stalled`: `wait -> backup -> spin -> fresh global replan`
+`/amr/local_planner/plan_local_escape` also returns stable reason labels such as
+`local_escape_map_unavailable`, `local_escape_empty_source_plan`, and
+`local_escape_no_valid_path` so operator-side logs can distinguish planner refusal from later
+fallback recovery behavior.
 
 ## Important Files
 

@@ -394,8 +394,10 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   dynamic_obstacle_escape_forward_distance_(1.2),
   dynamic_obstacle_escape_lateral_distance_(0.55),
   dynamic_obstacle_goal_proximity_disable_distance_(0.45),
+  dynamic_obstacle_corridor_relax_distance_(0.75),
   dynamic_obstacle_recovery_confirm_cycles_(3),
   dynamic_obstacle_goal_proximity_confirm_cycles_(2),
+  dynamic_obstacle_corridor_confirm_cycles_(5),
   nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
   dynamic_blocked_decision_(amr_msgs::msg::LocalPlanStatus::DECISION_OK),
@@ -454,11 +456,17 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     "dynamic_obstacle.goal_proximity_disable_distance",
     this->dynamic_obstacle_goal_proximity_disable_distance_);
   this->declare_parameter(
+    "dynamic_obstacle.corridor_relax_distance",
+    this->dynamic_obstacle_corridor_relax_distance_);
+  this->declare_parameter(
     "dynamic_obstacle.recovery_confirm_cycles",
     this->dynamic_obstacle_recovery_confirm_cycles_);
   this->declare_parameter(
     "dynamic_obstacle.goal_proximity_confirm_cycles",
     this->dynamic_obstacle_goal_proximity_confirm_cycles_);
+  this->declare_parameter(
+    "dynamic_obstacle.corridor_confirm_cycles",
+    this->dynamic_obstacle_corridor_confirm_cycles_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State &state)
@@ -513,11 +521,17 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     "dynamic_obstacle.goal_proximity_disable_distance",
     this->dynamic_obstacle_goal_proximity_disable_distance_);
   this->get_parameter(
+    "dynamic_obstacle.corridor_relax_distance",
+    this->dynamic_obstacle_corridor_relax_distance_);
+  this->get_parameter(
     "dynamic_obstacle.recovery_confirm_cycles",
     this->dynamic_obstacle_recovery_confirm_cycles_);
   this->get_parameter(
     "dynamic_obstacle.goal_proximity_confirm_cycles",
     this->dynamic_obstacle_goal_proximity_confirm_cycles_);
+  this->get_parameter(
+    "dynamic_obstacle.corridor_confirm_cycles",
+    this->dynamic_obstacle_corridor_confirm_cycles_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
@@ -715,13 +729,13 @@ void LocalPlanner::handle_plan_local_escape(
 
   if (!this->has_map_ || this->inflated_map_.data.empty())
   {
-    response->message = "Local planner map is not available yet.";
+    response->message = "local_escape_map_unavailable";
     return;
   }
 
   if (request->source_plan.poses.empty())
   {
-    response->message = "Source plan is empty.";
+    response->message = "local_escape_empty_source_plan";
     return;
   }
 
@@ -735,13 +749,13 @@ void LocalPlanner::handle_plan_local_escape(
 
   if (escape_plan.poses.size() < 2U)
   {
-    response->message = "Local escape planner could not build a valid recovery path.";
+    response->message = "local_escape_no_valid_path";
     return;
   }
 
   response->success = true;
   response->plan = this->refine_local_plan(escape_plan);
-  response->message = "Local escape recovery plan is ready.";
+  response->message = "local_escape_plan_ready";
 }
 
 void LocalPlanner::publish_local_plan()
@@ -855,7 +869,8 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
         result.has_blocked_pose = true;
         result.blocked_pose = final_blocked_pose;
         result.blocked_distance = this->pose_distance(current_pose, final_blocked_pose);
-        result.recovery_required = this->confirm_dynamic_recovery_decision(blocked_decision);
+        result.recovery_required =
+          this->confirm_dynamic_recovery_decision(blocked_decision, result.blocked_distance);
         if (!result.recovery_required)
         {
           result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
@@ -909,7 +924,8 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   result.has_blocked_pose = true;
   result.blocked_pose = blocked_pose;
   result.blocked_distance = this->pose_distance(current_pose, blocked_pose);
-  result.recovery_required = this->confirm_dynamic_recovery_decision(blocked_decision);
+  result.recovery_required =
+    this->confirm_dynamic_recovery_decision(blocked_decision, result.blocked_distance);
   if (!result.recovery_required)
   {
     result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
@@ -1204,7 +1220,7 @@ void LocalPlanner::reset_dynamic_blocked_state()
   this->dynamic_blocked_streak_ = 0;
 }
 
-bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision)
+bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision, double blocked_distance)
 {
   if (decision == amr_msgs::msg::LocalPlanStatus::DECISION_OK)
   {
@@ -1222,11 +1238,25 @@ bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision)
     this->dynamic_blocked_streak_ += 1;
   }
 
-  const int required_cycles =
-    decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED ?
-    std::max(1, this->dynamic_obstacle_goal_proximity_confirm_cycles_) :
-    std::max(1, this->dynamic_obstacle_recovery_confirm_cycles_);
+  const int required_cycles = this->required_dynamic_recovery_cycles(decision, blocked_distance);
   return this->dynamic_blocked_streak_ >= required_cycles;
+}
+
+int LocalPlanner::required_dynamic_recovery_cycles(uint8_t decision, double blocked_distance) const
+{
+  if (decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED)
+  {
+    return std::max(1, this->dynamic_obstacle_goal_proximity_confirm_cycles_);
+  }
+
+  if (
+    blocked_distance >= this->dynamic_obstacle_corridor_relax_distance_ &&
+    this->dynamic_obstacle_corridor_confirm_cycles_ > this->dynamic_obstacle_recovery_confirm_cycles_)
+  {
+    return std::max(1, this->dynamic_obstacle_corridor_confirm_cycles_);
+  }
+
+  return std::max(1, this->dynamic_obstacle_recovery_confirm_cycles_);
 }
 
 double LocalPlanner::sample_lateral_occupancy(

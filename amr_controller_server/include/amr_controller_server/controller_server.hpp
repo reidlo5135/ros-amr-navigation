@@ -122,7 +122,8 @@ private:
     const nav_msgs::msg::Path &plan,
     geometry_msgs::msg::PoseStamped &blocked_pose) const;
   void reset_dynamic_blocked_state();
-  bool confirm_dynamic_recovery_decision(uint8_t decision);
+  bool confirm_dynamic_recovery_decision(uint8_t decision, double blocked_distance);
+  int required_dynamic_recovery_cycles(uint8_t decision, double blocked_distance) const;
   double sample_lateral_occupancy(
     double origin_x,
     double origin_y,
@@ -173,8 +174,10 @@ private:
   double dynamic_obstacle_escape_forward_distance_;
   double dynamic_obstacle_escape_lateral_distance_;
   double dynamic_obstacle_goal_proximity_disable_distance_;
+  double dynamic_obstacle_corridor_relax_distance_;
   int dynamic_obstacle_recovery_confirm_cycles_;
   int dynamic_obstacle_goal_proximity_confirm_cycles_;
+  int dynamic_obstacle_corridor_confirm_cycles_;
   int nearest_free_search_radius_cells_;
   std::vector<double> footprint_polygon_param_;
   amr::geometry::FootprintPolygon footprint_polygon_;
