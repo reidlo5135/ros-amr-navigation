@@ -1437,10 +1437,8 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &p
       return smoothed_plan;
     }
 
-    RCLCPP_WARN_THROTTLE(
+    RCLCPP_WARN(
       this->get_logger(),
-      *this->get_clock(),
-      2000,
       "Path refiner rejected smoothed path because the acceptance checks failed");
   }
 
