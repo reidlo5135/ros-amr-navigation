@@ -364,6 +364,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 | Date | Detail |
 | --- | --- |
+| `2026-05-13` | `0.17.x` 시작: `amr_controller_server` tracking target 진행 인덱스 보강, local plan 재발행 시 path rejoin oscillation 완화용 rollback-window 파라미터 추가 |
 | `2026-04-30` | `0.15.x` freeze: `0.15.10`을 runtime-hardening 기준선으로 동결, recovery observation/dynamic interrupt 확인 후 다음 구현 축을 `0.16.x`로 이관 |
 | `2026-04-30` | `0.15.10` recovery phase 상태 고정, motion controller는 BT 실행 책임만 유지, observation의 blocked context / recovery phase schema 추가 |
 | `2026-04-30` | `0.15.9` 기준선 반영, recovery trigger/reason 가시성 강화, runtime observation summary/event schema 정리, `local_escape-first` 복구 흐름은 다음 패치 라인으로 이관 |

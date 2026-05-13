@@ -29,6 +29,9 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   simplify_path_(true),
   prevent_corner_cutting_(true),
   turn_penalty_(0.5),
+  start_row_hold_penalty_(1.25),
+  goal_row_align_distance_cells_(6),
+  goal_row_align_penalty_(1.75),
   nearest_free_search_radius_cells_(4)
 {
   this->declare_parameter("topics.costmap", this->costmap_topic_);
@@ -42,6 +45,10 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   this->declare_parameter(
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->declare_parameter("planner.turn_penalty", this->turn_penalty_);
+  this->declare_parameter("planner.start_row_hold_penalty", this->start_row_hold_penalty_);
+  this->declare_parameter(
+    "planner.goal_row_align_distance_cells", this->goal_row_align_distance_cells_);
+  this->declare_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
@@ -60,6 +67,10 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   this->get_parameter(
     "planner.prevent_corner_cutting", this->prevent_corner_cutting_);
   this->get_parameter("planner.turn_penalty", this->turn_penalty_);
+  this->get_parameter("planner.start_row_hold_penalty", this->start_row_hold_penalty_);
+  this->get_parameter(
+    "planner.goal_row_align_distance_cells", this->goal_row_align_distance_cells_);
+  this->get_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
@@ -84,7 +95,10 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
     this->allow_unknown_,
     connectivity,
     this->turn_penalty_,
-    this->prevent_corner_cutting_);
+    this->prevent_corner_cutting_,
+    this->start_row_hold_penalty_,
+    this->goal_row_align_distance_cells_,
+    this->goal_row_align_penalty_);
   this->footprint_polygon_ = amr::geometry::make_footprint_polygon(this->footprint_polygon_param_);
 
   this->global_costmap_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();

@@ -40,6 +40,9 @@ from the looser general waypoint-style yaw tolerance.
 For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
 corrections on straight segments so the robot does not visibly wag with small localization
 or path-sampling noise.
+`control.tracking_progress_rollback_window` limits how far the controller may search backward
+on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
+between old and newly republished nearby poses.
 
 ## Important Interfaces
 

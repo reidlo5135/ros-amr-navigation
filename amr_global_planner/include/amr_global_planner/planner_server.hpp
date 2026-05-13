@@ -92,6 +92,9 @@ private:
   bool simplify_path_;
   bool prevent_corner_cutting_;
   double turn_penalty_;
+  double start_row_hold_penalty_;
+  int goal_row_align_distance_cells_;
+  double goal_row_align_penalty_;
   int nearest_free_search_radius_cells_;
   std::vector<double> footprint_polygon_param_;
   amr::geometry::FootprintPolygon footprint_polygon_;

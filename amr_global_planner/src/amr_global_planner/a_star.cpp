@@ -34,12 +34,18 @@ AStarPlanner::AStarPlanner(
   const bool allow_unknown,
   const AStarConnectivity connectivity,
   const double turn_penalty,
-  const bool prevent_corner_cutting)
+  const bool prevent_corner_cutting,
+  const double start_row_hold_penalty,
+  const int goal_row_align_distance_cells,
+  const double goal_row_align_penalty)
 : obstacle_threshold_(obstacle_threshold),
   allow_unknown_(allow_unknown),
   turn_penalty_(turn_penalty),
   connectivity_(connectivity),
   prevent_corner_cutting_(prevent_corner_cutting),
+  start_row_hold_penalty_(start_row_hold_penalty),
+  goal_row_align_distance_cells_(std::max(0, goal_row_align_distance_cells)),
+  goal_row_align_penalty_(goal_row_align_penalty),
   map_resolution_(0.0),
   map_origin_x_(0.0),
   map_origin_y_(0.0)
@@ -167,6 +173,7 @@ AStarPlanResult AStarPlanner::plan(
           current_node.parent_index / width};
         tentative_g_cost += this->turn_penalty(previous_cell, current_cell, neighbor);
       }
+      tentative_g_cost += this->row_bias_penalty(neighbor, start, goal);
 
       if (!neighbor_node.opened || tentative_g_cost < neighbor_node.g_cost) {
         neighbor_node.g_cost = tentative_g_cost;
@@ -288,6 +295,27 @@ double AStarPlanner::turn_penalty(
   }
 
   return this->turn_penalty_;
+}
+
+double AStarPlanner::row_bias_penalty(
+  const GridCell & next,
+  const GridCell & start,
+  const GridCell & goal) const
+{
+  double penalty = 0.0;
+
+  const bool in_goal_align_zone =
+    std::abs(goal.x - next.x) <= this->goal_row_align_distance_cells_;
+
+  if (!in_goal_align_zone && this->start_row_hold_penalty_ > 0.0 && next.y != start.y) {
+    penalty += this->start_row_hold_penalty_ * static_cast<double>(std::abs(next.y - start.y));
+  }
+
+  if (in_goal_align_zone && this->goal_row_align_penalty_ > 0.0 && next.y != goal.y) {
+    penalty += this->goal_row_align_penalty_ * static_cast<double>(std::abs(next.y - goal.y));
+  }
+
+  return penalty;
 }
 
 std::vector<GridCell> AStarPlanner::get_neighbors(const GridCell & cell) const

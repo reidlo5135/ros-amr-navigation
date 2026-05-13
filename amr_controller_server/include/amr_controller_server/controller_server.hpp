@@ -273,7 +273,7 @@ private:
   double quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const;
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
-  geometry_msgs::msg::PoseStamped select_tracking_target() const;
+  geometry_msgs::msg::PoseStamped select_tracking_target();
   GoalCheckResult check_goal(
     const geometry_msgs::msg::PoseStamped &current_pose,
     const geometry_msgs::msg::PoseStamped &goal_pose,
@@ -302,6 +302,7 @@ private:
   double linear_speed_;
   double min_linear_speed_;
   double tracking_lookahead_distance_;
+  std::size_t tracking_progress_rollback_window_;
   double angular_gain_;
   double max_angular_speed_;
   double distance_tolerance_;
@@ -351,6 +352,8 @@ private:
   bool has_latest_scan_;
   bool has_progress_reference_;
   bool has_recovery_reference_;
+  bool has_tracking_progress_index_;
+  std::size_t tracking_progress_index_;
 
 public:
   explicit MotionController(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());

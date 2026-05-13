@@ -48,7 +48,10 @@ public:
     bool allow_unknown = false,
     AStarConnectivity connectivity = AStarConnectivity::Eight,
     double turn_penalty = 0.0,
-    bool prevent_corner_cutting = true);
+    bool prevent_corner_cutting = true,
+    double start_row_hold_penalty = 0.0,
+    int goal_row_align_distance_cells = 0,
+    double goal_row_align_penalty = 0.0);
 
   virtual ~AStarPlanner();
 
@@ -96,6 +99,10 @@ private:
     const GridCell & previous,
     const GridCell & current,
     const GridCell & next) const;
+  double row_bias_penalty(
+    const GridCell & next,
+    const GridCell & start,
+    const GridCell & goal) const;
   std::vector<GridCell> get_neighbors(const GridCell & cell) const;
 
   int obstacle_threshold_;
@@ -103,6 +110,9 @@ private:
   double turn_penalty_;
   AStarConnectivity connectivity_;
   bool prevent_corner_cutting_;
+  double start_row_hold_penalty_;
+  int goal_row_align_distance_cells_;
+  double goal_row_align_penalty_;
   amr::geometry::FootprintPolygon footprint_;
   double map_resolution_;
   double map_origin_x_;

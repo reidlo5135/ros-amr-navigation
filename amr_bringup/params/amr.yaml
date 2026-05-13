@@ -161,6 +161,9 @@
       simplify_path: false
       prevent_corner_cutting: true
       turn_penalty: 0.5
+      start_row_hold_penalty: 1.25
+      goal_row_align_distance_cells: 6
+      goal_row_align_penalty: 1.75
       nearest_free_search_radius_cells: 4
 
 /amr/local_planner:
@@ -228,6 +231,7 @@
       linear_speed: 0.10
       min_linear_speed: 0.06
       tracking_lookahead_distance: 0.18
+      tracking_progress_rollback_window: 2
       angular_gain: 2.6
       max_angular_speed: 0.85
       distance_tolerance: 0.1
