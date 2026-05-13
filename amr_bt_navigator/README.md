@@ -27,6 +27,9 @@ final goal requests explicit heading alignment at arrival.
 The BT now limits local escape attempts to planner-owned recovery requests for the currently
 active motion command, so controller-only blocked/stalled reports do not spuriously re-dispatch
 an escape plan from stale planner state.
+After any recovery-driven navigate re-dispatch, the navigator also waits through a short
+post-recovery reacquire window before it considers recovery exited, so stale blocked flags do
+not immediately bounce the BT back into another recovery cycle.
 The fixed recovery policy is now:
 - `DECISION_HARD_BLOCKED`: one planner-local escape attempt, then `backup`, then `spin`, then fresh global replan
 - `DECISION_GOAL_PROXIMITY_BLOCKED`: skip local escape, `wait`, and re-dispatch the current plan before escalating further

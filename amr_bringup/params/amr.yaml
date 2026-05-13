@@ -308,6 +308,7 @@
     recovery:
       max_retries: 4
       retry_delay_ms: 1000
+      reacquire_settle_ms: 700
 
 /amr/recovery_server:
   ros__parameters:

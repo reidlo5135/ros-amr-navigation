@@ -128,6 +128,10 @@ private:
     int timeout_ms,
     std::string & error_message,
     const std::function<bool()> & is_cancel_requested = {});
+  bool has_reacquired_navigation(
+    const amr_msgs::msg::MotionCommand & active_command,
+    const amr_msgs::msg::MotionStatus & motion_status,
+    const amr_msgs::msg::LocalPlanStatus & local_plan_status) const;
   bool has_planner_owned_recovery(
     const amr_msgs::msg::MotionCommand & active_command,
     const amr_msgs::msg::LocalPlanStatus & local_plan_status) const;
@@ -186,6 +190,7 @@ private:
   int feedback_period_ms_;
   int recovery_max_retries_;
   int recovery_retry_delay_ms_;
+  int recovery_reacquire_settle_ms_;
   double nominal_speed_;
   uint32_t next_command_id_;
   geometry_msgs::msg::PoseStamped current_pose_;

@@ -74,6 +74,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   feedback_period_ms_(100),
   recovery_max_retries_(3),
   recovery_retry_delay_ms_(700),
+  recovery_reacquire_settle_ms_(700),
   nominal_speed_(0.075),
   next_command_id_(1U),
   has_current_pose_(false),
@@ -99,6 +100,8 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->declare_parameter("recovery.max_retries", this->recovery_max_retries_);
   this->declare_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
+  this->declare_parameter(
+    "recovery.reacquire_settle_ms", this->recovery_reacquire_settle_ms_);
   this->declare_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 }
 
@@ -130,6 +133,8 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->get_parameter("recovery.max_retries", this->recovery_max_retries_);
   this->get_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
+  this->get_parameter(
+    "recovery.reacquire_settle_ms", this->recovery_reacquire_settle_ms_);
   this->get_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 
   if (this->behavior_tree_xml_path_.empty()) {
@@ -594,6 +599,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   blackboard->set("active_command", amr_msgs::msg::MotionCommand());
   blackboard->set("active_command_dispatch_ns", static_cast<int64_t>(0));
   blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+  blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
+  blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
   blackboard->set("local_escape_dispatched", false);
   blackboard->set("status_message", std::string("Behavior tree is running."));
   blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kRunning));
@@ -726,10 +733,46 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
       const auto dispatch_ns = blackboard->get<int64_t>("active_command_dispatch_ns");
       auto recovery_condition_since_ns = blackboard->get<int64_t>("recovery_condition_since_ns");
+      const auto recovery_reacquire_until_ns =
+        blackboard->get<int64_t>("recovery_reacquire_until_ns");
+      const auto recovery_reacquire_command_id =
+        blackboard->get<uint32_t>("recovery_reacquire_command_id");
       const auto settle_ns =
         static_cast<int64_t>(std::max(250, navigator->feedback_period_ms_ * 5)) * 1000000LL;
       const auto debounce_ns =
         static_cast<int64_t>(std::max(300, navigator->feedback_period_ms_ * 3)) * 1000000LL;
+      const auto now_ns = navigator->now().nanoseconds();
+
+      if (recovery_reacquire_until_ns > 0 && recovery_reacquire_command_id != 0U) {
+        const bool reacquired =
+          status.command_id == recovery_reacquire_command_id &&
+          navigator->has_reacquired_navigation(command, status, local_plan_status);
+        if (reacquired) {
+          blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
+          blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
+          blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+          blackboard->set("local_escape_dispatched", false);
+          blackboard->set(
+            "status_message",
+            std::string("Recovery exit confirmed after a stable navigation reacquire."));
+          return BT::NodeStatus::FAILURE;
+        }
+
+        if (now_ns < recovery_reacquire_until_ns) {
+          blackboard->set(
+            "status_message",
+            std::string("Waiting for a stable post-recovery navigation reacquire."));
+          return BT::NodeStatus::FAILURE;
+        }
+
+        blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
+        blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
+        blackboard->set("recovery_condition_since_ns", now_ns);
+        blackboard->set(
+          "status_message",
+          std::string("Post-recovery reacquire window expired; blocked evaluation resumed."));
+        return BT::NodeStatus::FAILURE;
+      }
 
       if (status.command_id != command.command_id || !status.active) {
         blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
@@ -751,7 +794,6 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         return BT::NodeStatus::FAILURE;
       }
 
-      const auto now_ns = navigator->now().nanoseconds();
       if (recovery_condition_since_ns == 0) {
         blackboard->set("recovery_condition_since_ns", now_ns);
         return BT::NodeStatus::FAILURE;
@@ -819,9 +861,21 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto attempts = blackboard->get<int>("recovery_attempts");
       std::string error_message;
       amr_msgs::msg::MotionCommand recovery_command;
+      const auto arm_recovery_reacquire =
+        [&](const amr_msgs::msg::MotionCommand & dispatched_command) {
+          const auto reacquire_until_ns =
+            navigator->now().nanoseconds() +
+            (static_cast<int64_t>(std::max(250, navigator->recovery_reacquire_settle_ms_)) * 1000000LL);
+          blackboard->set("active_command", dispatched_command);
+          blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
+          blackboard->set("recovery_reacquire_until_ns", reacquire_until_ns);
+          blackboard->set("recovery_reacquire_command_id", dispatched_command.command_id);
+        };
       const auto finish_canceled = [&]() {
         navigator->publish_stop_command();
         blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+        blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
+        blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
         blackboard->set("status_message", std::string("Navigation canceled."));
         blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kCanceled));
         return BT::NodeStatus::SUCCESS;
@@ -875,14 +929,12 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           auto command = navigator->build_motion_command(
             goal_pose, route_id, escape_plan, align_heading_at_goal);
           navigator->publish_motion_command(command);
-          blackboard->set("active_command", command);
-          blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
-          blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+          arm_recovery_reacquire(command);
           blackboard->set("local_escape_dispatched", true);
           blackboard->set("planned_path", escape_plan);
           blackboard->set(
             "status_message",
-            std::string("Local escape plan dispatched before heavier recovery behaviors."));
+            std::string("Local escape plan dispatched; waiting for a stable navigation reacquire."));
           return BT::NodeStatus::SUCCESS;
         }
 
@@ -927,14 +979,11 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           auto command = navigator->build_motion_command(
             goal_pose, route_id, replanned_path, align_heading_at_goal);
           navigator->publish_motion_command(command);
-          blackboard->set("active_command", command);
-          blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
-          blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
-          blackboard->set("local_escape_dispatched", false);
+          arm_recovery_reacquire(command);
           blackboard->set("planned_path", replanned_path);
           blackboard->set(
             "status_message",
-            std::string("Planner requested global replanning. Motion command re-dispatched."));
+            std::string("Planner requested global replanning; waiting for a stable navigation reacquire."));
           return BT::NodeStatus::SUCCESS;
         }
       }
@@ -995,16 +1044,14 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               auto command = navigator->build_motion_command(
                 goal_pose, route_id, planned_path, align_heading_at_goal);
               navigator->publish_motion_command(command);
-              blackboard->set("active_command", command);
-              blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
-              blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+              arm_recovery_reacquire(command);
               blackboard->set(
                 "status_message",
                 navigator->describe_recovery_policy(
                   active_command,
                   local_plan_status,
                   recovery_behavior,
-                  true));
+                  true) + " Waiting for a stable navigation reacquire.");
               return BT::NodeStatus::SUCCESS;
             }
 
@@ -1047,16 +1094,13 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto command = navigator->build_motion_command(
         goal_pose, route_id, replanned_path, align_heading_at_goal);
       navigator->publish_motion_command(command);
-      blackboard->set("active_command", command);
-      blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
-      blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
-      blackboard->set("local_escape_dispatched", false);
+      arm_recovery_reacquire(command);
       blackboard->set("planned_path", replanned_path);
       blackboard->set(
         "status_message",
         planner_owned_recovery ?
-        std::string("Planner-owned recovery policy completed; a fresh global plan was dispatched.") :
-        std::string("Controller-owned recovery policy completed; a fresh global plan was dispatched."));
+        std::string("Planner-owned recovery policy completed; a fresh global plan was dispatched and is reacquiring.") :
+        std::string("Controller-owned recovery policy completed; a fresh global plan was dispatched and is reacquiring."));
       return BT::NodeStatus::SUCCESS;
     });
 
@@ -1487,6 +1531,32 @@ bool Btnavigator::should_try_local_escape(
     default:
       return true;
   }
+}
+
+bool Btnavigator::has_reacquired_navigation(
+  const amr_msgs::msg::MotionCommand & active_command,
+  const amr_msgs::msg::MotionStatus & motion_status,
+  const amr_msgs::msg::LocalPlanStatus & local_plan_status) const
+{
+  if (
+    motion_status.command_id != active_command.command_id ||
+    !motion_status.active ||
+    motion_status.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE ||
+    motion_status.blocked ||
+    motion_status.stalled ||
+    !motion_status.local_plan_valid)
+  {
+    return false;
+  }
+
+  if (local_plan_status.command_id != active_command.command_id || !local_plan_status.active)
+  {
+    return true;
+  }
+
+  return
+    local_plan_status.local_plan_valid &&
+    !local_plan_status.recovery_required;
 }
 
 bool Btnavigator::has_planner_owned_recovery(
