@@ -320,6 +320,8 @@ private:
   double min_linear_speed_;
   double tracking_lookahead_distance_;
   std::size_t tracking_progress_rollback_window_;
+  double tracking_target_hysteresis_distance_;
+  double tracking_target_reset_distance_;
   double angular_gain_;
   double max_angular_speed_;
   double distance_tolerance_;
@@ -334,6 +336,9 @@ private:
   double rotate_in_place_threshold_;
   double rotate_in_place_goal_distance_;
   double tracking_heading_deadband_;
+  double rejoin_target_distance_threshold_;
+  double rejoin_heading_gate_threshold_;
+  double rejoin_min_linear_scale_;
   double heading_slowdown_threshold_;
   double min_heading_motion_scale_;
   double max_linear_accel_;
@@ -375,11 +380,13 @@ private:
   bool has_progress_reference_;
   bool has_recovery_reference_;
   bool has_tracking_progress_index_;
+  bool has_tracking_target_index_;
   bool blocked_latched_;
   int blocked_streak_;
   int blocked_clear_streak_;
   int stalled_streak_;
   std::size_t tracking_progress_index_;
+  std::size_t tracking_target_index_;
 
 public:
   explicit MotionController(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());

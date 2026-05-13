@@ -235,6 +235,8 @@
       min_linear_speed: 0.06
       tracking_lookahead_distance: 0.18
       tracking_progress_rollback_window: 2
+      tracking_target_hysteresis_distance: 0.06
+      tracking_target_reset_distance: 0.30
       angular_gain: 2.6
       max_angular_speed: 0.85
       distance_tolerance: 0.1
@@ -242,6 +244,9 @@
       goal_reach_heading_tolerance: 0.05
       final_align_max_angular_speed: 0.75
       tracking_heading_deadband: 0.05
+      rejoin_target_distance_threshold: 0.08
+      rejoin_heading_gate_threshold: 0.35
+      rejoin_min_linear_scale: 0.35
       rotate_in_place_threshold: 0.45
       rotate_in_place_goal_distance: 0.18
       heading_slowdown_threshold: 0.12

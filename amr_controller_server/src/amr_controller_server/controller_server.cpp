@@ -2069,6 +2069,8 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   min_linear_speed_(0.05),
   tracking_lookahead_distance_(0.25),
   tracking_progress_rollback_window_(2U),
+  tracking_target_hysteresis_distance_(0.06),
+  tracking_target_reset_distance_(0.30),
   angular_gain_(1.5),
   max_angular_speed_(0.8),
   distance_tolerance_(0.15),
@@ -2083,6 +2085,9 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   rotate_in_place_threshold_(0.6),
   rotate_in_place_goal_distance_(0.35),
   tracking_heading_deadband_(0.05),
+  rejoin_target_distance_threshold_(0.08),
+  rejoin_heading_gate_threshold_(0.35),
+  rejoin_min_linear_scale_(0.35),
   heading_slowdown_threshold_(0.2),
   min_heading_motion_scale_(0.15),
   max_linear_accel_(0.08),
@@ -2109,11 +2114,13 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   has_progress_reference_(false),
   has_recovery_reference_(false),
   has_tracking_progress_index_(false),
+  has_tracking_target_index_(false),
   blocked_latched_(false),
   blocked_streak_(0),
   blocked_clear_streak_(0),
   stalled_streak_(0),
-  tracking_progress_index_(0U)
+  tracking_progress_index_(0U),
+  tracking_target_index_(0U)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
@@ -2129,6 +2136,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter(
     "control.tracking_progress_rollback_window",
     static_cast<int64_t>(this->tracking_progress_rollback_window_));
+  this->declare_parameter(
+    "control.tracking_target_hysteresis_distance", this->tracking_target_hysteresis_distance_);
+  this->declare_parameter(
+    "control.tracking_target_reset_distance", this->tracking_target_reset_distance_);
   this->declare_parameter("control.angular_gain", this->angular_gain_);
   this->declare_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->declare_parameter("control.distance_tolerance", this->distance_tolerance_);
@@ -2148,6 +2159,12 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "control.rotate_in_place_goal_distance", this->rotate_in_place_goal_distance_);
   this->declare_parameter(
     "control.tracking_heading_deadband", this->tracking_heading_deadband_);
+  this->declare_parameter(
+    "control.rejoin_target_distance_threshold", this->rejoin_target_distance_threshold_);
+  this->declare_parameter(
+    "control.rejoin_heading_gate_threshold", this->rejoin_heading_gate_threshold_);
+  this->declare_parameter(
+    "control.rejoin_min_linear_scale", this->rejoin_min_linear_scale_);
   this->declare_parameter(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->declare_parameter(
@@ -2207,6 +2224,10 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("control.tracking_lookahead_distance", this->tracking_lookahead_distance_);
   this->tracking_progress_rollback_window_ = static_cast<std::size_t>(
     this->get_parameter("control.tracking_progress_rollback_window").as_int());
+  this->get_parameter(
+    "control.tracking_target_hysteresis_distance", this->tracking_target_hysteresis_distance_);
+  this->get_parameter(
+    "control.tracking_target_reset_distance", this->tracking_target_reset_distance_);
   this->get_parameter("control.angular_gain", this->angular_gain_);
   this->get_parameter("control.max_angular_speed", this->max_angular_speed_);
   this->get_parameter("control.distance_tolerance", this->distance_tolerance_);
@@ -2226,6 +2247,12 @@ MotionController::CallbackReturn MotionController::on_configure(
     "control.rotate_in_place_goal_distance", this->rotate_in_place_goal_distance_);
   this->get_parameter(
     "control.tracking_heading_deadband", this->tracking_heading_deadband_);
+  this->get_parameter(
+    "control.rejoin_target_distance_threshold", this->rejoin_target_distance_threshold_);
+  this->get_parameter(
+    "control.rejoin_heading_gate_threshold", this->rejoin_heading_gate_threshold_);
+  this->get_parameter(
+    "control.rejoin_min_linear_scale", this->rejoin_min_linear_scale_);
   this->get_parameter(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->get_parameter(
@@ -2398,7 +2425,9 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->has_current_pose_ = false;
   this->has_latest_scan_ = false;
   this->has_tracking_progress_index_ = false;
+  this->has_tracking_target_index_ = false;
   this->tracking_progress_index_ = 0U;
+  this->tracking_target_index_ = 0U;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
@@ -2428,7 +2457,9 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->has_current_pose_ = false;
   this->has_latest_scan_ = false;
   this->has_tracking_progress_index_ = false;
+  this->has_tracking_target_index_ = false;
   this->tracking_progress_index_ = 0U;
+  this->tracking_target_index_ = 0U;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
@@ -2447,7 +2478,9 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
     this->latest_local_plan_ = nav_msgs::msg::Path();
     this->has_local_plan_ = false;
     this->has_tracking_progress_index_ = false;
+    this->has_tracking_target_index_ = false;
     this->tracking_progress_index_ = 0U;
+    this->tracking_target_index_ = 0U;
   }
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
@@ -2474,13 +2507,21 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
   if (message->poses.empty())
   {
     this->has_tracking_progress_index_ = false;
+    this->has_tracking_target_index_ = false;
     this->tracking_progress_index_ = 0U;
+    this->tracking_target_index_ = 0U;
   }
   else if (this->has_tracking_progress_index_)
   {
     this->tracking_progress_index_ = std::min(
       this->tracking_progress_index_,
       message->poses.size() - 1U);
+    if (this->has_tracking_target_index_)
+    {
+      this->tracking_target_index_ = std::min(
+        this->tracking_target_index_,
+        message->poses.size() - 1U);
+    }
   }
   RCLCPP_INFO_THROTTLE(
     this->get_logger(),
@@ -2550,6 +2591,8 @@ void MotionController::publish_control()
       const geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target();
       const double local_plan_remaining_distance =
         this->estimate_remaining_distance(this->latest_local_plan_);
+      const double tracking_target_distance =
+        this->pose_distance(this->current_pose_, tracking_target);
       const GoalCheckResult goal_check = this->check_goal(
         this->current_pose_, this->latest_command_.goal_pose, current_yaw);
       const double goal_distance = goal_check.distance_error;
@@ -2577,6 +2620,9 @@ void MotionController::publish_control()
       const bool final_align_phase =
         align_heading_at_goal &&
         (distance_reached || goal_distance <= this->rotate_in_place_goal_distance_);
+      const bool rejoin_phase =
+        !final_align_phase &&
+        tracking_target_distance >= this->rejoin_target_distance_threshold_;
       const bool suppress_small_heading_correction =
         !final_align_phase &&
         abs_heading_error <= this->tracking_heading_deadband_;
@@ -2708,6 +2754,16 @@ void MotionController::publish_control()
             scale = 1.0 - (
               (steering_abs_heading_error - this->heading_slowdown_threshold_) /
               scale_window);
+          }
+          if (rejoin_phase && steering_abs_heading_error > this->rejoin_heading_gate_threshold_)
+          {
+            const double gate_window = std::max(
+              3.14159265358979323846 - this->rejoin_heading_gate_threshold_,
+              1e-6);
+            const double rejoin_scale = 1.0 - (
+              (steering_abs_heading_error - this->rejoin_heading_gate_threshold_) /
+              gate_window);
+            scale *= this->clamp(rejoin_scale, this->rejoin_min_linear_scale_, 1.0);
           }
 
           scale = this->clamp(scale, this->min_heading_motion_scale_, 1.0);
@@ -3085,6 +3141,7 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
   this->tracking_progress_index_ = nearest_index;
   this->has_tracking_progress_index_ = true;
 
+  std::size_t candidate_target_index = nearest_index;
   double accumulated_distance = 0.0;
   for (std::size_t index = nearest_index + 1U; index < plan_size; ++index)
   {
@@ -3093,11 +3150,39 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
     accumulated_distance += this->pose_distance(previous, current);
     if (accumulated_distance >= this->tracking_lookahead_distance_)
     {
-      return current;
+      candidate_target_index = index;
+      break;
     }
   }
 
-  return this->latest_local_plan_.poses.back();
+  if (!this->has_tracking_target_index_)
+  {
+    this->tracking_target_index_ = candidate_target_index;
+    this->has_tracking_target_index_ = true;
+    return this->latest_local_plan_.poses[this->tracking_target_index_];
+  }
+
+  this->tracking_target_index_ = std::min(this->tracking_target_index_, plan_size - 1U);
+  const std::size_t current_target_index = this->tracking_target_index_;
+  const double current_target_distance = this->pose_distance(
+    this->current_pose_,
+    this->latest_local_plan_.poses[current_target_index]);
+  const double candidate_target_distance = this->pose_distance(
+    this->current_pose_,
+    this->latest_local_plan_.poses[candidate_target_index]);
+  const bool candidate_is_forward = candidate_target_index >= current_target_index;
+  const bool current_target_stale =
+    current_target_index < nearest_index ||
+    current_target_distance >= this->tracking_target_reset_distance_;
+  const bool candidate_materially_better =
+    candidate_target_distance + this->tracking_target_hysteresis_distance_ < current_target_distance;
+
+  if (current_target_stale || (candidate_is_forward && candidate_materially_better))
+  {
+    this->tracking_target_index_ = candidate_target_index;
+  }
+
+  return this->latest_local_plan_.poses[this->tracking_target_index_];
 }
 
 MotionController::GoalCheckResult MotionController::check_goal(

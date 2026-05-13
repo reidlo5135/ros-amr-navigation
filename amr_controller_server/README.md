@@ -48,6 +48,9 @@ or path-sampling noise.
 `control.tracking_progress_rollback_window` limits how far the controller may search backward
 on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
 between old and newly republished nearby poses.
+`control.tracking_target_hysteresis_distance`, `control.tracking_target_reset_distance`, and
+the `control.rejoin_*` parameters slow down target switching and linear push during path rejoin
+so recovery exit and off-path correction do not wag left/right as aggressively.
 `status.*` parameters debounce blocked/stalled publication so fresh command dispatch, safety-gate
 flicker, and final-align settling do not immediately look like hard recovery conditions.
 
