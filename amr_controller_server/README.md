@@ -34,6 +34,8 @@ bound how far a smoothed candidate may drift from the base local path before it 
 It also exposes `dynamic_obstacle.*` parameters for local escape generation and blocked-state
 confirmation, including the current corridor/doorway relaxation controls used by the `0.16.x`
 recovery-tuning line.
+`dynamic_obstacle.clear_confirm_cycles` lets the local planner require a short clear streak
+before it fully drops a previously confirmed blocked decision.
 `/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
 By default, waypoint-style goals can stay heading-free while command-driven final heading align
 still uses a separate tighter tolerance near the goal.
@@ -46,6 +48,8 @@ or path-sampling noise.
 `control.tracking_progress_rollback_window` limits how far the controller may search backward
 on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
 between old and newly republished nearby poses.
+`status.*` parameters debounce blocked/stalled publication so fresh command dispatch, safety-gate
+flicker, and final-align settling do not immediately look like hard recovery conditions.
 
 ## Important Interfaces
 

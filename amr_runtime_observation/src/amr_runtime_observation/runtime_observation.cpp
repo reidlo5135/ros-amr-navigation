@@ -212,6 +212,16 @@ int8_t RuntimeObservation::resolve_action_status() const
 
 std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) const
 {
+  if (this->has_motion_status_ && this->latest_motion_status_.safety_gate_blocked)
+  {
+    return "motion_safety_gate_blocked";
+  }
+
+  if (this->has_motion_status_ && this->latest_motion_status_.costmap_blocked)
+  {
+    return "motion_costmap_blocked";
+  }
+
   if (this->has_local_plan_status_ && this->latest_local_plan_status_.recovery_required)
   {
     switch (this->latest_local_plan_status_.decision)
@@ -225,16 +235,6 @@ std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) c
       default:
         return "planner_recovery_required";
     }
-  }
-
-  if (this->has_motion_status_ && this->latest_motion_status_.safety_gate_blocked)
-  {
-    return "motion_safety_gate_blocked";
-  }
-
-  if (this->has_motion_status_ && this->latest_motion_status_.costmap_blocked)
-  {
-    return "motion_costmap_blocked";
   }
 
   if (this->has_motion_status_ && this->latest_motion_status_.stalled)

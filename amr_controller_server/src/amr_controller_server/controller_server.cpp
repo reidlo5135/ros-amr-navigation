@@ -400,10 +400,12 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   dynamic_obstacle_recovery_confirm_cycles_(3),
   dynamic_obstacle_goal_proximity_confirm_cycles_(2),
   dynamic_obstacle_corridor_confirm_cycles_(5),
+  dynamic_obstacle_clear_confirm_cycles_(2),
   nearest_free_search_radius_cells_(4),
   last_command_id_(0U),
   dynamic_blocked_decision_(amr_msgs::msg::LocalPlanStatus::DECISION_OK),
   dynamic_blocked_streak_(0),
+  dynamic_clear_streak_(0),
   last_progress_index_(0U),
   map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_command_(false),
@@ -473,6 +475,9 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   this->declare_parameter(
     "dynamic_obstacle.corridor_confirm_cycles",
     this->dynamic_obstacle_corridor_confirm_cycles_);
+  this->declare_parameter(
+    "dynamic_obstacle.clear_confirm_cycles",
+    this->dynamic_obstacle_clear_confirm_cycles_);
 }
 
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State &state)
@@ -542,6 +547,9 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   this->get_parameter(
     "dynamic_obstacle.corridor_confirm_cycles",
     this->dynamic_obstacle_corridor_confirm_cycles_);
+  this->get_parameter(
+    "dynamic_obstacle.clear_confirm_cycles",
+    this->dynamic_obstacle_clear_confirm_cycles_);
 
   if (
     this->command_topic_.empty() || this->current_pose_topic_.empty() ||
@@ -888,7 +896,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
       }
       else if (obstacle_active)
       {
-        this->reset_dynamic_blocked_state();
+        this->confirm_dynamic_clear();
         result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
         result.has_blocked_pose = true;
         result.blocked_pose = blocked_pose;
@@ -896,7 +904,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
       }
       else
       {
-        this->reset_dynamic_blocked_state();
+        this->confirm_dynamic_clear();
         result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
       }
       return result;
@@ -911,7 +919,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
 
   if (!obstacle_active)
   {
-    this->reset_dynamic_blocked_state();
+    this->confirm_dynamic_clear();
     result.plan = this->build_sliced_local_plan_with_lookahead(
       source_plan,
       current_pose,
@@ -1228,6 +1236,7 @@ void LocalPlanner::reset_dynamic_blocked_state()
 {
   this->dynamic_blocked_decision_ = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
   this->dynamic_blocked_streak_ = 0;
+  this->dynamic_clear_streak_ = 0;
 }
 
 bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision, double blocked_distance)
@@ -1250,6 +1259,24 @@ bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision, double bl
 
   const int required_cycles = this->required_dynamic_recovery_cycles(decision, blocked_distance);
   return this->dynamic_blocked_streak_ >= required_cycles;
+}
+
+bool LocalPlanner::confirm_dynamic_clear()
+{
+  if (this->dynamic_blocked_decision_ == amr_msgs::msg::LocalPlanStatus::DECISION_OK)
+  {
+    this->dynamic_clear_streak_ = 0;
+    return true;
+  }
+
+  this->dynamic_clear_streak_ += 1;
+  if (this->dynamic_clear_streak_ < std::max(1, this->dynamic_obstacle_clear_confirm_cycles_))
+  {
+    return false;
+  }
+
+  this->reset_dynamic_blocked_state();
+  return true;
 }
 
 int LocalPlanner::required_dynamic_recovery_cycles(uint8_t decision, double blocked_distance) const
@@ -2062,6 +2089,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   max_angular_accel_(0.8),
   progress_required_movement_radius_(0.05),
   progress_time_allowance_sec_(2.0),
+  status_command_settle_time_sec_(0.5),
+  status_blocked_confirm_cycles_(2),
+  status_blocked_clear_cycles_(2),
+  status_stalled_confirm_cycles_(2),
   safety_gate_enabled_(true),
   safety_gate_allow_rotate_in_place_(true),
   safety_gate_stop_distance_(3.0),
@@ -2078,6 +2109,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   has_progress_reference_(false),
   has_recovery_reference_(false),
   has_tracking_progress_index_(false),
+  blocked_latched_(false),
+  blocked_streak_(0),
+  blocked_clear_streak_(0),
+  stalled_streak_(0),
   tracking_progress_index_(0U)
 {
   this->declare_parameter("topics.command", this->command_topic_);
@@ -2121,6 +2156,14 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
   this->declare_parameter(
     "progress_checker.time_allowance_sec", this->progress_time_allowance_sec_);
+  this->declare_parameter(
+    "status.command_settle_time_sec", this->status_command_settle_time_sec_);
+  this->declare_parameter(
+    "status.blocked_confirm_cycles", this->status_blocked_confirm_cycles_);
+  this->declare_parameter(
+    "status.blocked_clear_cycles", this->status_blocked_clear_cycles_);
+  this->declare_parameter(
+    "status.stalled_confirm_cycles", this->status_stalled_confirm_cycles_);
 
   this->declare_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->declare_parameter(
@@ -2191,6 +2234,14 @@ MotionController::CallbackReturn MotionController::on_configure(
     "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
   this->get_parameter(
     "progress_checker.time_allowance_sec", this->progress_time_allowance_sec_);
+  this->get_parameter(
+    "status.command_settle_time_sec", this->status_command_settle_time_sec_);
+  this->get_parameter(
+    "status.blocked_confirm_cycles", this->status_blocked_confirm_cycles_);
+  this->get_parameter(
+    "status.blocked_clear_cycles", this->status_blocked_clear_cycles_);
+  this->get_parameter(
+    "status.stalled_confirm_cycles", this->status_stalled_confirm_cycles_);
 
   this->get_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->get_parameter(
@@ -2351,6 +2402,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
+  this->reset_status_semantics_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -2380,6 +2432,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
+  this->reset_status_semantics_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -2400,9 +2453,11 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
+  this->reset_status_semantics_state();
   this->has_recovery_reference_ = false;
   this->recovery_start_time_ = this->now();
   this->recovery_start_yaw_ = 0.0;
+  this->latest_command_time_ = this->now();
   RCLCPP_INFO(
     this->get_logger(),
     "Received motion command %u mode=%u with goal x=%.3f y=%.3f",
@@ -2530,13 +2585,21 @@ void MotionController::publish_control()
       const double angular_speed_limit = final_align_phase ?
         std::min(this->max_angular_speed_, this->final_align_max_angular_speed_) :
         this->max_angular_speed_;
+      const bool command_settling =
+        this->latest_command_time_.nanoseconds() > 0 &&
+        (this->now() - this->latest_command_time_).seconds() < this->status_command_settle_time_sec_;
+      const bool non_error_hold_phase = final_align_phase;
 
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
+      const bool blocked_candidate =
+        safety_gate_blocked &&
+        !command_settling &&
+        !non_error_hold_phase;
       status.local_plan_valid = this->has_local_plan_ && !this->latest_local_plan_.poses.empty();
       status.costmap_blocked = false;
       status.safety_gate_blocked = safety_gate_blocked;
       status.obstacle_detected = safety_gate_blocked;
-      status.blocked = status.obstacle_detected;
+      status.blocked = this->update_blocked_state(blocked_candidate);
       status.has_blocked_pose = false;
       status.blocked_pose = geometry_msgs::msg::PoseStamped();
       status.goal_reached = goal_check.goal_reached;
@@ -2568,10 +2631,16 @@ void MotionController::publish_control()
       }
       else if (
         !status.blocked &&
+        !command_settling &&
+        !non_error_hold_phase &&
         (this->now() - this->progress_reference_time_).seconds() >=
         this->progress_time_allowance_sec_)
       {
-        status.stalled = true;
+        status.stalled = this->update_stalled_state(true);
+      }
+      else
+      {
+        status.stalled = this->update_stalled_state(false);
       }
 
       if (status.goal_reached)
@@ -2583,6 +2652,7 @@ void MotionController::publish_control()
         this->reset_velocity_controller_state();
         this->reset_progress_checker_state();
         this->reset_goal_checker_state();
+        this->reset_status_semantics_state();
         RCLCPP_INFO(
           this->get_logger(),
           "Goal reached for command %u",
@@ -2653,6 +2723,7 @@ void MotionController::publish_control()
     }
     else
     {
+      this->reset_status_semantics_state();
       this->ensure_recovery_reference_initialized();
       const double elapsed_sec = (this->now() - this->recovery_start_time_).seconds();
 
@@ -2709,6 +2780,7 @@ void MotionController::publish_control()
         this->reset_velocity_controller_state();
         this->reset_progress_checker_state();
         this->reset_goal_checker_state();
+        this->reset_status_semantics_state();
         RCLCPP_INFO(
           this->get_logger(),
           "Recovery command %u completed",
@@ -2718,6 +2790,7 @@ void MotionController::publish_control()
   }
   else
   {
+    this->reset_status_semantics_state();
     status.goal_reached = true;
   }
 
@@ -2765,6 +2838,15 @@ void MotionController::reset_goal_checker_state()
 {
   this->goal_checker_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
   this->goal_checker_holding_ = false;
+}
+
+void MotionController::reset_status_semantics_state()
+{
+  this->latest_command_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->blocked_latched_ = false;
+  this->blocked_streak_ = 0;
+  this->blocked_clear_streak_ = 0;
+  this->stalled_streak_ = 0;
 }
 
 void MotionController::publish_zero_twist()
@@ -3106,6 +3188,46 @@ bool MotionController::is_safety_gate_triggered() const
   }
 
   return false;
+}
+
+bool MotionController::update_blocked_state(const bool blocked_candidate)
+{
+  if (blocked_candidate)
+  {
+    this->blocked_clear_streak_ = 0;
+    this->blocked_streak_ += 1;
+    if (this->blocked_streak_ >= std::max(1, this->status_blocked_confirm_cycles_))
+    {
+      this->blocked_latched_ = true;
+    }
+  }
+  else
+  {
+    this->blocked_streak_ = 0;
+    if (this->blocked_latched_)
+    {
+      this->blocked_clear_streak_ += 1;
+      if (this->blocked_clear_streak_ >= std::max(1, this->status_blocked_clear_cycles_))
+      {
+        this->blocked_latched_ = false;
+        this->blocked_clear_streak_ = 0;
+      }
+    }
+  }
+
+  return this->blocked_latched_;
+}
+
+bool MotionController::update_stalled_state(const bool stalled_candidate)
+{
+  if (!stalled_candidate)
+  {
+    this->stalled_streak_ = 0;
+    return false;
+  }
+
+  this->stalled_streak_ += 1;
+  return this->stalled_streak_ >= std::max(1, this->status_stalled_confirm_cycles_);
 }
 
 double MotionController::pose_distance(

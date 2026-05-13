@@ -123,6 +123,7 @@ private:
     geometry_msgs::msg::PoseStamped &blocked_pose) const;
   void reset_dynamic_blocked_state();
   bool confirm_dynamic_recovery_decision(uint8_t decision, double blocked_distance);
+  bool confirm_dynamic_clear();
   int required_dynamic_recovery_cycles(uint8_t decision, double blocked_distance) const;
   double sample_lateral_occupancy(
     double origin_x,
@@ -189,12 +190,14 @@ private:
   int dynamic_obstacle_recovery_confirm_cycles_;
   int dynamic_obstacle_goal_proximity_confirm_cycles_;
   int dynamic_obstacle_corridor_confirm_cycles_;
+  int dynamic_obstacle_clear_confirm_cycles_;
   int nearest_free_search_radius_cells_;
   std::vector<double> footprint_polygon_param_;
   amr::geometry::FootprintPolygon footprint_polygon_;
   uint32_t last_command_id_;
   uint8_t dynamic_blocked_decision_;
   int dynamic_blocked_streak_;
+  int dynamic_clear_streak_;
   std::size_t last_progress_index_;
   amr_msgs::msg::MotionCommand latest_command_;
   geometry_msgs::msg::PoseStamped current_pose_;
@@ -268,6 +271,7 @@ private:
   void reset_velocity_controller_state();
   void reset_progress_checker_state();
   void reset_goal_checker_state();
+  void reset_status_semantics_state();
   void publish_zero_twist();
   VelocityControlMode parse_velocity_control_mode(const std::string &mode) const;
   double apply_axis_controller(
@@ -290,6 +294,8 @@ private:
     const geometry_msgs::msg::PoseStamped &goal_pose,
     double current_yaw);
   bool is_safety_gate_triggered() const;
+  bool update_blocked_state(bool blocked_candidate);
+  bool update_stalled_state(bool stalled_candidate);
   void ensure_recovery_reference_initialized();
   double pose_distance(
     const geometry_msgs::msg::PoseStamped &start,
@@ -334,6 +340,10 @@ private:
   double max_angular_accel_;
   double progress_required_movement_radius_;
   double progress_time_allowance_sec_;
+  double status_command_settle_time_sec_;
+  int status_blocked_confirm_cycles_;
+  int status_blocked_clear_cycles_;
+  int status_stalled_confirm_cycles_;
   bool safety_gate_enabled_;
   bool safety_gate_allow_rotate_in_place_;
   double safety_gate_stop_distance_;
@@ -355,6 +365,7 @@ private:
   rclcpp::Time progress_reference_time_;
   rclcpp::Time recovery_start_time_;
   rclcpp::Time goal_checker_hold_start_time_;
+  rclcpp::Time latest_command_time_;
   double recovery_start_yaw_;
   bool goal_checker_holding_;
   bool has_command_;
@@ -364,6 +375,10 @@ private:
   bool has_progress_reference_;
   bool has_recovery_reference_;
   bool has_tracking_progress_index_;
+  bool blocked_latched_;
+  int blocked_streak_;
+  int blocked_clear_streak_;
+  int stalled_streak_;
   std::size_t tracking_progress_index_;
 
 public:

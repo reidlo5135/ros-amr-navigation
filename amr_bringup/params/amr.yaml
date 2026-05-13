@@ -218,6 +218,7 @@
       recovery_confirm_cycles: 3
       goal_proximity_confirm_cycles: 2
       corridor_confirm_cycles: 5
+      clear_confirm_cycles: 2
 
 /amr/motion_controller:
   ros__parameters:
@@ -248,6 +249,11 @@
     progress_checker:
       required_movement_radius: 0.03
       time_allowance_sec: 4.0
+    status:
+      command_settle_time_sec: 0.5
+      blocked_confirm_cycles: 2
+      blocked_clear_cycles: 2
+      stalled_confirm_cycles: 2
     goal_checker:
       xy_tolerance: 0.1
       yaw_tolerance: 0.7853981633974483
