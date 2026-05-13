@@ -387,6 +387,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   path_refiner_corner_smoothing_max_offset_(0.12),
   path_refiner_corner_smoothing_angle_threshold_(0.35),
   path_refiner_corner_smoothing_samples_(3),
+  path_refiner_smoothing_max_length_ratio_(1.15),
+  path_refiner_smoothing_max_pose_deviation_(0.08),
   path_refiner_collision_check_enabled_(true),
   path_refiner_collision_sample_distance_(0.05),
   dynamic_obstacle_enabled_(true),
@@ -440,6 +442,10 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     this->path_refiner_corner_smoothing_angle_threshold_);
   this->declare_parameter(
     "path_refiner.corner_smoothing_samples", this->path_refiner_corner_smoothing_samples_);
+  this->declare_parameter(
+    "path_refiner.smoothing_max_length_ratio", this->path_refiner_smoothing_max_length_ratio_);
+  this->declare_parameter(
+    "path_refiner.smoothing_max_pose_deviation", this->path_refiner_smoothing_max_pose_deviation_);
   this->declare_parameter(
     "path_refiner.collision_check_enabled", this->path_refiner_collision_check_enabled_);
   this->declare_parameter(
@@ -505,6 +511,10 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     this->path_refiner_corner_smoothing_angle_threshold_);
   this->get_parameter(
     "path_refiner.corner_smoothing_samples", this->path_refiner_corner_smoothing_samples_);
+  this->get_parameter(
+    "path_refiner.smoothing_max_length_ratio", this->path_refiner_smoothing_max_length_ratio_);
+  this->get_parameter(
+    "path_refiner.smoothing_max_pose_deviation", this->path_refiner_smoothing_max_pose_deviation_);
   this->get_parameter(
     "path_refiner.collision_check_enabled", this->path_refiner_collision_check_enabled_);
   this->get_parameter(
@@ -1381,6 +1391,37 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &p
     return plan;
   }
 
+  nav_msgs::msg::Path refined_plan = this->prune_and_interpolate_path(plan);
+  if (this->path_refiner_heading_assignment_enabled_)
+  {
+    this->assign_path_headings(refined_plan);
+  }
+
+  if (this->path_refiner_corner_smoothing_enabled_)
+  {
+    nav_msgs::msg::Path smoothed_plan = this->apply_path_smoother(refined_plan);
+    if (this->path_refiner_heading_assignment_enabled_)
+    {
+      this->assign_path_headings(smoothed_plan);
+    }
+
+    if (this->is_smoothed_path_acceptable(refined_plan, smoothed_plan))
+    {
+      return smoothed_plan;
+    }
+
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Path refiner rejected smoothed path because the acceptance checks failed");
+  }
+
+  return refined_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::prune_and_interpolate_path(const nav_msgs::msg::Path &plan) const
+{
   nav_msgs::msg::Path refined_plan;
   refined_plan.header = plan.header;
   refined_plan.header.stamp = this->now();
@@ -1423,32 +1464,12 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &p
     refined_plan.poses.push_back(target_pose);
   }
 
-  if (this->path_refiner_heading_assignment_enabled_)
-  {
-    this->assign_path_headings(refined_plan);
-  }
-
-  if (this->path_refiner_corner_smoothing_enabled_)
-  {
-    nav_msgs::msg::Path smoothed_plan = this->smooth_path_corners(refined_plan);
-    if (this->path_refiner_heading_assignment_enabled_)
-    {
-      this->assign_path_headings(smoothed_plan);
-    }
-
-    if (
-      !this->path_refiner_collision_check_enabled_ ||
-      this->is_path_collision_free(smoothed_plan))
-    {
-      return smoothed_plan;
-    }
-
-    RCLCPP_WARN(
-      this->get_logger(),
-      "Path refiner rejected corner-smoothed path because collision check failed");
-  }
-
   return refined_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::apply_path_smoother(const nav_msgs::msg::Path &plan) const
+{
+  return this->smooth_path_corners(plan);
 }
 
 nav_msgs::msg::Path LocalPlanner::smooth_path_corners(const nav_msgs::msg::Path &plan) const
@@ -1541,6 +1562,115 @@ nav_msgs::msg::Path LocalPlanner::smooth_path_corners(const nav_msgs::msg::Path 
 
   smoothed_plan.poses.push_back(plan.poses.back());
   return smoothed_plan;
+}
+
+bool LocalPlanner::is_smoothed_path_acceptable(
+  const nav_msgs::msg::Path &base_plan,
+  const nav_msgs::msg::Path &smoothed_plan) const
+{
+  if (smoothed_plan.poses.size() < 2U)
+  {
+    return false;
+  }
+
+  if (
+    this->path_refiner_collision_check_enabled_ &&
+    !this->is_path_collision_free(smoothed_plan))
+  {
+    return false;
+  }
+
+  const double base_length = this->estimate_path_length(base_plan);
+  const double smoothed_length = this->estimate_path_length(smoothed_plan);
+  if (
+    base_length > 1e-6 &&
+    smoothed_length > (base_length * std::max(1.0, this->path_refiner_smoothing_max_length_ratio_)))
+  {
+    return false;
+  }
+
+  if (this->path_refiner_smoothing_max_pose_deviation_ <= 1e-6)
+  {
+    return true;
+  }
+
+  for (const auto & pose : smoothed_plan.poses)
+  {
+    if (
+      this->estimate_pose_distance_to_path(pose, base_plan) >
+      this->path_refiner_smoothing_max_pose_deviation_)
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+double LocalPlanner::estimate_path_length(const nav_msgs::msg::Path &plan) const
+{
+  double total_distance = 0.0;
+  if (plan.poses.size() < 2U)
+  {
+    return total_distance;
+  }
+
+  for (std::size_t index = 1U; index < plan.poses.size(); ++index)
+  {
+    total_distance += this->pose_distance(plan.poses[index - 1U], plan.poses[index]);
+  }
+
+  return total_distance;
+}
+
+double LocalPlanner::estimate_pose_distance_to_path(
+  const geometry_msgs::msg::PoseStamped &pose,
+  const nav_msgs::msg::Path &path) const
+{
+  if (path.poses.empty())
+  {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  const auto &point = pose.pose.position;
+  double min_distance = std::numeric_limits<double>::infinity();
+
+  const auto update_distance_from_point =
+    [&point, &min_distance](const geometry_msgs::msg::Point &candidate_point)
+    {
+      const double dx = candidate_point.x - point.x;
+      const double dy = candidate_point.y - point.y;
+      min_distance = std::min(min_distance, std::sqrt((dx * dx) + (dy * dy)));
+    };
+
+  update_distance_from_point(path.poses.front().pose.position);
+
+  for (std::size_t index = 1U; index < path.poses.size(); ++index)
+  {
+    const auto &segment_start = path.poses[index - 1U].pose.position;
+    const auto &segment_end = path.poses[index].pose.position;
+    const double dx = segment_end.x - segment_start.x;
+    const double dy = segment_end.y - segment_start.y;
+    const double segment_length_sq = (dx * dx) + (dy * dy);
+
+    if (segment_length_sq <= 1e-8)
+    {
+      update_distance_from_point(segment_end);
+      continue;
+    }
+
+    const double projection = std::clamp(
+      (((point.x - segment_start.x) * dx) + ((point.y - segment_start.y) * dy)) /
+      segment_length_sq,
+      0.0,
+      1.0);
+    geometry_msgs::msg::Point projected_point;
+    projected_point.x = segment_start.x + (projection * dx);
+    projected_point.y = segment_start.y + (projection * dy);
+    update_distance_from_point(projected_point);
+  }
+
+  return min_distance;
 }
 
 bool LocalPlanner::is_path_collision_free(const nav_msgs::msg::Path &plan) const

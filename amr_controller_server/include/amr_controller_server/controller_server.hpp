@@ -130,7 +130,16 @@ private:
     double heading,
     double lateral_sign) const;
   nav_msgs::msg::Path refine_local_plan(const nav_msgs::msg::Path &plan) const;
+  nav_msgs::msg::Path prune_and_interpolate_path(const nav_msgs::msg::Path &plan) const;
+  nav_msgs::msg::Path apply_path_smoother(const nav_msgs::msg::Path &plan) const;
   nav_msgs::msg::Path smooth_path_corners(const nav_msgs::msg::Path &plan) const;
+  bool is_smoothed_path_acceptable(
+    const nav_msgs::msg::Path &base_plan,
+    const nav_msgs::msg::Path &smoothed_plan) const;
+  double estimate_path_length(const nav_msgs::msg::Path &plan) const;
+  double estimate_pose_distance_to_path(
+    const geometry_msgs::msg::PoseStamped &pose,
+    const nav_msgs::msg::Path &path) const;
   bool is_path_collision_free(const nav_msgs::msg::Path &plan) const;
   bool is_pose_collision_free(const geometry_msgs::msg::PoseStamped &pose) const;
   void assign_path_headings(nav_msgs::msg::Path &plan) const;
@@ -167,6 +176,8 @@ private:
   double path_refiner_corner_smoothing_max_offset_;
   double path_refiner_corner_smoothing_angle_threshold_;
   int path_refiner_corner_smoothing_samples_;
+  double path_refiner_smoothing_max_length_ratio_;
+  double path_refiner_smoothing_max_pose_deviation_;
   bool path_refiner_collision_check_enabled_;
   double path_refiner_collision_sample_distance_;
   bool dynamic_obstacle_enabled_;

@@ -204,6 +204,8 @@
       corner_smoothing_max_offset: 0.12
       corner_smoothing_angle_threshold: 0.35
       corner_smoothing_samples: 3
+      smoothing_max_length_ratio: 1.15
+      smoothing_max_pose_deviation: 0.08
       collision_check_enabled: true
       collision_sample_distance: 0.05
     dynamic_obstacle:

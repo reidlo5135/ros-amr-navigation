@@ -28,6 +28,9 @@ ros2 launch amr_controller_server controller.launch.py params_file:=/path/to/amr
 
 `/amr/local_planner` exposes `path_refiner.*` parameters for safe path post-processing,
 including collision-checked corner smoothing with fallback to the unsmoothed local plan.
+The refiner now stages prune/interpolate, smoothing, and final handoff separately, and
+`path_refiner.smoothing_max_length_ratio` plus `path_refiner.smoothing_max_pose_deviation`
+bound how far a smoothed candidate may drift from the base local path before it is rejected.
 It also exposes `dynamic_obstacle.*` parameters for local escape generation and blocked-state
 confirmation, including the current corridor/doorway relaxation controls used by the `0.16.x`
 recovery-tuning line.
