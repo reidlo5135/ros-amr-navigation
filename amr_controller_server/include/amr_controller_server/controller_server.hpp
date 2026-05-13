@@ -328,6 +328,8 @@ private:
   double goal_heading_tolerance_;
   double goal_reach_heading_tolerance_;
   double final_align_max_angular_speed_;
+  double final_align_heading_deadband_;
+  double final_align_settle_time_sec_;
   double goal_checker_xy_tolerance_;
   double goal_checker_yaw_tolerance_;
   double goal_checker_hold_time_sec_;
@@ -370,9 +372,11 @@ private:
   rclcpp::Time progress_reference_time_;
   rclcpp::Time recovery_start_time_;
   rclcpp::Time goal_checker_hold_start_time_;
+  rclcpp::Time final_align_hold_start_time_;
   rclcpp::Time latest_command_time_;
   double recovery_start_yaw_;
   bool goal_checker_holding_;
+  bool final_align_holding_;
   bool has_command_;
   bool has_local_plan_;
   bool has_current_pose_;

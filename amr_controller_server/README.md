@@ -42,6 +42,8 @@ still uses a separate tighter tolerance near the goal.
 When heading alignment is active near the goal, `control.goal_reach_heading_tolerance` and
 `control.final_align_max_angular_speed` tune the final in-place yaw settle behavior separately
 from the looser general waypoint-style yaw tolerance.
+`control.final_align_heading_deadband` and `control.final_align_settle_time_sec` let the
+controller hold a quiet final-yaw settle window before it declares the aligned goal complete.
 For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
 corrections on straight segments so the robot does not visibly wag with small localization
 or path-sampling noise.

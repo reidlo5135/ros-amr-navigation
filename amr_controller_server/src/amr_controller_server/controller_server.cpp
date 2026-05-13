@@ -2077,6 +2077,8 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   goal_heading_tolerance_(0.20),
   goal_reach_heading_tolerance_(0.35),
   final_align_max_angular_speed_(0.35),
+  final_align_heading_deadband_(0.05),
+  final_align_settle_time_sec_(0.20),
   goal_checker_xy_tolerance_(0.15),
   goal_checker_yaw_tolerance_(0.7853981633974483),
   goal_checker_hold_time_sec_(0.0),
@@ -2107,6 +2109,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   velocity_control_mode_(VelocityControlMode::PID),
   recovery_start_yaw_(0.0),
   goal_checker_holding_(false),
+  final_align_holding_(false),
   has_command_(false),
   has_local_plan_(false),
   has_current_pose_(false),
@@ -2148,6 +2151,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "control.goal_reach_heading_tolerance", this->goal_reach_heading_tolerance_);
   this->declare_parameter(
     "control.final_align_max_angular_speed", this->final_align_max_angular_speed_);
+  this->declare_parameter(
+    "control.final_align_heading_deadband", this->final_align_heading_deadband_);
+  this->declare_parameter(
+    "control.final_align_settle_time_sec", this->final_align_settle_time_sec_);
   this->declare_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
   this->declare_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->declare_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
@@ -2236,6 +2243,10 @@ MotionController::CallbackReturn MotionController::on_configure(
     "control.goal_reach_heading_tolerance", this->goal_reach_heading_tolerance_);
   this->get_parameter(
     "control.final_align_max_angular_speed", this->final_align_max_angular_speed_);
+  this->get_parameter(
+    "control.final_align_heading_deadband", this->final_align_heading_deadband_);
+  this->get_parameter(
+    "control.final_align_settle_time_sec", this->final_align_settle_time_sec_);
   this->get_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
   this->get_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->get_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
@@ -2615,18 +2626,42 @@ void MotionController::publish_control()
       }
       const double heading_error = this->normalize_angle(target_heading - current_yaw);
       const double abs_heading_error = std::abs(heading_error);
-      const bool heading_reached = goal_check.heading_reached;
-      const bool aligning_in_place = align_heading_at_goal && distance_reached && !heading_reached;
+      const bool final_heading_phase = align_heading_at_goal && distance_reached;
       const bool final_align_phase =
         align_heading_at_goal &&
         (distance_reached || goal_distance <= this->rotate_in_place_goal_distance_);
       const bool rejoin_phase =
         !final_align_phase &&
         tracking_target_distance >= this->rejoin_target_distance_threshold_;
+      const bool heading_settled =
+        !align_heading_at_goal ||
+        abs_heading_error <= this->final_align_heading_deadband_;
+      if (!final_heading_phase || !heading_settled)
+      {
+        this->final_align_holding_ = false;
+        this->final_align_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+      }
+      else if (!this->final_align_holding_)
+      {
+        this->final_align_hold_start_time_ = this->now();
+        this->final_align_holding_ = true;
+      }
+      const bool final_align_stable =
+        !final_heading_phase ||
+        (heading_settled && (
+        this->final_align_settle_time_sec_ <= 1e-6 ||
+        (
+          this->final_align_holding_ &&
+          (this->now() - this->final_align_hold_start_time_).seconds() >=
+          this->final_align_settle_time_sec_)));
+      const bool aligning_in_place = final_heading_phase && !final_align_stable;
       const bool suppress_small_heading_correction =
         !final_align_phase &&
         abs_heading_error <= this->tracking_heading_deadband_;
-      const double steering_heading_error = suppress_small_heading_correction ? 0.0 : heading_error;
+      const bool suppress_final_align_correction =
+        final_heading_phase && heading_settled;
+      const double steering_heading_error =
+        (suppress_small_heading_correction || suppress_final_align_correction) ? 0.0 : heading_error;
       const double steering_abs_heading_error = std::abs(steering_heading_error);
       const double angular_speed_limit = final_align_phase ?
         std::min(this->max_angular_speed_, this->final_align_max_angular_speed_) :
@@ -2648,7 +2683,9 @@ void MotionController::publish_control()
       status.blocked = this->update_blocked_state(blocked_candidate);
       status.has_blocked_pose = false;
       status.blocked_pose = geometry_msgs::msg::PoseStamped();
-      status.goal_reached = goal_check.goal_reached;
+      status.goal_reached = align_heading_at_goal ?
+        (distance_reached && final_align_stable) :
+        goal_check.goal_reached;
       status.remaining_distance = goal_distance;
       status.heading_error = heading_error;
 
@@ -2665,12 +2702,12 @@ void MotionController::publish_control()
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
       }
-      else if (aligning_in_place)
+      else if (final_heading_phase)
       {
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
       }
-      else if (distance_reached && heading_reached)
+      else if (distance_reached && final_align_stable)
       {
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
@@ -2704,7 +2741,7 @@ void MotionController::publish_control()
           "Goal reached for command %u",
           status.command_id);
       }
-      else if (distance_reached && heading_reached)
+      else if (distance_reached && (!align_heading_at_goal || final_align_stable))
       {
         desired_twist = geometry_msgs::msg::Twist();
       }
@@ -2894,6 +2931,8 @@ void MotionController::reset_goal_checker_state()
 {
   this->goal_checker_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
   this->goal_checker_holding_ = false;
+  this->final_align_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->final_align_holding_ = false;
 }
 
 void MotionController::reset_status_semantics_state()

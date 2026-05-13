@@ -243,6 +243,8 @@
       goal_heading_tolerance: 0.12
       goal_reach_heading_tolerance: 0.05
       final_align_max_angular_speed: 0.75
+      final_align_heading_deadband: 0.05
+      final_align_settle_time_sec: 0.20
       tracking_heading_deadband: 0.05
       rejoin_target_distance_threshold: 0.08
       rejoin_heading_gate_threshold: 0.35
