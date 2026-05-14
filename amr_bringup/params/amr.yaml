@@ -344,3 +344,77 @@
       route_stale_timeout_ms: 1500
       progress_stall_window_sec: 3.0
       progress_epsilon: 0.05
+
+/amr/robot_bringup:
+  ros__parameters:
+    robot:
+      model: "turtlebot3_burger"
+      robot_side_only: true
+    frames:
+      map: "map"
+      odom: "odom"
+      base_footprint: "base_footprint"
+      base_link: "base_link"
+      base_scan: "base_scan"
+      imu_link: "imu_link"
+    topics:
+      cmd_vel: "/cmd_vel"
+      odom: "/odom"
+      imu: "/imu"
+      scan: "/scan"
+      joint_states: "/joint_states"
+      tf: "/tf"
+      tf_static: "/tf_static"
+      robot_description: "/robot_description"
+
+/amr/tb3_base_driver:
+  ros__parameters:
+    enabled: true
+    serial:
+      port: "/dev/ttyACM0"
+      baudrate: 115200
+    frames:
+      odom: "odom"
+      base_footprint: "base_footprint"
+      base_link: "base_link"
+      imu: "imu_link"
+    topics:
+      cmd_vel: "/cmd_vel"
+      odom: "/odom"
+      imu: "/imu"
+      joint_states: "/joint_states"
+    publish_tf: true
+    rates:
+      odom_hz: 30.0
+      imu_hz: 30.0
+      joint_state_hz: 30.0
+    watchdog:
+      cmd_vel_timeout_sec: 0.5
+    kinematics:
+      wheel_separation_m: 0.160
+      wheel_radius_m: 0.033
+      max_linear_velocity_mps: 0.22
+      max_angular_velocity_radps: 2.84
+
+/amr/tb3_lidar_driver:
+  ros__parameters:
+    enabled: true
+    serial:
+      port: "/dev/ttyUSB0"
+      baudrate: 230400
+    frame_id: "base_scan"
+    topic: "/scan"
+    sensor_model: "auto"
+    inverted: false
+    angle_min_rad: 0.0
+    angle_max_rad: 6.28318530717958647692
+    range_min_m: 0.12
+    range_max_m: 3.5
+    scan_time_sec: 0.1
+
+/amr/description:
+  ros__parameters:
+    publish_robot_description: true
+    use_amr_description: true
+    robot_model: "turtlebot3_burger"
+    frame_prefix: ""

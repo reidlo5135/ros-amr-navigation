@@ -13,6 +13,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>amr_tb3_bringup</exec_depend>
   <exec_depend>turtlebot3_bringup</exec_depend>
   <exec_depend>amr_map_server</exec_depend>
   <exec_depend>amr_localization</exec_depend>
