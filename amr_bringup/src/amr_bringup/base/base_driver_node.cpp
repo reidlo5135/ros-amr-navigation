@@ -506,11 +506,20 @@ bool BaseDriverNode::connect_opencr(const bool calibrate_imu)
 
   if (calibrate_imu && this->startup_calibrate_imu_) {
     if (!this->opencr_.write_byte(kOpenCRControlTable.imu_re_calibration.addr, 1U)) {
-      RCLCPP_ERROR(
+      const auto calibration_error = this->opencr_.last_error();
+      if (!this->opencr_.refresh_read_memory()) {
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "Failed to trigger OpenCR gyro recalibration and controller readback is unavailable: %s",
+          calibration_error.c_str());
+        return false;
+      }
+
+      RCLCPP_WARN(
         this->get_logger(),
-        "Failed to trigger OpenCR gyro recalibration: %s",
-        this->opencr_.last_error().c_str());
-      return false;
+        "OpenCR gyro recalibration command was not acknowledged: %s. Continuing because the "
+        "controller still responds to readback.",
+        calibration_error.c_str());
     }
 
     RCLCPP_INFO(this->get_logger(), "Start Calibration of Gyro");

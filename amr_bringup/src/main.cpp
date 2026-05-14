@@ -76,6 +76,7 @@ int main(int argc, char ** argv)
   try {
     rclcpp::NodeOptions selector_options;
     selector_options.automatically_declare_parameters_from_overrides(true);
+    selector_options.enable_rosout(false);
 
     rclcpp::NodeOptions hardware_options;
     auto node = create_hardware_node(selector_options, hardware_options);
