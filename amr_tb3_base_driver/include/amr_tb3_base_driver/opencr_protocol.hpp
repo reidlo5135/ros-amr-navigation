@@ -22,6 +22,7 @@ public:
 
   std::optional<std::vector<std::uint8_t>> encode_command(const BaseCommand & command) const;
   std::optional<BaseState> decode_state(const OpenCRPacket & packet) const;
+  std::optional<BaseFeedback> decode_feedback(const OpenCRPacket & packet) const;
 
   const std::string & last_error() const;
 

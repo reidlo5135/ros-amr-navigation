@@ -136,6 +136,12 @@ void BaseDriverNode::setup_interfaces()
     [this]() {
       this->handle_connection_check();
     });
+
+  this->feedback_timer_ = this->create_wall_timer(
+    20ms,
+    [this]() {
+      this->poll_feedback();
+    });
 }
 
 void BaseDriverNode::handle_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr message)
@@ -211,6 +217,53 @@ void BaseDriverNode::handle_feedback(const BaseFeedback & feedback)
   this->publish_joint_states(feedback);
   this->publish_imu(feedback);
   this->publish_tf(feedback);
+}
+
+void BaseDriverNode::poll_feedback()
+{
+  if (!this->transport_.is_open()) {
+    return;
+  }
+
+  std::uint8_t buffer[256] = {};
+  const std::ptrdiff_t bytes_read = this->transport_.read(buffer, sizeof(buffer), 1ms);
+  if (bytes_read < 0) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      5000,
+      "OpenCR feedback read failed: %s",
+      this->transport_.last_error().c_str());
+    return;
+  }
+  if (bytes_read == 0) {
+    return;
+  }
+
+  this->rx_buffer_.insert(this->rx_buffer_.end(), buffer, buffer + bytes_read);
+
+  while (true) {
+    const auto packet = this->protocol_.try_parse_packet(this->rx_buffer_);
+    if (!packet.has_value()) {
+      break;
+    }
+
+    const auto state = this->protocol_.decode_state(*packet);
+    if (state.has_value()) {
+      this->base_state_.connected = true;
+      this->base_state_.protocol_ready = state->protocol_ready;
+      this->base_state_.transport_sequence += 1U;
+      this->base_state_.last_error = state->last_error;
+    }
+
+    const auto feedback = this->protocol_.decode_feedback(*packet);
+    if (feedback.has_value()) {
+      if (feedback->stamp.count() == 0) {
+        feedback->stamp = std::chrono::nanoseconds(this->now().nanoseconds());
+      }
+      this->handle_feedback(*feedback);
+    }
+  }
 }
 
 BaseCommand BaseDriverNode::clamp_command(

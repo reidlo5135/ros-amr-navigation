@@ -35,6 +35,7 @@ private:
   void handle_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr message);
   void handle_watchdog();
   void handle_connection_check();
+  void poll_feedback();
   void handle_feedback(const BaseFeedback & feedback);
 
   void publish_odometry(const BaseFeedback & feedback);
@@ -56,6 +57,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_publisher_;
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::TimerBase::SharedPtr connection_timer_;
+  rclcpp::TimerBase::SharedPtr feedback_timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   std::string port_;
@@ -80,6 +82,7 @@ private:
   bool has_cmd_vel_{false};
   bool stop_command_sent_{false};
   DifferentialDriveOdometry odometry_;
+  std::vector<std::uint8_t> rx_buffer_;
 };
 
 }  // namespace amr::tb3::base_driver

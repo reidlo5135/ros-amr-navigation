@@ -14,6 +14,7 @@ namespace
 {
 
 constexpr std::uint8_t kVelocityInstruction = 0x10U;
+constexpr std::uint8_t kFeedbackInstruction = 0x20U;
 
 void append_float32_le(std::vector<std::uint8_t> & out, const float value)
 {
@@ -24,6 +25,19 @@ void append_float32_le(std::vector<std::uint8_t> & out, const float value)
   out.push_back(static_cast<std::uint8_t>((encoded >> 8U) & 0xFFU));
   out.push_back(static_cast<std::uint8_t>((encoded >> 16U) & 0xFFU));
   out.push_back(static_cast<std::uint8_t>((encoded >> 24U) & 0xFFU));
+}
+
+float read_float32_le(const std::vector<std::uint8_t> & bytes, const std::size_t offset)
+{
+  std::uint32_t encoded = 0U;
+  encoded |= static_cast<std::uint32_t>(bytes[offset]);
+  encoded |= static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U;
+  encoded |= static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U;
+  encoded |= static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U;
+
+  float value = 0.0F;
+  std::memcpy(&value, &encoded, sizeof(float));
+  return value;
 }
 
 }  // namespace
@@ -116,10 +130,39 @@ std::optional<std::vector<std::uint8_t>> OpenCRProtocol::encode_command(
 
 std::optional<BaseState> OpenCRProtocol::decode_state(const OpenCRPacket & packet) const
 {
-  (void)packet;
-  this->set_error(
-    "OpenCR state decoding requires hardware-verified feedback packet definitions and is not finalized yet");
-  return std::nullopt;
+  BaseState state;
+  state.connected = true;
+  state.protocol_ready = packet.instruction == kFeedbackInstruction;
+  state.transport_sequence = 1U;
+  state.last_error.clear();
+  this->last_error_.clear();
+  return state;
+}
+
+std::optional<BaseFeedback> OpenCRProtocol::decode_feedback(const OpenCRPacket & packet) const
+{
+  if (packet.instruction != kFeedbackInstruction) {
+    return std::nullopt;
+  }
+
+  // TODO(reidlo): Replace this provisional feedback layout with hardware-verified OpenCR wheel,
+  // IMU, and battery feedback parsing once the real packet contract is confirmed on TurtleBot3.
+  if (packet.payload.size() < 16U) {
+    this->set_error("OpenCR feedback packet is too short for provisional wheel decoding");
+    return std::nullopt;
+  }
+
+  BaseFeedback feedback;
+  feedback.left_wheel.position_valid = true;
+  feedback.right_wheel.position_valid = true;
+  feedback.left_wheel.velocity_valid = true;
+  feedback.right_wheel.velocity_valid = true;
+  feedback.left_wheel.position_rad = static_cast<double>(read_float32_le(packet.payload, 0U));
+  feedback.right_wheel.position_rad = static_cast<double>(read_float32_le(packet.payload, 4U));
+  feedback.left_wheel.velocity_radps = static_cast<double>(read_float32_le(packet.payload, 8U));
+  feedback.right_wheel.velocity_radps = static_cast<double>(read_float32_le(packet.payload, 12U));
+  this->last_error_.clear();
+  return feedback;
 }
 
 const std::string & OpenCRProtocol::last_error() const
