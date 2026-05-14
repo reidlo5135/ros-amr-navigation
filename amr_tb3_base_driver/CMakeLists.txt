@@ -15,9 +15,27 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 
+add_library(${PROJECT_NAME}_core
+  src/amr_tb3_base_driver/opencr_protocol.cpp
+  src/amr_tb3_base_driver/serial_transport.cpp
+)
+target_include_directories(${PROJECT_NAME}_core
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
 install(DIRECTORY
   include/
   DESTINATION include
+)
+
+install(TARGETS
+  ${PROJECT_NAME}_core
+  EXPORT ${PROJECT_NAME}_targets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 if(BUILD_TESTING)
@@ -27,6 +45,7 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+ament_export_targets(${PROJECT_NAME}_targets HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
 
 ament_package()
