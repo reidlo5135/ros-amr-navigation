@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <utility>
 
 namespace amr::tb3::lidar_driver
@@ -13,6 +14,53 @@ namespace
 {
 
 constexpr double kTwoPi = 6.28318530717958647692;
+
+std::string resolve_lidar_port_path(const std::string & requested_port)
+{
+  namespace fs = std::filesystem;
+
+  auto choose_cp210x_path = []() -> std::string {
+      const fs::path by_id_dir("/dev/serial/by-id");
+      if (fs::exists(by_id_dir) && fs::is_directory(by_id_dir)) {
+        for (const auto & entry : fs::directory_iterator(by_id_dir)) {
+          const auto name = entry.path().filename().string();
+          if (
+            name.find("CP210") != std::string::npos ||
+            name.find("cp210") != std::string::npos ||
+            name.find("Silicon_Labs") != std::string::npos)
+          {
+            return entry.path().string();
+          }
+        }
+      }
+
+      const fs::path tty_usb0("/dev/ttyUSB0");
+      if (fs::exists(tty_usb0)) {
+        return tty_usb0.string();
+      }
+
+      return {};
+    };
+
+  if (requested_port.empty() || requested_port == "auto") {
+    const auto detected_port = choose_cp210x_path();
+    if (!detected_port.empty()) {
+      return detected_port;
+    }
+    return requested_port;
+  }
+
+  if (fs::exists(fs::path(requested_port))) {
+    return requested_port;
+  }
+
+  const auto detected_port = choose_cp210x_path();
+  if (!detected_port.empty()) {
+    return detected_port;
+  }
+
+  return requested_port;
+}
 
 }  // namespace
 
@@ -94,6 +142,8 @@ void LidarDriverNode::load_parameters()
   this->get_parameter("scan_time_sec", this->scan_time_sec_);
   this->get_parameter("fake_scan_mode", this->fake_scan_mode_);
 
+  const auto configured_port = this->port_;
+  this->port_ = resolve_lidar_port_path(this->port_);
   this->transport_.set_port(this->port_);
   this->transport_.set_baudrate(this->baudrate_);
   this->parser_ = make_lidar_parser(this->sensor_model_);
@@ -105,6 +155,14 @@ void LidarDriverNode::load_parameters()
   this->scan_config_.range_max_m = static_cast<float>(this->range_max_m_);
   this->scan_config_.scan_time_sec = static_cast<float>(this->scan_time_sec_);
   this->last_read_stamp_ = this->now();
+
+  if (configured_port != this->port_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Resolved LiDAR serial port from '%s' to '%s'",
+      configured_port.c_str(),
+      this->port_.c_str());
+  }
 }
 
 void LidarDriverNode::log_configuration() const

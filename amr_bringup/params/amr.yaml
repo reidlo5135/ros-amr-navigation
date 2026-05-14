@@ -408,7 +408,7 @@
   ros__parameters:
     enabled: true
     serial:
-      port: "/dev/ttyUSB0"
+      port: "auto"
       baudrate: 230400
     frame_id: "base_scan"
     topic: "/scan"

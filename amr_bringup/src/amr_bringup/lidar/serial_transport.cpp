@@ -120,19 +120,29 @@ std::ptrdiff_t SerialTransport::read(
     this->set_error("LiDAR serial port is not open");
     return -1;
   }
+  const ssize_t read_size = ::read(this->file_descriptor_, buffer, buffer_size);
+  if (read_size > 0) {
+    return static_cast<std::ptrdiff_t>(read_size);
+  }
+
+  if (read_size < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+    this->set_error("Failed to read LiDAR serial port: " + std::string(std::strerror(errno)));
+    return -1;
+  }
+
   if (!this->wait_until_ready(timeout)) {
     return 0;
   }
 
-  const ssize_t read_size = ::read(this->file_descriptor_, buffer, buffer_size);
-  if (read_size < 0) {
+  const ssize_t waited_read_size = ::read(this->file_descriptor_, buffer, buffer_size);
+  if (waited_read_size < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       return 0;
     }
     this->set_error("Failed to read LiDAR serial port: " + std::string(std::strerror(errno)));
     return -1;
   }
-  return static_cast<std::ptrdiff_t>(read_size);
+  return static_cast<std::ptrdiff_t>(waited_read_size);
 }
 
 bool SerialTransport::configure_port(const int fd)

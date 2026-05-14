@@ -165,8 +165,8 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "lidar_port",
-                default_value="/dev/ttyUSB0",
-                description="LiDAR serial port path.",
+                default_value="auto",
+                description="LiDAR serial port path or 'auto' to resolve a CP210x-backed device.",
             ),
             DeclareLaunchArgument(
                 "lidar_baudrate",
