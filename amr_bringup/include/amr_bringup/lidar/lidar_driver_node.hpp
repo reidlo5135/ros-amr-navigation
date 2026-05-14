@@ -24,6 +24,7 @@ private:
   void declare_parameters();
   void load_parameters();
   void setup_interfaces();
+  void log_configuration() const;
   void handle_connection_check();
   void poll_lidar();
 
@@ -48,6 +49,9 @@ private:
   double range_max_m_;
   double scan_time_sec_;
   bool fake_scan_mode_{false};
+  bool first_successful_read_logged_{false};
+  std::size_t total_bytes_received_{0U};
+  rclcpp::Time last_read_stamp_{0, 0, RCL_ROS_TIME};
   std::vector<std::uint8_t> rx_buffer_;
 };
 

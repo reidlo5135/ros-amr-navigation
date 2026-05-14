@@ -37,11 +37,19 @@ BaseDriverNode::BaseDriverNode(const rclcpp::NodeOptions & options)
   this->declare_parameters();
   this->load_parameters();
   this->setup_interfaces();
+  this->log_configuration();
 
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Attempting to open OpenCR transport on %s @ %d",
+    this->transport_.port().c_str(),
+    this->transport_.baudrate());
   if (!this->transport_.open()) {
-    RCLCPP_WARN(
+    RCLCPP_ERROR(
       this->get_logger(),
-      "TB3 base driver transport is not connected yet: %s",
+      "Failed to open OpenCR transport on %s @ %d: %s",
+      this->transport_.port().c_str(),
+      this->transport_.baudrate(),
       this->transport_.last_error().c_str());
   } else {
     this->base_state_.connected = true;
@@ -106,6 +114,32 @@ void BaseDriverNode::load_parameters()
   this->transport_.set_port(this->port_);
   this->transport_.set_baudrate(this->baudrate_);
   this->odometry_.set_wheel_geometry(this->wheel_separation_m_, this->wheel_radius_m_);
+}
+
+void BaseDriverNode::log_configuration() const
+{
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Base config: port=%s baudrate=%d cmd_vel=%s odom=%s imu=%s joint_states=%s "
+    "frames=[%s,%s,%s,%s] publish_tf=%s timeout=%.3f wheel_separation=%.3f "
+    "wheel_radius=%.3f max_linear=%.3f max_angular=%.3f fake_feedback_mode=%s",
+    this->port_.c_str(),
+    this->baudrate_,
+    this->cmd_vel_topic_.c_str(),
+    this->odom_topic_.c_str(),
+    this->imu_topic_.c_str(),
+    this->joint_states_topic_.c_str(),
+    this->odom_frame_.c_str(),
+    this->base_frame_.c_str(),
+    this->body_frame_.c_str(),
+    this->imu_frame_.c_str(),
+    this->publish_tf_ ? "true" : "false",
+    this->cmd_vel_timeout_sec_,
+    this->wheel_separation_m_,
+    this->wheel_radius_m_,
+    this->max_linear_velocity_mps_,
+    this->max_angular_velocity_radps_,
+    this->fake_feedback_mode_ ? "true" : "false");
 }
 
 void BaseDriverNode::setup_interfaces()
@@ -213,6 +247,14 @@ void BaseDriverNode::handle_connection_check()
     return;
   }
 
+  RCLCPP_WARN_THROTTLE(
+    this->get_logger(),
+    *this->get_clock(),
+    5000,
+    "OpenCR transport is closed, attempting reconnect on %s @ %d",
+    this->transport_.port().c_str(),
+    this->transport_.baudrate());
+
   if (this->transport_.reconnect()) {
     this->base_state_.connected = true;
     RCLCPP_INFO(
@@ -264,6 +306,15 @@ void BaseDriverNode::poll_feedback()
   }
 
   this->rx_buffer_.insert(this->rx_buffer_.end(), buffer, buffer + bytes_read);
+  if (!this->first_feedback_read_logged_) {
+    this->first_feedback_read_logged_ = true;
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Received first OpenCR bytes on %s: %td bytes, buffered=%zu",
+      this->transport_.port().c_str(),
+      bytes_read,
+      this->rx_buffer_.size());
+  }
 
   while (true) {
     const auto packet = this->protocol_.try_parse_packet(this->rx_buffer_);

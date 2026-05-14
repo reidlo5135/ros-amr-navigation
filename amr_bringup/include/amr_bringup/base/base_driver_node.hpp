@@ -32,6 +32,7 @@ private:
   void declare_parameters();
   void load_parameters();
   void setup_interfaces();
+  void log_configuration() const;
 
   void handle_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr message);
   void handle_watchdog();
@@ -87,6 +88,7 @@ private:
   bool has_cmd_vel_{false};
   bool stop_command_sent_{false};
   DifferentialDriveOdometry odometry_;
+  bool first_feedback_read_logged_{false};
   std::vector<std::uint8_t> rx_buffer_;
 };
 

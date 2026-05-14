@@ -86,6 +86,16 @@ bool SerialTransport::is_open() const
   return this->file_descriptor_ >= 0;
 }
 
+const std::string & SerialTransport::port() const
+{
+  return this->port_;
+}
+
+int SerialTransport::baudrate() const
+{
+  return this->baudrate_;
+}
+
 void SerialTransport::set_port(std::string port)
 {
   this->port_ = std::move(port);

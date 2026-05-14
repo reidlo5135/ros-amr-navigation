@@ -23,6 +23,8 @@ public:
   bool reconnect();
   bool is_open() const;
 
+  const std::string & port() const;
+  int baudrate() const;
   void set_port(std::string port);
   void set_baudrate(int baudrate);
   const std::string & last_error() const;
