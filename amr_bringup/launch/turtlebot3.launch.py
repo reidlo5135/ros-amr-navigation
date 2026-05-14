@@ -2,9 +2,11 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch.substitutions import PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import Command
@@ -22,6 +24,7 @@ def generate_launch_description() -> LaunchDescription:
     use_base_driver = LaunchConfiguration("use_base_driver")
     use_lidar_driver = LaunchConfiguration("use_lidar_driver")
     use_robot_state_publisher = LaunchConfiguration("use_robot_state_publisher")
+    lidar_backend = LaunchConfiguration("lidar_backend")
     robot_type = LaunchConfiguration("robot_type")
     robot_model = LaunchConfiguration("robot_model")
     base_port = LaunchConfiguration("base_port")
@@ -104,7 +107,36 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": use_sim_time,
             },
         ],
-        condition=IfCondition(use_lidar_driver),
+        condition=IfCondition(
+            PythonExpression(
+                ["'", use_lidar_driver, "' == 'true' and '", lidar_backend, "' == 'internal'"]
+            )
+        ),
+    )
+
+    external_lidar_driver = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("hls_lfcd_lds_driver"),
+                "launch",
+                "hlds_laser.launch.py",
+            )
+        ),
+        launch_arguments={
+            "port": lidar_port,
+            "frame_id": "base_scan",
+        }.items(),
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    use_lidar_driver,
+                    "' == 'true' and '",
+                    lidar_backend,
+                    "' == 'external_hlds'",
+                ]
+            )
+        ),
     )
 
     return LaunchDescription(
@@ -147,6 +179,11 @@ def generate_launch_description() -> LaunchDescription:
                 "use_lidar_driver",
                 default_value="true",
                 description="Start the AMR-owned TB3 LiDAR driver.",
+            ),
+            DeclareLaunchArgument(
+                "lidar_backend",
+                default_value="external_hlds",
+                description="LiDAR backend selector: external_hlds or internal.",
             ),
             DeclareLaunchArgument(
                 "use_robot_state_publisher",
@@ -211,5 +248,6 @@ def generate_launch_description() -> LaunchDescription:
             robot_state_publisher,
             base_driver,
             lidar_driver,
+            external_lidar_driver,
         ]
     )

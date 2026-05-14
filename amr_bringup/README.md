@@ -25,8 +25,10 @@ All AMR-owned TurtleBot3 hardware code now lives directly under `amr_bringup/inc
 
 `turtlebot3.launch.py` starts:
 1. `amr_bringup_hardware` as `base_driver`
-2. `amr_bringup_hardware` as `lidar_driver`
-3. `robot_state_publisher` from the AMR-owned URDF in `amr_bringup/urdf`
+2. LiDAR backend selected by `lidar_backend`
+3. `external_hlds` uses `hls_lfcd_lds_driver`
+4. `internal` uses `amr_bringup_hardware` as `lidar_driver`
+5. `robot_state_publisher` from the AMR-owned URDF in `amr_bringup/urdf`
 
 `turtlebot3_external.launch.py` preserves the older compatibility flow:
 1. `turtlebot3_bringup/robot.launch.py`
@@ -67,6 +69,12 @@ Robot-side AMR-owned hardware bringup on the TurtleBot3 RPi4:
 
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py
+```
+
+Current safest TurtleBot3 Burger LiDAR path:
+
+```bash
+ros2 launch amr_bringup turtlebot3.launch.py lidar_backend:=external_hlds
 ```
 
 Single-entry executable used by the robot-side launch:
