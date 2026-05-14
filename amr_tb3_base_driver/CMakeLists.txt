@@ -16,6 +16,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 
 add_library(${PROJECT_NAME}_core
+  src/amr_tb3_base_driver/differential_drive_odometry.cpp
   src/amr_tb3_base_driver/opencr_protocol.cpp
   src/amr_tb3_base_driver/serial_transport.cpp
 )
