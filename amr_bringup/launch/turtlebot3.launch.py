@@ -208,7 +208,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "base_baudrate",
-                default_value="115200",
+                default_value="1000000",
                 description="OpenCR serial baudrate.",
             ),
             DeclareLaunchArgument(

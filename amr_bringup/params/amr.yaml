@@ -375,7 +375,7 @@
     enabled: true
     serial:
       port: "/dev/ttyACM0"
-      baudrate: 115200
+      baudrate: 1000000
     frames:
       odom: "odom"
       base_footprint: "base_footprint"

@@ -103,7 +103,7 @@ RobotBringupProfile RobotBringupSchema::make_default_turtlebot3_burger_profile()
 
   profile.base_driver.enabled = true;
   profile.base_driver.port = "/dev/ttyACM0";
-  profile.base_driver.baudrate = 115200;
+  profile.base_driver.baudrate = 1000000;
   profile.base_driver.publish_tf = true;
   profile.base_driver.odom_rate_hz = 30.0;
   profile.base_driver.imu_rate_hz = 30.0;

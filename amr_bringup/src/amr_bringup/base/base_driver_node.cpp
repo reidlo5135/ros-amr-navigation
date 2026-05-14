@@ -12,10 +12,10 @@ using namespace std::chrono_literals;
 
 BaseDriverNode::BaseDriverNode(const rclcpp::NodeOptions & options)
 : rclcpp::Node("base_driver", options),
-  transport_("/dev/ttyACM0", 115200),
+  transport_("/dev/ttyACM0", 1000000),
   base_state_(),
   port_("/dev/ttyACM0"),
-  baudrate_(115200),
+  baudrate_(1000000),
   base_frame_("base_footprint"),
   body_frame_("base_link"),
   odom_frame_("odom"),
