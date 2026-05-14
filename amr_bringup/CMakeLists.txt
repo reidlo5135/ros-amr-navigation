@@ -9,6 +9,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(dynamixel_sdk REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -29,6 +30,7 @@ add_library(${PROJECT_NAME}_base
   src/amr_bringup/base/base_driver_node.cpp
   src/amr_bringup/base/differential_drive_odometry.cpp
   src/amr_bringup/base/opencr_protocol.cpp
+  src/amr_bringup/base/opencr_sdk_wrapper.cpp
   src/amr_bringup/base/serial_transport.cpp
 )
 target_include_directories(${PROJECT_NAME}_base
@@ -40,6 +42,7 @@ target_link_libraries(${PROJECT_NAME}_base
   ${PROJECT_NAME}_schema
 )
 ament_target_dependencies(${PROJECT_NAME}_base
+  dynamixel_sdk
   geometry_msgs
   nav_msgs
   rclcpp

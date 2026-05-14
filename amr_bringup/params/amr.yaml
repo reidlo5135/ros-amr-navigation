@@ -379,6 +379,9 @@
     serial:
       port: "/dev/ttyACM0"
       baudrate: 1000000
+    opencr:
+      id: 200
+      protocol_version: 2.0
     frames:
       odom: "odom"
       base_footprint: "base_footprint"
@@ -396,6 +399,12 @@
       joint_state_hz: 30.0
     watchdog:
       cmd_vel_timeout_sec: 0.5
+    poll:
+      feedback_rate_hz: 20.0
+      heartbeat_rate_hz: 10.0
+    startup:
+      calibrate_imu: true
+      calibration_wait_sec: 5.0
     safety:
       emergency_stop_topic: ""
     kinematics:

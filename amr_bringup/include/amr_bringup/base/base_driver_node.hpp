@@ -2,7 +2,9 @@
 #define AMR_TB3_BASE_DRIVER__BASE_DRIVER_NODE_HPP_
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
@@ -16,8 +18,8 @@
 
 #include "amr_bringup/base/base_types.hpp"
 #include "amr_bringup/base/differential_drive_odometry.hpp"
-#include "amr_bringup/base/opencr_protocol.hpp"
-#include "amr_bringup/base/serial_transport.hpp"
+#include "amr_bringup/base/opencr_control_table.hpp"
+#include "amr_bringup/base/opencr_sdk_wrapper.hpp"
 
 namespace amr::tb3::base_driver
 {
@@ -49,9 +51,10 @@ private:
   BaseCommand clamp_command(double linear_x_mps, double angular_z_radps) const;
   bool send_velocity_command(const BaseCommand & command);
   void send_stop_command();
+  bool connect_opencr(bool calibrate_imu);
+  std::optional<BaseFeedback> read_opencr_feedback();
 
-  SerialTransport transport_;
-  OpenCRProtocol protocol_;
+  OpenCRSdkWrapper opencr_;
   BaseState base_state_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
@@ -62,10 +65,13 @@ private:
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::TimerBase::SharedPtr connection_timer_;
   rclcpp::TimerBase::SharedPtr feedback_timer_;
+  rclcpp::TimerBase::SharedPtr heartbeat_timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   std::string port_;
   int baudrate_;
+  std::uint8_t opencr_id_{200U};
+  double opencr_protocol_version_{2.0};
   std::string base_frame_;
   std::string body_frame_;
   std::string odom_frame_;
@@ -81,6 +87,10 @@ private:
   double wheel_radius_m_;
   double max_linear_velocity_mps_;
   double max_angular_velocity_radps_;
+  double feedback_rate_hz_{20.0};
+  double heartbeat_rate_hz_{10.0};
+  double startup_calibration_wait_sec_{5.0};
+  bool startup_calibrate_imu_{true};
   bool fake_feedback_mode_{false};
   bool emergency_stop_active_{false};
 
@@ -88,8 +98,13 @@ private:
   bool has_cmd_vel_{false};
   bool stop_command_sent_{false};
   DifferentialDriveOdometry odometry_;
+  std::uint8_t heartbeat_counter_{0U};
   bool first_feedback_read_logged_{false};
-  std::vector<std::uint8_t> rx_buffer_;
+  bool raw_wheel_state_initialized_{false};
+  std::int32_t last_left_position_ticks_{0};
+  std::int32_t last_right_position_ticks_{0};
+  double cumulative_left_position_rad_{0.0};
+  double cumulative_right_position_rad_{0.0};
 };
 
 }  // namespace amr::tb3::base_driver
