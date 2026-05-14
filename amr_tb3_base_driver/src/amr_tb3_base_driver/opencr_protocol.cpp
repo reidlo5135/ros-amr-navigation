@@ -1,5 +1,6 @@
 #include "amr_tb3_base_driver/opencr_protocol.hpp"
 
+#include <cstring>
 #include <cstddef>
 #include <cstdint>
 
@@ -8,6 +9,24 @@
 
 namespace amr::tb3::base_driver
 {
+
+namespace
+{
+
+constexpr std::uint8_t kVelocityInstruction = 0x10U;
+
+void append_float32_le(std::vector<std::uint8_t> & out, const float value)
+{
+  std::uint32_t encoded = 0U;
+  static_assert(sizeof(float) == sizeof(std::uint32_t), "Unexpected float size");
+  std::memcpy(&encoded, &value, sizeof(float));
+  out.push_back(static_cast<std::uint8_t>(encoded & 0xFFU));
+  out.push_back(static_cast<std::uint8_t>((encoded >> 8U) & 0xFFU));
+  out.push_back(static_cast<std::uint8_t>((encoded >> 16U) & 0xFFU));
+  out.push_back(static_cast<std::uint8_t>((encoded >> 24U) & 0xFFU));
+}
+
+}  // namespace
 
 std::vector<std::uint8_t> OpenCRProtocol::build_packet(const OpenCRPacket & packet) const
 {
@@ -71,10 +90,28 @@ std::optional<OpenCRPacket> OpenCRProtocol::try_parse_packet(
 std::optional<std::vector<std::uint8_t>> OpenCRProtocol::encode_command(
   const BaseCommand & command) const
 {
-  (void)command;
-  this->set_error(
-    "OpenCR command encoding requires hardware-verified packet definitions and is not finalized yet");
-  return std::nullopt;
+  if (command.type != CommandType::kVelocity && command.type != CommandType::kStop) {
+    this->set_error("Unsupported base command type for OpenCR encoding");
+    return std::nullopt;
+  }
+
+  OpenCRPacket packet;
+  packet.device_id = 1U;
+  packet.instruction = kVelocityInstruction;
+  packet.payload.reserve(8U);
+
+  const float linear_x_mps =
+    command.type == CommandType::kStop ? 0.0F : static_cast<float>(command.linear_x_mps);
+  const float angular_z_radps =
+    command.type == CommandType::kStop ? 0.0F : static_cast<float>(command.angular_z_radps);
+
+  // TODO(reidlo): Verify the real TurtleBot3 OpenCR velocity instruction, units, and framing
+  // against hardware before enabling this path for production use.
+  append_float32_le(packet.payload, linear_x_mps);
+  append_float32_le(packet.payload, angular_z_radps);
+
+  this->last_error_.clear();
+  return this->build_packet(packet);
 }
 
 std::optional<BaseState> OpenCRProtocol::decode_state(const OpenCRPacket & packet) const
