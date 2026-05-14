@@ -279,7 +279,7 @@ void BaseDriverNode::poll_feedback()
       this->base_state_.last_error = state->last_error;
     }
 
-    const auto feedback = this->protocol_.decode_feedback(*packet);
+    auto feedback = this->protocol_.decode_feedback(*packet);
     if (feedback.has_value()) {
       if (feedback->stamp.count() == 0) {
         feedback->stamp = std::chrono::nanoseconds(this->now().nanoseconds());
