@@ -8,7 +8,7 @@ namespace
 
 constexpr int kUnknownCellValue = -1;
 
-double yaw_from_quaternion(const geometry_msgs::msg::Quaternion & quaternion)
+double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
 {
   return std::atan2(
     2.0 * ((quaternion.w * quaternion.z) + (quaternion.x * quaternion.y)),
@@ -17,7 +17,7 @@ double yaw_from_quaternion(const geometry_msgs::msg::Quaternion & quaternion)
 
 }  // namespace
 
-PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
+PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("global_planner", options),
   costmap_topic_(""),
   computed_plan_topic_(""),
@@ -53,7 +53,7 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
 
-PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle::State & state)
+PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->get_parameter("topics.costmap", this->costmap_topic_);
@@ -138,7 +138,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   return CallbackReturn::SUCCESS;
 }
 
-PlannerServer::CallbackReturn PlannerServer::on_activate(const rclcpp_lifecycle::State & state)
+PlannerServer::CallbackReturn PlannerServer::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->computed_plan_publisher_) {
@@ -148,7 +148,7 @@ PlannerServer::CallbackReturn PlannerServer::on_activate(const rclcpp_lifecycle:
   return CallbackReturn::SUCCESS;
 }
 
-PlannerServer::CallbackReturn PlannerServer::on_deactivate(const rclcpp_lifecycle::State & state)
+PlannerServer::CallbackReturn PlannerServer::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->computed_plan_publisher_) {
@@ -157,7 +157,7 @@ PlannerServer::CallbackReturn PlannerServer::on_deactivate(const rclcpp_lifecycl
   return CallbackReturn::SUCCESS;
 }
 
-PlannerServer::CallbackReturn PlannerServer::on_cleanup(const rclcpp_lifecycle::State & state)
+PlannerServer::CallbackReturn PlannerServer::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->a_star_planner_.reset();
@@ -170,7 +170,7 @@ PlannerServer::CallbackReturn PlannerServer::on_cleanup(const rclcpp_lifecycle::
   return CallbackReturn::SUCCESS;
 }
 
-PlannerServer::CallbackReturn PlannerServer::on_shutdown(const rclcpp_lifecycle::State & state)
+PlannerServer::CallbackReturn PlannerServer::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->a_star_planner_.reset();
@@ -196,7 +196,7 @@ void PlannerServer::handle_plan_segment(
 
   if (response->success) {
     this->planned_path_ = response->plan;
-    if (this->computed_plan_publisher_ && this->computed_plan_publisher_->is_activated()) {
+    if (this->computed_plan_publisher_ &&this->computed_plan_publisher_->is_activated()) {
       this->computed_plan_publisher_->publish(this->planned_path_);
     }
   }
@@ -214,7 +214,7 @@ void PlannerServer::handle_plan_route(
   for (std::size_t index = 0; index < request->waypoints.size(); ++index) {
     nav_msgs::msg::Path segment_path;
     std::string segment_message;
-    const auto & waypoint = request->waypoints[index];
+    const auto &waypoint = request->waypoints[index];
     const bool success = this->compute_plan_between_poses(
       current, waypoint, segment_path, segment_message);
     if (!success) {
@@ -231,16 +231,16 @@ void PlannerServer::handle_plan_route(
   response->success = true;
   response->message = "Generated A* plans for all route segments.";
   this->planned_path_ = this->merge_paths(response->plans);
-  if (this->computed_plan_publisher_ && this->computed_plan_publisher_->is_activated()) {
+  if (this->computed_plan_publisher_ &&this->computed_plan_publisher_->is_activated()) {
     this->computed_plan_publisher_->publish(this->planned_path_);
   }
 }
 
 bool PlannerServer::compute_plan_between_poses(
-  const geometry_msgs::msg::PoseStamped & start,
-  const geometry_msgs::msg::PoseStamped & goal,
-  nav_msgs::msg::Path & path,
-  std::string & message) const
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal,
+  nav_msgs::msg::Path &path,
+  std::string &message) const
 {
   path = nav_msgs::msg::Path();
   message.clear();
@@ -313,14 +313,14 @@ bool PlannerServer::compute_plan_between_poses(
 }
 
 bool PlannerServer::world_to_grid(
-  const geometry_msgs::msg::PoseStamped & pose,
-  GridCell & cell) const
+  const geometry_msgs::msg::PoseStamped &pose,
+  GridCell &cell) const
 {
   if (!this->global_costmap_ || this->global_costmap_->info.resolution <= 0.0F) {
     return false;
   }
 
-  const auto & map_info = this->global_costmap_->info;
+  const auto &map_info = this->global_costmap_->info;
   const double resolution = static_cast<double>(map_info.resolution);
   const double origin_x = map_info.origin.position.x;
   const double origin_y = map_info.origin.position.y;
@@ -334,7 +334,7 @@ bool PlannerServer::world_to_grid(
     cell.y < static_cast<int>(map_info.height);
 }
 
-geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell & cell) const
+geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell &cell) const
 {
   geometry_msgs::msg::PoseStamped pose;
 
@@ -342,8 +342,8 @@ geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell & ce
     return pose;
   }
 
-  const auto & map_header = this->global_costmap_->header;
-  const auto & map_info = this->global_costmap_->info;
+  const auto &map_header = this->global_costmap_->header;
+  const auto &map_info = this->global_costmap_->info;
   const double resolution = static_cast<double>(map_info.resolution);
 
   pose.header = map_header;
@@ -355,10 +355,10 @@ geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell & ce
 }
 
 bool PlannerServer::is_occupied_cell(
-  const std::vector<int8_t> & occupancy_grid,
+  const std::vector<int8_t> &occupancy_grid,
   const int width,
   const int height,
-  const GridCell & cell) const
+  const GridCell &cell) const
 {
   if (cell.x < 0 || cell.x >= width || cell.y < 0 || cell.y >= height) {
     return true;
@@ -372,10 +372,10 @@ bool PlannerServer::is_occupied_cell(
 }
 
 bool PlannerServer::find_nearest_free_cell(
-  const std::vector<int8_t> & occupancy_grid,
+  const std::vector<int8_t> &occupancy_grid,
   const int width,
   const int height,
-  GridCell & cell,
+  GridCell &cell,
   const int max_radius,
   const double yaw) const
 {
@@ -399,10 +399,10 @@ bool PlannerServer::find_nearest_free_cell(
 }
 
 bool PlannerServer::is_cell_collision(
-  const std::vector<int8_t> & occupancy_grid,
+  const std::vector<int8_t> &occupancy_grid,
   const int width,
   const int height,
-  const GridCell & cell,
+  const GridCell &cell,
   const double yaw) const
 {
   if (this->footprint_polygon_.empty() || !this->global_costmap_) {
@@ -425,7 +425,7 @@ bool PlannerServer::is_cell_collision(
     this->allow_unknown_);
 }
 
-std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCell> & grid_path) const
+std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCell> &grid_path) const
 {
   if (!this->simplify_path_ || grid_path.size() <= 2U) {
     return grid_path;
@@ -436,9 +436,9 @@ std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCe
   simplified_path.push_back(grid_path.front());
 
   for (std::size_t index = 1; index + 1 < grid_path.size(); ++index) {
-    const auto & previous = grid_path[index - 1];
-    const auto & current = grid_path[index];
-    const auto & next = grid_path[index + 1];
+    const auto &previous = grid_path[index - 1];
+    const auto &current = grid_path[index];
+    const auto &next = grid_path[index + 1];
 
     const int previous_dx = current.x - previous.x;
     const int previous_dy = current.y - previous.y;
@@ -455,7 +455,7 @@ std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCe
 }
 
 nav_msgs::msg::Path PlannerServer::create_path_message(
-  const std::vector<GridCell> & grid_path) const
+  const std::vector<GridCell> &grid_path) const
 {
   nav_msgs::msg::Path path;
   if (!this->global_costmap_) {
@@ -465,14 +465,14 @@ nav_msgs::msg::Path PlannerServer::create_path_message(
   path.header = this->global_costmap_->header;
   path.header.stamp = this->now();
   path.poses.reserve(grid_path.size());
-  for (const auto & cell : grid_path) {
+  for (const auto &cell : grid_path) {
     path.poses.push_back(this->grid_to_world(cell));
   }
 
   return path;
 }
 
-nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::Path> & paths) const
+nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::Path> &paths) const
 {
   nav_msgs::msg::Path merged;
   if (paths.empty()) {
@@ -483,9 +483,9 @@ nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::
   merged.header.stamp = this->now();
 
   for (std::size_t path_index = 0; path_index < paths.size(); ++path_index) {
-    const auto & path = paths[path_index];
+    const auto &path = paths[path_index];
     for (std::size_t pose_index = 0; pose_index < path.poses.size(); ++pose_index) {
-      if (path_index > 0 && pose_index == 0U && !merged.poses.empty()) {
+      if (path_index > 0 &&pose_index == 0U &&!merged.poses.empty()) {
         continue;
       }
       merged.poses.push_back(path.poses[pose_index]);

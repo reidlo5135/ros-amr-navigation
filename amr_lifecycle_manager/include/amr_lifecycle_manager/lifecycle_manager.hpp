@@ -21,7 +21,7 @@ namespace amr::lifecycle::manager
 class LifecycleManager : public rclcpp::Node
 {
 public:
-  explicit LifecycleManager(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit LifecycleManager(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~LifecycleManager() override;
 
 private:
@@ -33,13 +33,13 @@ private:
   };
 
   void run_bringup();
-  bool wait_for_service_clients(const ManagedNode & managed_node) const;
+  bool wait_for_service_clients(const ManagedNode &managed_node) const;
   bool request_transition(
-    const ManagedNode & managed_node,
+    const ManagedNode &managed_node,
     std::uint8_t transition_id,
     std::chrono::milliseconds timeout) const;
   bool wait_for_state(
-    const ManagedNode & managed_node,
+    const ManagedNode &managed_node,
     std::uint8_t target_state_id,
     std::chrono::milliseconds timeout) const;
   void publish_initial_pose();

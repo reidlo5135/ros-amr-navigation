@@ -29,12 +29,12 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   return orientation;
 }
 
-QVector<double> parse_scalar_list(const QString & text, int expected_count)
+QVector<double> parse_scalar_list(const QString &text, int expected_count)
 {
   QVector<double> values;
   const QStringList tokens = text.split(' ', Qt::SkipEmptyParts);
   values.reserve(tokens.size());
-  for (const auto & token : tokens) {
+  for (const auto &token : tokens) {
     bool ok = false;
     const double value = token.toDouble(&ok);
     if (!ok) {
@@ -48,7 +48,7 @@ QVector<double> parse_scalar_list(const QString & text, int expected_count)
   return values;
 }
 
-Pose2D parse_origin_attributes(const QXmlStreamAttributes & attributes)
+Pose2D parse_origin_attributes(const QXmlStreamAttributes &attributes)
 {
   Pose2D pose;
   pose.valid = true;
@@ -66,10 +66,10 @@ Pose2D parse_origin_attributes(const QXmlStreamAttributes & attributes)
 }
 
 bool parse_geometry(
-  QXmlStreamReader & reader,
-  const QString & frame_id,
-  const Pose2D & origin,
-  RobotVisual & visual)
+  QXmlStreamReader &reader,
+  const QString &frame_id,
+  const Pose2D &origin,
+  RobotVisual &visual)
 {
   while (reader.readNextStartElement()) {
     const auto name = reader.name();
@@ -129,7 +129,7 @@ bool parse_geometry(
 
 }  // namespace
 
-Pose2D RosWorker::compose_pose(const Pose2D & parent, const Pose2D & child)
+Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
 {
   Pose2D pose;
   pose.x = parent.x + (std::cos(parent.yaw) * child.x) - (std::sin(parent.yaw) * child.y);
@@ -140,7 +140,7 @@ Pose2D RosWorker::compose_pose(const Pose2D & parent, const Pose2D & child)
   return pose;
 }
 
-RosWorker::RosWorker(QObject * parent)
+RosWorker::RosWorker(QObject *parent)
 : QObject(parent)
 {
 }
@@ -324,10 +324,10 @@ void RosWorker::configure_ros_interfaces()
     rclcpp_action::create_client<NavigateToPoses>(node_, navigate_to_poses_action_);
 }
 
-void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage & message, bool is_static)
+void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool is_static)
 {
-  auto & storage = is_static ? static_frames_ : dynamic_frames_;
-  for (const auto & transform : message.transforms) {
+  auto &storage = is_static ? static_frames_ : dynamic_frames_;
+  for (const auto &transform : message.transforms) {
     FrameVisual frame;
     frame.parent_frame = QString::fromStdString(transform.header.frame_id);
     frame.child_frame = QString::fromStdString(transform.child_frame_id);
@@ -360,7 +360,7 @@ QVector<FrameVisual> RosWorker::build_frame_visuals() const
   emitted_frames.insert("map");
 
   auto add_frame =
-    [this, &frames, &emitted_frames](const std::string & child_frame) {
+    [this, &frames, &emitted_frames](const std::string &child_frame) {
       if (child_frame.empty() || emitted_frames.count(child_frame) > 0) {
         return;
       }
@@ -391,15 +391,15 @@ QVector<FrameVisual> RosWorker::build_frame_visuals() const
       emitted_frames.insert(child_frame);
     };
 
-  for (const auto & [child_frame, frame] : static_frames_) {
+  for (const auto &[child_frame, frame] : static_frames_) {
     (void)frame;
     add_frame(child_frame);
   }
-  for (const auto & [child_frame, frame] : dynamic_frames_) {
+  for (const auto &[child_frame, frame] : dynamic_frames_) {
     (void)frame;
     add_frame(child_frame);
   }
-  for (const auto & [child_frame, joint] : robot_joints_) {
+  for (const auto &[child_frame, joint] : robot_joints_) {
     (void)joint;
     add_frame(child_frame);
   }
@@ -472,12 +472,12 @@ void RosWorker::spin()
 {
   try {
     executor_.spin();
-  } catch (const std::exception & error) {
+  } catch (const std::exception &error) {
     Q_EMIT eventReceived(QString("ROS executor stopped: %1").arg(error.what()));
   }
 }
 
-GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid & message) const
+GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid &message) const
 {
   GridMap map;
   map.width = static_cast<int>(message.info.width);
@@ -499,17 +499,17 @@ GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid & message) co
   return map;
 }
 
-PathData RosWorker::convert_path(const nav_msgs::msg::Path & message) const
+PathData RosWorker::convert_path(const nav_msgs::msg::Path &message) const
 {
   PathData path;
   path.points.reserve(static_cast<int>(message.poses.size()));
-  for (const auto & pose : message.poses) {
+  for (const auto &pose : message.poses) {
     path.points.push_back(QPointF(pose.pose.position.x, pose.pose.position.y));
   }
   return path;
 }
 
-Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped & message) const
+Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) const
 {
   Pose2D pose;
   pose.x = message.pose.position.x;
@@ -524,7 +524,7 @@ Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped & message) 
   return pose;
 }
 
-ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan & message) const
+ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan &message) const
 {
   ScanData scan;
   const Pose2D frame_pose = resolve_frame_pose(message.header.frame_id);
@@ -553,7 +553,7 @@ ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan & message) co
   return scan;
 }
 
-geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D & pose) const
+geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D &pose) const
 {
   geometry_msgs::msg::PoseStamped stamped;
   stamped.header.frame_id = default_frame_id_;
@@ -565,7 +565,7 @@ geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D & pose) 
   return stamped;
 }
 
-RuntimeSummary RosWorker::parse_runtime_summary(const std::string & payload) const
+RuntimeSummary RosWorker::parse_runtime_summary(const std::string &payload) const
 {
   RuntimeSummary summary;
   const auto document = QJsonDocument::fromJson(QByteArray::fromStdString(payload));
@@ -582,7 +582,7 @@ RuntimeSummary RosWorker::parse_runtime_summary(const std::string & payload) con
   return summary;
 }
 
-QVector<RobotVisual> RosWorker::parse_robot_description(const std::string & payload)
+QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &payload)
 {
   robot_joints_.clear();
   QVector<RobotVisual> visuals;
@@ -688,7 +688,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
   visuals.reserve(robot_description_visuals_.size());
   std::set<QString> visual_frames;
 
-  for (const auto & source_visual : robot_description_visuals_) {
+  for (const auto &source_visual : robot_description_visuals_) {
     const Pose2D frame_pose = resolve_robot_link_pose(source_visual.frame_id);
     if (!frame_pose.valid) {
       continue;
@@ -701,7 +701,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual_frames.insert(source_visual.frame_id);
   }
 
-  auto add_proxy_visual = [this, &visuals, &visual_frames](const QString & frame_id) {
+  auto add_proxy_visual = [this, &visuals, &visual_frames](const QString &frame_id) {
       if (visual_frames.count(frame_id) > 0) {
         return;
       }
@@ -731,15 +731,15 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visuals.push_back(visual);
     };
 
-  for (const auto & [child_frame, joint] : robot_joints_) {
+  for (const auto &[child_frame, joint] : robot_joints_) {
     (void)joint;
     add_proxy_visual(QString::fromStdString(child_frame));
   }
-  for (const auto & [child_frame, frame] : static_frames_) {
+  for (const auto &[child_frame, frame] : static_frames_) {
     (void)frame;
     add_proxy_visual(QString::fromStdString(child_frame));
   }
-  for (const auto & [child_frame, frame] : dynamic_frames_) {
+  for (const auto &[child_frame, frame] : dynamic_frames_) {
     (void)frame;
     add_proxy_visual(QString::fromStdString(child_frame));
   }
@@ -747,7 +747,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
   return visuals;
 }
 
-Pose2D RosWorker::resolve_robot_link_pose(const QString & link_frame) const
+Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
 {
   const Pose2D tf_pose = resolve_frame_pose(link_frame.toStdString());
   if (tf_pose.valid) {
@@ -755,7 +755,7 @@ Pose2D RosWorker::resolve_robot_link_pose(const QString & link_frame) const
   }
 
   std::function<Pose2D(const QString &, int)> resolve =
-    [this, &resolve](const QString & frame_name, int depth) -> Pose2D {
+    [this, &resolve](const QString &frame_name, int depth) -> Pose2D {
       if (depth > 32) {
         return {};
       }
@@ -780,9 +780,9 @@ Pose2D RosWorker::resolve_robot_link_pose(const QString & link_frame) const
   return resolve(link_frame, 0);
 }
 
-Pose2D RosWorker::resolve_frame_pose(const std::string & child_frame) const
+Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
 {
-  const auto find_frame = [this](const std::string & child) -> const FrameVisual * {
+  const auto find_frame = [this](const std::string &child) -> const FrameVisual *{
     const auto dynamic_it = dynamic_frames_.find(child);
     if (dynamic_it != dynamic_frames_.end()) {
       return &dynamic_it->second;
@@ -795,7 +795,7 @@ Pose2D RosWorker::resolve_frame_pose(const std::string & child_frame) const
   };
 
   std::function<Pose2D(const std::string &, int)> resolve =
-    [&](const std::string & frame_name, int depth) -> Pose2D {
+    [&](const std::string &frame_name, int depth) -> Pose2D {
       if (depth > 16) {
         return {};
       }
@@ -805,7 +805,7 @@ Pose2D RosWorker::resolve_frame_pose(const std::string & child_frame) const
         return identity;
       }
 
-      const FrameVisual * frame = find_frame(frame_name);
+      const FrameVisual *frame = find_frame(frame_name);
       if (!frame || !frame->pose.valid || frame->parent_frame.isEmpty()) {
         return {};
       }
@@ -820,7 +820,7 @@ Pose2D RosWorker::resolve_frame_pose(const std::string & child_frame) const
   return resolve(child_frame, 0);
 }
 
-void RosWorker::sendSingleGoal(const Pose2D & pose)
+void RosWorker::sendSingleGoal(const Pose2D &pose)
 {
   if (!node_ || !pose.valid) {
     return;
@@ -836,13 +836,13 @@ void RosWorker::sendSingleGoal(const Pose2D & pose)
   goal.goal_pose = to_pose_stamped(pose);
   rclcpp_action::Client<NavigateToPose>::SendGoalOptions options;
   options.goal_response_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr & handle) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr &handle) {
       const QString state = handle ? "Accepted" : "Rejected";
       Q_EMIT goalStateChanged(state);
       Q_EMIT eventReceived(QString("Single goal %1").arg(state.toLower()));
     };
   options.result_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult & result) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult &result) {
       const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
       Q_EMIT goalStateChanged(state);
       Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
@@ -853,7 +853,7 @@ void RosWorker::sendSingleGoal(const Pose2D & pose)
   Q_EMIT eventReceived("Single goal sent");
 }
 
-void RosWorker::sendRoute(const QVector<Pose2D> & route)
+void RosWorker::sendRoute(const QVector<Pose2D> &route)
 {
   if (!node_ || route.empty()) {
     return;
@@ -867,7 +867,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> & route)
 
   NavigateToPoses::Goal goal;
   goal.goal_poses.reserve(static_cast<size_t>(route.size()));
-  for (const auto & pose : route) {
+  for (const auto &pose : route) {
     if (pose.valid) {
       goal.goal_poses.push_back(to_pose_stamped(pose));
     }
@@ -877,7 +877,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> & route)
   }
   rclcpp_action::Client<NavigateToPoses>::SendGoalOptions options;
   options.goal_response_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr & handle) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr &handle) {
       const QString state = handle ? "Accepted" : "Rejected";
       Q_EMIT goalStateChanged(state);
       Q_EMIT eventReceived(QString("Route %1").arg(state.toLower()));
@@ -892,7 +892,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> & route)
           .arg(feedback->goal_count));
     };
   options.result_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::WrappedResult & result) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::WrappedResult &result) {
       const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
       Q_EMIT goalStateChanged(state);
       Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
@@ -904,7 +904,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> & route)
     QString("Route sent: %1 waypoint(s)").arg(static_cast<int>(goal.goal_poses.size())));
 }
 
-void RosWorker::publishInitialPose(const Pose2D & pose)
+void RosWorker::publishInitialPose(const Pose2D &pose)
 {
   if (!node_ || !pose.valid) {
     return;

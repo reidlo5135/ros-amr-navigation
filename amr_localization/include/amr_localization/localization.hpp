@@ -26,7 +26,7 @@ namespace amr::localization::estimator
 class Localization : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit Localization(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit Localization(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~Localization() = default;
 
 private:
@@ -41,38 +41,38 @@ private:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   void handle_odometry(const nav_msgs::msg::Odometry::SharedPtr message);
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_initial_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr message);
   void publish_auto_initial_pose();
-  void initialize_particles(const geometry_msgs::msg::PoseStamped & pose);
+  void initialize_particles(const geometry_msgs::msg::PoseStamped &pose);
   void apply_motion_update(
-    const geometry_msgs::msg::PoseStamped & previous_odom_pose,
-    const geometry_msgs::msg::PoseStamped & current_odom_pose);
-  void apply_measurement_update(const sensor_msgs::msg::LaserScan & scan);
+    const geometry_msgs::msg::PoseStamped &previous_odom_pose,
+    const geometry_msgs::msg::PoseStamped &current_odom_pose);
+  void apply_measurement_update(const sensor_msgs::msg::LaserScan &scan);
   void resample_particles();
-  void update_estimated_pose_from_particles(const rclcpp::Time & stamp);
-  void publish_outputs(const rclcpp::Time & stamp);
-  geometry_msgs::msg::TransformStamped build_map_to_odom_transform(const rclcpp::Time & stamp) const;
+  void update_estimated_pose_from_particles(const rclcpp::Time &stamp);
+  void publish_outputs(const rclcpp::Time &stamp);
+  geometry_msgs::msg::TransformStamped build_map_to_odom_transform(const rclcpp::Time &stamp) const;
   geometry_msgs::msg::PoseStamped odometry_pose_to_pose_stamped(
-    const nav_msgs::msg::Odometry & odometry) const;
-  bool world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const;
+    const nav_msgs::msg::Odometry &odometry) const;
+  bool world_to_grid(double world_x, double world_y, int &grid_x, int &grid_y) const;
   bool is_occupied_cell(int grid_x, int grid_y) const;
   double nearest_obstacle_distance(double world_x, double world_y) const;
   double compute_particle_likelihood(
-    const Particle & particle,
-    const sensor_msgs::msg::LaserScan & scan) const;
+    const Particle &particle,
+    const sensor_msgs::msg::LaserScan &scan) const;
   double sample_normal(double stddev);
   double normalize_angle(double angle) const;
-  double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
-  void update_pose_orientation(geometry_msgs::msg::PoseStamped & pose, double yaw) const;
+  double quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const;
+  void update_pose_orientation(geometry_msgs::msg::PoseStamped &pose, double yaw) const;
   void reset_state();
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscription_;

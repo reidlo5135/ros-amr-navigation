@@ -20,18 +20,18 @@ namespace amr::costmap::server
 class CostmapServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit CostmapServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit CostmapServer(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~CostmapServer() = default;
 
 private:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
@@ -46,13 +46,13 @@ private:
   void publish_costmaps();
   void update_footprint_metrics();
   bool should_publish_local_costmap();
-  bool world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const;
+  bool world_to_grid(double world_x, double world_y, int &grid_x, int &grid_y) const;
   bool world_to_costmap_grid(
-    const nav_msgs::msg::OccupancyGrid & costmap,
+    const nav_msgs::msg::OccupancyGrid &costmap,
     double world_x,
     double world_y,
-    int & grid_x,
-    int & grid_y) const;
+    int &grid_x,
+    int &grid_y) const;
   bool has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const;
 
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;

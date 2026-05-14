@@ -62,7 +62,7 @@ public:
 
 private:
   geometry_msgs::msg::PoseStamped normalize_pose(
-    const geometry_msgs::msg::PoseStamped & input) const
+    const geometry_msgs::msg::PoseStamped &input) const
   {
     geometry_msgs::msg::PoseStamped normalized = input;
     if (normalized.header.frame_id.empty()) {
@@ -75,8 +75,8 @@ private:
   }
 
   geometry_msgs::msg::PoseStamped to_pose_stamped(
-    const std_msgs::msg::Header & header,
-    const geometry_msgs::msg::Pose & pose) const
+    const std_msgs::msg::Header &header,
+    const geometry_msgs::msg::Pose &pose) const
   {
     geometry_msgs::msg::PoseStamped stamped;
     stamped.header = header;
@@ -89,7 +89,7 @@ private:
     return stamped;
   }
 
-  bool wait_for_server(const std::string & name, bool multi_goal)
+  bool wait_for_server(const std::string &name, bool multi_goal)
   {
     const bool available = multi_goal ?
       navigate_to_poses_client_->wait_for_action_server(1s) :
@@ -101,7 +101,7 @@ private:
     return available;
   }
 
-  void handle_goal(const geometry_msgs::msg::PoseStamped & message)
+  void handle_goal(const geometry_msgs::msg::PoseStamped &message)
   {
     if (!wait_for_server(navigate_to_pose_action_, false)) {
       return;
@@ -119,7 +119,7 @@ private:
 
     rclcpp_action::Client<NavigateToPose>::SendGoalOptions options;
     options.goal_response_callback =
-      [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr & goal_handle) {
+      [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr &goal_handle) {
         if (!goal_handle) {
           RCLCPP_WARN(this->get_logger(), "Navigator rejected RViz single-goal request");
           return;
@@ -127,7 +127,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "Navigator accepted RViz single-goal request");
       };
     options.result_callback =
-      [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult & result) {
+      [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult &result) {
         RCLCPP_INFO(
           this->get_logger(),
           "RViz single-goal request finished with code=%d",
@@ -136,7 +136,7 @@ private:
     navigate_to_pose_client_->async_send_goal(goal, options);
   }
 
-  void handle_goals(const geometry_msgs::msg::PoseArray & message)
+  void handle_goals(const geometry_msgs::msg::PoseArray &message)
   {
     if (message.poses.empty()) {
       RCLCPP_WARN(this->get_logger(), "Ignoring empty RViz multi-goal route");
@@ -149,12 +149,12 @@ private:
 
     NavigateToPoses::Goal goal;
     goal.goal_poses.reserve(message.poses.size());
-    for (const auto & pose : message.poses) {
+    for (const auto &pose : message.poses) {
       goal.goal_poses.push_back(to_pose_stamped(message.header, pose));
     }
 
-    const auto & first = goal.goal_poses.front();
-    const auto & last = goal.goal_poses.back();
+    const auto &first = goal.goal_poses.front();
+    const auto &last = goal.goal_poses.back();
     RCLCPP_INFO(
       this->get_logger(),
       "Forwarding RViz multi-goal route with %zu goals: first=(%.3f, %.3f) last=(%.3f, %.3f)",
@@ -166,7 +166,7 @@ private:
 
     rclcpp_action::Client<NavigateToPoses>::SendGoalOptions options;
     options.goal_response_callback =
-      [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr & goal_handle) {
+      [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr &goal_handle) {
         if (!goal_handle) {
           RCLCPP_WARN(this->get_logger(), "Navigator rejected RViz multi-goal route");
           return;
@@ -174,7 +174,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "Navigator accepted RViz multi-goal route");
       };
     options.result_callback =
-      [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::WrappedResult & result) {
+      [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::WrappedResult &result) {
         RCLCPP_INFO(
           this->get_logger(),
           "RViz multi-goal route finished with code=%d",

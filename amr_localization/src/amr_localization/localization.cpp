@@ -11,7 +11,7 @@ constexpr double kMinimumWeight = 1e-6;
 
 }  // namespace
 
-Localization::Localization(const rclcpp::NodeOptions & options)
+Localization::Localization(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("localization", options),
   odom_topic_(""),
   scan_topic_(""),
@@ -85,7 +85,7 @@ Localization::Localization(const rclcpp::NodeOptions & options)
   this->declare_parameter("amcl.occupied_threshold", this->occupied_threshold_);
 }
 
-Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::State & state)
+Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->get_parameter("topics.odom", this->odom_topic_);
@@ -189,7 +189,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   return CallbackReturn::SUCCESS;
 }
 
-Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::State & state)
+Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->estimated_pose_publisher_) {
@@ -214,7 +214,7 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
   return CallbackReturn::SUCCESS;
 }
 
-Localization::CallbackReturn Localization::on_deactivate(const rclcpp_lifecycle::State & state)
+Localization::CallbackReturn Localization::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->estimated_pose_publisher_) {
@@ -230,7 +230,7 @@ Localization::CallbackReturn Localization::on_deactivate(const rclcpp_lifecycle:
   return CallbackReturn::SUCCESS;
 }
 
-Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::State & state)
+Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->odometry_subscription_.reset();
@@ -246,7 +246,7 @@ Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::St
   return CallbackReturn::SUCCESS;
 }
 
-Localization::CallbackReturn Localization::on_shutdown(const rclcpp_lifecycle::State & state)
+Localization::CallbackReturn Localization::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->odometry_subscription_.reset();
@@ -389,7 +389,7 @@ void Localization::publish_auto_initial_pose()
     this->initial_yaw_);
 }
 
-void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & pose)
+void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped &pose)
 {
   this->particles_.clear();
   this->particles_.reserve(static_cast<std::size_t>(std::max(1, this->particle_count_)));
@@ -411,8 +411,8 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped & 
 }
 
 void Localization::apply_motion_update(
-  const geometry_msgs::msg::PoseStamped & previous_odom_pose,
-  const geometry_msgs::msg::PoseStamped & current_odom_pose)
+  const geometry_msgs::msg::PoseStamped &previous_odom_pose,
+  const geometry_msgs::msg::PoseStamped &current_odom_pose)
 {
   if (this->particles_.empty()) {
     return;
@@ -428,7 +428,7 @@ void Localization::apply_motion_update(
     (-std::sin(previous_odom_yaw) * delta_odom_x) + (std::cos(previous_odom_yaw) * delta_odom_y);
   const double delta_yaw = this->normalize_angle(current_odom_yaw - previous_odom_yaw);
 
-  for (auto & particle : this->particles_) {
+  for (auto &particle : this->particles_) {
     const double noisy_local_x = local_delta_x + this->sample_normal(this->motion_noise_linear_);
     const double noisy_local_y = local_delta_y + this->sample_normal(this->motion_noise_lateral_);
     const double noisy_delta_yaw = delta_yaw + this->sample_normal(this->motion_noise_angular_);
@@ -441,27 +441,27 @@ void Localization::apply_motion_update(
   }
 }
 
-void Localization::apply_measurement_update(const sensor_msgs::msg::LaserScan & scan)
+void Localization::apply_measurement_update(const sensor_msgs::msg::LaserScan &scan)
 {
   if (this->particles_.empty() || !this->has_map_) {
     return;
   }
 
   double total_weight = 0.0;
-  for (auto & particle : this->particles_) {
+  for (auto &particle : this->particles_) {
     particle.weight = std::max(kMinimumWeight, this->compute_particle_likelihood(particle, scan));
     total_weight += particle.weight;
   }
 
   if (total_weight <= 0.0) {
     const double uniform_weight = 1.0 / static_cast<double>(this->particles_.size());
-    for (auto & particle : this->particles_) {
+    for (auto &particle : this->particles_) {
       particle.weight = uniform_weight;
     }
     return;
   }
 
-  for (auto & particle : this->particles_) {
+  for (auto &particle : this->particles_) {
     particle.weight /= total_weight;
   }
 }
@@ -496,7 +496,7 @@ void Localization::resample_particles()
   this->particles_ = std::move(resampled_particles);
 }
 
-void Localization::update_estimated_pose_from_particles(const rclcpp::Time & stamp)
+void Localization::update_estimated_pose_from_particles(const rclcpp::Time &stamp)
 {
   if (this->particles_.empty()) {
     this->estimated_pose_ = this->initial_map_pose_;
@@ -511,7 +511,7 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
   double weighted_cos_yaw = 0.0;
   double total_weight = 0.0;
 
-  for (const auto & particle : this->particles_) {
+  for (const auto &particle : this->particles_) {
     weighted_x += particle.x * particle.weight;
     weighted_y += particle.y * particle.weight;
     weighted_sin_yaw += std::sin(particle.yaw) * particle.weight;
@@ -533,7 +533,7 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time & sta
     std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight));
 }
 
-void Localization::publish_outputs(const rclcpp::Time & stamp)
+void Localization::publish_outputs(const rclcpp::Time &stamp)
 {
   if (
     !this->estimated_pose_publisher_ || !this->estimated_pose_publisher_->is_activated() ||
@@ -557,7 +557,7 @@ void Localization::publish_outputs(const rclcpp::Time & stamp)
 }
 
 geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
-  const rclcpp::Time & stamp) const
+  const rclcpp::Time &stamp) const
 {
   geometry_msgs::msg::TransformStamped transform;
   transform.header.stamp = stamp;
@@ -586,7 +586,7 @@ geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
 }
 
 geometry_msgs::msg::PoseStamped Localization::odometry_pose_to_pose_stamped(
-  const nav_msgs::msg::Odometry & odometry) const
+  const nav_msgs::msg::Odometry &odometry) const
 {
   geometry_msgs::msg::PoseStamped pose;
   pose.header = odometry.header;
@@ -597,13 +597,13 @@ geometry_msgs::msg::PoseStamped Localization::odometry_pose_to_pose_stamped(
   return pose;
 }
 
-bool Localization::world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const
+bool Localization::world_to_grid(double world_x, double world_y, int &grid_x, int &grid_y) const
 {
   if (!this->has_map_ || !this->map_occupancy_grid_) {
     return false;
   }
 
-  const auto & info = this->map_occupancy_grid_->info;
+  const auto &info = this->map_occupancy_grid_->info;
   const double origin_yaw = this->quaternion_yaw(info.origin.orientation);
   const double relative_x = world_x - info.origin.position.x;
   const double relative_y = world_y - info.origin.position.y;
@@ -680,8 +680,8 @@ double Localization::nearest_obstacle_distance(const double world_x, const doubl
 }
 
 double Localization::compute_particle_likelihood(
-  const Particle & particle,
-  const sensor_msgs::msg::LaserScan & scan) const
+  const Particle &particle,
+  const sensor_msgs::msg::LaserScan &scan) const
 {
   if (!this->has_map_ || scan.ranges.empty()) {
     return kMinimumWeight;
@@ -746,7 +746,7 @@ double Localization::normalize_angle(double angle) const
   return angle;
 }
 
-double Localization::quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation) const
+double Localization::quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const
 {
   const double siny_cosp =
     2.0 * ((orientation.w * orientation.z) + (orientation.x * orientation.y));
@@ -756,7 +756,7 @@ double Localization::quaternion_yaw(const geometry_msgs::msg::Quaternion & orien
 }
 
 void Localization::update_pose_orientation(
-  geometry_msgs::msg::PoseStamped & pose,
+  geometry_msgs::msg::PoseStamped &pose,
   const double yaw) const
 {
   pose.pose.orientation.x = 0.0;

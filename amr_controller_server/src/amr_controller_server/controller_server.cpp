@@ -23,7 +23,7 @@ struct GridCell
 
   bool operator==(const GridCell &other) const
   {
-    return this->x == other.x && this->y == other.y;
+    return this->x == other.x &&this->y == other.y;
   }
 };
 
@@ -52,7 +52,7 @@ struct OpenSetEntryCompare
 
 bool is_within_bounds(const GridCell &cell, int width, int height)
 {
-  return cell.x >= 0 && cell.x < width && cell.y >= 0 && cell.y < height;
+  return cell.x >= 0 &&cell.x < width &&cell.y >= 0 &&cell.y < height;
 }
 
 int to_index(const GridCell &cell, int width)
@@ -73,7 +73,7 @@ bool is_occupied(
   double origin_y,
   double yaw)
 {
-  if (!footprint_polygon.empty() && resolution > 0.0 && height > 0)
+  if (!footprint_polygon.empty() &&resolution > 0.0 &&height > 0)
   {
     const double pose_x = origin_x + (static_cast<double>(cell.x) + 0.5) * resolution;
     const double pose_y = origin_y + (static_cast<double>(cell.y) + 0.5) * resolution;
@@ -163,7 +163,7 @@ double turn_penalty(
   const int previous_dy = current.y - previous.y;
   const int next_dx = next.x - current.x;
   const int next_dy = next.y - current.y;
-  if (previous_dx == next_dx && previous_dy == next_dy)
+  if (previous_dx == next_dx &&previous_dy == next_dy)
   {
     return 0.0;
   }
@@ -332,7 +332,7 @@ bool plan_on_grid(
         continue;
       }
 
-      const bool diagonal = neighbor.x != current_cell.x && neighbor.y != current_cell.y;
+      const bool diagonal = neighbor.x != current_cell.x &&neighbor.y != current_cell.y;
       double tentative_g_cost = current_node.g_cost + (diagonal ? std::sqrt(2.0) : 1.0);
       if (current_node.parent_index >= 0)
       {
@@ -866,7 +866,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
     std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_) :
     this->lookahead_distance_;
 
-  if (this->has_map_ && !this->inflated_map_.data.empty())
+  if (this->has_map_ &&!this->inflated_map_.data.empty())
   {
     result.plan = this->build_inflated_local_plan(
       source_plan,
@@ -1169,7 +1169,7 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
     }
   }
 
-  if (best_grid_path.empty() && !build_grid_plan_to_pose(sliced_plan.poses.back(), best_grid_path))
+  if (best_grid_path.empty() &&!build_grid_plan_to_pose(sliced_plan.poses.back(), best_grid_path))
   {
     return sliced_plan;
   }
@@ -1460,7 +1460,7 @@ nav_msgs::msg::Path LocalPlanner::prune_and_interpolate_path(const nav_msgs::msg
     const geometry_msgs::msg::PoseStamped last_pose = refined_plan.poses.back();
     const double segment_distance = this->pose_distance(last_pose, target_pose);
 
-    if (!final_pose && segment_distance < this->path_refiner_prune_distance_)
+    if (!final_pose &&segment_distance < this->path_refiner_prune_distance_)
     {
       continue;
     }
@@ -1619,7 +1619,7 @@ bool LocalPlanner::is_smoothed_path_acceptable(
     return true;
   }
 
-  for (const auto & pose : smoothed_plan.poses)
+  for (const auto &pose : smoothed_plan.poses)
   {
     if (
       this->estimate_pose_distance_to_path(pose, base_plan) >
@@ -1817,7 +1817,7 @@ nav_msgs::msg::Path LocalPlanner::build_source_plan(const amr_msgs::msg::MotionC
   {
     source_plan.header = command.header;
   }
-  if (source_plan.header.stamp.sec == 0 && source_plan.header.stamp.nanosec == 0U)
+  if (source_plan.header.stamp.sec == 0 &&source_plan.header.stamp.nanosec == 0U)
   {
     source_plan.header.stamp = this->now();
   }
@@ -1870,8 +1870,8 @@ bool LocalPlanner::world_to_grid(
   grid_y = static_cast<int>(std::floor((point.y - info.origin.position.y) / info.resolution));
 
   return
-    grid_x >= 0 && grid_x < static_cast<int>(info.width) &&
-    grid_y >= 0 && grid_y < static_cast<int>(info.height);
+    grid_x >= 0 &&grid_x < static_cast<int>(info.width) &&
+    grid_y >= 0 &&grid_y < static_cast<int>(info.height);
 }
 
 geometry_msgs::msg::PoseStamped LocalPlanner::grid_to_pose(
@@ -1998,7 +1998,7 @@ bool LocalPlanner::find_nearest_free_cell(
         if (
           !found_candidate ||
           distance_squared < best_distance_squared ||
-          (distance_squared == best_distance_squared && axis_offset < best_axis_offset) ||
+          (distance_squared == best_distance_squared &&axis_offset < best_axis_offset) ||
           (
             distance_squared == best_distance_squared &&
             axis_offset == best_axis_offset &&
@@ -2587,7 +2587,7 @@ void MotionController::publish_control()
   status.heading_error = 0.0;
 
   const bool has_navigation_inputs =
-    this->has_command_ && this->has_current_pose_ &&
+    this->has_command_ &&this->has_current_pose_ &&
     (this->latest_command_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE || this->has_local_plan_);
 
   if (has_navigation_inputs)
@@ -2618,13 +2618,13 @@ void MotionController::publish_control()
       {
         target_heading = std::atan2(target_dy, target_dx);
       }
-      if (align_heading_at_goal && distance_reached)
+      if (align_heading_at_goal &&distance_reached)
       {
         target_heading = goal_yaw;
       }
       const double heading_error = this->normalize_angle(target_heading - current_yaw);
       const double abs_heading_error = std::abs(heading_error);
-      const bool final_heading_phase = align_heading_at_goal && distance_reached;
+      const bool final_heading_phase = align_heading_at_goal &&distance_reached;
       const bool final_align_phase =
         align_heading_at_goal &&
         (distance_reached || goal_distance <= this->rotate_in_place_goal_distance_);
@@ -2646,18 +2646,18 @@ void MotionController::publish_control()
       }
       const bool final_align_stable =
         !final_heading_phase ||
-        (heading_settled && (
+        (heading_settled &&(
         this->final_align_settle_time_sec_ <= 1e-6 ||
         (
           this->final_align_holding_ &&
           (this->now() - this->final_align_hold_start_time_).seconds() >=
           this->final_align_settle_time_sec_)));
-      const bool aligning_in_place = final_heading_phase && !final_align_stable;
+      const bool aligning_in_place = final_heading_phase &&!final_align_stable;
       const bool suppress_small_heading_correction =
         !final_align_phase &&
         abs_heading_error <= this->tracking_heading_deadband_;
       const bool suppress_final_align_correction =
-        final_heading_phase && heading_settled;
+        final_heading_phase &&heading_settled;
       const double steering_heading_error =
         (suppress_small_heading_correction || suppress_final_align_correction) ? 0.0 : heading_error;
       const double steering_abs_heading_error = std::abs(steering_heading_error);
@@ -2674,7 +2674,7 @@ void MotionController::publish_control()
         safety_gate_blocked &&
         !command_settling &&
         !non_error_hold_phase;
-      status.local_plan_valid = this->has_local_plan_ && !this->latest_local_plan_.poses.empty();
+      status.local_plan_valid = this->has_local_plan_ &&!this->latest_local_plan_.poses.empty();
       status.costmap_blocked = false;
       status.safety_gate_blocked = safety_gate_blocked;
       status.obstacle_detected = safety_gate_blocked;
@@ -2682,7 +2682,7 @@ void MotionController::publish_control()
       status.has_blocked_pose = false;
       status.blocked_pose = geometry_msgs::msg::PoseStamped();
       status.goal_reached = align_heading_at_goal ?
-        (distance_reached && final_align_stable) :
+        (distance_reached &&final_align_stable) :
         goal_check.goal_reached;
       status.remaining_distance = goal_distance;
       status.heading_error = heading_error;
@@ -2705,7 +2705,7 @@ void MotionController::publish_control()
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
       }
-      else if (distance_reached && final_align_stable)
+      else if (distance_reached &&final_align_stable)
       {
         this->progress_reference_pose_ = this->current_pose_;
         this->progress_reference_time_ = this->now();
@@ -2739,7 +2739,7 @@ void MotionController::publish_control()
           "Goal reached for command %u",
           status.command_id);
       }
-      else if (distance_reached && (!align_heading_at_goal || final_align_stable))
+      else if (distance_reached &&(!align_heading_at_goal || final_align_stable))
       {
         desired_twist = geometry_msgs::msg::Twist();
       }
@@ -2790,7 +2790,7 @@ void MotionController::publish_control()
               (steering_abs_heading_error - this->heading_slowdown_threshold_) /
               scale_window);
           }
-          if (rejoin_phase && steering_abs_heading_error > this->rejoin_heading_gate_threshold_)
+          if (rejoin_phase &&steering_abs_heading_error > this->rejoin_heading_gate_threshold_)
           {
             const double gate_window = std::max(
               3.14159265358979323846 - this->rejoin_heading_gate_threshold_,
@@ -3214,7 +3214,7 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
   const bool candidate_materially_better =
     candidate_target_distance + this->tracking_target_hysteresis_distance_ < current_target_distance;
 
-  if (current_target_stale || (candidate_is_forward && candidate_materially_better))
+  if (current_target_stale || (candidate_is_forward &&candidate_materially_better))
   {
     this->tracking_target_index_ = candidate_target_index;
   }
@@ -3241,7 +3241,7 @@ MotionController::GoalCheckResult MotionController::check_goal(
   result.heading_reached =
     !result.align_heading || std::abs(result.heading_error) <= heading_tolerance;
 
-  const bool reached_now = result.distance_reached && result.heading_reached;
+  const bool reached_now = result.distance_reached &&result.heading_reached;
   if (!reached_now)
   {
     this->reset_goal_checker_state();

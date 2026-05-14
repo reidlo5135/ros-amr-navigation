@@ -10,15 +10,12 @@ int main(int argc, char ** argv)
 
   qRegisterMetaType<amr::visualization::Pose2D>("amr::visualization::Pose2D");
   qRegisterMetaType<amr::visualization::FrameVisual>("amr::visualization::FrameVisual");
-  qRegisterMetaType<QVector<amr::visualization::FrameVisual>>(
-    "QVector<amr::visualization::FrameVisual>");
+  qRegisterMetaType<QVector<amr::visualization::FrameVisual>>("QVector<amr::visualization::FrameVisual>");
   qRegisterMetaType<amr::visualization::GridMap>("amr::visualization::GridMap");
   qRegisterMetaType<amr::visualization::PathData>("amr::visualization::PathData");
   qRegisterMetaType<amr::visualization::ScanData>("amr::visualization::ScanData");
-  qRegisterMetaType<amr::visualization::MotionStatusData>(
-    "amr::visualization::MotionStatusData");
-  qRegisterMetaType<amr::visualization::RuntimeSummary>(
-    "amr::visualization::RuntimeSummary");
+  qRegisterMetaType<amr::visualization::MotionStatusData>("amr::visualization::MotionStatusData");
+  qRegisterMetaType<amr::visualization::RuntimeSummary>("amr::visualization::RuntimeSummary");
 
   QApplication app(argc, argv);
   app.setApplicationName("AMR Visualization");

@@ -39,7 +39,7 @@ namespace amr::bt::navigator
 class Btnavigator : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit Btnavigator(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit Btnavigator(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~Btnavigator() = default;
 
 private:
@@ -58,17 +58,17 @@ private:
     uint16_t error_code{9000U};  // UNKNOWN by default; 0 = NONE on success/cancel
   };
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   rclcpp_action::GoalResponse handle_goal(
-    const rclcpp_action::GoalUUID & uuid,
+    const rclcpp_action::GoalUUID &uuid,
     std::shared_ptr<const NavigateToPose::Goal> goal);
   rclcpp_action::GoalResponse handle_goals(
-    const rclcpp_action::GoalUUID & uuid,
+    const rclcpp_action::GoalUUID &uuid,
     std::shared_ptr<const NavigateToPoses::Goal> goal);
   rclcpp_action::CancelResponse handle_cancel(
     const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
@@ -79,89 +79,89 @@ private:
   void execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
   void execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle);
   ExecutionResult execute_goal_pose(
-    const geometry_msgs::msg::PoseStamped & goal_pose,
-    const std::string & route_id,
+    const geometry_msgs::msg::PoseStamped &goal_pose,
+    const std::string &route_id,
     bool align_heading_at_goal,
-    const std::function<bool()> & is_cancel_requested,
+    const std::function<bool()> &is_cancel_requested,
     const std::function<void(
       const geometry_msgs::msg::PoseStamped &,
       const amr_msgs::msg::MotionStatus &,
       int32_t,
-      const rclcpp::Duration &)> & publish_feedback);
+      const rclcpp::Duration &)> &publish_feedback);
   void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message);
   void handle_local_plan_status(const amr_msgs::msg::LocalPlanStatus::SharedPtr message);
   geometry_msgs::msg::PoseStamped get_current_pose_copy() const;
   amr_msgs::msg::MotionStatus get_motion_status_copy() const;
   amr_msgs::msg::LocalPlanStatus get_local_plan_status_copy() const;
-  bool is_navigator_ready(std::string & error_message) const;
+  bool is_navigator_ready(std::string &error_message) const;
   bool wait_for_planner_service(
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool wait_for_recovery_services(
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool request_global_plan(
-    const geometry_msgs::msg::PoseStamped & start,
-    const geometry_msgs::msg::PoseStamped & goal,
-    nav_msgs::msg::Path & plan,
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal,
+    nav_msgs::msg::Path &plan,
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool request_recovery_command(
-    const std::string & behavior,
-    const geometry_msgs::msg::PoseStamped & current_pose,
-    const geometry_msgs::msg::PoseStamped & goal_pose,
-    amr_msgs::msg::MotionCommand & command,
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    const std::string &behavior,
+    const geometry_msgs::msg::PoseStamped &current_pose,
+    const geometry_msgs::msg::PoseStamped &goal_pose,
+    amr_msgs::msg::MotionCommand &command,
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool request_local_escape_plan(
-    const geometry_msgs::msg::PoseStamped & current_pose,
-    const nav_msgs::msg::Path & source_plan,
-    nav_msgs::msg::Path & escape_plan,
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    const geometry_msgs::msg::PoseStamped &current_pose,
+    const nav_msgs::msg::Path &source_plan,
+    nav_msgs::msg::Path &escape_plan,
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool clear_local_costmap(
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool wait_for_command_completion(
     uint32_t command_id,
     int timeout_ms,
-    std::string & error_message,
-    const std::function<bool()> & is_cancel_requested = {});
+    std::string &error_message,
+    const std::function<bool()> &is_cancel_requested = {});
   bool has_reacquired_navigation(
-    const amr_msgs::msg::MotionCommand & active_command,
-    const amr_msgs::msg::MotionStatus & motion_status,
-    const amr_msgs::msg::LocalPlanStatus & local_plan_status) const;
+    const amr_msgs::msg::MotionCommand &active_command,
+    const amr_msgs::msg::MotionStatus &motion_status,
+    const amr_msgs::msg::LocalPlanStatus &local_plan_status) const;
   bool has_planner_owned_recovery(
-    const amr_msgs::msg::MotionCommand & active_command,
-    const amr_msgs::msg::LocalPlanStatus & local_plan_status) const;
+    const amr_msgs::msg::MotionCommand &active_command,
+    const amr_msgs::msg::LocalPlanStatus &local_plan_status) const;
   bool should_try_local_escape(
-    const amr_msgs::msg::MotionCommand & active_command,
-    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
-    const nav_msgs::msg::Path & planned_path,
+    const amr_msgs::msg::MotionCommand &active_command,
+    const amr_msgs::msg::LocalPlanStatus &local_plan_status,
+    const nav_msgs::msg::Path &planned_path,
     bool local_escape_dispatched) const;
   std::string select_recovery_behavior(
-    const amr_msgs::msg::MotionCommand & active_command,
-    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+    const amr_msgs::msg::MotionCommand &active_command,
+    const amr_msgs::msg::LocalPlanStatus &local_plan_status,
     int attempt_index) const;
   bool should_redispatch_existing_plan_after_recovery(
-    const amr_msgs::msg::MotionCommand & active_command,
-    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
-    const std::string & executed_behavior) const;
-  int recovery_behavior_timeout_ms(const std::string & behavior) const;
-  std::string describe_local_escape_failure(const std::string & planner_message) const;
+    const amr_msgs::msg::MotionCommand &active_command,
+    const amr_msgs::msg::LocalPlanStatus &local_plan_status,
+    const std::string &executed_behavior) const;
+  int recovery_behavior_timeout_ms(const std::string &behavior) const;
+  std::string describe_local_escape_failure(const std::string &planner_message) const;
   std::string describe_recovery_policy(
-    const amr_msgs::msg::MotionCommand & active_command,
-    const amr_msgs::msg::LocalPlanStatus & local_plan_status,
-    const std::string & behavior,
+    const amr_msgs::msg::MotionCommand &active_command,
+    const amr_msgs::msg::LocalPlanStatus &local_plan_status,
+    const std::string &behavior,
     bool redispatch_existing_plan) const;
   bool has_active_goal() const;
   amr_msgs::msg::MotionCommand build_motion_command(
-    const geometry_msgs::msg::PoseStamped & goal_pose,
-    const std::string & route_id,
-    const nav_msgs::msg::Path & plan,
+    const geometry_msgs::msg::PoseStamped &goal_pose,
+    const std::string &route_id,
+    const nav_msgs::msg::Path &plan,
     bool align_heading_at_goal);
-  void publish_motion_command(const amr_msgs::msg::MotionCommand & command);
+  void publish_motion_command(const amr_msgs::msg::MotionCommand &command);
   void publish_stop_command();
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;

@@ -23,18 +23,18 @@ namespace amr::planner::global
 class PlannerServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit PlannerServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit PlannerServer(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~PlannerServer() = default;
 
 private:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   void handle_plan_segment(
     const std::shared_ptr<amr_msgs::srv::PlanSegment::Request> request,
@@ -43,36 +43,36 @@ private:
     const std::shared_ptr<amr_msgs::srv::PlanRoute::Request> request,
     std::shared_ptr<amr_msgs::srv::PlanRoute::Response> response);
   bool compute_plan_between_poses(
-    const geometry_msgs::msg::PoseStamped & start,
-    const geometry_msgs::msg::PoseStamped & goal,
-    nav_msgs::msg::Path & path,
-    std::string & message) const;
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal,
+    nav_msgs::msg::Path &path,
+    std::string &message) const;
   bool world_to_grid(
-    const geometry_msgs::msg::PoseStamped & pose,
-    GridCell & cell) const;
-  geometry_msgs::msg::PoseStamped grid_to_world(const GridCell & cell) const;
+    const geometry_msgs::msg::PoseStamped &pose,
+    GridCell &cell) const;
+  geometry_msgs::msg::PoseStamped grid_to_world(const GridCell &cell) const;
   bool is_occupied_cell(
-    const std::vector<int8_t> & occupancy_grid,
+    const std::vector<int8_t> &occupancy_grid,
     int width,
     int height,
-    const GridCell & cell) const;
+    const GridCell &cell) const;
   bool is_cell_collision(
-    const std::vector<int8_t> & occupancy_grid,
+    const std::vector<int8_t> &occupancy_grid,
     int width,
     int height,
-    const GridCell & cell,
+    const GridCell &cell,
     double yaw) const;
   bool find_nearest_free_cell(
-    const std::vector<int8_t> & occupancy_grid,
+    const std::vector<int8_t> &occupancy_grid,
     int width,
     int height,
-    GridCell & cell,
+    GridCell &cell,
     int max_radius,
     double yaw) const;
-  std::vector<GridCell> simplify_grid_path(const std::vector<GridCell> & grid_path) const;
+  std::vector<GridCell> simplify_grid_path(const std::vector<GridCell> &grid_path) const;
   nav_msgs::msg::Path create_path_message(
-    const std::vector<GridCell> & grid_path) const;
-  nav_msgs::msg::Path merge_paths(const std::vector<nav_msgs::msg::Path> & paths) const;
+    const std::vector<GridCell> &grid_path) const;
+  nav_msgs::msg::Path merge_paths(const std::vector<nav_msgs::msg::Path> &paths) const;
   void costmap_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map);
 
   rclcpp::Service<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_service_;

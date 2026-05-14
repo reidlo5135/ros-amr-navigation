@@ -15,7 +15,7 @@ using NavigateToPoses = amr_msgs::action::NavigateToPoses;
 using GoalHandleNavigateToPoses = rclcpp_action::ClientGoalHandle<NavigateToPoses>;
 
 template<typename... Args>
-void appendf(std::string & out, const char * format, Args... args)
+void appendf(std::string &out, const char *format, Args... args)
 {
   int length = std::snprintf(nullptr, 0, format, args...);
   if (length <= 0) {
@@ -67,7 +67,7 @@ uint64_t now_ms()
          (static_cast<uint64_t>(timestamp.tv_nsec) / 1000000ULL);
 }
 
-bool is_valid_robot_id(const std::string & robot_id)
+bool is_valid_robot_id(const std::string &robot_id)
 {
   if (robot_id.empty()) {
     return false;
@@ -84,7 +84,7 @@ bool is_valid_robot_id(const std::string & robot_id)
   return true;
 }
 
-std::string normalize_root(const std::string & root)
+std::string normalize_root(const std::string &root)
 {
   if (root.empty()) {
     return "/amr";
@@ -97,14 +97,14 @@ std::string normalize_root(const std::string & root)
 }
 
 std::string scoped_topic(
-  const std::string & root,
-  const std::string & robot_id,
-  const std::string & suffix)
+  const std::string &root,
+  const std::string &robot_id,
+  const std::string &suffix)
 {
   return normalize_root(root) + "/" + robot_id + "/" + suffix;
 }
 
-std::string build_viz_topic(const std::string & raw_topic)
+std::string build_viz_topic(const std::string &raw_topic)
 {
   const std::string marker = "/telemetry/";
   const std::string::size_type position = raw_topic.find(marker);
@@ -131,7 +131,7 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   return orientation;
 }
 
-void append_header(std::string & out, const std_msgs::msg::Header & header)
+void append_header(std::string &out, const std_msgs::msg::Header &header)
 {
   appendf(
     out,
@@ -141,7 +141,7 @@ void append_header(std::string & out, const std_msgs::msg::Header & header)
     escape_json(header.frame_id).c_str());
 }
 
-void append_frame(std::string & out, const std::string & frame_id)
+void append_frame(std::string &out, const std::string &frame_id)
 {
   if (frame_id.empty()) {
     return;
@@ -150,7 +150,7 @@ void append_frame(std::string & out, const std::string & frame_id)
   out += escape_json(frame_id);
 }
 
-void append_pose_fields(std::string & out, const geometry_msgs::msg::Pose & pose)
+void append_pose_fields(std::string &out, const geometry_msgs::msg::Pose &pose)
 {
   const double yaw = quaternion_to_yaw(
     pose.orientation.x,
@@ -171,7 +171,7 @@ void append_pose_fields(std::string & out, const geometry_msgs::msg::Pose & pose
     yaw);
 }
 
-void append_pose_stamped(std::string & out, const geometry_msgs::msg::PoseStamped & pose)
+void append_pose_stamped(std::string &out, const geometry_msgs::msg::PoseStamped &pose)
 {
   out += "{";
   if (!pose.header.frame_id.empty()) {
@@ -182,7 +182,7 @@ void append_pose_stamped(std::string & out, const geometry_msgs::msg::PoseStampe
   out += "}";
 }
 
-std::string serialize_pose_stamped(const geometry_msgs::msg::PoseStamped & pose)
+std::string serialize_pose_stamped(const geometry_msgs::msg::PoseStamped &pose)
 {
   std::string out;
   out.reserve(256U);
@@ -190,7 +190,7 @@ std::string serialize_pose_stamped(const geometry_msgs::msg::PoseStamped & pose)
   return out;
 }
 
-std::string serialize_path(const nav_msgs::msg::Path & path)
+std::string serialize_path(const nav_msgs::msg::Path &path)
 {
   std::string out;
   out.reserve(1024U);
@@ -210,7 +210,7 @@ std::string serialize_path(const nav_msgs::msg::Path & path)
   return out;
 }
 
-std::string serialize_occupancy_grid(const nav_msgs::msg::OccupancyGrid & grid)
+std::string serialize_occupancy_grid(const nav_msgs::msg::OccupancyGrid &grid)
 {
   std::string out;
   out.reserve(2048U);
@@ -250,7 +250,7 @@ std::string serialize_occupancy_grid(const nav_msgs::msg::OccupancyGrid & grid)
   return out;
 }
 
-std::string serialize_motion_status(const amr_msgs::msg::MotionStatus & status)
+std::string serialize_motion_status(const amr_msgs::msg::MotionStatus &status)
 {
   std::string out;
   out.reserve(1024U);
@@ -284,7 +284,7 @@ std::string serialize_motion_status(const amr_msgs::msg::MotionStatus & status)
   return out;
 }
 
-std::string serialize_scan(const sensor_msgs::msg::LaserScan & scan)
+std::string serialize_scan(const sensor_msgs::msg::LaserScan &scan)
 {
   std::string out;
   out.reserve(1024U);
@@ -317,7 +317,7 @@ std::string serialize_scan(const sensor_msgs::msg::LaserScan & scan)
   return out;
 }
 
-std::string serialize_odom(const nav_msgs::msg::Odometry & odom)
+std::string serialize_odom(const nav_msgs::msg::Odometry &odom)
 {
   std::string out;
   out.reserve(512U);
@@ -350,7 +350,7 @@ std::string serialize_odom(const nav_msgs::msg::Odometry & odom)
   return out;
 }
 
-std::string serialize_imu(const sensor_msgs::msg::Imu & imu)
+std::string serialize_imu(const sensor_msgs::msg::Imu &imu)
 {
   std::string out;
   out.reserve(512U);
@@ -377,7 +377,7 @@ std::string serialize_imu(const sensor_msgs::msg::Imu & imu)
   return out;
 }
 
-void append_double_array(std::string & out, const std::vector<double> & values)
+void append_double_array(std::string &out, const std::vector<double> &values)
 {
   out += "[";
   for (size_t index = 0; index < values.size(); ++index) {
@@ -389,7 +389,7 @@ void append_double_array(std::string & out, const std::vector<double> & values)
   out += "]";
 }
 
-void append_string_array(std::string & out, const std::vector<std::string> & values)
+void append_string_array(std::string &out, const std::vector<std::string> &values)
 {
   out += "[";
   for (size_t index = 0; index < values.size(); ++index) {
@@ -401,7 +401,7 @@ void append_string_array(std::string & out, const std::vector<std::string> & val
   out += "]";
 }
 
-std::string serialize_joint_states(const sensor_msgs::msg::JointState & joint_states)
+std::string serialize_joint_states(const sensor_msgs::msg::JointState &joint_states)
 {
   std::string out;
   out.reserve(768U);
@@ -437,7 +437,7 @@ std::string serialize_joint_states(const sensor_msgs::msg::JointState & joint_st
   return out;
 }
 
-void append_transform_stamped(std::string & out, const geometry_msgs::msg::TransformStamped & transform)
+void append_transform_stamped(std::string &out, const geometry_msgs::msg::TransformStamped &transform)
 {
   const double yaw = quaternion_to_yaw(
     transform.transform.rotation.x,
@@ -462,7 +462,7 @@ void append_transform_stamped(std::string & out, const geometry_msgs::msg::Trans
     yaw);
 }
 
-std::string serialize_tf_message(const tf2_msgs::msg::TFMessage & tf_message)
+std::string serialize_tf_message(const tf2_msgs::msg::TFMessage &tf_message)
 {
   std::string out;
   out.reserve(1024U);
@@ -478,8 +478,8 @@ std::string serialize_tf_message(const tf2_msgs::msg::TFMessage & tf_message)
 }
 
 std::string serialize_string_message(
-  const std_msgs::msg::String & message,
-  const std::vector<double> & footprint_polygon)
+  const std_msgs::msg::String &message,
+  const std::vector<double> &footprint_polygon)
 {
   std::string out = "{\"data\":";
   out += escape_json(message.data);
@@ -491,12 +491,12 @@ std::string serialize_string_message(
   return out;
 }
 
-std::string serialize_string_json_message(const std_msgs::msg::String & message)
+std::string serialize_string_json_message(const std_msgs::msg::String &message)
 {
   return message.data;
 }
 
-std::string serialize_battery_state(const sensor_msgs::msg::BatteryState & battery_state)
+std::string serialize_battery_state(const sensor_msgs::msg::BatteryState &battery_state)
 {
   std::string out;
   out.reserve(512U);
@@ -519,21 +519,21 @@ std::string serialize_battery_state(const sensor_msgs::msg::BatteryState & batte
   return out;
 }
 
-std::string uuid_to_hex(const std::array<uint8_t, 16> & uuid)
+std::string uuid_to_hex(const std::array<uint8_t, 16> &uuid)
 {
   static const char hex_chars[] = "0123456789abcdef";
   std::string out;
   out.reserve(uuid.size() * 2U);
   for (uint8_t value : uuid) {
-    out.push_back(hex_chars[(value >> 4U) & 0x0FU]);
-    out.push_back(hex_chars[value & 0x0FU]);
+    out.push_back(hex_chars[(value >> 4U) &0x0FU]);
+    out.push_back(hex_chars[value &0x0FU]);
   }
   return out;
 }
 
 std::string serialize_navigation_feedback(
-  const std::string & goal_id_hex,
-  const NavigateToPoses::Feedback & feedback)
+  const std::string &goal_id_hex,
+  const NavigateToPoses::Feedback &feedback)
 {
   std::string out;
   out.reserve(512U);
@@ -558,7 +558,7 @@ std::string serialize_navigation_feedback(
   return out;
 }
 
-std::string serialize_navigation_status(const action_msgs::msg::GoalStatusArray & status_array)
+std::string serialize_navigation_status(const action_msgs::msg::GoalStatusArray &status_array)
 {
   std::string out = "{\"status_list\":[";
   for (size_t index = 0; index < status_array.status_list.size(); ++index) {
@@ -576,9 +576,9 @@ std::string serialize_navigation_status(const action_msgs::msg::GoalStatusArray 
 }
 
 std::string serialize_simple_response(
-  const std::string & request_id,
+  const std::string &request_id,
   bool success,
-  const std::string & message)
+  const std::string &message)
 {
   std::string out = "{\"request_id\":";
   out += escape_json(request_id);
@@ -589,11 +589,11 @@ std::string serialize_simple_response(
 }
 
 std::string serialize_ping_response(
-  const std::string & request_id,
+  const std::string &request_id,
   bool success,
   double sent_at_ms,
   uint64_t bridge_time_ms,
-  const std::string & message)
+  const std::string &message)
 {
   std::string out = "{\"request_id\":";
   out += escape_json(request_id);
@@ -609,13 +609,13 @@ std::string serialize_ping_response(
 }
 
 std::string serialize_navigation_result(
-  const std::string & request_id,
+  const std::string &request_id,
   bool success,
   int status_code,
   bool accepted,
   bool completed,
   uint32_t completed_goals,
-  const std::string & message)
+  const std::string &message)
 {
   std::string out = "{\"request_id\":";
   out += escape_json(request_id);
@@ -633,7 +633,7 @@ std::string serialize_navigation_result(
   return out;
 }
 
-const char * skip_ws(const char * cursor, const char * end)
+const char *skip_ws(const char *cursor, const char *end)
 {
   while (cursor < end && std::isspace(static_cast<unsigned char>(*cursor))) {
     ++cursor;
@@ -641,12 +641,12 @@ const char * skip_ws(const char * cursor, const char * end)
   return cursor;
 }
 
-const char * find_key(const char * begin, const char * end, const char * key)
+const char *find_key(const char *begin, const char *end, const char *key)
 {
   std::string pattern = "\"";
   pattern += key;
   pattern += "\"";
-  for (const char * cursor = begin; cursor + static_cast<ptrdiff_t>(pattern.size()) <= end; ++cursor) {
+  for (const char *cursor = begin; cursor + static_cast<ptrdiff_t>(pattern.size()) <= end; ++cursor) {
     if (std::memcmp(cursor, pattern.data(), pattern.size()) == 0) {
       return cursor + static_cast<ptrdiff_t>(pattern.size());
     }
@@ -655,12 +655,12 @@ const char * find_key(const char * begin, const char * end, const char * key)
 }
 
 bool extract_json_string_in_range(
-  const char * begin,
-  const char * end,
-  const char * key,
-  std::string & output)
+  const char *begin,
+  const char *end,
+  const char *key,
+  std::string &output)
 {
-  const char * cursor = find_key(begin, end, key);
+  const char *cursor = find_key(begin, end, key);
   if (cursor == nullptr) {
     return false;
   }
@@ -685,12 +685,12 @@ bool extract_json_string_in_range(
 }
 
 bool extract_json_double_in_range(
-  const char * begin,
-  const char * end,
-  const char * key,
-  double & output)
+  const char *begin,
+  const char *end,
+  const char *key,
+  double &output)
 {
-  const char * cursor = find_key(begin, end, key);
+  const char *cursor = find_key(begin, end, key);
   if (cursor == nullptr) {
     return false;
   }
@@ -699,19 +699,19 @@ bool extract_json_double_in_range(
     return false;
   }
   cursor = skip_ws(cursor + 1, end);
-  char * parsed_end = nullptr;
+  char *parsed_end = nullptr;
   output = std::strtod(cursor, &parsed_end);
   return parsed_end != cursor;
 }
 
 bool extract_json_object_in_range(
-  const char * begin,
-  const char * end,
-  const char * key,
-  const char *& object_begin,
-  const char *& object_end)
+  const char *begin,
+  const char *end,
+  const char *key,
+  const char *&object_begin,
+  const char *&object_end)
 {
-  const char * cursor = find_key(begin, end, key);
+  const char *cursor = find_key(begin, end, key);
   if (cursor == nullptr) {
     return false;
   }
@@ -741,13 +741,13 @@ bool extract_json_object_in_range(
 }
 
 bool extract_json_array_in_range(
-  const char * begin,
-  const char * end,
-  const char * key,
-  const char *& array_begin,
-  const char *& array_end)
+  const char *begin,
+  const char *end,
+  const char *key,
+  const char *&array_begin,
+  const char *&array_end)
 {
-  const char * cursor = find_key(begin, end, key);
+  const char *cursor = find_key(begin, end, key);
   if (cursor == nullptr) {
     return false;
   }
@@ -777,18 +777,18 @@ bool extract_json_array_in_range(
 }
 
 bool parse_pose_stamped_in_range(
-  const char * begin,
-  const char * end,
-  geometry_msgs::msg::PoseStamped & pose)
+  const char *begin,
+  const char *end,
+  geometry_msgs::msg::PoseStamped &pose)
 {
-  const char * header_begin = nullptr;
-  const char * header_end = nullptr;
-  const char * position_begin = nullptr;
-  const char * position_end = nullptr;
-  const char * orientation_begin = nullptr;
-  const char * orientation_end = nullptr;
-  const char * pose_begin = nullptr;
-  const char * pose_end = nullptr;
+  const char *header_begin = nullptr;
+  const char *header_end = nullptr;
+  const char *position_begin = nullptr;
+  const char *position_end = nullptr;
+  const char *orientation_begin = nullptr;
+  const char *orientation_end = nullptr;
+  const char *pose_begin = nullptr;
+  const char *pose_end = nullptr;
   std::string frame_id;
 
   pose = geometry_msgs::msg::PoseStamped();
@@ -846,11 +846,11 @@ bool parse_pose_stamped_in_range(
 }
 
 bool parse_waypoints_array(
-  const char * begin,
-  const char * end,
-  std::vector<geometry_msgs::msg::PoseStamped> & waypoints)
+  const char *begin,
+  const char *end,
+  std::vector<geometry_msgs::msg::PoseStamped> &waypoints)
 {
-  const char * cursor = begin;
+  const char *cursor = begin;
   waypoints.clear();
   if (cursor == nullptr || end == nullptr || *cursor != '[') {
     return false;
@@ -866,7 +866,7 @@ bool parse_waypoints_array(
       continue;
     }
     int depth = 0;
-    const char * object_end = cursor;
+    const char *object_end = cursor;
     while (object_end <= end) {
       if (*object_end == '{') {
         ++depth;
@@ -892,12 +892,12 @@ bool parse_waypoints_array(
 }
 
 bool deserialize_twist_raw(
-  const void * payload,
+  const void *payload,
   size_t payload_length,
-  geometry_msgs::msg::Twist & twist)
+  geometry_msgs::msg::Twist &twist)
 {
   rclcpp::SerializedMessage serialized(payload_length);
-  rcl_serialized_message_t & rmw = serialized.get_rcl_serialized_message();
+  rcl_serialized_message_t &rmw = serialized.get_rcl_serialized_message();
   std::memcpy(rmw.buffer, payload, payload_length);
   rmw.buffer_length = payload_length;
   rclcpp::Serialization<geometry_msgs::msg::Twist> serializer;
@@ -909,14 +909,14 @@ bool deserialize_twist_raw(
   }
 }
 
-bool extract_twist_from_json(const std::string & payload, geometry_msgs::msg::Twist & twist)
+bool extract_twist_from_json(const std::string &payload, geometry_msgs::msg::Twist &twist)
 {
-  const char * begin = payload.c_str();
-  const char * end = begin + payload.size();
-  const char * linear_begin = nullptr;
-  const char * linear_end = nullptr;
-  const char * angular_begin = nullptr;
-  const char * angular_end = nullptr;
+  const char *begin = payload.c_str();
+  const char *end = begin + payload.size();
+  const char *linear_begin = nullptr;
+  const char *linear_end = nullptr;
+  const char *angular_begin = nullptr;
+  const char *angular_end = nullptr;
   twist = geometry_msgs::msg::Twist();
   if (extract_json_object_in_range(begin, end, "linear", linear_begin, linear_end)) {
     (void)extract_json_double_in_range(linear_begin, linear_end + 1, "x", twist.linear.x);
@@ -939,7 +939,7 @@ bool extract_twist_from_json(const std::string & payload, geometry_msgs::msg::Tw
   return true;
 }
 
-bool ensure_directory_exists(const std::string & path)
+bool ensure_directory_exists(const std::string &path)
 {
   if (path.empty()) {
     return false;
@@ -959,7 +959,7 @@ bool ensure_directory_exists(const std::string & path)
   return (::mkdir(buffer.c_str(), 0775) == 0 || errno == EEXIST);
 }
 
-bool is_valid_map_basename(const std::string & basename)
+bool is_valid_map_basename(const std::string &basename)
 {
   if (basename.empty()) {
     return false;
@@ -977,11 +977,11 @@ bool is_valid_map_basename(const std::string & basename)
 }
 
 bool write_temp_map_files(
-  const nav_msgs::msg::OccupancyGrid & map,
-  const std::string & directory,
-  const std::string & basename,
-  std::string & image_path,
-  std::string & yaml_path)
+  const nav_msgs::msg::OccupancyGrid &map,
+  const std::string &directory,
+  const std::string &basename,
+  std::string &image_path,
+  std::string &yaml_path)
 {
   if (map.info.width == 0U || map.info.height == 0U || map.data.empty()) {
     return false;
@@ -991,7 +991,7 @@ bool write_temp_map_files(
   }
   image_path = directory + "/" + basename + ".pgm";
   yaml_path = directory + "/" + basename + ".yaml";
-  FILE * image_file = std::fopen(image_path.c_str(), "wb");
+  FILE *image_file = std::fopen(image_path.c_str(), "wb");
   if (image_file == nullptr) {
     return false;
   }
@@ -999,7 +999,7 @@ bool write_temp_map_files(
   for (size_t row = 0U; row < map.info.height; ++row) {
     const size_t map_row = map.info.height - 1U - row;
     for (size_t col = 0U; col < map.info.width; ++col) {
-      const size_t index = (map_row * map.info.width) + col;
+      const size_t index = (map_row *map.info.width) + col;
       const int8_t cell = map.data[index];
       uint8_t pixel = 205U;
       if (cell == 0) {
@@ -1012,7 +1012,7 @@ bool write_temp_map_files(
   }
   std::fclose(image_file);
 
-  FILE * yaml_file = std::fopen(yaml_path.c_str(), "wb");
+  FILE *yaml_file = std::fopen(yaml_path.c_str(), "wb");
   if (yaml_file == nullptr) {
     return false;
   }
@@ -1049,12 +1049,12 @@ int wrapped_result_status(rclcpp_action::ResultCode code)
 }
 
 template<typename MsgT>
-std::vector<uint8_t> serialize_raw_message(const MsgT & message)
+std::vector<uint8_t> serialize_raw_message(const MsgT &message)
 {
   rclcpp::Serialization<MsgT> serializer;
   rclcpp::SerializedMessage serialized;
   serializer.serialize_message(&message, &serialized);
-  const rcl_serialized_message_t & rmw = serialized.get_rcl_serialized_message();
+  const rcl_serialized_message_t &rmw = serialized.get_rcl_serialized_message();
   return std::vector<uint8_t>(rmw.buffer, rmw.buffer + rmw.buffer_length);
 }
 
@@ -1457,7 +1457,7 @@ private:
       rclcpp::QoS(rclcpp::KeepLast(1)).transient_local(),
       true,
       true,
-      [this](const std_msgs::msg::String & message) {
+      [this](const std_msgs::msg::String &message) {
         return serialize_string_message(message, footprint_polygon_);
       },
       true,
@@ -1500,7 +1500,7 @@ private:
       false,
       0U,
       700U,
-      [this](const nav_msgs::msg::OccupancyGrid & message) {
+      [this](const nav_msgs::msg::OccupancyGrid &message) {
         latest_temp_map_ = message;
         has_temp_map_ = true;
       });
@@ -1563,10 +1563,10 @@ private:
 
   template<typename MsgT>
   void add_endpoint(
-    const std::string & label,
-    const std::string & ros_topic,
-    const std::string & mqtt_topic,
-    const rclcpp::QoS & qos,
+    const std::string &label,
+    const std::string &ros_topic,
+    const std::string &mqtt_topic,
+    const rclcpp::QoS &qos,
     bool retained,
     bool raw_passthrough,
     JsonSerializer<MsgT> serializer,
@@ -1737,12 +1737,12 @@ private:
       {mqtt_.request_plan_segment, mqtt_.service_qos},
       {mqtt_.request_plan_route, mqtt_.service_qos},
     };
-    for (const std::pair<std::string, int> & entry : topics) {
+    for (const std::pair<std::string, int> &entry : topics) {
       (void)MQTTClient_subscribe(mqtt_client_, entry.first.c_str(), entry.second);
     }
   }
 
-  void publish_payload(const std::string & topic, const std::string & payload, int qos, bool retained)
+  void publish_payload(const std::string &topic, const std::string &payload, int qos, bool retained)
   {
     if (!ensure_connected()) {
       return;
@@ -1762,8 +1762,8 @@ private:
   }
 
   void publish_binary_payload(
-    const std::string & topic,
-    const std::vector<uint8_t> & payload,
+    const std::string &topic,
+    const std::vector<uint8_t> &payload,
     int qos,
     bool retained)
   {
@@ -1785,22 +1785,22 @@ private:
   }
 
   void publish_simple_response(
-    const std::string & topic,
-    const std::string & request_id,
+    const std::string &topic,
+    const std::string &request_id,
     bool success,
-    const std::string & message)
+    const std::string &message)
   {
     publish_payload(topic, serialize_simple_response(request_id, success, message), mqtt_.service_qos, false);
   }
 
   void publish_navigation_result(
-    const std::string & request_id,
+    const std::string &request_id,
     bool success,
     int status_code,
     bool accepted,
     bool completed,
     uint32_t completed_goals,
-    const std::string & message)
+    const std::string &message)
   {
     publish_payload(
       mqtt_.response_navigate_to_poses,
@@ -1816,7 +1816,7 @@ private:
       false);
   }
 
-  void handle_cmd_vel_message(const void * payload, size_t payload_length)
+  void handle_cmd_vel_message(const void *payload, size_t payload_length)
   {
     geometry_msgs::msg::Twist twist;
     if (payload != nullptr && payload_length > 0U && static_cast<const unsigned char *>(payload)[0] == '{') {
@@ -1830,7 +1830,7 @@ private:
     cmd_vel_publisher_->publish(twist);
   }
 
-  void handle_set_initial_pose_command(const std::string & payload)
+  void handle_set_initial_pose_command(const std::string &payload)
   {
     std::string request_id;
     std::string frame_id{"map"};
@@ -1896,7 +1896,7 @@ private:
     publish_simple_response(mqtt_.response_set_initial_pose, request_id, true, "initial pose published");
   }
 
-  void handle_save_map_command(const std::string & payload)
+  void handle_save_map_command(const std::string &payload)
   {
     std::string request_id;
     std::string basename;
@@ -1919,13 +1919,13 @@ private:
     publish_simple_response(mqtt_.response_save_map, request_id, true, "saved map files");
   }
 
-  void handle_plan_segment_request(const std::string & payload)
+  void handle_plan_segment_request(const std::string &payload)
   {
     std::string request_id;
-    const char * start_begin = nullptr;
-    const char * start_end = nullptr;
-    const char * goal_begin = nullptr;
-    const char * goal_end = nullptr;
+    const char *start_begin = nullptr;
+    const char *start_end = nullptr;
+    const char *goal_begin = nullptr;
+    const char *goal_end = nullptr;
     amr_msgs::srv::PlanSegment::Request request;
 
     if (!extract_json_string_in_range(payload.c_str(), payload.c_str() + payload.size(), "request_id", request_id) ||
@@ -1946,13 +1946,13 @@ private:
     publish_simple_response(mqtt_.response_plan_segment, request_id, true, "plan_segment request dispatched");
   }
 
-  void handle_plan_route_request(const std::string & payload)
+  void handle_plan_route_request(const std::string &payload)
   {
     std::string request_id;
-    const char * start_begin = nullptr;
-    const char * start_end = nullptr;
-    const char * waypoints_begin = nullptr;
-    const char * waypoints_end = nullptr;
+    const char *start_begin = nullptr;
+    const char *start_end = nullptr;
+    const char *waypoints_begin = nullptr;
+    const char *waypoints_end = nullptr;
     amr_msgs::srv::PlanRoute::Request request;
 
     if (!extract_json_string_in_range(payload.c_str(), payload.c_str() + payload.size(), "request_id", request_id) ||
@@ -1973,11 +1973,11 @@ private:
     publish_simple_response(mqtt_.response_plan_route, request_id, true, "plan_route request dispatched");
   }
 
-  void handle_navigation_command(const std::string & payload)
+  void handle_navigation_command(const std::string &payload)
   {
     std::string request_id;
-    const char * goals_begin = nullptr;
-    const char * goals_end = nullptr;
+    const char *goals_begin = nullptr;
+    const char *goals_end = nullptr;
     NavigateToPoses::Goal goal;
 
     if (!extract_json_string_in_range(payload.c_str(), payload.c_str() + payload.size(), "request_id", request_id) ||
@@ -2029,7 +2029,7 @@ private:
           false);
       };
     options.result_callback =
-      [this](const GoalHandleNavigateToPoses::WrappedResult & result) {
+      [this](const GoalHandleNavigateToPoses::WrappedResult &result) {
         const bool success =
           result.result != nullptr &&
           result.code == rclcpp_action::ResultCode::SUCCEEDED &&
@@ -2057,7 +2057,7 @@ private:
     (void)navigate_client_->async_send_goal(goal, options);
   }
 
-  void handle_navigation_cancel(const std::string & payload)
+  void handle_navigation_cancel(const std::string &payload)
   {
     std::string request_id;
     (void)extract_json_string_in_range(payload.c_str(), payload.c_str() + payload.size(), "request_id", request_id);
@@ -2069,7 +2069,7 @@ private:
     publish_simple_response(mqtt_.response_navigate_to_poses, request_id, true, "goal cancel dispatched");
   }
 
-  void handle_ping(const std::string & payload)
+  void handle_ping(const std::string &payload)
   {
     std::string request_id;
     double sent_at_ms = 0.0;
@@ -2084,7 +2084,7 @@ private:
       false);
   }
 
-  void handle_set_robot_id(const std::string & payload)
+  void handle_set_robot_id(const std::string &payload)
   {
     std::string request_id;
     std::string robot_id;
@@ -2139,9 +2139,9 @@ private:
     }
     int processed = 0;
     while (processed < static_cast<int>(k_max_processed_mqtt_messages)) {
-      char * topic_name = nullptr;
+      char *topic_name = nullptr;
       int topic_length = 0;
-      MQTTClient_message * message = nullptr;
+      MQTTClient_message *message = nullptr;
       const int rc = MQTTClient_receive(mqtt_client_, &topic_name, &topic_length, &message, 0UL);
       if (rc != MQTTCLIENT_SUCCESS) {
         if (rc == MQTTCLIENT_DISCONNECTED) {

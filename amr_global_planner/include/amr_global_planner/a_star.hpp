@@ -21,7 +21,7 @@ struct GridCell
   int x;
   int y;
 
-  bool operator==(const GridCell & other) const;
+  bool operator==(const GridCell &other) const;
 };
 
 struct AStarPlanResult
@@ -62,11 +62,11 @@ public:
     double origin_y);
 
   AStarPlanResult plan(
-    const std::vector<int8_t> & occupancy_grid,
+    const std::vector<int8_t> &occupancy_grid,
     int width,
     int height,
-    const GridCell & start,
-    const GridCell & goal,
+    const GridCell &start,
+    const GridCell &goal,
     double start_yaw = 0.0,
     double goal_yaw = 0.0) const;
 
@@ -80,30 +80,30 @@ private:
     bool closed;
   };
 
-  bool is_within_bounds(const GridCell & cell, int width, int height) const;
+  bool is_within_bounds(const GridCell &cell, int width, int height) const;
   bool is_occupied(
-    const std::vector<int8_t> & occupancy_grid,
+    const std::vector<int8_t> &occupancy_grid,
     int height,
     int width,
-    const GridCell & cell,
+    const GridCell &cell,
     double yaw) const;
   bool is_diagonal_move_blocked(
-    const std::vector<int8_t> & occupancy_grid,
+    const std::vector<int8_t> &occupancy_grid,
     int width,
     int height,
-    const GridCell & current,
-    const GridCell & next) const;
-  int to_index(const GridCell & cell, int width) const;
-  double heuristic(const GridCell & from, const GridCell & to) const;
+    const GridCell &current,
+    const GridCell &next) const;
+  int to_index(const GridCell &cell, int width) const;
+  double heuristic(const GridCell &from, const GridCell &to) const;
   double turn_penalty(
-    const GridCell & previous,
-    const GridCell & current,
-    const GridCell & next) const;
+    const GridCell &previous,
+    const GridCell &current,
+    const GridCell &next) const;
   double row_bias_penalty(
-    const GridCell & next,
-    const GridCell & start,
-    const GridCell & goal) const;
-  std::vector<GridCell> get_neighbors(const GridCell & cell) const;
+    const GridCell &next,
+    const GridCell &start,
+    const GridCell &goal) const;
+  std::vector<GridCell> get_neighbors(const GridCell &cell) const;
 
   int obstacle_threshold_;
   bool allow_unknown_;

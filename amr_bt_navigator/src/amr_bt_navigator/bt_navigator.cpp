@@ -35,7 +35,7 @@ geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw)
 }
 
 geometry_msgs::msg::PoseStamped make_route_goal_pose(
-  const std::vector<geometry_msgs::msg::PoseStamped> & goal_poses,
+  const std::vector<geometry_msgs::msg::PoseStamped> &goal_poses,
   std::size_t index)
 {
   geometry_msgs::msg::PoseStamped goal_pose = goal_poses[index];
@@ -43,7 +43,7 @@ geometry_msgs::msg::PoseStamped make_route_goal_pose(
     return goal_pose;
   }
 
-  const auto & next_goal = goal_poses[index + 1U];
+  const auto &next_goal = goal_poses[index + 1U];
   const double dx = next_goal.pose.position.x - goal_pose.pose.position.x;
   const double dy = next_goal.pose.position.y - goal_pose.pose.position.y;
   if ((dx * dx) + (dy * dy) <= 1e-8) {
@@ -56,7 +56,7 @@ geometry_msgs::msg::PoseStamped make_route_goal_pose(
 
 }  // namespace
 
-Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
+Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("navigator", options),
   navigate_action_name_("/amr/navigator/navigate_to_pose"),
   navigate_poses_action_name_("/amr/navigator/navigate_to_poses"),
@@ -105,7 +105,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions & options)
   this->declare_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 }
 
-Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::State & state)
+Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->get_parameter("actions.navigate_to_pose", this->navigate_action_name_);
@@ -187,7 +187,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->get_node_waitables_interface(),
     this->navigate_action_name_,
     [this](
-      const rclcpp_action::GoalUUID & uuid,
+      const rclcpp_action::GoalUUID &uuid,
       std::shared_ptr<const NavigateToPose::Goal> goal) {
       return this->handle_goal(uuid, goal);
     },
@@ -204,7 +204,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->get_node_waitables_interface(),
     this->navigate_poses_action_name_,
     [this](
-      const rclcpp_action::GoalUUID & uuid,
+      const rclcpp_action::GoalUUID &uuid,
       std::shared_ptr<const NavigateToPoses::Goal> goal) {
       return this->handle_goals(uuid, goal);
     },
@@ -233,7 +233,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   return CallbackReturn::SUCCESS;
 }
 
-Btnavigator::CallbackReturn Btnavigator::on_activate(const rclcpp_lifecycle::State & state)
+Btnavigator::CallbackReturn Btnavigator::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->motion_command_publisher_) {
@@ -243,7 +243,7 @@ Btnavigator::CallbackReturn Btnavigator::on_activate(const rclcpp_lifecycle::Sta
   return CallbackReturn::SUCCESS;
 }
 
-Btnavigator::CallbackReturn Btnavigator::on_deactivate(const rclcpp_lifecycle::State & state)
+Btnavigator::CallbackReturn Btnavigator::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->motion_command_publisher_) {
@@ -253,7 +253,7 @@ Btnavigator::CallbackReturn Btnavigator::on_deactivate(const rclcpp_lifecycle::S
   return CallbackReturn::SUCCESS;
 }
 
-Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::State & state)
+Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->action_server_.reset();
@@ -278,7 +278,7 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   return CallbackReturn::SUCCESS;
 }
 
-Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::State & state)
+Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->action_server_.reset();
@@ -304,7 +304,7 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
 }
 
 rclcpp_action::GoalResponse Btnavigator::handle_goal(
-  const rclcpp_action::GoalUUID & uuid,
+  const rclcpp_action::GoalUUID &uuid,
   std::shared_ptr<const NavigateToPose::Goal> goal)
 {
   (void)uuid;
@@ -336,7 +336,7 @@ rclcpp_action::GoalResponse Btnavigator::handle_goal(
 }
 
 rclcpp_action::GoalResponse Btnavigator::handle_goals(
-  const rclcpp_action::GoalUUID & uuid,
+  const rclcpp_action::GoalUUID &uuid,
   std::shared_ptr<const NavigateToPoses::Goal> goal)
 {
   (void)uuid;
@@ -367,8 +367,8 @@ rclcpp_action::GoalResponse Btnavigator::handle_goals(
     }
   }
 
-  const auto & first_goal = goal->goal_poses.front();
-  const auto & last_goal = goal->goal_poses.back();
+  const auto &first_goal = goal->goal_poses.front();
+  const auto &last_goal = goal->goal_poses.back();
   RCLCPP_INFO(
     this->get_logger(),
     "Accepted waypoint route with %zu goals: first=(%.3f, %.3f) last=(%.3f, %.3f)",
@@ -433,10 +433,10 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
     true,
     [goal_handle]() { return goal_handle->is_canceling(); },
     [goal_handle, this](
-      const geometry_msgs::msg::PoseStamped & pose,
-      const amr_msgs::msg::MotionStatus & status,
+      const geometry_msgs::msg::PoseStamped &pose,
+      const amr_msgs::msg::MotionStatus &status,
       int32_t recovery_count,
-      const rclcpp::Duration & nav_time) {
+      const rclcpp::Duration &nav_time) {
       auto feedback = std::make_shared<NavigateToPose::Feedback>();
       feedback->current_pose = pose;
       feedback->distance_remaining = static_cast<float>(status.remaining_distance);
@@ -513,10 +513,10 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
       align_heading_at_goal,
       [goal_handle]() { return goal_handle->is_canceling(); },
       [goal_handle, index, goal_count, this](
-        const geometry_msgs::msg::PoseStamped & pose,
-        const amr_msgs::msg::MotionStatus & status,
+        const geometry_msgs::msg::PoseStamped &pose,
+        const amr_msgs::msg::MotionStatus &status,
         int32_t recovery_count,
-        const rclcpp::Duration & nav_time) {
+        const rclcpp::Duration &nav_time) {
         auto feedback = std::make_shared<NavigateToPoses::Feedback>();
         feedback->current_pose = pose;
         feedback->current_goal_index = static_cast<uint32_t>(index);
@@ -570,15 +570,15 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
 }
 
 Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
-  const geometry_msgs::msg::PoseStamped & goal_pose,
-  const std::string & route_id,
+  const geometry_msgs::msg::PoseStamped &goal_pose,
+  const std::string &route_id,
   const bool align_heading_at_goal,
-  const std::function<bool()> & is_cancel_requested,
+  const std::function<bool()> &is_cancel_requested,
   const std::function<void(
     const geometry_msgs::msg::PoseStamped &,
     const amr_msgs::msg::MotionStatus &,
     int32_t,
-    const rclcpp::Duration &)> & publish_feedback)
+    const rclcpp::Duration &)> &publish_feedback)
 {
   RCLCPP_INFO(
     this->get_logger(),
@@ -609,7 +609,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleCondition(
     "CheckNavigatorReady",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       std::string error_message;
       if (navigator->is_navigator_ready(error_message)) {
         return BT::NodeStatus::SUCCESS;
@@ -621,7 +621,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleCondition(
     "CheckCurrentPose",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto current_pose = navigator->get_current_pose_copy();
       if (current_pose.header.frame_id.empty()) {
         blackboard->set("status_message", std::string("Current pose is not available yet."));
@@ -634,7 +634,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleAction(
     "WaitForPlannerService",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto cancel_requested =
         blackboard->get<std::function<bool()>>("is_cancel_requested");
       std::string error_message;
@@ -648,7 +648,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleAction(
     "RequestGlobalPlan",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto cancel_requested =
         blackboard->get<std::function<bool()>>("is_cancel_requested");
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
@@ -683,7 +683,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleAction(
     "PublishMotionCommand",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
       const bool align_heading_at_goal = blackboard->get<bool>("align_heading_at_goal");
@@ -715,7 +715,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleCondition(
     "CheckGoalReached",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
       const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
       if (status.command_id == command.command_id && status.goal_reached) {
@@ -727,7 +727,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleCondition(
     "CheckRecoveryNeeded",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
       const auto local_plan_status = navigator->get_local_plan_status_copy();
       const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
@@ -745,7 +745,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
 
       if (recovery_reacquire_until_ns > 0 && recovery_reacquire_command_id != 0U) {
         const bool reacquired =
-          status.command_id == recovery_reacquire_command_id &&
+          status.command_id == recovery_reacquire_command_id && 
           navigator->has_reacquired_navigation(command, status, local_plan_status);
         if (reacquired) {
           blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
@@ -785,8 +785,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       }
 
       const bool planner_recovery_needed =
-        local_plan_status.command_id == command.command_id &&
-        local_plan_status.active &&
+        local_plan_status.command_id == command.command_id && 
+        local_plan_status.active && 
         local_plan_status.recovery_required;
       const bool recovery_needed = status.blocked || status.stalled || planner_recovery_needed;
       if (!recovery_needed) {
@@ -847,7 +847,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleAction(
     "HandleRecoveryCycle",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto cancel_requested =
         blackboard->get<std::function<bool()>>("is_cancel_requested");
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
@@ -862,7 +862,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       std::string error_message;
       amr_msgs::msg::MotionCommand recovery_command;
       const auto arm_recovery_reacquire =
-        [&](const amr_msgs::msg::MotionCommand & dispatched_command) {
+        [&](const amr_msgs::msg::MotionCommand &dispatched_command) {
           const auto reacquire_until_ns =
             navigator->now().nanoseconds() +
             (static_cast<int64_t>(std::max(250, navigator->recovery_reacquire_settle_ms_)) * 1000000LL);
@@ -952,7 +952,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       }
 
       if (
-        planner_owned_recovery &&
+        planner_owned_recovery && 
         planner_decision == amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED)
       {
         nav_msgs::msg::Path replanned_path;
@@ -1107,7 +1107,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleAction(
     "PublishStopCommand",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       navigator->publish_stop_command();
       blackboard->set("status_message", std::string("Stop command dispatched."));
       RCLCPP_WARN(
@@ -1135,7 +1135,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   factory.registerSimpleAction(
     "WaitFeedbackPeriod",
     [blackboard](BT::TreeNode &) {
-      auto * navigator = blackboard->get<Btnavigator *>("navigator");
+      auto *navigator = blackboard->get<Btnavigator *>("navigator");
       std::this_thread::sleep_for(std::chrono::milliseconds(navigator->feedback_period_ms_));
       return BT::NodeStatus::SUCCESS;
     });
@@ -1146,7 +1146,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     factory.registerBehaviorTreeFromFile(this->behavior_tree_xml_path_);
     plan_tree = factory.createTree("PlanAndDispatch", blackboard);
     monitor_tree = factory.createTree("MonitorExecution", blackboard);
-  } catch (const std::exception & error) {
+  } catch (const std::exception &error) {
     return ExecutionResult{
       false,
       false,
@@ -1247,7 +1247,7 @@ amr_msgs::msg::LocalPlanStatus Btnavigator::get_local_plan_status_copy() const
   return this->latest_local_plan_status_;
 }
 
-bool Btnavigator::is_navigator_ready(std::string & error_message) const
+bool Btnavigator::is_navigator_ready(std::string &error_message) const
 {
   if (
     !this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated() ||
@@ -1262,8 +1262,8 @@ bool Btnavigator::is_navigator_ready(std::string & error_message) const
 }
 
 bool Btnavigator::wait_for_planner_service(
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto cancel_requested = [&is_cancel_requested]() {
     return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
@@ -1293,8 +1293,8 @@ bool Btnavigator::wait_for_planner_service(
 }
 
 bool Btnavigator::wait_for_recovery_services(
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto cancel_requested = [&is_cancel_requested]() {
     return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
@@ -1358,11 +1358,11 @@ bool Btnavigator::wait_for_recovery_services(
 }
 
 bool Btnavigator::request_global_plan(
-  const geometry_msgs::msg::PoseStamped & start,
-  const geometry_msgs::msg::PoseStamped & goal,
-  nav_msgs::msg::Path & plan,
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal,
+  nav_msgs::msg::Path &plan,
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::PlanSegment::Request>();
   auto cancel_requested = [&is_cancel_requested]() {
@@ -1392,7 +1392,7 @@ bool Btnavigator::request_global_plan(
     }
     elapsed_ms += 50;
   }
-  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ && 
     future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while waiting for a global plan.";
@@ -1412,12 +1412,12 @@ bool Btnavigator::request_global_plan(
 }
 
 bool Btnavigator::request_recovery_command(
-  const std::string & behavior,
-  const geometry_msgs::msg::PoseStamped & current_pose,
-  const geometry_msgs::msg::PoseStamped & goal_pose,
-  amr_msgs::msg::MotionCommand & command,
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  const std::string &behavior,
+  const geometry_msgs::msg::PoseStamped &current_pose,
+  const geometry_msgs::msg::PoseStamped &goal_pose,
+  amr_msgs::msg::MotionCommand &command,
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::PlanRecovery::Request>();
   auto cancel_requested = [&is_cancel_requested]() {
@@ -1440,7 +1440,7 @@ bool Btnavigator::request_recovery_command(
     }
     elapsed_ms += 50;
   }
-  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ && 
     future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while waiting for a recovery command.";
@@ -1463,11 +1463,11 @@ bool Btnavigator::request_recovery_command(
 }
 
 bool Btnavigator::request_local_escape_plan(
-  const geometry_msgs::msg::PoseStamped & current_pose,
-  const nav_msgs::msg::Path & source_plan,
-  nav_msgs::msg::Path & escape_plan,
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  const geometry_msgs::msg::PoseStamped &current_pose,
+  const nav_msgs::msg::Path &source_plan,
+  nav_msgs::msg::Path &escape_plan,
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::PlanLocalEscape::Request>();
   auto cancel_requested = [&is_cancel_requested]() {
@@ -1489,7 +1489,7 @@ bool Btnavigator::request_local_escape_plan(
     }
     elapsed_ms += 50;
   }
-  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ && 
     future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while waiting for a local escape plan.";
@@ -1508,9 +1508,9 @@ bool Btnavigator::request_local_escape_plan(
 }
 
 bool Btnavigator::should_try_local_escape(
-  const amr_msgs::msg::MotionCommand & active_command,
-  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
-  const nav_msgs::msg::Path & planned_path,
+  const amr_msgs::msg::MotionCommand &active_command,
+  const amr_msgs::msg::LocalPlanStatus &local_plan_status,
+  const nav_msgs::msg::Path &planned_path,
   bool local_escape_dispatched) const
 {
   if (local_escape_dispatched || planned_path.poses.empty()) {
@@ -1534,9 +1534,9 @@ bool Btnavigator::should_try_local_escape(
 }
 
 bool Btnavigator::has_reacquired_navigation(
-  const amr_msgs::msg::MotionCommand & active_command,
-  const amr_msgs::msg::MotionStatus & motion_status,
-  const amr_msgs::msg::LocalPlanStatus & local_plan_status) const
+  const amr_msgs::msg::MotionCommand &active_command,
+  const amr_msgs::msg::MotionStatus &motion_status,
+  const amr_msgs::msg::LocalPlanStatus &local_plan_status) const
 {
   if (
     motion_status.command_id != active_command.command_id ||
@@ -1555,23 +1555,23 @@ bool Btnavigator::has_reacquired_navigation(
   }
 
   return
-    local_plan_status.local_plan_valid &&
+    local_plan_status.local_plan_valid && 
     !local_plan_status.recovery_required;
 }
 
 bool Btnavigator::has_planner_owned_recovery(
-  const amr_msgs::msg::MotionCommand & active_command,
-  const amr_msgs::msg::LocalPlanStatus & local_plan_status) const
+  const amr_msgs::msg::MotionCommand &active_command,
+  const amr_msgs::msg::LocalPlanStatus &local_plan_status) const
 {
   return
-    local_plan_status.command_id == active_command.command_id &&
-    local_plan_status.active &&
+    local_plan_status.command_id == active_command.command_id && 
+    local_plan_status.active && 
     local_plan_status.recovery_required;
 }
 
 std::string Btnavigator::select_recovery_behavior(
-  const amr_msgs::msg::MotionCommand & active_command,
-  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
+  const amr_msgs::msg::MotionCommand &active_command,
+  const amr_msgs::msg::LocalPlanStatus &local_plan_status,
   int attempt_index) const
 {
   if (!this->has_planner_owned_recovery(active_command, local_plan_status)) {
@@ -1606,20 +1606,20 @@ std::string Btnavigator::select_recovery_behavior(
 }
 
 bool Btnavigator::should_redispatch_existing_plan_after_recovery(
-  const amr_msgs::msg::MotionCommand & active_command,
-  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
-  const std::string & executed_behavior) const
+  const amr_msgs::msg::MotionCommand &active_command,
+  const amr_msgs::msg::LocalPlanStatus &local_plan_status,
+  const std::string &executed_behavior) const
 {
   if (!this->has_planner_owned_recovery(active_command, local_plan_status)) {
     return false;
   }
 
   return
-    local_plan_status.decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED &&
+    local_plan_status.decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED && 
     executed_behavior == "wait";
 }
 
-int Btnavigator::recovery_behavior_timeout_ms(const std::string & behavior) const
+int Btnavigator::recovery_behavior_timeout_ms(const std::string &behavior) const
 {
   if (behavior == "wait") {
     return std::max(this->feedback_period_ms_ * 10, this->recovery_retry_delay_ms_);
@@ -1633,7 +1633,7 @@ int Btnavigator::recovery_behavior_timeout_ms(const std::string & behavior) cons
   return std::max(this->feedback_period_ms_ * 10, this->recovery_retry_delay_ms_);
 }
 
-std::string Btnavigator::describe_local_escape_failure(const std::string & planner_message) const
+std::string Btnavigator::describe_local_escape_failure(const std::string &planner_message) const
 {
   if (planner_message.empty()) {
     return "Local escape planner failed without a reason label.";
@@ -1643,9 +1643,9 @@ std::string Btnavigator::describe_local_escape_failure(const std::string & plann
 }
 
 std::string Btnavigator::describe_recovery_policy(
-  const amr_msgs::msg::MotionCommand & active_command,
-  const amr_msgs::msg::LocalPlanStatus & local_plan_status,
-  const std::string & behavior,
+  const amr_msgs::msg::MotionCommand &active_command,
+  const amr_msgs::msg::LocalPlanStatus &local_plan_status,
+  const std::string &behavior,
   bool redispatch_existing_plan) const
 {
   if (redispatch_existing_plan) {
@@ -1670,8 +1670,8 @@ std::string Btnavigator::describe_recovery_policy(
 }
 
 bool Btnavigator::clear_local_costmap(
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto request = std::make_shared<amr_msgs::srv::ClearCostmap::Request>();
   auto cancel_requested = [&is_cancel_requested]() {
@@ -1692,7 +1692,7 @@ bool Btnavigator::clear_local_costmap(
     }
     elapsed_ms += 50;
   }
-  if (elapsed_ms >= this->planner_wait_timeout_ms_ &&
+  if (elapsed_ms >= this->planner_wait_timeout_ms_ && 
     future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while clearing the local costmap.";
@@ -1712,8 +1712,8 @@ bool Btnavigator::clear_local_costmap(
 bool Btnavigator::wait_for_command_completion(
   const uint32_t command_id,
   const int timeout_ms,
-  std::string & error_message,
-  const std::function<bool()> & is_cancel_requested)
+  std::string &error_message,
+  const std::function<bool()> &is_cancel_requested)
 {
   auto cancel_requested = [&is_cancel_requested]() {
     return static_cast<bool>(is_cancel_requested) && is_cancel_requested();
@@ -1747,9 +1747,9 @@ bool Btnavigator::has_active_goal() const
 }
 
 amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
-  const geometry_msgs::msg::PoseStamped & goal_pose,
-  const std::string & route_id,
-  const nav_msgs::msg::Path & plan,
+  const geometry_msgs::msg::PoseStamped &goal_pose,
+  const std::string &route_id,
+  const nav_msgs::msg::Path &plan,
   const bool align_heading_at_goal)
 {
   amr_msgs::msg::MotionCommand command;
@@ -1766,7 +1766,7 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   return command;
 }
 
-void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand & command)
+void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand &command)
 {
   if (!this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated()) {
     return;

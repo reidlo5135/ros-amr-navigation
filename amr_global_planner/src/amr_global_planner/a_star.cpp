@@ -16,7 +16,7 @@ struct OpenSetEntry
 
 struct OpenSetEntryCompare
 {
-  bool operator()(const OpenSetEntry & lhs, const OpenSetEntry & rhs) const
+  bool operator()(const OpenSetEntry &lhs, const OpenSetEntry &rhs) const
   {
     return lhs.f_cost > rhs.f_cost;
   }
@@ -24,9 +24,9 @@ struct OpenSetEntryCompare
 
 }  // namespace
 
-bool GridCell::operator==(const GridCell & other) const
+bool GridCell::operator==(const GridCell &other) const
 {
-  return this->x == other.x && this->y == other.y;
+  return this->x == other.x &&this->y == other.y;
 }
 
 AStarPlanner::AStarPlanner(
@@ -67,11 +67,11 @@ void AStarPlanner::set_collision_model(
 }
 
 AStarPlanResult AStarPlanner::plan(
-  const std::vector<int8_t> & occupancy_grid,
+  const std::vector<int8_t> &occupancy_grid,
   const int width,
   const int height,
-  const GridCell & start,
-  const GridCell & goal,
+  const GridCell &start,
+  const GridCell &goal,
   const double start_yaw,
   const double goal_yaw) const
 {
@@ -124,7 +124,7 @@ AStarPlanResult AStarPlanner::plan(
     const OpenSetEntry current_entry = open_set.top();
     open_set.pop();
 
-    Node & current_node = nodes[static_cast<std::size_t>(current_entry.index)];
+    Node &current_node = nodes[static_cast<std::size_t>(current_entry.index)];
     if (current_node.closed) {
       continue;
     }
@@ -143,7 +143,7 @@ AStarPlanResult AStarPlanner::plan(
     }
 
     const GridCell current_cell{current_entry.index % width, current_entry.index / width};
-    for (const auto & neighbor : this->get_neighbors(current_cell)) {
+    for (const auto &neighbor : this->get_neighbors(current_cell)) {
       if (
         !this->is_within_bounds(neighbor, width, height) ||
         this->is_occupied(
@@ -160,12 +160,12 @@ AStarPlanResult AStarPlanner::plan(
       }
 
       const int neighbor_index = this->to_index(neighbor, width);
-      Node & neighbor_node = nodes[static_cast<std::size_t>(neighbor_index)];
+      Node &neighbor_node = nodes[static_cast<std::size_t>(neighbor_index)];
       if (neighbor_node.closed) {
         continue;
       }
 
-      const bool is_diagonal = neighbor.x != current_cell.x && neighbor.y != current_cell.y;
+      const bool is_diagonal = neighbor.x != current_cell.x &&neighbor.y != current_cell.y;
       double tentative_g_cost = current_node.g_cost + (is_diagonal ? std::sqrt(2.0) : 1.0);
       if (current_node.parent_index >= 0) {
         const GridCell previous_cell{
@@ -192,19 +192,19 @@ AStarPlanResult AStarPlanner::plan(
   return {false, {}, "No path found"};
 }
 
-bool AStarPlanner::is_within_bounds(const GridCell & cell, const int width, const int height) const
+bool AStarPlanner::is_within_bounds(const GridCell &cell, const int width, const int height) const
 {
-  return cell.x >= 0 && cell.x < width && cell.y >= 0 && cell.y < height;
+  return cell.x >= 0 &&cell.x < width &&cell.y >= 0 &&cell.y < height;
 }
 
 bool AStarPlanner::is_occupied(
-  const std::vector<int8_t> & occupancy_grid,
+  const std::vector<int8_t> &occupancy_grid,
   const int height,
   const int width,
-  const GridCell & cell,
+  const GridCell &cell,
   const double yaw) const
 {
-  if (!footprint_.empty() && map_resolution_ > 0.0 && height > 0) {
+  if (!footprint_.empty() &&map_resolution_ > 0.0 &&height > 0) {
     const double pose_x = map_origin_x_ + (static_cast<double>(cell.x) + 0.5) * map_resolution_;
     const double pose_y = map_origin_y_ + (static_cast<double>(cell.y) + 0.5) * map_resolution_;
     return amr::geometry::footprint_pose_collides(
@@ -231,17 +231,17 @@ bool AStarPlanner::is_occupied(
 }
 
 bool AStarPlanner::is_diagonal_move_blocked(
-  const std::vector<int8_t> & occupancy_grid,
+  const std::vector<int8_t> &occupancy_grid,
   const int width,
   const int height,
-  const GridCell & current,
-  const GridCell & next) const
+  const GridCell &current,
+  const GridCell &next) const
 {
   if (!this->prevent_corner_cutting_) {
     return false;
   }
 
-  const bool is_diagonal = current.x != next.x && current.y != next.y;
+  const bool is_diagonal = current.x != next.x &&current.y != next.y;
   if (!is_diagonal) {
     return false;
   }
@@ -261,12 +261,12 @@ bool AStarPlanner::is_diagonal_move_blocked(
     this->is_occupied(occupancy_grid, height, width, vertical_neighbor, 0.0);
 }
 
-int AStarPlanner::to_index(const GridCell & cell, const int width) const
+int AStarPlanner::to_index(const GridCell &cell, const int width) const
 {
   return cell.y * width + cell.x;
 }
 
-double AStarPlanner::heuristic(const GridCell & from, const GridCell & to) const
+double AStarPlanner::heuristic(const GridCell &from, const GridCell &to) const
 {
   const double dx = std::abs(from.x - to.x);
   const double dy = std::abs(from.y - to.y);
@@ -281,16 +281,16 @@ double AStarPlanner::heuristic(const GridCell & from, const GridCell & to) const
 }
 
 double AStarPlanner::turn_penalty(
-  const GridCell & previous,
-  const GridCell & current,
-  const GridCell & next) const
+  const GridCell &previous,
+  const GridCell &current,
+  const GridCell &next) const
 {
   const int previous_dx = current.x - previous.x;
   const int previous_dy = current.y - previous.y;
   const int next_dx = next.x - current.x;
   const int next_dy = next.y - current.y;
 
-  if (previous_dx == next_dx && previous_dy == next_dy) {
+  if (previous_dx == next_dx &&previous_dy == next_dy) {
     return 0.0;
   }
 
@@ -298,27 +298,27 @@ double AStarPlanner::turn_penalty(
 }
 
 double AStarPlanner::row_bias_penalty(
-  const GridCell & next,
-  const GridCell & start,
-  const GridCell & goal) const
+  const GridCell &next,
+  const GridCell &start,
+  const GridCell &goal) const
 {
   double penalty = 0.0;
 
   const bool in_goal_align_zone =
     std::abs(goal.x - next.x) <= this->goal_row_align_distance_cells_;
 
-  if (!in_goal_align_zone && this->start_row_hold_penalty_ > 0.0 && next.y != start.y) {
+  if (!in_goal_align_zone &&this->start_row_hold_penalty_ > 0.0 &&next.y != start.y) {
     penalty += this->start_row_hold_penalty_ * static_cast<double>(std::abs(next.y - start.y));
   }
 
-  if (in_goal_align_zone && this->goal_row_align_penalty_ > 0.0 && next.y != goal.y) {
+  if (in_goal_align_zone &&this->goal_row_align_penalty_ > 0.0 &&next.y != goal.y) {
     penalty += this->goal_row_align_penalty_ * static_cast<double>(std::abs(next.y - goal.y));
   }
 
   return penalty;
 }
 
-std::vector<GridCell> AStarPlanner::get_neighbors(const GridCell & cell) const
+std::vector<GridCell> AStarPlanner::get_neighbors(const GridCell &cell) const
 {
   std::vector<GridCell> neighbors{
     {cell.x + 1, cell.y},

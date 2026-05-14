@@ -11,7 +11,7 @@ constexpr double kPi = 3.14159265358979323846;
 
 }  // namespace
 
-CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
+CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("costmap_server", options),
   map_topic_(""),
   pose_topic_(""),
@@ -63,7 +63,7 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions & options)
 }
 
 CostmapServer::CallbackReturn CostmapServer::on_configure(
-  const rclcpp_lifecycle::State & state)
+  const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->get_parameter("topics.map", this->map_topic_);
@@ -153,7 +153,7 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 }
 
 CostmapServer::CallbackReturn CostmapServer::on_activate(
-  const rclcpp_lifecycle::State & state)
+  const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->global_costmap_publisher_) {
@@ -168,7 +168,7 @@ CostmapServer::CallbackReturn CostmapServer::on_activate(
 }
 
 CostmapServer::CallbackReturn CostmapServer::on_deactivate(
-  const rclcpp_lifecycle::State & state)
+  const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->global_costmap_publisher_) {
@@ -181,7 +181,7 @@ CostmapServer::CallbackReturn CostmapServer::on_deactivate(
 }
 
 CostmapServer::CallbackReturn CostmapServer::on_cleanup(
-  const rclcpp_lifecycle::State & state)
+  const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->map_subscription_.reset();
@@ -202,7 +202,7 @@ CostmapServer::CallbackReturn CostmapServer::on_cleanup(
 }
 
 CostmapServer::CallbackReturn CostmapServer::on_shutdown(
-  const rclcpp_lifecycle::State & state)
+  const rclcpp_lifecycle::State &state)
 {
   return this->on_cleanup(state);
 }
@@ -488,7 +488,7 @@ void CostmapServer::rebuild_local_costmap()
   }
 }
 
-bool CostmapServer::world_to_grid(double world_x, double world_y, int & grid_x, int & grid_y) const
+bool CostmapServer::world_to_grid(double world_x, double world_y, int &grid_x, int &grid_y) const
 {
   if (!this->map_) {
     return false;
@@ -503,16 +503,16 @@ bool CostmapServer::world_to_grid(double world_x, double world_y, int & grid_x, 
   grid_y = static_cast<int>(std::floor((world_y - this->map_->info.origin.position.y) / resolution));
 
   return
-    grid_x >= 0 && grid_x < static_cast<int>(this->map_->info.width) &&
-    grid_y >= 0 && grid_y < static_cast<int>(this->map_->info.height);
+    grid_x >= 0 &&grid_x < static_cast<int>(this->map_->info.width) &&
+    grid_y >= 0 &&grid_y < static_cast<int>(this->map_->info.height);
 }
 
 bool CostmapServer::world_to_costmap_grid(
-  const nav_msgs::msg::OccupancyGrid & costmap,
+  const nav_msgs::msg::OccupancyGrid &costmap,
   double world_x,
   double world_y,
-  int & grid_x,
-  int & grid_y) const
+  int &grid_x,
+  int &grid_y) const
 {
   const double resolution = static_cast<double>(costmap.info.resolution);
   if (resolution <= 0.0) {
@@ -525,8 +525,8 @@ bool CostmapServer::world_to_costmap_grid(
     std::floor((world_y - costmap.info.origin.position.y) / resolution));
 
   return
-    grid_x >= 0 && grid_x < static_cast<int>(costmap.info.width) &&
-    grid_y >= 0 && grid_y < static_cast<int>(costmap.info.height);
+    grid_x >= 0 &&grid_x < static_cast<int>(costmap.info.width) &&
+    grid_y >= 0 &&grid_y < static_cast<int>(costmap.info.height);
 }
 
 bool CostmapServer::has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const

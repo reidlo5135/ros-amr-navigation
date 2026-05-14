@@ -21,7 +21,7 @@ class SceneWidget : public QWidget
   Q_OBJECT
 
 public:
-  explicit SceneWidget(QWidget * parent = nullptr);
+  explicit SceneWidget(QWidget *parent = nullptr);
 
   Pose2D aimPose() const;
   QVector<Pose2D> waypoints() const;
@@ -30,15 +30,15 @@ public:
   bool followRobotEnabled() const;
 
 public Q_SLOTS:
-  void setMap(const amr::visualization::GridMap & map);
-  void setTfFrames(const QVector<amr::visualization::FrameVisual> & frames);
-  void setRobotModel(const QVector<amr::visualization::RobotVisual> & visuals);
-  void setGlobalCostmap(const amr::visualization::GridMap & map);
-  void setLocalCostmap(const amr::visualization::GridMap & map);
-  void setScan(const amr::visualization::ScanData & scan);
-  void setRobotPose(const amr::visualization::Pose2D & pose);
-  void setGlobalPath(const amr::visualization::PathData & path);
-  void setLocalPath(const amr::visualization::PathData & path);
+  void setMap(const amr::visualization::GridMap &map);
+  void setTfFrames(const QVector<amr::visualization::FrameVisual> &frames);
+  void setRobotModel(const QVector<amr::visualization::RobotVisual> &visuals);
+  void setGlobalCostmap(const amr::visualization::GridMap &map);
+  void setLocalCostmap(const amr::visualization::GridMap &map);
+  void setScan(const amr::visualization::ScanData &scan);
+  void setRobotPose(const amr::visualization::Pose2D &pose);
+  void setGlobalPath(const amr::visualization::PathData &path);
+  void setLocalPath(const amr::visualization::PathData &path);
   void setGridVisible(bool visible);
   void setMapVisible(bool visible);
   void setGlobalCostmapVisible(bool visible);
@@ -62,18 +62,18 @@ public Q_SLOTS:
   void setFollowRobotEnabled(bool enabled);
 
 Q_SIGNALS:
-  void aimPoseChanged(const amr::visualization::Pose2D & pose);
+  void aimPoseChanged(const amr::visualization::Pose2D &pose);
   void waypointCountChanged(int count);
-  void waypointsChanged(const QVector<amr::visualization::Pose2D> & waypoints);
+  void waypointsChanged(const QVector<amr::visualization::Pose2D> &waypoints);
   void selectedWaypointChanged(int index);
 
 protected:
-  void paintEvent(QPaintEvent * event) override;
-  void mousePressEvent(QMouseEvent * event) override;
-  void mouseMoveEvent(QMouseEvent * event) override;
-  void mouseReleaseEvent(QMouseEvent * event) override;
-  void wheelEvent(QWheelEvent * event) override;
-  void resizeEvent(QResizeEvent * event) override;
+  void paintEvent(QPaintEvent *event) override;
+  void mousePressEvent(QMouseEvent *event) override;
+  void mouseMoveEvent(QMouseEvent *event) override;
+  void mouseReleaseEvent(QMouseEvent *event) override;
+  void wheelEvent(QWheelEvent *event) override;
+  void resizeEvent(QResizeEvent *event) override;
 
 private:
   struct MeshTriangle
@@ -89,55 +89,55 @@ private:
     QVector<MeshTriangle> triangles;
   };
 
-  QPointF worldToScreen(const QPointF & point) const;
+  QPointF worldToScreen(const QPointF &point) const;
   QPointF worldToScreen3D(double x, double y, double z) const;
   QVector3D cameraRight() const;
   QVector3D cameraForward() const;
   QVector3D cameraUp() const;
-  QPointF screenToWorld(const QPointF & point) const;
-  void panCameraByPixels(const QPoint & delta);
+  QPointF screenToWorld(const QPointF &point) const;
+  void panCameraByPixels(const QPoint &delta);
   void centerViewOnRobot();
   void updateCameraControlsGeometry();
   void updateCameraControlState();
-  QToolButton * makeCameraButton(
-    const QIcon & icon,
-    const QString & text,
-    const QString & tooltip,
+  QToolButton *makeCameraButton(
+    const QIcon &icon,
+    const QString &text,
+    const QString &tooltip,
     bool checkable);
-  QImage makeGridImage(const GridMap & map, const QColor & occupied, const QColor & free) const;
-  QImage makeCostmapImage(const GridMap & map) const;
-  void drawGrid(QPainter & painter) const;
-  void drawGridLayer(QPainter & painter, const GridMap & map, const QImage & image, qreal opacity);
-  void drawPath(QPainter & painter, const PathData & path, const QColor & color, qreal width) const;
-  void drawPose(QPainter & painter, const Pose2D & pose, const QColor & color) const;
-  void drawExactFootprint(QPainter & painter) const;
-  void drawRobotModel(QPainter & painter) const;
+  QImage makeGridImage(const GridMap &map, const QColor &occupied, const QColor &free) const;
+  QImage makeCostmapImage(const GridMap &map) const;
+  void drawGrid(QPainter &painter) const;
+  void drawGridLayer(QPainter &painter, const GridMap &map, const QImage &image, qreal opacity);
+  void drawPath(QPainter &painter, const PathData &path, const QColor &color, qreal width) const;
+  void drawPose(QPainter &painter, const Pose2D &pose, const QColor &color) const;
+  void drawExactFootprint(QPainter &painter) const;
+  void drawRobotModel(QPainter &painter) const;
   void drawBox3D(
-    QPainter & painter,
-    const Pose2D & pose,
+    QPainter &painter,
+    const Pose2D &pose,
     double size_x,
     double size_y,
     double size_z,
-    const QColor & color) const;
+    const QColor &color) const;
   void drawCylinderProxy3D(
-    QPainter & painter,
-    const Pose2D & pose,
+    QPainter &painter,
+    const Pose2D &pose,
     double radius,
     double height,
-    const QColor & color) const;
-  void drawBurgerBaseProxy3D(QPainter & painter, const Pose2D & pose) const;
-  void drawWheelProxy3D(QPainter & painter, const Pose2D & pose, const QColor & color) const;
-  bool drawMesh3D(QPainter & painter, const RobotVisual & visual, const QColor & color) const;
-  QString resolveMeshPath(const QString & uri) const;
-  const MeshCacheEntry * meshForVisual(const RobotVisual & visual) const;
-  bool loadStlMesh(const QString & path, MeshCacheEntry & entry) const;
-  QVector3D meshPointToWorld(const RobotVisual & visual, const QVector3D & point) const;
-  void drawTfFrames(QPainter & painter) const;
-  void drawTfChainLine(QPainter & painter, const Pose2D & from, const Pose2D & to) const;
-  void drawScan(QPainter & painter) const;
-  void drawWaypointRoute(QPainter & painter) const;
-  void drawWaypoints(QPainter & painter) const;
-  int waypointAt(const QPointF & screen_position) const;
+    const QColor &color) const;
+  void drawBurgerBaseProxy3D(QPainter &painter, const Pose2D &pose) const;
+  void drawWheelProxy3D(QPainter &painter, const Pose2D &pose, const QColor &color) const;
+  bool drawMesh3D(QPainter &painter, const RobotVisual &visual, const QColor &color) const;
+  QString resolveMeshPath(const QString &uri) const;
+  const MeshCacheEntry *meshForVisual(const RobotVisual &visual) const;
+  bool loadStlMesh(const QString &path, MeshCacheEntry &entry) const;
+  QVector3D meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const;
+  void drawTfFrames(QPainter &painter) const;
+  void drawTfChainLine(QPainter &painter, const Pose2D &from, const Pose2D &to) const;
+  void drawScan(QPainter &painter) const;
+  void drawWaypointRoute(QPainter &painter) const;
+  void drawWaypoints(QPainter &painter) const;
+  int waypointAt(const QPointF &screen_position) const;
   void emitWaypointState();
 
   GridMap map_;
@@ -177,9 +177,9 @@ private:
   bool orbiting_camera_{false};
   bool setting_aim_heading_{false};
   QPoint last_mouse_position_;
-  QWidget * camera_controls_{nullptr};
-  QToolButton * follow_robot_button_{nullptr};
-  QToolButton * reset_view_button_{nullptr};
+  QWidget *camera_controls_{nullptr};
+  QToolButton *follow_robot_button_{nullptr};
+  QToolButton *reset_view_button_{nullptr};
   mutable QHash<QString, MeshCacheEntry> mesh_cache_;
 };
 

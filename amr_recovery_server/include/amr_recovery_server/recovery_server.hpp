@@ -17,29 +17,29 @@ namespace amr::recovery::server
 class RecoveryServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit RecoveryServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit RecoveryServer(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~RecoveryServer() = default;
 
 private:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   void handle_plan_recovery(
     const std::shared_ptr<amr_msgs::srv::PlanRecovery::Request> request,
     std::shared_ptr<amr_msgs::srv::PlanRecovery::Response> response);
   amr_msgs::msg::MotionCommand build_backup_command(
-    const geometry_msgs::msg::PoseStamped & current_pose) const;
+    const geometry_msgs::msg::PoseStamped &current_pose) const;
   amr_msgs::msg::MotionCommand build_spin_command(
-    const geometry_msgs::msg::PoseStamped & current_pose) const;
+    const geometry_msgs::msg::PoseStamped &current_pose) const;
   amr_msgs::msg::MotionCommand build_wait_command(
-    const geometry_msgs::msg::PoseStamped & current_pose) const;
-  static double quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation);
+    const geometry_msgs::msg::PoseStamped &current_pose) const;
+  static double quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation);
   static geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw);
 
   rclcpp::Service<amr_msgs::srv::PlanRecovery>::SharedPtr plan_recovery_service_;

@@ -7,7 +7,7 @@
 namespace amr::runtime::observation
 {
 
-RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions & options)
+RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
 : rclcpp::Node("runtime_observation", options)
 {
   this->declare_parameter("topics.motion_status", "/amr/motion/status");
@@ -162,7 +162,7 @@ void RuntimeObservation::handle_navigate_status(
   this->last_navigate_status_time_ = this->now();
 }
 
-bool RuntimeObservation::is_route_active(const rclcpp::Time & now) const
+bool RuntimeObservation::is_route_active(const rclcpp::Time &now) const
 {
   if (!this->has_navigate_feedback_) {
     return false;
@@ -182,7 +182,7 @@ bool RuntimeObservation::is_route_active(const rclcpp::Time & now) const
     status != action_msgs::msg::GoalStatus::STATUS_ABORTED;
 }
 
-bool RuntimeObservation::is_progress_stalled(const rclcpp::Time & now) const
+bool RuntimeObservation::is_progress_stalled(const rclcpp::Time &now) const
 {
   if (!this->is_route_active(now) || !this->has_progress_baseline_ || !this->has_motion_status_) {
     return false;
@@ -201,7 +201,7 @@ int8_t RuntimeObservation::resolve_action_status() const
     return action_msgs::msg::GoalStatus::STATUS_UNKNOWN;
   }
 
-  for (const auto & item : this->latest_navigate_status_.status_list) {
+  for (const auto &item : this->latest_navigate_status_.status_list) {
     if (item.goal_info.goal_id.uuid == this->latest_navigate_feedback_.goal_id.uuid) {
       return item.status;
     }
@@ -328,7 +328,7 @@ std::string RuntimeObservation::resolve_runtime_state(
   return "navigating";
 }
 
-RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Time & now) const
+RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Time &now) const
 {
   Snapshot snapshot;
   snapshot.route_active = this->is_route_active(now);
@@ -370,7 +370,7 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   return snapshot;
 }
 
-void RuntimeObservation::publish_event_if_needed(const Snapshot & snapshot, const rclcpp::Time & now)
+void RuntimeObservation::publish_event_if_needed(const Snapshot &snapshot, const rclcpp::Time &now)
 {
   if (!this->has_previous_snapshot_) {
     this->publish_event("observation_started", "initial_snapshot", snapshot, now);
@@ -431,10 +431,10 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot & snapshot, cons
 }
 
 void RuntimeObservation::publish_event(
-  const std::string & event_type,
-  const std::string & reason,
-  const Snapshot & snapshot,
-  const rclcpp::Time & now)
+  const std::string &event_type,
+  const std::string &reason,
+  const Snapshot &snapshot,
+  const rclcpp::Time &now)
 {
   std_msgs::msg::String message;
   message.data = this->build_event_json(event_type, reason, snapshot, now);
@@ -453,8 +453,8 @@ void RuntimeObservation::publish_observation()
 }
 
 std::string RuntimeObservation::build_summary_json(
-  const Snapshot & snapshot,
-  const rclcpp::Time & now) const
+  const Snapshot &snapshot,
+  const rclcpp::Time &now) const
 {
   std::ostringstream stream;
   stream << std::boolalpha;
@@ -516,10 +516,10 @@ std::string RuntimeObservation::build_summary_json(
 }
 
 std::string RuntimeObservation::build_event_json(
-  const std::string & event_type,
-  const std::string & reason,
-  const Snapshot & snapshot,
-  const rclcpp::Time & now) const
+  const std::string &event_type,
+  const std::string &reason,
+  const Snapshot &snapshot,
+  const rclcpp::Time &now) const
 {
   std::ostringstream stream;
   stream << std::boolalpha;
@@ -587,7 +587,7 @@ std::string RuntimeObservation::action_status_label(int8_t status) const
   }
 }
 
-std::string RuntimeObservation::escape_json(const std::string & value)
+std::string RuntimeObservation::escape_json(const std::string &value)
 {
   std::string escaped;
   escaped.reserve(value.size());

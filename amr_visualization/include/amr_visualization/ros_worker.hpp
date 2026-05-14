@@ -32,38 +32,38 @@ class RosWorker : public QObject
   Q_OBJECT
 
 public:
-  explicit RosWorker(QObject * parent = nullptr);
+  explicit RosWorker(QObject *parent = nullptr);
   ~RosWorker() override;
 
   void start();
   void stop();
 
 public Q_SLOTS:
-  void sendSingleGoal(const amr::visualization::Pose2D & pose);
-  void sendRoute(const QVector<amr::visualization::Pose2D> & route);
-  void publishInitialPose(const amr::visualization::Pose2D & pose);
+  void sendSingleGoal(const amr::visualization::Pose2D &pose);
+  void sendRoute(const QVector<amr::visualization::Pose2D> &route);
+  void publishInitialPose(const amr::visualization::Pose2D &pose);
   void cancelNavigation();
   void setGlobalCostmapSubscriptionEnabled(bool enabled);
   void setLocalCostmapSubscriptionEnabled(bool enabled);
   void setScanSubscriptionEnabled(bool enabled);
 
 Q_SIGNALS:
-  void connectionStateChanged(const QString & state);
-  void mapChanged(const amr::visualization::GridMap & map);
-  void tfFramesChanged(const QVector<amr::visualization::FrameVisual> & frames);
-  void robotModelChanged(const QVector<amr::visualization::RobotVisual> & visuals);
-  void globalCostmapChanged(const amr::visualization::GridMap & map);
-  void localCostmapChanged(const amr::visualization::GridMap & map);
-  void scanChanged(const amr::visualization::ScanData & scan);
-  void robotPoseChanged(const amr::visualization::Pose2D & pose);
-  void globalPathChanged(const amr::visualization::PathData & path);
-  void localPathChanged(const amr::visualization::PathData & path);
-  void motionStatusChanged(const amr::visualization::MotionStatusData & status);
-  void runtimeSummaryChanged(const amr::visualization::RuntimeSummary & summary);
+  void connectionStateChanged(const QString &state);
+  void mapChanged(const amr::visualization::GridMap &map);
+  void tfFramesChanged(const QVector<amr::visualization::FrameVisual> &frames);
+  void robotModelChanged(const QVector<amr::visualization::RobotVisual> &visuals);
+  void globalCostmapChanged(const amr::visualization::GridMap &map);
+  void localCostmapChanged(const amr::visualization::GridMap &map);
+  void scanChanged(const amr::visualization::ScanData &scan);
+  void robotPoseChanged(const amr::visualization::Pose2D &pose);
+  void globalPathChanged(const amr::visualization::PathData &path);
+  void localPathChanged(const amr::visualization::PathData &path);
+  void motionStatusChanged(const amr::visualization::MotionStatusData &status);
+  void runtimeSummaryChanged(const amr::visualization::RuntimeSummary &summary);
   void batteryStateChanged(double percentage, bool present);
-  void goalStateChanged(const QString & state);
+  void goalStateChanged(const QString &state);
   void navigationCompleted(bool succeeded);
-  void eventReceived(const QString & event);
+  void eventReceived(const QString &event);
 
 private:
   struct RobotJoint
@@ -82,22 +82,22 @@ private:
   void update_local_costmap_subscription();
   void update_scan_subscription();
   void handle_tf_message(
-    const tf2_msgs::msg::TFMessage & message,
+    const tf2_msgs::msg::TFMessage &message,
     bool is_static);
   void spin();
 
-  GridMap convert_grid(const nav_msgs::msg::OccupancyGrid & message) const;
-  PathData convert_path(const nav_msgs::msg::Path & message) const;
-  Pose2D convert_pose(const geometry_msgs::msg::PoseStamped & message) const;
-  ScanData convert_scan(const sensor_msgs::msg::LaserScan & message) const;
-  geometry_msgs::msg::PoseStamped to_pose_stamped(const Pose2D & pose) const;
-  RuntimeSummary parse_runtime_summary(const std::string & payload) const;
-  QVector<RobotVisual> parse_robot_description(const std::string & payload);
+  GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
+  PathData convert_path(const nav_msgs::msg::Path &message) const;
+  Pose2D convert_pose(const geometry_msgs::msg::PoseStamped &message) const;
+  ScanData convert_scan(const sensor_msgs::msg::LaserScan &message) const;
+  geometry_msgs::msg::PoseStamped to_pose_stamped(const Pose2D &pose) const;
+  RuntimeSummary parse_runtime_summary(const std::string &payload) const;
+  QVector<RobotVisual> parse_robot_description(const std::string &payload);
   QVector<RobotVisual> build_robot_visuals() const;
-  Pose2D resolve_robot_link_pose(const QString & link_frame) const;
+  Pose2D resolve_robot_link_pose(const QString &link_frame) const;
   QVector<FrameVisual> build_frame_visuals() const;
-  static Pose2D compose_pose(const Pose2D & parent, const Pose2D & child);
-  Pose2D resolve_frame_pose(const std::string & child_frame) const;
+  static Pose2D compose_pose(const Pose2D &parent, const Pose2D &child);
+  Pose2D resolve_frame_pose(const std::string &child_frame) const;
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::executors::MultiThreadedExecutor executor_;

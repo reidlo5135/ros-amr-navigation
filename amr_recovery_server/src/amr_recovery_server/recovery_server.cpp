@@ -10,7 +10,7 @@ constexpr double kPi = 3.14159265358979323846;
 
 }  // namespace
 
-RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
+RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("recovery_server", options),
   plan_recovery_service_name_("/amr/recovery_server/plan_recovery"),
   default_node_id_("recovery"),
@@ -27,7 +27,7 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
   this->declare_parameter("recovery.spin_angle_rad", this->spin_angle_rad_);
 }
 
-RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecycle::State & state)
+RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->get_parameter("services.plan_recovery", this->plan_recovery_service_name_);
@@ -58,27 +58,27 @@ RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecyc
   return CallbackReturn::SUCCESS;
 }
 
-RecoveryServer::CallbackReturn RecoveryServer::on_activate(const rclcpp_lifecycle::State & state)
+RecoveryServer::CallbackReturn RecoveryServer::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   RCLCPP_INFO(this->get_logger(), "Activated recovery server");
   return CallbackReturn::SUCCESS;
 }
 
-RecoveryServer::CallbackReturn RecoveryServer::on_deactivate(const rclcpp_lifecycle::State & state)
+RecoveryServer::CallbackReturn RecoveryServer::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   return CallbackReturn::SUCCESS;
 }
 
-RecoveryServer::CallbackReturn RecoveryServer::on_cleanup(const rclcpp_lifecycle::State & state)
+RecoveryServer::CallbackReturn RecoveryServer::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->plan_recovery_service_.reset();
   return CallbackReturn::SUCCESS;
 }
 
-RecoveryServer::CallbackReturn RecoveryServer::on_shutdown(const rclcpp_lifecycle::State & state)
+RecoveryServer::CallbackReturn RecoveryServer::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   return this->on_cleanup(state);
 }
@@ -111,7 +111,7 @@ void RecoveryServer::handle_plan_recovery(
 }
 
 amr_msgs::msg::MotionCommand RecoveryServer::build_backup_command(
-  const geometry_msgs::msg::PoseStamped & current_pose) const
+  const geometry_msgs::msg::PoseStamped &current_pose) const
 {
   amr_msgs::msg::MotionCommand command;
   command.header.stamp = this->now();
@@ -130,7 +130,7 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_backup_command(
 }
 
 amr_msgs::msg::MotionCommand RecoveryServer::build_spin_command(
-  const geometry_msgs::msg::PoseStamped & current_pose) const
+  const geometry_msgs::msg::PoseStamped &current_pose) const
 {
   amr_msgs::msg::MotionCommand command;
   command.header.stamp = this->now();
@@ -149,7 +149,7 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_spin_command(
 }
 
 amr_msgs::msg::MotionCommand RecoveryServer::build_wait_command(
-  const geometry_msgs::msg::PoseStamped & current_pose) const
+  const geometry_msgs::msg::PoseStamped &current_pose) const
 {
   amr_msgs::msg::MotionCommand command;
   command.header.stamp = this->now();
@@ -164,7 +164,7 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_wait_command(
   return command;
 }
 
-double RecoveryServer::quaternion_yaw(const geometry_msgs::msg::Quaternion & orientation)
+double RecoveryServer::quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation)
 {
   return std::atan2(
     2.0 * (

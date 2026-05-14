@@ -32,7 +32,7 @@ namespace amr::map::server
 class MapServer : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit MapServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit MapServer(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   virtual ~MapServer() = default;
 
 private:
@@ -50,19 +50,19 @@ private:
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
-  CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &state) override;
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   bool load_static_map_from_files();
   void publish_official_map();
   std::string resolve_path(
-    const std::string & configured_path,
-    const std::string & base_directory = "") const;
-  void set_quaternion_from_yaw(geometry_msgs::msg::Quaternion & orientation, double yaw) const;
-  double quaternion_to_yaw(const geometry_msgs::msg::Quaternion & orientation) const;
+    const std::string &configured_path,
+    const std::string &base_directory = "") const;
+  void set_quaternion_from_yaw(geometry_msgs::msg::Quaternion &orientation, double yaw) const;
+  double quaternion_to_yaw(const geometry_msgs::msg::Quaternion &orientation) const;
 
   void handle_temporary_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
   void handle_corrected_odometry(const nav_msgs::msg::Odometry::SharedPtr message);
@@ -81,16 +81,16 @@ private:
 
   MapQualityMetrics evaluate_temporary_map_quality() const;
   bool save_map_to_files(
-    const nav_msgs::msg::OccupancyGrid & map,
-    const std::string & image_path,
-    const std::string & yaml_path) const;
-  bool save_temporary_map_to_official_and_files(std::string & message);
+    const nav_msgs::msg::OccupancyGrid &map,
+    const std::string &image_path,
+    const std::string &yaml_path) const;
+  bool save_temporary_map_to_official_and_files(std::string &message);
   void maybe_auto_save_temporary_map();
   bool grid_index(
-    const nav_msgs::msg::OccupancyGrid & map,
+    const nav_msgs::msg::OccupancyGrid &map,
     int grid_x,
     int grid_y,
-    std::size_t & index) const;
+    std::size_t &index) const;
 
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr official_map_publisher_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr temporary_map_subscription_;

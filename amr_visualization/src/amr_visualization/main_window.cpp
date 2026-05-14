@@ -26,29 +26,29 @@ namespace amr::visualization
 namespace
 {
 
-QLabel * make_value_label(const QString & text = "--")
+QLabel *make_value_label(const QString &text = "--")
 {
-  auto * label = new QLabel(text);
+  auto *label = new QLabel(text);
   label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
   return label;
 }
 
-QFrame * line()
+QFrame *line()
 {
-  auto * frame = new QFrame;
+  auto *frame = new QFrame;
   frame->setFrameShape(QFrame::HLine);
   frame->setObjectName("separator");
   return frame;
 }
 
-QPixmap make_layer_icon(const QString & name, const QSize & size)
+QPixmap make_layer_icon(const QString &name, const QSize &size)
 {
   QPixmap pixmap(size);
   pixmap.fill(Qt::transparent);
   QPainter painter(&pixmap);
   painter.setRenderHint(QPainter::Antialiasing, true);
 
-  const auto pen = [&](const QColor & color, qreal width = 1.6) {
+  const auto pen = [&](const QColor &color, qreal width = 1.6) {
     painter.setPen(QPen(color, width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
   };
@@ -127,7 +127,7 @@ QPixmap make_layer_icon(const QString & name, const QSize & size)
     pen(QColor("#8fa4c3"), 1.4);
     painter.drawEllipse(QPointF(8.0, 8.0), 3.2, 3.2);
     painter.drawEllipse(QPointF(8.0, 8.0), 1.1, 1.1);
-    for (const QPointF & p : {
+    for (const QPointF &p : {
         QPointF(8.0, 2.0), QPointF(8.0, 14.0), QPointF(2.0, 8.0), QPointF(14.0, 8.0)}) {
       painter.drawPoint(p);
     }
@@ -136,7 +136,7 @@ QPixmap make_layer_icon(const QString & name, const QSize & size)
   return pixmap;
 }
 
-QString pose_text(const Pose2D & pose)
+QString pose_text(const Pose2D &pose)
 {
   if (!pose.valid) {
     return "Pose x --, y --, z --";
@@ -147,14 +147,14 @@ QString pose_text(const Pose2D & pose)
     .arg(pose.z, 0, 'f', 2);
 }
 
-void set_label_if_changed(QLabel * label, const QString & text)
+void set_label_if_changed(QLabel *label, const QString &text)
 {
   if (label && label->text() != text) {
     label->setText(text);
   }
 }
 
-QString summarize_event_payload(const QString & event)
+QString summarize_event_payload(const QString &event)
 {
   const auto document = QJsonDocument::fromJson(event.toUtf8());
   if (!document.isObject()) {
@@ -206,21 +206,21 @@ QString summarize_event_payload(const QString & event)
 
 }  // namespace
 
-MainWindow::MainWindow(QWidget * parent)
+MainWindow::MainWindow(QWidget *parent)
 : QMainWindow(parent),
   ros_worker_(std::make_unique<RosWorker>())
 {
   setWindowTitle("AMR Visualization");
   resize(1500, 900);
 
-  auto * root = new QWidget;
-  auto * root_layout = new QVBoxLayout(root);
+  auto *root = new QWidget;
+  auto *root_layout = new QVBoxLayout(root);
   root_layout->setContentsMargins(0, 0, 0, 0);
   root_layout->setSpacing(0);
   root_layout->addWidget(makeTopBar());
 
-  auto * content = new QWidget;
-  auto * content_layout = new QHBoxLayout(content);
+  auto *content = new QWidget;
+  auto *content_layout = new QHBoxLayout(content);
   content_layout->setContentsMargins(0, 0, 0, 0);
   content_layout->setSpacing(6);
 
@@ -239,7 +239,7 @@ MainWindow::MainWindow(QWidget * parent)
     waypoint_list_->setCurrentRow(index);
   });
 
-  connect(ros_worker_.get(), &RosWorker::connectionStateChanged, this, [this](const QString & state) {
+  connect(ros_worker_.get(), &RosWorker::connectionStateChanged, this, [this](const QString &state) {
     appendEvent(state);
   });
   connect(ros_worker_.get(), &RosWorker::mapChanged, scene_, &SceneWidget::setMap);
@@ -255,7 +255,7 @@ MainWindow::MainWindow(QWidget * parent)
   connect(ros_worker_.get(), &RosWorker::motionStatusChanged, this, &MainWindow::updateMotionStatus);
   connect(ros_worker_.get(), &RosWorker::runtimeSummaryChanged, this, &MainWindow::updateRuntimeSummary);
   connect(ros_worker_.get(), &RosWorker::batteryStateChanged, this, [this](double percentage, bool present) {
-    auto refresh_battery_style = [this](const QString & level) {
+    auto refresh_battery_style = [this](const QString &level) {
         battery_bar_->setProperty("level", level);
         battery_label_->setProperty("level", level);
         battery_bar_->style()->unpolish(battery_bar_);
@@ -280,7 +280,7 @@ MainWindow::MainWindow(QWidget * parent)
       refresh_battery_style("low");
     }
   });
-  connect(ros_worker_.get(), &RosWorker::goalStateChanged, this, [this](const QString & state) {
+  connect(ros_worker_.get(), &RosWorker::goalStateChanged, this, [this](const QString &state) {
     goal_label_->setText(state);
   });
   connect(ros_worker_.get(), &RosWorker::navigationCompleted, this, [this](bool succeeded) {
@@ -301,15 +301,15 @@ MainWindow::~MainWindow()
   ros_worker_->stop();
 }
 
-QWidget * MainWindow::makeTopBar()
+QWidget *MainWindow::makeTopBar()
 {
-  auto * bar = new QWidget;
+  auto *bar = new QWidget;
   bar->setObjectName("topBar");
-  auto * layout = new QHBoxLayout(bar);
+  auto *layout = new QHBoxLayout(bar);
   layout->setContentsMargins(8, 5, 8, 5);
   layout->setSpacing(8);
 
-  auto * title = new QLabel("AMR");
+  auto *title = new QLabel("AMR");
   title->setObjectName("brandLabel");
   frame_label_ = new QLabel("Fixed Frame: map");
   frame_label_->setObjectName("pill");
@@ -319,9 +319,9 @@ QWidget * MainWindow::makeTopBar()
   mode_label_->setObjectName("modePill");
   ai_label_ = new QLabel("AI");
   ai_label_->setObjectName("statusPill");
-  auto * battery_pill = new QWidget;
+  auto *battery_pill = new QWidget;
   battery_pill->setObjectName("batteryPill");
-  auto * battery_layout = new QHBoxLayout(battery_pill);
+  auto *battery_layout = new QHBoxLayout(battery_pill);
   battery_layout->setContentsMargins(10, 3, 10, 3);
   battery_layout->setSpacing(8);
   battery_bar_ = new QProgressBar;
@@ -345,20 +345,20 @@ QWidget * MainWindow::makeTopBar()
   return bar;
 }
 
-QWidget * MainWindow::makeLeftPanel()
+QWidget *MainWindow::makeLeftPanel()
 {
-  auto * panel = new QWidget;
+  auto *panel = new QWidget;
   panel->setObjectName("sidePanel");
   panel->setFixedWidth(268);
-  auto * layout = new QVBoxLayout(panel);
+  auto *layout = new QVBoxLayout(panel);
   layout->setContentsMargins(6, 10, 10, 10);
   layout->setSpacing(8);
 
-  auto * command_panel = new QWidget;
-  auto * command_layout = new QVBoxLayout(command_panel);
+  auto *command_panel = new QWidget;
+  auto *command_layout = new QVBoxLayout(command_panel);
   command_layout->setContentsMargins(0, 0, 0, 0);
   command_layout->setSpacing(8);
-  auto * command = new QLabel("COMMAND");
+  auto *command = new QLabel("COMMAND");
   command->setObjectName("sectionTitle");
   command_layout->addWidget(command);
 
@@ -375,10 +375,10 @@ QWidget * MainWindow::makeLeftPanel()
   command_layout->addWidget(waypoint_list_, 1);
   connect(waypoint_list_, &QListWidget::currentRowChanged, scene_, &SceneWidget::selectWaypoint);
 
-  auto * waypoint_tools = new QHBoxLayout;
-  auto * move_up = new QPushButton("Up");
-  auto * move_down = new QPushButton("Down");
-  auto * remove = new QPushButton("Delete");
+  auto *waypoint_tools = new QHBoxLayout;
+  auto *move_up = new QPushButton("Up");
+  auto *move_down = new QPushButton("Down");
+  auto *remove = new QPushButton("Delete");
   move_up->setObjectName("compactButton");
   move_down->setObjectName("compactButton");
   remove->setObjectName("compactDangerButton");
@@ -390,14 +390,14 @@ QWidget * MainWindow::makeLeftPanel()
   connect(move_down, &QPushButton::clicked, scene_, &SceneWidget::moveSelectedWaypointDown);
   connect(remove, &QPushButton::clicked, scene_, &SceneWidget::removeSelectedWaypoint);
 
-  auto * command_grid = new QGridLayout;
+  auto *command_grid = new QGridLayout;
   send_button_ = new QPushButton("Send");
   send_button_->setObjectName("sendButton");
-  auto * cancel_button = new QPushButton("Cancel");
+  auto *cancel_button = new QPushButton("Cancel");
   cancel_button->setObjectName("cancelButton");
-  auto * clear_button = new QPushButton("Clear");
+  auto *clear_button = new QPushButton("Clear");
   clear_button->setObjectName("neutralButton");
-  auto * initial_pose_button = new QPushButton("Init Pose");
+  auto *initial_pose_button = new QPushButton("Init Pose");
   initial_pose_button->setObjectName("initButton");
   command_grid->addWidget(send_button_, 0, 0);
   command_grid->addWidget(cancel_button, 0, 1);
@@ -416,17 +416,17 @@ QWidget * MainWindow::makeLeftPanel()
 
   layout->addWidget(command_panel, 3);
   layout->addWidget(line());
-  auto * visualization_panel = new QWidget;
-  auto * visualization_layout = new QVBoxLayout(visualization_panel);
+  auto *visualization_panel = new QWidget;
+  auto *visualization_layout = new QVBoxLayout(visualization_panel);
   visualization_layout->setContentsMargins(0, 0, 0, 0);
   visualization_layout->setSpacing(6);
-  auto * visualization_header = new QWidget;
-  auto * visualization_header_layout = new QHBoxLayout(visualization_header);
+  auto *visualization_header = new QWidget;
+  auto *visualization_header_layout = new QHBoxLayout(visualization_header);
   visualization_header_layout->setContentsMargins(0, 0, 0, 0);
   visualization_header_layout->setSpacing(0);
-  auto * visualization = new QLabel("VISUALIZATION");
+  auto *visualization = new QLabel("VISUALIZATION");
   visualization->setObjectName("sectionTitle");
-  auto * visualization_settings = new QToolButton;
+  auto *visualization_settings = new QToolButton;
   visualization_settings->setObjectName("panelIconButton");
   visualization_settings->setIcon(QIcon(make_layer_icon("settings", QSize(16, 16))));
   visualization_settings->setIconSize(QSize(16, 16));
@@ -488,16 +488,16 @@ QWidget * MainWindow::makeLeftPanel()
   return panel;
 }
 
-QWidget * MainWindow::makeRightPanel()
+QWidget *MainWindow::makeRightPanel()
 {
-  auto * panel = new QWidget;
+  auto *panel = new QWidget;
   panel->setObjectName("sidePanel");
   panel->setFixedWidth(278);
-  auto * layout = new QVBoxLayout(panel);
+  auto *layout = new QVBoxLayout(panel);
   layout->setContentsMargins(10, 10, 10, 10);
   layout->setSpacing(10);
 
-  auto * status_title = new QLabel("NAVIGATION STATUS");
+  auto *status_title = new QLabel("NAVIGATION STATUS");
   status_title->setObjectName("sectionTitle");
   layout->addWidget(status_title);
 
@@ -515,7 +515,7 @@ QWidget * MainWindow::makeRightPanel()
   appendStatusRow(layout, "Recovery", recovery_label_);
 
   layout->addWidget(line());
-  auto * events_title = new QLabel("EVENTS / FEEDBACK");
+  auto *events_title = new QLabel("EVENTS / FEEDBACK");
   events_title->setObjectName("sectionTitle");
   layout->addWidget(events_title);
   event_list_ = new QListWidget;
@@ -523,10 +523,10 @@ QWidget * MainWindow::makeRightPanel()
   layout->addWidget(event_list_, 1);
 
   layout->addWidget(line());
-  auto * joystick_title = new QLabel("JOYSTICK");
+  auto *joystick_title = new QLabel("JOYSTICK");
   joystick_title->setObjectName("sectionTitle");
   layout->addWidget(joystick_title);
-  auto * joystick = new QLabel;
+  auto *joystick = new QLabel;
   joystick->setObjectName("joystick");
   joystick->setMinimumHeight(150);
   joystick->setAlignment(Qt::AlignCenter);
@@ -538,29 +538,29 @@ QWidget * MainWindow::makeRightPanel()
 }
 
 MainWindow::LayerCheckRow MainWindow::makeLayerCheckBox(
-  const QString & label,
-  const QString & icon_name,
+  const QString &label,
+  const QString &icon_name,
   bool checked)
 {
-  auto * row = new QWidget;
+  auto *row = new QWidget;
   row->setObjectName("layerRow");
   row->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-  auto * row_layout = new QHBoxLayout(row);
+  auto *row_layout = new QHBoxLayout(row);
   row_layout->setContentsMargins(0, 0, 0, 0);
   row_layout->setSpacing(8);
 
-  auto * check = new QCheckBox;
+  auto *check = new QCheckBox;
   check->setChecked(checked);
   check->setObjectName("layerCheckBox");
   check->setFixedSize(14, 18);
 
-  auto * icon = new QLabel;
+  auto *icon = new QLabel;
   icon->setObjectName("layerIcon");
   icon->setFixedSize(16, 16);
   icon->setPixmap(make_layer_icon(icon_name, QSize(16, 16)));
 
-  auto * text = new QLabel(label);
+  auto *text = new QLabel(label);
   text->setObjectName("layerLabel");
   text->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
 
@@ -570,10 +570,10 @@ MainWindow::LayerCheckRow MainWindow::makeLayerCheckBox(
   return {row, check};
 }
 
-void MainWindow::appendStatusRow(QVBoxLayout * layout, const QString & label, QLabel * value)
+void MainWindow::appendStatusRow(QVBoxLayout *layout, const QString &label, QLabel *value)
 {
-  auto * row = new QWidget;
-  auto * row_layout = new QHBoxLayout(row);
+  auto *row = new QWidget;
+  auto *row_layout = new QHBoxLayout(row);
   row_layout->setContentsMargins(0, 0, 0, 0);
   row_layout->addWidget(new QLabel(label));
   row_layout->addStretch(1);
@@ -581,12 +581,12 @@ void MainWindow::appendStatusRow(QVBoxLayout * layout, const QString & label, QL
   layout->addWidget(row);
 }
 
-void MainWindow::updateAimPose(const Pose2D & pose)
+void MainWindow::updateAimPose(const Pose2D &pose)
 {
   set_label_if_changed(aim_label_, pose_text(pose));
 }
 
-void MainWindow::updateMotionStatus(const MotionStatusData & status)
+void MainWindow::updateMotionStatus(const MotionStatusData &status)
 {
   QString motion_state = "Idle";
   if (status.goal_reached || status.command_completed) {
@@ -610,7 +610,7 @@ void MainWindow::updateMotionStatus(const MotionStatusData & status)
   set_label_if_changed(blocked_label_, status.blocked ? status.blocked_source : "Clear");
 }
 
-void MainWindow::updateRuntimeSummary(const RuntimeSummary & summary)
+void MainWindow::updateRuntimeSummary(const RuntimeSummary &summary)
 {
   if (!summary.action_status.isEmpty() && summary.action_status != "unknown") {
     set_label_if_changed(goal_label_, summary.action_status);
@@ -625,13 +625,13 @@ void MainWindow::updateRuntimeSummary(const RuntimeSummary & summary)
   set_label_if_changed(recovery_label_, summary.recovery_phase);
 }
 
-void MainWindow::updateWaypointList(const QVector<Pose2D> & waypoints)
+void MainWindow::updateWaypointList(const QVector<Pose2D> &waypoints)
 {
   const int selected = scene_->selectedWaypointIndex();
   waypoint_list_->blockSignals(true);
   waypoint_list_->clear();
   for (int i = 0; i < waypoints.size(); ++i) {
-    const auto & pose = waypoints[i];
+    const auto &pose = waypoints[i];
     waypoint_list_->addItem(
       QString("%1  x %2  y %3  yaw %4")
         .arg(i + 1)
@@ -643,7 +643,7 @@ void MainWindow::updateWaypointList(const QVector<Pose2D> & waypoints)
   waypoint_list_->blockSignals(false);
 }
 
-void MainWindow::appendEvent(const QString & event)
+void MainWindow::appendEvent(const QString &event)
 {
   const QString stamp = QDateTime::currentDateTime().toString("HH:mm:ss");
   event_list_->addItem(QString("%1  %2").arg(stamp, summarize_event_payload(event)));

@@ -24,50 +24,50 @@ class MainWindow : public QMainWindow
   Q_OBJECT
 
 public:
-  explicit MainWindow(QWidget * parent = nullptr);
+  explicit MainWindow(QWidget *parent = nullptr);
   ~MainWindow() override;
 
 private Q_SLOTS:
-  void updateAimPose(const amr::visualization::Pose2D & pose);
-  void updateMotionStatus(const amr::visualization::MotionStatusData & status);
-  void updateRuntimeSummary(const amr::visualization::RuntimeSummary & summary);
-  void updateWaypointList(const QVector<amr::visualization::Pose2D> & waypoints);
-  void appendEvent(const QString & event);
+  void updateAimPose(const amr::visualization::Pose2D &pose);
+  void updateMotionStatus(const amr::visualization::MotionStatusData &status);
+  void updateRuntimeSummary(const amr::visualization::RuntimeSummary &summary);
+  void updateWaypointList(const QVector<amr::visualization::Pose2D> &waypoints);
+  void appendEvent(const QString &event);
   void sendGoal();
 
 private:
   struct LayerCheckRow
   {
-    QWidget * row{nullptr};
-    QCheckBox * check{nullptr};
+    QWidget *row{nullptr};
+    QCheckBox *check{nullptr};
   };
 
-  QWidget * makeLeftPanel();
-  QWidget * makeRightPanel();
-  QWidget * makeTopBar();
-  LayerCheckRow makeLayerCheckBox(const QString & label, const QString & icon_name, bool checked);
-  void appendStatusRow(QVBoxLayout * layout, const QString & label, QLabel * value);
+  QWidget *makeLeftPanel();
+  QWidget *makeRightPanel();
+  QWidget *makeTopBar();
+  LayerCheckRow makeLayerCheckBox(const QString &label, const QString &icon_name, bool checked);
+  void appendStatusRow(QVBoxLayout *layout, const QString &label, QLabel *value);
   void applyStyle();
   void setWaypointEditingLocked(bool locked);
 
   std::unique_ptr<RosWorker> ros_worker_;
-  SceneWidget * scene_{nullptr};
-  QLabel * frame_label_{nullptr};
-  QLabel * aim_label_{nullptr};
-  QLabel * mode_label_{nullptr};
-  QLabel * ai_label_{nullptr};
-  QLabel * battery_label_{nullptr};
-  QProgressBar * battery_bar_{nullptr};
-  QLabel * motion_label_{nullptr};
-  QLabel * remaining_label_{nullptr};
-  QLabel * heading_label_{nullptr};
-  QLabel * goal_label_{nullptr};
-  QLabel * blocked_label_{nullptr};
-  QLabel * recovery_label_{nullptr};
-  QListWidget * waypoint_list_{nullptr};
-  QListWidget * event_list_{nullptr};
-  QPushButton * add_waypoint_button_{nullptr};
-  QPushButton * send_button_{nullptr};
+  SceneWidget *scene_{nullptr};
+  QLabel *frame_label_{nullptr};
+  QLabel *aim_label_{nullptr};
+  QLabel *mode_label_{nullptr};
+  QLabel *ai_label_{nullptr};
+  QLabel *battery_label_{nullptr};
+  QProgressBar *battery_bar_{nullptr};
+  QLabel *motion_label_{nullptr};
+  QLabel *remaining_label_{nullptr};
+  QLabel *heading_label_{nullptr};
+  QLabel *goal_label_{nullptr};
+  QLabel *blocked_label_{nullptr};
+  QLabel *recovery_label_{nullptr};
+  QListWidget *waypoint_list_{nullptr};
+  QListWidget *event_list_{nullptr};
+  QPushButton *add_waypoint_button_{nullptr};
+  QPushButton *send_button_{nullptr};
   bool waypoint_editing_locked_{false};
 };
 

@@ -5,7 +5,7 @@ namespace amr::lifecycle::manager
 
 using namespace std::chrono_literals;
 
-LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
+LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
 : rclcpp::Node("lifecycle_manager", options),
   autostart_(true),
   service_timeout_ms_(5000),
@@ -59,7 +59,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
       rclcpp::SystemDefaultsQoS());
   }
 
-  for (const auto & node_name : this->managed_node_names_) {
+  for (const auto &node_name : this->managed_node_names_) {
     ManagedNode managed_node;
     managed_node.name = node_name;
     managed_node.get_state_client =
@@ -91,7 +91,7 @@ LifecycleManager::~LifecycleManager()
 void LifecycleManager::run_bringup()
 {
   const auto service_timeout = std::chrono::milliseconds(this->service_timeout_ms_);
-  for (const auto & managed_node : this->managed_nodes_) {
+  for (const auto &managed_node : this->managed_nodes_) {
     if (this->shutdown_requested_.load()) {
       return;
     }
@@ -144,7 +144,7 @@ void LifecycleManager::run_bringup()
   }
 }
 
-bool LifecycleManager::wait_for_service_clients(const ManagedNode & managed_node) const
+bool LifecycleManager::wait_for_service_clients(const ManagedNode &managed_node) const
 {
   const auto timeout = std::chrono::milliseconds(this->service_timeout_ms_);
   if (!managed_node.get_state_client->wait_for_service(timeout)) {
@@ -165,7 +165,7 @@ bool LifecycleManager::wait_for_service_clients(const ManagedNode & managed_node
 }
 
 bool LifecycleManager::request_transition(
-  const ManagedNode & managed_node,
+  const ManagedNode &managed_node,
   const std::uint8_t transition_id,
   const std::chrono::milliseconds timeout) const
 {
@@ -195,7 +195,7 @@ bool LifecycleManager::request_transition(
 }
 
 bool LifecycleManager::wait_for_state(
-  const ManagedNode & managed_node,
+  const ManagedNode &managed_node,
   const std::uint8_t target_state_id,
   const std::chrono::milliseconds timeout) const
 {

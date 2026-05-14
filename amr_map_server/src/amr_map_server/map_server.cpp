@@ -6,7 +6,7 @@ namespace amr::map::server
 namespace
 {
 
-std::string resolve_package_uri(const std::string & uri)
+std::string resolve_package_uri(const std::string &uri)
 {
   constexpr auto prefix = "package://";
   if (uri.rfind(prefix, 0) != 0) {
@@ -27,7 +27,7 @@ std::string resolve_package_uri(const std::string & uri)
 
 }  // namespace
 
-MapServer::MapServer(const rclcpp::NodeOptions & options)
+MapServer::MapServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("map_server", options),
   yaml_path_(""),
   frame_id_("map"),
@@ -80,7 +80,7 @@ MapServer::MapServer(const rclcpp::NodeOptions & options)
     "auto_save.required_consecutive_passes", this->auto_save_required_consecutive_passes_);
 }
 
-MapServer::CallbackReturn MapServer::on_configure(const rclcpp_lifecycle::State & state)
+MapServer::CallbackReturn MapServer::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   this->get_parameter("files.yaml", this->yaml_path_);
@@ -191,7 +191,7 @@ MapServer::CallbackReturn MapServer::on_configure(const rclcpp_lifecycle::State 
   return CallbackReturn::SUCCESS;
 }
 
-MapServer::CallbackReturn MapServer::on_activate(const rclcpp_lifecycle::State & state)
+MapServer::CallbackReturn MapServer::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->official_map_publisher_) {
@@ -205,7 +205,7 @@ MapServer::CallbackReturn MapServer::on_activate(const rclcpp_lifecycle::State &
   return CallbackReturn::SUCCESS;
 }
 
-MapServer::CallbackReturn MapServer::on_deactivate(const rclcpp_lifecycle::State & state)
+MapServer::CallbackReturn MapServer::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   if (this->official_map_publisher_) {
@@ -214,7 +214,7 @@ MapServer::CallbackReturn MapServer::on_deactivate(const rclcpp_lifecycle::State
   return CallbackReturn::SUCCESS;
 }
 
-MapServer::CallbackReturn MapServer::on_cleanup(const rclcpp_lifecycle::State & state)
+MapServer::CallbackReturn MapServer::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   {
@@ -237,7 +237,7 @@ MapServer::CallbackReturn MapServer::on_cleanup(const rclcpp_lifecycle::State & 
   return CallbackReturn::SUCCESS;
 }
 
-MapServer::CallbackReturn MapServer::on_shutdown(const rclcpp_lifecycle::State & state)
+MapServer::CallbackReturn MapServer::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   return this->on_cleanup(state);
@@ -254,7 +254,7 @@ bool MapServer::load_static_map_from_files()
   const auto resolved_yaml_path = this->resolve_path(this->yaml_path_);
   try {
     map_yaml = YAML::LoadFile(resolved_yaml_path);
-  } catch (const YAML::Exception & exception) {
+  } catch (const YAML::Exception &exception) {
     RCLCPP_ERROR(
       this->get_logger(),
       "Failed to parse map yaml '%s': %s",
@@ -496,9 +496,9 @@ MapServer::MapQualityMetrics MapServer::evaluate_temporary_map_quality() const
 }
 
 bool MapServer::save_map_to_files(
-  const nav_msgs::msg::OccupancyGrid & map,
-  const std::string & image_path,
-  const std::string & yaml_path) const
+  const nav_msgs::msg::OccupancyGrid &map,
+  const std::string &image_path,
+  const std::string &yaml_path) const
 {
   if (map.info.width == 0U || map.info.height == 0U || map.data.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Cannot save an empty map");
@@ -553,7 +553,7 @@ bool MapServer::save_map_to_files(
   return true;
 }
 
-bool MapServer::save_temporary_map_to_official_and_files(std::string & message)
+bool MapServer::save_temporary_map_to_official_and_files(std::string &message)
 {
   const MapQualityMetrics metrics = this->evaluate_temporary_map_quality();
   if (!metrics.passed) {
@@ -706,10 +706,10 @@ void MapServer::handle_save_temporary_map(
 }
 
 bool MapServer::grid_index(
-  const nav_msgs::msg::OccupancyGrid & map,
+  const nav_msgs::msg::OccupancyGrid &map,
   int grid_x,
   int grid_y,
-  std::size_t & index) const
+  std::size_t &index) const
 {
   if (
     grid_x < 0 || grid_y < 0 ||
@@ -724,8 +724,8 @@ bool MapServer::grid_index(
 }
 
 std::string MapServer::resolve_path(
-  const std::string & configured_path,
-  const std::string & base_directory) const
+  const std::string &configured_path,
+  const std::string &base_directory) const
 {
   const auto resolved_uri_path = resolve_package_uri(configured_path);
   std::filesystem::path resolved_path(resolved_uri_path);
@@ -737,7 +737,7 @@ std::string MapServer::resolve_path(
 }
 
 void MapServer::set_quaternion_from_yaw(
-  geometry_msgs::msg::Quaternion & orientation,
+  geometry_msgs::msg::Quaternion &orientation,
   double yaw) const
 {
   const double half_yaw = yaw * 0.5;
@@ -747,7 +747,7 @@ void MapServer::set_quaternion_from_yaw(
   orientation.w = std::cos(half_yaw);
 }
 
-double MapServer::quaternion_to_yaw(const geometry_msgs::msg::Quaternion & orientation) const
+double MapServer::quaternion_to_yaw(const geometry_msgs::msg::Quaternion &orientation) const
 {
   const double siny_cosp = 2.0 * (
     (orientation.w * orientation.z) + (orientation.x * orientation.y));

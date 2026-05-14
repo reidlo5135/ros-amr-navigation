@@ -17,7 +17,7 @@ namespace amr::runtime::observation
 class RuntimeObservation : public rclcpp::Node
 {
 public:
-  explicit RuntimeObservation(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  explicit RuntimeObservation(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   ~RuntimeObservation() override = default;
 
 private:
@@ -52,29 +52,29 @@ private:
   void handle_navigate_status(const action_msgs::msg::GoalStatusArray::SharedPtr message);
   void publish_observation();
 
-  bool is_route_active(const rclcpp::Time & now) const;
-  bool is_progress_stalled(const rclcpp::Time & now) const;
+  bool is_route_active(const rclcpp::Time &now) const;
+  bool is_progress_stalled(const rclcpp::Time &now) const;
   int8_t resolve_action_status() const;
   std::string resolve_blocked_context(bool progress_stalled) const;
   std::string resolve_recovery_reason(bool progress_stalled) const;
   std::string resolve_recovery_phase(bool route_active, bool recovery_triggered) const;
   std::string resolve_runtime_state(bool route_active, bool progress_stalled) const;
-  Snapshot make_snapshot(const rclcpp::Time & now) const;
-  void publish_event_if_needed(const Snapshot & snapshot, const rclcpp::Time & now);
+  Snapshot make_snapshot(const rclcpp::Time &now) const;
+  void publish_event_if_needed(const Snapshot &snapshot, const rclcpp::Time &now);
   void publish_event(
-    const std::string & event_type,
-    const std::string & reason,
-    const Snapshot & snapshot,
-    const rclcpp::Time & now);
-  std::string build_summary_json(const Snapshot & snapshot, const rclcpp::Time & now) const;
+    const std::string &event_type,
+    const std::string &reason,
+    const Snapshot &snapshot,
+    const rclcpp::Time &now);
+  std::string build_summary_json(const Snapshot &snapshot, const rclcpp::Time &now) const;
   std::string build_event_json(
-    const std::string & event_type,
-    const std::string & reason,
-    const Snapshot & snapshot,
-    const rclcpp::Time & now) const;
+    const std::string &event_type,
+    const std::string &reason,
+    const Snapshot &snapshot,
+    const rclcpp::Time &now) const;
   std::string planner_decision_label(uint8_t decision) const;
   std::string action_status_label(int8_t status) const;
-  static std::string escape_json(const std::string & value);
+  static std::string escape_json(const std::string &value);
 
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
