@@ -64,11 +64,12 @@ struct LidarDriverProfile
 struct DescriptionProfile
 {
   bool publish_robot_description;
-  bool use_amr_description;
+  std::string urdf_path;
 };
 
 struct RobotBringupProfile
 {
+  std::string robot_type;
   std::string robot_model;
   bool robot_side_only;
   TopicNames topics;
@@ -90,6 +91,10 @@ public:
   static const char * base_driver_namespace();
   static const char * lidar_driver_namespace();
   static const char * description_namespace();
+
+  static bool is_supported_robot(const std::string & robot_type, const std::string & robot_model);
+  static std::string make_robot_key(const std::string & robot_type, const std::string & robot_model);
+  static std::string default_urdf_path(const std::string & robot_type, const std::string & robot_model);
 
   static RobotBringupProfile make_default_turtlebot3_burger_profile();
 };

@@ -9,6 +9,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 add_library(${PROJECT_NAME}_schema
   src/amr_bringup/robot_bringup.cpp
@@ -19,12 +25,73 @@ target_include_directories(${PROJECT_NAME}_schema
     $<INSTALL_INTERFACE:include>
 )
 
+add_library(${PROJECT_NAME}_base
+  src/amr_bringup/base/base_driver_node.cpp
+  src/amr_bringup/base/differential_drive_odometry.cpp
+  src/amr_bringup/base/opencr_protocol.cpp
+  src/amr_bringup/base/serial_transport.cpp
+)
+target_include_directories(${PROJECT_NAME}_base
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(${PROJECT_NAME}_base
+  ${PROJECT_NAME}_schema
+)
+ament_target_dependencies(${PROJECT_NAME}_base
+  geometry_msgs
+  nav_msgs
+  rclcpp
+  sensor_msgs
+  std_msgs
+  tf2_ros
+)
+
+add_library(${PROJECT_NAME}_lidar
+  src/amr_bringup/lidar/lidar_driver_node.cpp
+  src/amr_bringup/lidar/lidar_parser.cpp
+  src/amr_bringup/lidar/laser_scan_assembler.cpp
+  src/amr_bringup/lidar/serial_transport.cpp
+)
+target_include_directories(${PROJECT_NAME}_lidar
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(${PROJECT_NAME}_lidar
+  ${PROJECT_NAME}_schema
+)
+ament_target_dependencies(${PROJECT_NAME}_lidar
+  rclcpp
+  sensor_msgs
+)
+
+add_executable(${PROJECT_NAME}_hardware
+  src/main.cpp
+)
+target_include_directories(${PROJECT_NAME}_hardware
+  PRIVATE
+    include
+)
+target_link_libraries(${PROJECT_NAME}_hardware
+  ${PROJECT_NAME}_base
+  ${PROJECT_NAME}_lidar
+  ${PROJECT_NAME}_schema
+)
+ament_target_dependencies(${PROJECT_NAME}_hardware
+  rclcpp
+)
+
 install(TARGETS
   ${PROJECT_NAME}_schema
+  ${PROJECT_NAME}_base
+  ${PROJECT_NAME}_lidar
+  ${PROJECT_NAME}_hardware
   EXPORT ${PROJECT_NAME}_targets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY
@@ -39,6 +106,11 @@ install(DIRECTORY
 
 install(DIRECTORY
   params
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  urdf
   DESTINATION share/${PROJECT_NAME}
 )
 

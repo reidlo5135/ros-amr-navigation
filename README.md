@@ -17,9 +17,9 @@ Current `0.17.x` direction:
 - `0.16.x` closes the local-escape-first recovery policy, corridor/doorway blocked-state
   tuning pass, and the first in-repo `amr_visualization` operator lane.
 - `0.17.x` establishes the first AMR-owned TurtleBot3 hardware layer:
-  - AMR-owned base driver boundary
-  - AMR-owned LiDAR driver boundary
-  - AMR-owned description ownership
+  - `amr_bringup`-owned base driver boundary
+  - `amr_bringup`-owned LiDAR driver boundary
+  - `amr_bringup`-owned description ownership
   - explicit split between robot-side hardware and remote-PC AMR runtime
 
 ## Architecture
@@ -56,11 +56,7 @@ flowchart LR
 
 ## Active Packages
 
-- `amr_bringup`: central launch files and `amr.yaml`
-- `amr_tb3_bringup`: AMR-owned TurtleBot3 robot-side hardware composition
-- `amr_tb3_base_driver`: AMR-owned OpenCR base-driver boundary
-- `amr_tb3_lidar_driver`: AMR-owned LDS-class LiDAR driver boundary
-- `amr_description`: AMR-owned TurtleBot3 Burger-compatible description assets
+- `amr_bringup`: central launch files, `amr.yaml`, robot-side hardware drivers, and AMR-owned TB3 URDF
 - `amr_bt_navigator`: BT-based goal orchestration and recovery decisions
 - `amr_controller_server`: local planner and motion controller lifecycle nodes
 - `amr_costmap_server`: static global costmap + scan-based dynamic local costmap
@@ -163,8 +159,8 @@ Frame convention:
 - `imu_link`
 
 The new AMR-owned hardware path is intentionally still incremental. The current pass adds the
-launch/package/transport/protocol boundaries and node shells, but it does not claim production-safe
-OpenCR or LDS packet parity yet.
+launch/package/transport/protocol boundaries and node shells inside `amr_bringup`, but it does not
+claim production-safe OpenCR or LDS packet parity yet.
 
 The ROS-native local operator UI lives in `amr_visualization`. The external `ros-rcs`
 line remains useful as a separate remote-client reference.
@@ -184,10 +180,6 @@ colcon build --packages-select \
   amr_runtime_observation \
   amr_lifecycle_manager \
   amr_mqtt_server \
-  amr_tb3_bringup \
-  amr_tb3_base_driver \
-  amr_tb3_lidar_driver \
-  amr_description \
   amr_rviz \
   amr_visualization \
   amr_bringup \

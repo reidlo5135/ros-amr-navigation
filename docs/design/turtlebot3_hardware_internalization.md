@@ -51,16 +51,19 @@ joint states, and robot description.
 
 ## Desired AMR-Owned Replacement
 
-Replace the direct runtime dependency on `turtlebot3_bringup` with AMR-owned packages:
+Replace the direct runtime dependency on `turtlebot3_bringup` with an AMR-owned hardware layer
+that lives inside `amr_bringup`:
 
-- `amr_tb3_bringup`
-  - TurtleBot3 Burger hardware launch composition
-- `amr_tb3_base_driver`
+- `amr_bringup/launch/turtlebot3.launch.py`
+  - TurtleBot3 Burger hardware launch composition for the robot-side RPi4
+- `amr_bringup/src/main.cpp`
+  - single hardware entrypoint that dispatches by `bringup.component`, `robot.type`, and `robot.model`
+- `amr_bringup/src/amr_bringup/base/*`
   - OpenCR transport, command path, feedback decoding, odometry, IMU, joint states, TF
-- `amr_tb3_lidar_driver`
+- `amr_bringup/src/amr_bringup/lidar/*`
   - LDS-class LiDAR transport and `/scan`
-- `amr_description`
-  - AMR-owned TurtleBot3 Burger description and `robot_state_publisher` input
+- `amr_bringup/urdf/*`
+  - AMR-owned TurtleBot3 Burger description assets
 
 The AMR-facing contract must remain root-topic compatible:
 
@@ -104,9 +107,8 @@ The migration should stay incremental and reviewable.
 ### Phase 1
 
 - define the hardware boundary in docs
-- restore `amr_bringup` as a small shared schema/config package
-- add AMR-owned package skeletons
-- add AMR-owned TurtleBot3 Burger description
+- restore `amr_bringup` as a shared schema/config and hardware package
+- add AMR-owned TurtleBot3 Burger description under `amr_bringup/urdf`
 - split launch roles clearly:
   - `turtlebot3.launch.py` becomes robot-side, pure-ROS, hardware-only
   - `navigation.launch.py` remains remote-PC navigation/runtime only
@@ -114,7 +116,7 @@ The migration should stay incremental and reviewable.
 
 ### Phase 2
 
-- add serial transport and protocol abstractions
+- add serial transport and protocol abstractions in `amr_bringup`
 - add base-driver node shell with `/cmd_vel` watchdog and connection-state reporting
 - add lidar-driver node shell and parser interfaces
 - move configurable hardware defaults into `amr_bringup/params/amr.yaml`

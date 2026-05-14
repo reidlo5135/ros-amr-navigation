@@ -347,8 +347,11 @@
 
 /amr/robot_bringup:
   ros__parameters:
+    bringup:
+      component: ""
     robot:
-      model: "turtlebot3_burger"
+      type: "turtlebot3"
+      model: "burger"
       robot_side_only: true
     frames:
       map: "map"
@@ -367,7 +370,7 @@
       tf_static: "/tf_static"
       robot_description: "/robot_description"
 
-/amr/tb3_base_driver:
+/amr/base_driver:
   ros__parameters:
     enabled: true
     serial:
@@ -397,8 +400,11 @@
       wheel_radius_m: 0.033
       max_linear_velocity_mps: 0.22
       max_angular_velocity_radps: 2.84
+    robot:
+      type: "turtlebot3"
+      model: "burger"
 
-/amr/tb3_lidar_driver:
+/amr/lidar_driver:
   ros__parameters:
     enabled: true
     serial:
@@ -413,10 +419,15 @@
     range_min_m: 0.12
     range_max_m: 3.5
     scan_time_sec: 0.1
+    robot:
+      type: "turtlebot3"
+      model: "burger"
 
 /amr/description:
   ros__parameters:
     publish_robot_description: true
-    use_amr_description: true
-    robot_model: "turtlebot3_burger"
+    robot:
+      type: "turtlebot3"
+      model: "burger"
+    urdf_path: "urdf/turtlebot3_burger.urdf.xacro"
     frame_prefix: ""

@@ -25,10 +25,6 @@
   <exec_depend>amr_runtime_observation</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
   <exec_depend>amr_bringup</exec_depend>
-  <exec_depend>amr_tb3_bringup</exec_depend>
-  <exec_depend>amr_tb3_base_driver</exec_depend>
-  <exec_depend>amr_tb3_lidar_driver</exec_depend>
-  <exec_depend>amr_description</exec_depend>
   <exec_depend>amr_mqtt_server</exec_depend>
   <exec_depend>behaviortree_cpp_v3</exec_depend>
   <exec_depend>builtin_interfaces</exec_depend>

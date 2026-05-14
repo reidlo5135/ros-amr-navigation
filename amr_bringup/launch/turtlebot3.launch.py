@@ -2,28 +2,28 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+from launch.substitutions import Command
 
 
 def generate_launch_description() -> LaunchDescription:
-    tb3_bringup_launch = os.path.join(
-        get_package_share_directory("amr_tb3_bringup"),
-        "launch",
-        "turtlebot3.launch.py",
-    )
     bringup_params = os.path.join(
         get_package_share_directory("amr_bringup"),
         "params",
         "amr.yaml",
     )
-    hardware_profile = LaunchConfiguration("hardware_profile")
+    description_file = LaunchConfiguration("description_file")
     use_sim_time = LaunchConfiguration("use_sim_time")
     frame_prefix = LaunchConfiguration("frame_prefix")
     use_base_driver = LaunchConfiguration("use_base_driver")
     use_lidar_driver = LaunchConfiguration("use_lidar_driver")
     use_robot_state_publisher = LaunchConfiguration("use_robot_state_publisher")
+    robot_type = LaunchConfiguration("robot_type")
+    robot_model = LaunchConfiguration("robot_model")
     base_port = LaunchConfiguration("base_port")
     base_baudrate = LaunchConfiguration("base_baudrate")
     lidar_port = LaunchConfiguration("lidar_port")
@@ -36,21 +36,102 @@ def generate_launch_description() -> LaunchDescription:
     scan_topic = LaunchConfiguration("scan_topic")
     joint_states_topic = LaunchConfiguration("joint_states_topic")
 
+    robot_description = ParameterValue(
+        Command(["xacro", " ", description_file, " ", "prefix:=", frame_prefix]),
+        value_type=str,
+    )
+
+    robot_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="description",
+        namespace="amr",
+        output="screen",
+        parameters=[
+            bringup_params,
+            {
+                "robot.type": robot_type,
+                "robot.model": robot_model,
+                "robot_description": robot_description,
+                "use_sim_time": use_sim_time,
+                "frame_prefix": frame_prefix,
+            },
+        ],
+        condition=IfCondition(use_robot_state_publisher),
+    )
+
+    base_driver = Node(
+        package="amr_bringup",
+        executable="amr_bringup_hardware",
+        name="base_driver",
+        namespace="amr",
+        output="screen",
+        parameters=[
+            bringup_params,
+            {
+                "bringup.component": "base_driver",
+                "robot.type": robot_type,
+                "robot.model": robot_model,
+                "serial.port": base_port,
+                "serial.baudrate": base_baudrate,
+                "topics.cmd_vel": cmd_vel_topic,
+                "topics.odom": odom_topic,
+                "topics.imu": imu_topic,
+                "topics.joint_states": joint_states_topic,
+                "publish_tf": publish_tf,
+                "use_sim_time": use_sim_time,
+            },
+        ],
+        condition=IfCondition(use_base_driver),
+    )
+
+    lidar_driver = Node(
+        package="amr_bringup",
+        executable="amr_bringup_hardware",
+        name="lidar_driver",
+        namespace="amr",
+        output="screen",
+        parameters=[
+            bringup_params,
+            {
+                "bringup.component": "lidar_driver",
+                "robot.type": robot_type,
+                "robot.model": robot_model,
+                "serial.port": lidar_port,
+                "serial.baudrate": lidar_baudrate,
+                "topic": scan_topic,
+                "sensor_model": sensor_model,
+                "use_sim_time": use_sim_time,
+            },
+        ],
+        condition=IfCondition(use_lidar_driver),
+    )
+
     return LaunchDescription(
         [
-            DeclareLaunchArgument(
-                "hardware_profile",
-                default_value=os.path.join(
-                    get_package_share_directory("amr_tb3_bringup"),
-                    "config",
-                    "turtlebot3_burger.hardware.yaml",
-                ),
-                description="AMR-owned TurtleBot3 hardware profile YAML.",
-            ),
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="false",
                 description="Use simulation time.",
+            ),
+            DeclareLaunchArgument(
+                "robot_type",
+                default_value="turtlebot3",
+                description="Robot type selector for the AMR-owned hardware entrypoint.",
+            ),
+            DeclareLaunchArgument(
+                "robot_model",
+                default_value="burger",
+                description="Robot model selector for the AMR-owned hardware entrypoint.",
+            ),
+            DeclareLaunchArgument(
+                "description_file",
+                default_value=os.path.join(
+                    get_package_share_directory("amr_bringup"),
+                    "urdf",
+                    "turtlebot3_burger.urdf.xacro",
+                ),
+                description="AMR-owned robot description xacro.",
             ),
             DeclareLaunchArgument(
                 "frame_prefix",
@@ -127,28 +208,8 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="/joint_states",
                 description="Joint states topic.",
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(tb3_bringup_launch),
-                launch_arguments={
-                    "hardware_profile": hardware_profile,
-                    "bringup_params": bringup_params,
-                    "use_sim_time": use_sim_time,
-                    "frame_prefix": frame_prefix,
-                    "use_base_driver": use_base_driver,
-                    "use_lidar_driver": use_lidar_driver,
-                    "use_robot_state_publisher": use_robot_state_publisher,
-                    "base_port": base_port,
-                    "base_baudrate": base_baudrate,
-                    "lidar_port": lidar_port,
-                    "lidar_baudrate": lidar_baudrate,
-                    "sensor_model": sensor_model,
-                    "publish_tf": publish_tf,
-                    "cmd_vel_topic": cmd_vel_topic,
-                    "odom_topic": odom_topic,
-                    "imu_topic": imu_topic,
-                    "scan_topic": scan_topic,
-                    "joint_states_topic": joint_states_topic,
-                }.items(),
-            ),
+            robot_state_publisher,
+            base_driver,
+            lidar_driver,
         ]
     )

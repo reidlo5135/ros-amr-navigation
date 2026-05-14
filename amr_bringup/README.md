@@ -1,6 +1,6 @@
 # amr_bringup
 
-Central launch and parameter package for the active `0.16.x` line.
+Central launch, parameter, and hardware-entry package for the active `0.17.x` line.
 
 ## Main Files
 
@@ -18,13 +18,15 @@ Central launch and parameter package for the active `0.16.x` line.
 This package now treats robot-side hardware and remote-PC navigation as separate operational lanes.
 The AMR-owned `turtlebot3.launch.py` is pure ROS hardware bringup only and does not start
 `amr_mqtt_server`, localization, planner, controller, or navigator nodes.
+All AMR-owned TurtleBot3 hardware code now lives directly under `amr_bringup/include`,
+`amr_bringup/src`, and `amr_bringup/urdf`.
 
 ## Runtime Layout
 
 `turtlebot3.launch.py` starts:
-1. `amr_tb3_base_driver_node`
-2. `amr_tb3_lidar_driver_node`
-3. `robot_state_publisher` from `amr_description`
+1. `amr_bringup_hardware` as `base_driver`
+2. `amr_bringup_hardware` as `lidar_driver`
+3. `robot_state_publisher` from the AMR-owned URDF in `amr_bringup/urdf`
 
 `turtlebot3_external.launch.py` preserves the older compatibility flow:
 1. `turtlebot3_bringup/robot.launch.py`
@@ -44,6 +46,10 @@ and skips:
 
 ## Important Parameter Groups
 
+- `/amr/robot_bringup`
+- `/amr/base_driver`
+- `/amr/lidar_driver`
+- `/amr/description`
 - `/amr/map_server`
 - `/amr/localization`
 - `/amr/costmap_server`
@@ -61,6 +67,12 @@ Robot-side AMR-owned hardware bringup on the TurtleBot3 RPi4:
 
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py
+```
+
+Single-entry executable used by the robot-side launch:
+
+```bash
+ros2 run amr_bringup amr_bringup_hardware --ros-args -p bringup.component:=base_driver
 ```
 
 Legacy external TurtleBot3 compatibility mode:
