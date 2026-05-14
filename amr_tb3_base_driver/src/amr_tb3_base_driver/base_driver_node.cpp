@@ -24,6 +24,7 @@ BaseDriverNode::BaseDriverNode(const rclcpp::NodeOptions & options)
   odom_topic_("/odom"),
   imu_topic_("/imu"),
   joint_states_topic_("/joint_states"),
+  emergency_stop_topic_(""),
   publish_tf_(true),
   cmd_vel_timeout_sec_(0.5),
   wheel_separation_m_(0.160),
@@ -69,6 +70,7 @@ void BaseDriverNode::declare_parameters()
   this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.imu", this->imu_topic_);
   this->declare_parameter("topics.joint_states", this->joint_states_topic_);
+  this->declare_parameter("safety.emergency_stop_topic", this->emergency_stop_topic_);
   this->declare_parameter("publish_tf", this->publish_tf_);
   this->declare_parameter("watchdog.cmd_vel_timeout_sec", this->cmd_vel_timeout_sec_);
   this->declare_parameter("kinematics.wheel_separation_m", this->wheel_separation_m_);
@@ -91,6 +93,7 @@ void BaseDriverNode::load_parameters()
   this->get_parameter("topics.odom", this->odom_topic_);
   this->get_parameter("topics.imu", this->imu_topic_);
   this->get_parameter("topics.joint_states", this->joint_states_topic_);
+  this->get_parameter("safety.emergency_stop_topic", this->emergency_stop_topic_);
   this->get_parameter("publish_tf", this->publish_tf_);
   this->get_parameter("watchdog.cmd_vel_timeout_sec", this->cmd_vel_timeout_sec_);
   this->get_parameter("kinematics.wheel_separation_m", this->wheel_separation_m_);
@@ -113,6 +116,15 @@ void BaseDriverNode::setup_interfaces()
     [this](const geometry_msgs::msg::Twist::SharedPtr message) {
       this->handle_cmd_vel(message);
     });
+
+  if (!this->emergency_stop_topic_.empty()) {
+    this->emergency_stop_subscription_ = this->create_subscription<std_msgs::msg::Bool>(
+      this->emergency_stop_topic_,
+      rclcpp::SystemDefaultsQoS(),
+      [this](const std_msgs::msg::Bool::SharedPtr message) {
+        this->handle_emergency_stop(message);
+      });
+  }
 
   this->odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
     this->odom_topic_,
@@ -147,6 +159,15 @@ void BaseDriverNode::setup_interfaces()
 void BaseDriverNode::handle_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr message)
 {
   if (!message) {
+    return;
+  }
+  if (this->emergency_stop_active_) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Ignoring /cmd_vel while emergency stop is active");
+    this->send_stop_command();
     return;
   }
 
@@ -203,6 +224,8 @@ void BaseDriverNode::handle_connection_check()
   }
 
   this->base_state_.connected = false;
+  this->has_cmd_vel_ = false;
+  this->stop_command_sent_ = true;
   RCLCPP_WARN_THROTTLE(
     this->get_logger(),
     *this->get_clock(),
@@ -263,6 +286,27 @@ void BaseDriverNode::poll_feedback()
       }
       this->handle_feedback(*feedback);
     }
+  }
+}
+
+void BaseDriverNode::handle_emergency_stop(const std_msgs::msg::Bool::SharedPtr message)
+{
+  if (!message) {
+    return;
+  }
+
+  const bool previous_state = this->emergency_stop_active_;
+  this->emergency_stop_active_ = message->data;
+
+  if (this->emergency_stop_active_) {
+    this->has_cmd_vel_ = false;
+    this->send_stop_command();
+    RCLCPP_ERROR(this->get_logger(), "Emergency stop is active");
+    return;
+  }
+
+  if (previous_state) {
+    RCLCPP_INFO(this->get_logger(), "Emergency stop cleared");
   }
 }
 

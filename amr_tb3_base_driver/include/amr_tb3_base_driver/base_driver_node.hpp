@@ -11,6 +11,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 
 #include "amr_tb3_base_driver/base_types.hpp"
@@ -37,6 +38,7 @@ private:
   void handle_connection_check();
   void poll_feedback();
   void handle_feedback(const BaseFeedback & feedback);
+  void handle_emergency_stop(const std_msgs::msg::Bool::SharedPtr message);
 
   void publish_odometry(const BaseFeedback & feedback);
   void publish_joint_states(const BaseFeedback & feedback);
@@ -52,6 +54,7 @@ private:
   BaseState base_state_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_stop_subscription_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_publisher_;
@@ -70,6 +73,7 @@ private:
   std::string odom_topic_;
   std::string imu_topic_;
   std::string joint_states_topic_;
+  std::string emergency_stop_topic_;
   bool publish_tf_;
   double cmd_vel_timeout_sec_;
   double wheel_separation_m_;
@@ -77,6 +81,7 @@ private:
   double max_linear_velocity_mps_;
   double max_angular_velocity_radps_;
   bool fake_feedback_mode_{false};
+  bool emergency_stop_active_{false};
 
   rclcpp::Time last_cmd_vel_stamp_;
   bool has_cmd_vel_{false};

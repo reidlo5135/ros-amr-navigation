@@ -43,6 +43,8 @@
       joint_state_hz: 30.0
     watchdog:
       cmd_vel_timeout_sec: 0.5
+    safety:
+      emergency_stop_topic: ""
     kinematics:
       wheel_separation_m: 0.160
       wheel_radius_m: 0.033
