@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <utility>
 
 namespace amr::tb3::base_driver
@@ -29,7 +30,8 @@ BaseDriverNode::BaseDriverNode(const rclcpp::NodeOptions & options)
   wheel_radius_m_(0.033),
   max_linear_velocity_mps_(0.22),
   max_angular_velocity_radps_(2.84),
-  last_cmd_vel_stamp_(0, 0, this->get_clock()->get_clock_type())
+  last_cmd_vel_stamp_(0, 0, this->get_clock()->get_clock_type()),
+  odometry_(this->wheel_separation_m_, this->wheel_radius_m_)
 {
   this->declare_parameters();
   this->load_parameters();
@@ -74,6 +76,7 @@ void BaseDriverNode::declare_parameters()
   this->declare_parameter("kinematics.max_linear_velocity_mps", this->max_linear_velocity_mps_);
   this->declare_parameter(
     "kinematics.max_angular_velocity_radps", this->max_angular_velocity_radps_);
+  this->declare_parameter("fake_feedback_mode", this->fake_feedback_mode_);
 }
 
 void BaseDriverNode::load_parameters()
@@ -95,9 +98,11 @@ void BaseDriverNode::load_parameters()
   this->get_parameter("kinematics.max_linear_velocity_mps", this->max_linear_velocity_mps_);
   this->get_parameter(
     "kinematics.max_angular_velocity_radps", this->max_angular_velocity_radps_);
+  this->get_parameter("fake_feedback_mode", this->fake_feedback_mode_);
 
   this->transport_.set_port(this->port_);
   this->transport_.set_baudrate(this->baudrate_);
+  this->odometry_.set_wheel_geometry(this->wheel_separation_m_, this->wheel_radius_m_);
 }
 
 void BaseDriverNode::setup_interfaces()
@@ -108,6 +113,17 @@ void BaseDriverNode::setup_interfaces()
     [this](const geometry_msgs::msg::Twist::SharedPtr message) {
       this->handle_cmd_vel(message);
     });
+
+  this->odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
+    this->odom_topic_,
+    rclcpp::SystemDefaultsQoS());
+  this->imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(
+    this->imu_topic_,
+    rclcpp::SensorDataQoS());
+  this->joint_states_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>(
+    this->joint_states_topic_,
+    rclcpp::SystemDefaultsQoS());
+  this->tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
   this->watchdog_timer_ = this->create_wall_timer(
     100ms,
@@ -189,6 +205,14 @@ void BaseDriverNode::handle_connection_check()
     this->transport_.last_error().c_str());
 }
 
+void BaseDriverNode::handle_feedback(const BaseFeedback & feedback)
+{
+  this->publish_odometry(feedback);
+  this->publish_joint_states(feedback);
+  this->publish_imu(feedback);
+  this->publish_tf(feedback);
+}
+
 BaseCommand BaseDriverNode::clamp_command(
   const double linear_x_mps,
   const double angular_z_radps) const
@@ -250,6 +274,122 @@ void BaseDriverNode::send_stop_command()
   stop_command.angular_z_radps = 0.0;
   (void)this->send_velocity_command(stop_command);
   this->stop_command_sent_ = true;
+}
+
+void BaseDriverNode::publish_odometry(const BaseFeedback & feedback)
+{
+  if (
+    !feedback.left_wheel.position_valid || !feedback.right_wheel.position_valid ||
+    !this->odom_publisher_)
+  {
+    return;
+  }
+
+  if (!this->odometry_.update_from_wheel_positions(
+      feedback.left_wheel.position_rad,
+      feedback.right_wheel.position_rad,
+      feedback.stamp))
+  {
+    return;
+  }
+
+  const OdometryState & state = this->odometry_.state();
+  nav_msgs::msg::Odometry odom;
+  odom.header.stamp = rclcpp::Time(feedback.stamp.count(), this->get_clock()->get_clock_type());
+  odom.header.frame_id = this->odom_frame_;
+  odom.child_frame_id = this->base_frame_;
+  odom.pose.pose.position.x = state.x_m;
+  odom.pose.pose.position.y = state.y_m;
+  odom.pose.pose.position.z = 0.0;
+  odom.pose.pose.orientation.z = std::sin(state.yaw_rad * 0.5);
+  odom.pose.pose.orientation.w = std::cos(state.yaw_rad * 0.5);
+  odom.twist.twist.linear.x = state.linear_velocity_mps;
+  odom.twist.twist.angular.z = state.angular_velocity_radps;
+  odom.pose.covariance[0] = 0.01;
+  odom.pose.covariance[7] = 0.01;
+  odom.pose.covariance[35] = 0.02;
+  odom.twist.covariance[0] = 0.02;
+  odom.twist.covariance[7] = 0.02;
+  odom.twist.covariance[35] = 0.04;
+  this->odom_publisher_->publish(odom);
+}
+
+void BaseDriverNode::publish_joint_states(const BaseFeedback & feedback)
+{
+  if (!this->joint_states_publisher_) {
+    return;
+  }
+
+  sensor_msgs::msg::JointState joint_states;
+  joint_states.header.stamp = rclcpp::Time(
+    feedback.stamp.count(), this->get_clock()->get_clock_type());
+  joint_states.name = {"left_wheel_joint", "right_wheel_joint"};
+  joint_states.position = {
+    feedback.left_wheel.position_rad,
+    feedback.right_wheel.position_rad,
+  };
+  joint_states.velocity = {
+    feedback.left_wheel.velocity_radps,
+    feedback.right_wheel.velocity_radps,
+  };
+  this->joint_states_publisher_->publish(joint_states);
+}
+
+void BaseDriverNode::publish_imu(const BaseFeedback & feedback)
+{
+  if (!this->imu_publisher_) {
+    return;
+  }
+
+  sensor_msgs::msg::Imu imu;
+  imu.header.stamp = rclcpp::Time(feedback.stamp.count(), this->get_clock()->get_clock_type());
+  imu.header.frame_id = this->imu_frame_;
+
+  if (feedback.imu.orientation_valid) {
+    imu.orientation.x = feedback.imu.orientation_xyzw[0];
+    imu.orientation.y = feedback.imu.orientation_xyzw[1];
+    imu.orientation.z = feedback.imu.orientation_xyzw[2];
+    imu.orientation.w = feedback.imu.orientation_xyzw[3];
+    imu.orientation_covariance[0] = 0.02;
+    imu.orientation_covariance[4] = 0.02;
+    imu.orientation_covariance[8] = 0.04;
+  } else {
+    imu.orientation_covariance[0] = -1.0;
+  }
+
+  imu.angular_velocity.x = feedback.imu.angular_velocity_xyz[0];
+  imu.angular_velocity.y = feedback.imu.angular_velocity_xyz[1];
+  imu.angular_velocity.z = feedback.imu.angular_velocity_xyz[2];
+  imu.linear_acceleration.x = feedback.imu.linear_acceleration_xyz[0];
+  imu.linear_acceleration.y = feedback.imu.linear_acceleration_xyz[1];
+  imu.linear_acceleration.z = feedback.imu.linear_acceleration_xyz[2];
+  imu.angular_velocity_covariance[0] = 0.02;
+  imu.angular_velocity_covariance[4] = 0.02;
+  imu.angular_velocity_covariance[8] = 0.04;
+  imu.linear_acceleration_covariance[0] = 0.04;
+  imu.linear_acceleration_covariance[4] = 0.04;
+  imu.linear_acceleration_covariance[8] = 0.08;
+  this->imu_publisher_->publish(imu);
+}
+
+void BaseDriverNode::publish_tf(const BaseFeedback & feedback)
+{
+  if (!this->publish_tf_ || !this->tf_broadcaster_) {
+    return;
+  }
+
+  const OdometryState & state = this->odometry_.state();
+  geometry_msgs::msg::TransformStamped transform;
+  transform.header.stamp = rclcpp::Time(
+    feedback.stamp.count(), this->get_clock()->get_clock_type());
+  transform.header.frame_id = this->odom_frame_;
+  transform.child_frame_id = this->base_frame_;
+  transform.transform.translation.x = state.x_m;
+  transform.transform.translation.y = state.y_m;
+  transform.transform.translation.z = 0.0;
+  transform.transform.rotation.z = std::sin(state.yaw_rad * 0.5);
+  transform.transform.rotation.w = std::cos(state.yaw_rad * 0.5);
+  this->tf_broadcaster_->sendTransform(transform);
 }
 
 }  // namespace amr::tb3::base_driver

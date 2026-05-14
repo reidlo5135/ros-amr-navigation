@@ -5,10 +5,16 @@
 #include <memory>
 #include <string>
 
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
 #include "amr_tb3_base_driver/base_types.hpp"
+#include "amr_tb3_base_driver/differential_drive_odometry.hpp"
 #include "amr_tb3_base_driver/opencr_protocol.hpp"
 #include "amr_tb3_base_driver/serial_transport.hpp"
 
@@ -29,6 +35,12 @@ private:
   void handle_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr message);
   void handle_watchdog();
   void handle_connection_check();
+  void handle_feedback(const BaseFeedback & feedback);
+
+  void publish_odometry(const BaseFeedback & feedback);
+  void publish_joint_states(const BaseFeedback & feedback);
+  void publish_imu(const BaseFeedback & feedback);
+  void publish_tf(const BaseFeedback & feedback);
 
   BaseCommand clamp_command(double linear_x_mps, double angular_z_radps) const;
   bool send_velocity_command(const BaseCommand & command);
@@ -39,8 +51,12 @@ private:
   BaseState base_state_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_publisher_;
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::TimerBase::SharedPtr connection_timer_;
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   std::string port_;
   int baudrate_;
@@ -58,10 +74,12 @@ private:
   double wheel_radius_m_;
   double max_linear_velocity_mps_;
   double max_angular_velocity_radps_;
+  bool fake_feedback_mode_{false};
 
   rclcpp::Time last_cmd_vel_stamp_;
   bool has_cmd_vel_{false};
   bool stop_command_sent_{false};
+  DifferentialDriveOdometry odometry_;
 };
 
 }  // namespace amr::tb3::base_driver
