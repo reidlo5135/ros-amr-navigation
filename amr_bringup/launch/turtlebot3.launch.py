@@ -23,6 +23,15 @@ def default_lidar_port() -> str:
     return "/dev/ttyUSB0"
 
 
+def default_tb3_param_file() -> str:
+    return os.path.join(
+        get_package_share_directory("turtlebot3_bringup"),
+        "param",
+        "humble",
+        "burger.yaml",
+    )
+
+
 def generate_launch_description() -> LaunchDescription:
     bringup_params = os.path.join(
         get_package_share_directory("amr_bringup"),
@@ -32,6 +41,7 @@ def generate_launch_description() -> LaunchDescription:
     description_file = LaunchConfiguration("description_file")
     use_sim_time = LaunchConfiguration("use_sim_time")
     frame_prefix = LaunchConfiguration("frame_prefix")
+    base_backend = LaunchConfiguration("base_backend")
     use_base_driver = LaunchConfiguration("use_base_driver")
     use_lidar_driver = LaunchConfiguration("use_lidar_driver")
     use_robot_state_publisher = LaunchConfiguration("use_robot_state_publisher")
@@ -40,6 +50,7 @@ def generate_launch_description() -> LaunchDescription:
     robot_model = LaunchConfiguration("robot_model")
     base_port = LaunchConfiguration("base_port")
     base_baudrate = LaunchConfiguration("base_baudrate")
+    tb3_param_file = LaunchConfiguration("tb3_param_file")
     lidar_port = LaunchConfiguration("lidar_port")
     lidar_baudrate = LaunchConfiguration("lidar_baudrate")
     sensor_model = LaunchConfiguration("sensor_model")
@@ -96,7 +107,34 @@ def generate_launch_description() -> LaunchDescription:
                 "use_sim_time": use_sim_time,
             },
         ],
-        condition=IfCondition(use_base_driver),
+        condition=IfCondition(
+            PythonExpression(
+                ["'", use_base_driver, "' == 'true' and '", base_backend, "' == 'internal'"]
+            )
+        ),
+    )
+
+    external_base_driver = Node(
+        package="turtlebot3_node",
+        executable="turtlebot3_ros",
+        name="turtlebot3_node",
+        output="screen",
+        parameters=[
+            tb3_param_file,
+            {"namespace": ""},
+        ],
+        arguments=["-i", base_port],
+        condition=IfCondition(
+            PythonExpression(
+                [
+                    "'",
+                    use_base_driver,
+                    "' == 'true' and '",
+                    base_backend,
+                    "' == 'external_tb3_node'",
+                ]
+            )
+        ),
     )
 
     lidar_driver = Node(
@@ -184,7 +222,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "use_base_driver",
                 default_value="true",
-                description="Start the AMR-owned TB3 base driver.",
+                description="Start the selected TB3 base driver backend.",
+            ),
+            DeclareLaunchArgument(
+                "base_backend",
+                default_value="external_tb3_node",
+                description="Base backend selector: external_tb3_node or internal.",
             ),
             DeclareLaunchArgument(
                 "use_lidar_driver",
@@ -205,6 +248,11 @@ def generate_launch_description() -> LaunchDescription:
                 "base_port",
                 default_value="/dev/ttyACM0",
                 description="OpenCR serial port path.",
+            ),
+            DeclareLaunchArgument(
+                "tb3_param_file",
+                default_value=default_tb3_param_file(),
+                description="TurtleBot3 node parameter file used by the external base backend.",
             ),
             DeclareLaunchArgument(
                 "base_baudrate",
@@ -258,6 +306,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             robot_state_publisher,
             base_driver,
+            external_base_driver,
             lidar_driver,
             external_lidar_driver,
         ]

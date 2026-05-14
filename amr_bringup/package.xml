@@ -29,6 +29,7 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>turtlebot3_bringup</exec_depend>
+  <exec_depend>turtlebot3_node</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>amr_map_server</exec_depend>
   <exec_depend>amr_localization</exec_depend>

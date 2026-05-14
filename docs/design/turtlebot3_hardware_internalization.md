@@ -171,6 +171,8 @@ Required host permissions:
 Known limitations in this pass:
 
 - OpenCR velocity and feedback packet details are still provisional and require hardware capture
+- TurtleBot3 Burger should currently prefer the `external_tb3_node` base backend for real hardware
+  wakeup until the AMR-owned OpenCR protocol reaches parity
 - LiDAR parser backends are structural skeletons and still require sensor-specific packet validation
 - TurtleBot3 Burger should currently prefer the `external_hlds` LiDAR backend for real hardware
   until the AMR-owned LDS parser reaches protocol parity
