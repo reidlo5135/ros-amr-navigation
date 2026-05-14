@@ -10,3 +10,8 @@ AMR-owned TurtleBot3 LDS-class LiDAR driver package.
 - support TurtleBot3 LDS variants through explicit parser backends
 
 The first implementation pass focuses on the node shell and parser structure, not full protocol parity.
+
+Current limitations:
+
+- LDS parser backends are still structural skeletons
+- actual sensor-model packet verification is still required per deployed TurtleBot3 unit

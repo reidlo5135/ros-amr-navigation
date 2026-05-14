@@ -13,3 +13,8 @@ AMR-owned TurtleBot3 Burger base driver package.
 - apply stale command watchdog and conservative safety behavior
 
 The first implementation pass focuses on transport, protocol structure, and the ROS-facing node shell.
+
+Current limitations:
+
+- OpenCR velocity and feedback packet details are still provisional
+- hardware verification is still required before production use on a moving robot

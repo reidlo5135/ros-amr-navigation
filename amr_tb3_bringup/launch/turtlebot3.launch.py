@@ -17,14 +17,6 @@ def default_hardware_profile() -> str:
     )
 
 
-def default_bringup_params() -> str:
-    return os.path.join(
-        get_package_share_directory("amr_bringup"),
-        "params",
-        "amr.yaml",
-    )
-
-
 def default_description_file() -> str:
     return os.path.join(
         get_package_share_directory("amr_description"),
@@ -129,8 +121,8 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "bringup_params",
-                default_value=default_bringup_params(),
-                description="Shared AMR bringup parameter file.",
+                default_value=default_hardware_profile(),
+                description="Optional shared AMR bringup parameter file override.",
             ),
             DeclareLaunchArgument(
                 "description_file",

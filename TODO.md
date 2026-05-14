@@ -55,10 +55,12 @@ timeline
            : corridor / doorway blocked-state tuning
            : final-approach stability cleanup
            : ROS + Qt6 `amr_visualization` app start
-    0.17.x : planner/controller quality uplift
+    0.17.x : TurtleBot3 hardware internalization priority
+           : AMR-owned bringup/base/lidar/description boundary
+           : external tb3 bringup replacement track start
+    0.18.x : planner/controller quality + safety + task-layer navigation operations
            : smoother/path-handler style path quality
            : blocked semantics and recovery-exit / path-rejoin quality
-    0.18.x : safety + task-layer navigation operations
            : collision-monitor / detector style near-field safety lane
            : route / waypoint / operator command-state contract maturity
            : application-level BT and operator UX stabilization
@@ -101,8 +103,8 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `0.14.x` | Mapping line reboot | reset mainline to `0.12.4`, add `amr_slam_mapper`, split mapping mode from nav mode, raw/refined temp SLAM maps, mapping observability and save flows |
 | `0.15.x` | Runtime hardening | scenario-based regression baselines, clearer recovery diagnostics, safer operational baseline after the mapping reboot |
 | `0.16.x` | Recovery refinement + Qt6 operator app start | local escape-first recovery flow, narrower-corridor tuning, cleaner blocked semantics, reduced false recovery entry near doors and goal approach, early `amr_visualization` package work |
-| `0.17.x` | Planner/controller quality | Nav2-style smoother/path-quality work, blocked semantics refinement, cleaner recovery exit, lower oscillation during path rejoin and final heading alignment |
-| `0.18.x` | Safety and task-layer ops | collision-monitor/detector-style near-field safety lane, route/waypoint task execution maturity, stronger operator command/state contract, app-level BT and Qt6 operator workflow closure |
+| `0.17.x` | TB3 hardware internalization priority | make TurtleBot3 bringup, base-driver, LiDAR-driver, and robot-description ownership first-class inside the AMR repository while preserving the current compatibility path |
+| `0.18.x` | Planner/controller quality + safety and task-layer ops | Nav2-style smoother/path-quality work, blocked semantics refinement, cleaner recovery exit, lower oscillation during path rejoin and final heading alignment, plus collision-monitor/detector-style near-field safety lane, route/waypoint task execution maturity, stronger operator command/state contract, and app-level BT / Qt6 operator workflow closure |
 | `0.19.x` | Docking and deployment readiness | dock/undock lifecycle, startup/shutdown and reconnect discipline, richer diagnostics and long-run unattended confidence, single-robot deployment closure before `1.0.0` |
 
 ## 0.11.x Focus
@@ -194,16 +196,28 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 
 ## 0.17.x Planned Focus
 
-- improve planner/controller quality after the recovery flow is more trustworthy
+- promote TurtleBot3 hardware internalization into the top-priority line for this cycle
+- define the AMR-owned hardware boundary from `amr_bringup` down to base driver, LiDAR driver, and robot description ownership
+- remove the long-term architectural dependency on `turtlebot3_bringup` as the only way to obtain `/scan`, `/odom`, `/imu`, `/tf`, `/tf_static`, `/cmd_vel`, and `robot_description`
+- keep the first pass incremental and reviewable
+  - docs/design note
+  - package skeletons
+  - TurtleBot3 Burger hardware profile
+  - base/LiDAR transport and protocol abstractions
+  - ROS node shells
+  - selectable hardware backend wiring in `amr_bringup`
+- preserve current TurtleBot3 compatibility while the AMR-owned backend matures
+- defer "production-complete OpenCR + LDS protocol parity" until after the ROS-facing contract and package boundary are stable
+- treat planner/controller quality work as secondary during this line unless hardware contract alignment requires minimal touch
+
+## 0.18.x Planned Focus
+
+- resume planner/controller quality work after the hardware boundary is established
 - add a clearer path-smoothing lane instead of overloading planner and controller heuristics
 - move toward a Nav2-style split where path quality, path handling, and goal checking are explicit responsibilities
 - refine blocked-state semantics between local planner, motion controller, and BT navigator
 - improve recovery exit quality so the robot rejoins the global path without sharp oscillation
 - reduce low-speed final heading jitter and stop/start thrash near the goal
-- keep this line focused on navigation quality itself, not yet on deployment or map-lifecycle expansion
-
-## 0.18.x Planned Focus
-
 - add a near-field safety lane comparable to Nav2's collision monitor / detector direction
   - emergency-stop / slowdown style logic should be explicitly separated from planner recovery semantics
   - operator-facing obstacle/safety state should become more deterministic than a generic blocked flag
