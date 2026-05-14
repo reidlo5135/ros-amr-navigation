@@ -25,6 +25,25 @@ target_include_directories(${PROJECT_NAME}_core
     $<INSTALL_INTERFACE:include>
 )
 
+add_executable(${PROJECT_NAME}_node
+  src/amr_tb3_base_driver/base_driver_node.cpp
+  src/main.cpp
+)
+target_include_directories(${PROJECT_NAME}_node
+  PRIVATE
+    include
+)
+target_link_libraries(${PROJECT_NAME}_node
+  ${PROJECT_NAME}_core
+)
+ament_target_dependencies(${PROJECT_NAME}_node
+  geometry_msgs
+  nav_msgs
+  rclcpp
+  sensor_msgs
+  tf2_ros
+)
+
 install(DIRECTORY
   include/
   DESTINATION include
@@ -32,10 +51,11 @@ install(DIRECTORY
 
 install(TARGETS
   ${PROJECT_NAME}_core
+  ${PROJECT_NAME}_node
   EXPORT ${PROJECT_NAME}_targets
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
