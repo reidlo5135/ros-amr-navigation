@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -10,6 +11,16 @@ from launch.substitutions import PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch.substitutions import Command
+
+
+def default_lidar_port() -> str:
+    by_id_dir = Path("/dev/serial/by-id")
+    if by_id_dir.exists() and by_id_dir.is_dir():
+        for entry in sorted(by_id_dir.iterdir()):
+            name = entry.name.lower()
+            if "cp210" in name or "silicon_labs" in name:
+                return str(entry)
+    return "/dev/ttyUSB0"
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -202,8 +213,8 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "lidar_port",
-                default_value="auto",
-                description="LiDAR serial port path or 'auto' to resolve a CP210x-backed device.",
+                default_value=default_lidar_port(),
+                description="LiDAR serial port path. Defaults to a detected CP210x-backed device when available.",
             ),
             DeclareLaunchArgument(
                 "lidar_baudrate",
