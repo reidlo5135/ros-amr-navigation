@@ -514,7 +514,9 @@ bool BaseDriverNode::connect_opencr(const bool calibrate_imu)
     }
 
     RCLCPP_INFO(this->get_logger(), "Start Calibration of Gyro");
-    rclcpp::sleep_for(std::chrono::duration<double>(this->startup_calibration_wait_sec_));
+    rclcpp::sleep_for(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(this->startup_calibration_wait_sec_)));
     RCLCPP_INFO(this->get_logger(), "Calibration End");
   }
 
