@@ -226,7 +226,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "base_backend",
-                default_value="external_tb3_node",
+                default_value="internal",
                 description="Base backend selector: external_tb3_node or internal.",
             ),
             DeclareLaunchArgument(
@@ -236,7 +236,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "lidar_backend",
-                default_value="external_hlds",
+                default_value="internal",
                 description="LiDAR backend selector: external_hlds or internal.",
             ),
             DeclareLaunchArgument(

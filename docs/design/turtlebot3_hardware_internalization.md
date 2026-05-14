@@ -176,5 +176,6 @@ Known limitations in this pass:
 - LiDAR parser backends are structural skeletons and still require sensor-specific packet validation
 - TurtleBot3 Burger should currently prefer the `external_hlds` LiDAR backend for real hardware
   until the AMR-owned LDS parser reaches protocol parity
+- Those external backends are compatibility fallbacks and must not become the architectural end state
 - the new AMR-owned hardware lane should be treated as an internalization pass, not yet a
   production-ready drop-in replacement for all TurtleBot3 variants

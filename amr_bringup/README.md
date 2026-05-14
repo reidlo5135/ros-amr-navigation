@@ -85,6 +85,9 @@ Current safest real-hardware wakeup path:
 ros2 launch amr_bringup turtlebot3.launch.py base_backend:=external_tb3_node lidar_backend:=external_hlds
 ```
 
+Those external backends are debug/compatibility fallbacks only.
+The default `turtlebot3.launch.py` path remains the AMR-owned internal hardware path.
+
 Single-entry executable used by the robot-side launch:
 
 ```bash

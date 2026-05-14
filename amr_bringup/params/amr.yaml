@@ -349,8 +349,8 @@
   ros__parameters:
     bringup:
       component: ""
-      base_backend: "external_tb3_node"
-      lidar_backend: "external_hlds"
+      base_backend: "internal"
+      lidar_backend: "internal"
     robot:
       type: "turtlebot3"
       model: "burger"
@@ -375,7 +375,7 @@
 /amr/base_driver:
   ros__parameters:
     enabled: true
-    backend: "external_tb3_node"
+    backend: "internal"
     serial:
       port: "/dev/ttyACM0"
       baudrate: 1000000
@@ -410,7 +410,7 @@
 /amr/lidar_driver:
   ros__parameters:
     enabled: true
-    backend: "external_hlds"
+    backend: "internal"
     serial:
       port: "auto"
       baudrate: 230400
