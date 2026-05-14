@@ -137,3 +137,38 @@ The migration should stay incremental and reviewable.
   split deployment topology
 - no build/test/colcon execution is performed in this implementation pass; manual validation is
   required after each stage
+
+## Validation and Rollback
+
+Recommended manual validation commands after implementation:
+
+- `ros2 topic list`
+- `ros2 topic hz /scan`
+- `ros2 topic hz /odom`
+- `ros2 topic echo /imu`
+- `ros2 run tf2_tools view_frames`
+- teleop or another bounded `/cmd_vel` smoke test
+
+Expected robot-side AMR-owned launch:
+
+- `ros2 launch amr_bringup turtlebot3.launch.py`
+
+Expected remote-PC runtime launch:
+
+- `ros2 launch amr_bringup navigation.launch.py`
+
+Rollback path:
+
+- `ros2 launch amr_bringup turtlebot3_external.launch.py`
+
+Required host permissions:
+
+- serial devices such as `/dev/ttyACM0` and `/dev/ttyUSB0` must be accessible to the runtime user
+- typical Ubuntu deployment expects the user to be in a group such as `dialout`
+
+Known limitations in this pass:
+
+- OpenCR velocity and feedback packet details are still provisional and require hardware capture
+- LiDAR parser backends are structural skeletons and still require sensor-specific packet validation
+- the new AMR-owned hardware lane should be treated as an internalization pass, not yet a
+  production-ready drop-in replacement for all TurtleBot3 variants

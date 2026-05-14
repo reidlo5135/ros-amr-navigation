@@ -2,8 +2,10 @@
 
 ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
-Current `0.16.x` line:
-- TurtleBot3 runs the full navigation runtime on-robot.
+Current `0.17.x` direction:
+- TurtleBot3 hardware internalization is the top-priority track.
+- `amr_bringup/launch/turtlebot3.launch.py` is the AMR-owned robot-side hardware entrypoint.
+- `amr_bringup/launch/navigation.launch.py` remains the remote-PC navigation/runtime entrypoint.
 - `amr_visualization` starts the in-repo ROS-native Qt6 operator app lane.
 - `amr_mqtt_server` remains available for remote-client telemetry and command bridging.
 - the external `ros-rcs` app remains a separate remote-client reference:
@@ -14,10 +16,11 @@ Current `0.16.x` line:
 - `0.15.x` remains the frozen runtime-hardening interpretation baseline.
 - `0.16.x` closes the local-escape-first recovery policy, corridor/doorway blocked-state
   tuning pass, and the first in-repo `amr_visualization` operator lane.
-- `0.17.x` is the next quality line:
-  - path-shape / smoothing quality
-  - blocked semantics and recovery-exit quality
-  - controller path rejoin and final-approach polish
+- `0.17.x` establishes the first AMR-owned TurtleBot3 hardware layer:
+  - AMR-owned base driver boundary
+  - AMR-owned LiDAR driver boundary
+  - AMR-owned description ownership
+  - explicit split between robot-side hardware and remote-PC AMR runtime
 
 ## Architecture
 
@@ -54,6 +57,10 @@ flowchart LR
 ## Active Packages
 
 - `amr_bringup`: central launch files and `amr.yaml`
+- `amr_tb3_bringup`: AMR-owned TurtleBot3 robot-side hardware composition
+- `amr_tb3_base_driver`: AMR-owned OpenCR base-driver boundary
+- `amr_tb3_lidar_driver`: AMR-owned LDS-class LiDAR driver boundary
+- `amr_description`: AMR-owned TurtleBot3 Burger-compatible description assets
 - `amr_bt_navigator`: BT-based goal orchestration and recovery decisions
 - `amr_controller_server`: local planner and motion controller lifecycle nodes
 - `amr_costmap_server`: static global costmap + scan-based dynamic local costmap
@@ -99,10 +106,22 @@ Single-goal navigation also uses `/amr/burger1/navigation/command` with a one-el
 
 ## Launch
 
-TB3 full runtime:
+RPi4 robot-side AMR-owned TurtleBot3 hardware bringup:
 
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py
+```
+
+Legacy external TurtleBot3 compatibility path:
+
+```bash
+ros2 launch amr_bringup turtlebot3_external.launch.py
+```
+
+Remote-PC AMR navigation/runtime bringup:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py
 ```
 
 RViz-based local operator test console:
@@ -120,6 +139,32 @@ ros2 launch amr_visualization amr_visualization.launch.py
 `amr_visualization` subscribes to the static map, pose, paths, and runtime status by default.
 Global/local costmap layers are opt-in from the UI because full costmap streams can be heavy on
 TurtleBot3-class hardware.
+
+## Hardware Boundary
+
+The AMR-facing hardware contract remains:
+
+- `/cmd_vel`
+- `/odom`
+- `/imu`
+- `/scan`
+- `/joint_states`
+- `/tf`
+- `/tf_static`
+- `/robot_description`
+
+Frame convention:
+
+- `map`
+- `odom`
+- `base_footprint`
+- `base_link`
+- `base_scan`
+- `imu_link`
+
+The new AMR-owned hardware path is intentionally still incremental. The current pass adds the
+launch/package/transport/protocol boundaries and node shells, but it does not claim production-safe
+OpenCR or LDS packet parity yet.
 
 The ROS-native local operator UI lives in `amr_visualization`. The external `ros-rcs`
 line remains useful as a separate remote-client reference.
@@ -139,6 +184,10 @@ colcon build --packages-select \
   amr_runtime_observation \
   amr_lifecycle_manager \
   amr_mqtt_server \
+  amr_tb3_bringup \
+  amr_tb3_base_driver \
+  amr_tb3_lidar_driver \
+  amr_description \
   amr_rviz \
   amr_visualization \
   amr_bringup \

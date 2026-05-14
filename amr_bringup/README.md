@@ -6,21 +6,27 @@ Central launch and parameter package for the active `0.16.x` line.
 
 - `params/amr.yaml`: shared runtime parameters
 - `launch/localization.launch.py`: map server, localization, costmap server, global planner
-- `launch/navigation.launch.py`: Ubuntu-side AMR bringup without `turtlebot3_bringup`
-- `launch/turtlebot3.launch.py`: TurtleBot3 bringup + AMR runtime + robot-side MQTT bridge
+- `launch/navigation.launch.py`: remote-PC AMR runtime entrypoint
+- `launch/turtlebot3.launch.py`: AMR-owned TurtleBot3 robot-side hardware bringup
+- `launch/turtlebot3_external.launch.py`: legacy external `turtlebot3_bringup` compatibility path
 
-`navigation.launch.py` starts the navigation runtime by default:
+`navigation.launch.py` starts the remote-PC navigation runtime by default:
 - delayed `localization.launch.py`
 - delayed controller / recovery / BT navigation nodes
 - delayed runtime observation and lifecycle manager nodes
 
-`amr_mqtt_server` is started by `turtlebot3.launch.py`, not by `navigation.launch.py`.
-
-Set `navigation_only:=true` only when localization and MQTT are already started elsewhere.
+This package now treats robot-side hardware and remote-PC navigation as separate operational lanes.
+The AMR-owned `turtlebot3.launch.py` is pure ROS hardware bringup only and does not start
+`amr_mqtt_server`, localization, planner, controller, or navigator nodes.
 
 ## Runtime Layout
 
 `turtlebot3.launch.py` starts:
+1. `amr_tb3_base_driver_node`
+2. `amr_tb3_lidar_driver_node`
+3. `robot_state_publisher` from `amr_description`
+
+`turtlebot3_external.launch.py` preserves the older compatibility flow:
 1. `turtlebot3_bringup/robot.launch.py`
 2. delayed `localization.launch.py`
 3. delayed `amr_mqtt_server.launch.py`
@@ -51,38 +57,55 @@ and skips:
 
 ## Launch
 
+Robot-side AMR-owned hardware bringup on the TurtleBot3 RPi4:
+
 ```bash
 ros2 launch amr_bringup turtlebot3.launch.py
 ```
 
-Ubuntu-side AMR bringup for a robot whose `turtlebot3_bringup` is already running elsewhere:
+Legacy external TurtleBot3 compatibility mode:
+
+```bash
+ros2 launch amr_bringup turtlebot3_external.launch.py
+```
+
+Remote-PC AMR navigation/runtime bringup when robot hardware topics already exist:
 
 ```bash
 ros2 launch amr_bringup navigation.launch.py
 ```
 
-Navigation-only bringup when localization and MQTT are already running:
+Mapping mode on the remote-PC runtime:
 
 ```bash
-ros2 launch amr_bringup navigation.launch.py navigation_only:=true
+ros2 launch amr_bringup navigation.launch.py mapping_mode:=true
 ```
 
-Mapping mode:
-
-```bash
-ros2 launch amr_bringup turtlebot3.launch.py mapping_mode:=true
-```
-
-In mapping mode, `amr_bringup` consumes external SLAM topics such as:
+In mapping mode, `navigation.launch.py` consumes external SLAM topics such as:
 - `/slam/map/temp/refined`
 - `/slam/map/temp/raw`
 - `/slam/mapper/odometry`
 - `/slam/mapper/pose`
 - `/slam/mapper/graph_debug`
 
-`navigation.launch.py` starts:
-- `/amr/recovery_server`
-- `/amr/navigator`
-- `/amr/runtime_observation`
-- `/amr/navigation_manager`
-- `amr_controller_server` launch, which hosts `/amr/local_planner` and `/amr/motion_controller`
+## Validation Checklist
+
+- confirm robot-side hardware topics:
+  - `ros2 topic list`
+  - `ros2 topic hz /scan`
+  - `ros2 topic hz /odom`
+  - `ros2 topic echo /imu`
+- confirm TF chain:
+  - `ros2 run tf2_tools view_frames`
+- smoke-test velocity path carefully:
+  - teleop or a single bounded `/cmd_vel` command
+- validate remote-PC runtime consumption separately:
+  - launch `navigation.launch.py`
+  - verify localization, planner, and controller subscribe cleanly to robot-side hardware topics
+
+## Safety Notes
+
+- Wheels can move as soon as `/cmd_vel` is sent to the base driver.
+- OpenCR and LDS packet details are still under incremental verification in this pass.
+- Keep the rollback path available:
+  - use `turtlebot3_external.launch.py` if the AMR-owned hardware backend is not yet ready for the robot under test.
