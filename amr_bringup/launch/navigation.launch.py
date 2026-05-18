@@ -23,12 +23,21 @@ def generate_launch_description() -> LaunchDescription:
     bringup_params = bringup_params_file()
     mapping_mode = LaunchConfiguration("mapping_mode")
     navigation_only = LaunchConfiguration("navigation_only")
-    robot_bringup_delay_sec = LaunchConfiguration("robot_bringup_delay_sec")
+    bringup_delay_sec = LaunchConfiguration("bringup_delay_sec")
     navigation_start_delay_sec = LaunchConfiguration("navigation_start_delay_sec")
 
     localization_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(bringup_launch_file("localization.launch.py")),
         launch_arguments={"mapping_mode": mapping_mode}.items(),
+    )
+    mqtt_server_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("amr_mqtt_server"),
+                "launch",
+                "amr_mqtt_server.launch.py",
+            )
+        ),
     )
 
     controller_launch = IncludeLaunchDescription(
@@ -98,25 +107,26 @@ def generate_launch_description() -> LaunchDescription:
                 description="When true, start only controller/recovery/navigator nodes. Use this when localization and MQTT are already started elsewhere.",
             ),
             DeclareLaunchArgument(
-                "robot_bringup_delay_sec",
+                "bringup_delay_sec",
                 default_value="0.0",
-                description="Delay before localization bringup.",
+                description="Delay before AMR bringup starts.",
             ),
             DeclareLaunchArgument(
                 "navigation_start_delay_sec",
                 default_value="3.0",
-                description="Additional delay before navigation starts after localization bringup.",
+                description="Additional delay before navigation nodes start after localization and MQTT bringup.",
             ),
             TimerAction(
-                period=robot_bringup_delay_sec,
+                period=bringup_delay_sec,
                 actions=[
                     localization_launch,
+                    mqtt_server_launch,
                 ],
                 condition=UnlessCondition(navigation_only),
             ),
             TimerAction(
                 period=PythonExpression(
-                    [robot_bringup_delay_sec, " + ", navigation_start_delay_sec]
+                    [bringup_delay_sec, " + ", navigation_start_delay_sec]
                 ),
                 actions=[
                     controller_launch,
