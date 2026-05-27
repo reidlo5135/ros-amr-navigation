@@ -1,10 +1,5 @@
 #include "amr_localization/localization.hpp"
 
-#include <algorithm>
-#include <cstdint>
-#include <iomanip>
-#include <sstream>
-
 namespace amr::localization::estimator
 {
 
@@ -13,7 +8,6 @@ namespace
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kMinimumWeight = 1e-6;
-constexpr std::int64_t kInputSanityLogIntervalNs = 5LL * 1000LL * 1000LL * 1000LL;
 
 }  // namespace
 
@@ -36,12 +30,6 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   auto_initial_pose_covariance_x_(0.25),
   auto_initial_pose_covariance_y_(0.25),
   auto_initial_pose_covariance_yaw_(0.06853891945200942),
-  debug_map_odom_(false),
-  max_map_odom_jump_xy_(0.20),
-  max_map_odom_jump_yaw_(0.20),
-  clamp_map_odom_jump_(false),
-  max_map_odom_correction_xy_per_update_(0.05),
-  max_map_odom_correction_yaw_per_update_(0.05),
   particle_count_(200),
   initial_particle_std_xy_(0.15),
   initial_particle_std_yaw_(0.15),
@@ -61,10 +49,7 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   has_previous_odom_(false),
   has_initial_pose_(false),
   particles_initialized_(false),
-  auto_initial_pose_published_(false),
-  has_previous_map_to_odom_transform_(false),
-  map_odom_update_reason_("startup"),
-  last_input_sanity_log_ns_(0)
+  auto_initial_pose_published_(false)
 {
   this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
@@ -86,14 +71,6 @@ Localization::Localization(const rclcpp::NodeOptions &options)
     "auto_initial_pose.covariance.y", this->auto_initial_pose_covariance_y_);
   this->declare_parameter(
     "auto_initial_pose.covariance.yaw", this->auto_initial_pose_covariance_yaw_);
-  this->declare_parameter("debug_map_odom", this->debug_map_odom_);
-  this->declare_parameter("max_map_odom_jump_xy", this->max_map_odom_jump_xy_);
-  this->declare_parameter("max_map_odom_jump_yaw", this->max_map_odom_jump_yaw_);
-  this->declare_parameter("clamp_map_odom_jump", this->clamp_map_odom_jump_);
-  this->declare_parameter(
-    "max_map_odom_correction_xy_per_update", this->max_map_odom_correction_xy_per_update_);
-  this->declare_parameter(
-    "max_map_odom_correction_yaw_per_update", this->max_map_odom_correction_yaw_per_update_);
   this->declare_parameter("amcl.particle_count", this->particle_count_);
   this->declare_parameter("amcl.initial_particle_std_xy", this->initial_particle_std_xy_);
   this->declare_parameter("amcl.initial_particle_std_yaw", this->initial_particle_std_yaw_);
@@ -131,14 +108,6 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     "auto_initial_pose.covariance.y", this->auto_initial_pose_covariance_y_);
   this->get_parameter(
     "auto_initial_pose.covariance.yaw", this->auto_initial_pose_covariance_yaw_);
-  this->get_parameter("debug_map_odom", this->debug_map_odom_);
-  this->get_parameter("max_map_odom_jump_xy", this->max_map_odom_jump_xy_);
-  this->get_parameter("max_map_odom_jump_yaw", this->max_map_odom_jump_yaw_);
-  this->get_parameter("clamp_map_odom_jump", this->clamp_map_odom_jump_);
-  this->get_parameter(
-    "max_map_odom_correction_xy_per_update", this->max_map_odom_correction_xy_per_update_);
-  this->get_parameter(
-    "max_map_odom_correction_yaw_per_update", this->max_map_odom_correction_yaw_per_update_);
   this->get_parameter("amcl.particle_count", this->particle_count_);
   this->get_parameter("amcl.initial_particle_std_xy", this->initial_particle_std_xy_);
   this->get_parameter("amcl.initial_particle_std_yaw", this->initial_particle_std_yaw_);
@@ -166,21 +135,6 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
       this->initial_pose_topic_.c_str(),
       this->estimated_pose_topic_.c_str(),
       this->estimated_odom_topic_.c_str());
-    return CallbackReturn::FAILURE;
-  }
-
-  if (
-    this->max_map_odom_jump_xy_ <= 0.0 || this->max_map_odom_jump_yaw_ <= 0.0 ||
-    this->max_map_odom_correction_xy_per_update_ <= 0.0 ||
-    this->max_map_odom_correction_yaw_per_update_ <= 0.0)
-  {
-    RCLCPP_ERROR(
-      this->get_logger(),
-      "Map/odom diagnostic thresholds must be positive: jump_xy=%.3f jump_yaw=%.3f clamp_xy=%.3f clamp_yaw=%.3f",
-      this->max_map_odom_jump_xy_,
-      this->max_map_odom_jump_yaw_,
-      this->max_map_odom_correction_xy_per_update_,
-      this->max_map_odom_correction_yaw_per_update_);
     return CallbackReturn::FAILURE;
   }
 
@@ -225,19 +179,13 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->estimated_odom_topic_, rclcpp::SystemDefaultsQoS());
   this->transform_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-  if (this->debug_map_odom_) {
-    this->log_input_sanity("startup");
-  }
-
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, debug_map_odom=%s, clamp_map_odom_jump=%s",
+    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d",
     this->odom_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->map_topic_.c_str(),
-    this->particle_count_,
-    this->debug_map_odom_ ? "true" : "false",
-    this->clamp_map_odom_jump_ ? "true" : "false");
+    this->particle_count_);
   return CallbackReturn::SUCCESS;
 }
 
@@ -252,7 +200,6 @@ Localization::CallbackReturn Localization::on_activate(const rclcpp_lifecycle::S
   }
 
   if (this->has_initial_pose_) {
-    this->map_odom_update_reason_ = "activation_publish";
     this->update_estimated_pose_from_particles(this->now());
     this->publish_outputs(this->now());
   }
@@ -319,13 +266,11 @@ void Localization::handle_odometry(const nav_msgs::msg::Odometry::SharedPtr mess
 {
   this->latest_odom_ = *message;
   this->has_latest_odom_ = true;
-  this->maybe_log_input_sanity();
 
   const auto current_odom_pose = this->odometry_pose_to_pose_stamped(*message);
   if (!this->has_previous_odom_) {
     this->previous_odom_pose_ = current_odom_pose;
     this->has_previous_odom_ = true;
-    this->map_odom_update_reason_ = "odometry_bootstrap";
     this->update_estimated_pose_from_particles(message->header.stamp);
     this->publish_outputs(message->header.stamp);
     return;
@@ -333,7 +278,6 @@ void Localization::handle_odometry(const nav_msgs::msg::Odometry::SharedPtr mess
 
   if (this->particles_initialized_) {
     this->apply_motion_update(this->previous_odom_pose_, current_odom_pose);
-    this->map_odom_update_reason_ = "odometry_motion_update";
     this->update_estimated_pose_from_particles(message->header.stamp);
     this->publish_outputs(message->header.stamp);
   }
@@ -345,7 +289,6 @@ void Localization::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr mess
 {
   this->latest_scan_ = *message;
   this->has_latest_scan_ = true;
-  this->maybe_log_input_sanity();
 
   if (!this->particles_initialized_ || !this->has_map_) {
     return;
@@ -357,7 +300,6 @@ void Localization::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr mess
   const auto stamp = message->header.stamp.sec == 0 && message->header.stamp.nanosec == 0U ?
     this->now() :
     rclcpp::Time(message->header.stamp);
-  this->map_odom_update_reason_ = "scan_measurement_update";
   this->update_estimated_pose_from_particles(stamp);
   this->publish_outputs(stamp);
 }
@@ -398,7 +340,6 @@ void Localization::handle_initial_pose(
   const auto stamp = message->header.stamp.sec == 0 && message->header.stamp.nanosec == 0U ?
     this->now() :
     rclcpp::Time(message->header.stamp);
-  this->map_odom_update_reason_ = "initial_pose";
   this->update_estimated_pose_from_particles(stamp);
   this->publish_outputs(stamp);
 
@@ -616,7 +557,7 @@ void Localization::publish_outputs(const rclcpp::Time &stamp)
 }
 
 geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
-  const rclcpp::Time &stamp)
+  const rclcpp::Time &stamp) const
 {
   geometry_msgs::msg::TransformStamped transform;
   transform.header.stamp = stamp;
@@ -641,122 +582,6 @@ geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
   transform.transform.rotation.y = 0.0;
   transform.transform.rotation.z = std::sin(yaw_delta * 0.5);
   transform.transform.rotation.w = std::cos(yaw_delta * 0.5);
-
-  const double odom_age_sec = this->stamp_age_seconds(this->latest_odom_.header.stamp, stamp);
-  const double scan_age_sec = this->has_latest_scan_ ?
-    this->stamp_age_seconds(this->latest_scan_.header.stamp, stamp) :
-    -1.0;
-
-  if (!this->has_previous_map_to_odom_transform_) {
-    this->previous_map_to_odom_transform_ = transform;
-    this->has_previous_map_to_odom_transform_ = true;
-  } else {
-    const double previous_x = this->previous_map_to_odom_transform_.transform.translation.x;
-    const double previous_y = this->previous_map_to_odom_transform_.transform.translation.y;
-    const double previous_yaw =
-      this->quaternion_yaw(this->previous_map_to_odom_transform_.transform.rotation);
-    double delta_x = transform.transform.translation.x - previous_x;
-    double delta_y = transform.transform.translation.y - previous_y;
-    double delta_yaw =
-      this->normalize_angle(this->quaternion_yaw(transform.transform.rotation) - previous_yaw);
-    const double delta_xy = this->planar_distance(delta_x, delta_y);
-
-    if (
-      delta_xy > this->max_map_odom_jump_xy_ ||
-      std::abs(delta_yaw) > this->max_map_odom_jump_yaw_)
-    {
-      RCLCPP_WARN(
-        this->get_logger(),
-        "map->odom jump detected: reason=%s prev=(%.3f, %.3f, %.3f) new=(%.3f, %.3f, %.3f) delta=(%.3f, %.3f, %.3f) odom_pose=(%.3f, %.3f, %.3f) map_pose=(%.3f, %.3f, %.3f) scan_frame='%s' scan_age=%.3f odom_age=%.3f",
-        this->map_odom_update_reason_.c_str(),
-        previous_x,
-        previous_y,
-        previous_yaw,
-        transform.transform.translation.x,
-        transform.transform.translation.y,
-        this->quaternion_yaw(transform.transform.rotation),
-        delta_x,
-        delta_y,
-        delta_yaw,
-        current_odom_pose.pose.position.x,
-        current_odom_pose.pose.position.y,
-        odom_yaw,
-        this->estimated_pose_.pose.position.x,
-        this->estimated_pose_.pose.position.y,
-        map_yaw,
-        this->has_latest_scan_ ? this->latest_scan_.header.frame_id.c_str() : "<none>",
-        scan_age_sec,
-        odom_age_sec);
-    }
-
-    if (this->clamp_map_odom_jump_) {
-      bool clamped = false;
-      if (delta_xy > this->max_map_odom_correction_xy_per_update_ && delta_xy > 0.0) {
-        const double scale = this->max_map_odom_correction_xy_per_update_ / delta_xy;
-        delta_x *= scale;
-        delta_y *= scale;
-        clamped = true;
-      }
-      const double limited_delta_yaw = std::clamp(
-        delta_yaw,
-        -this->max_map_odom_correction_yaw_per_update_,
-        this->max_map_odom_correction_yaw_per_update_);
-      if (limited_delta_yaw != delta_yaw) {
-        delta_yaw = limited_delta_yaw;
-        clamped = true;
-      }
-      if (clamped) {
-        transform.transform.translation.x = previous_x + delta_x;
-        transform.transform.translation.y = previous_y + delta_y;
-        const double clamped_yaw = this->normalize_angle(previous_yaw + delta_yaw);
-        transform.transform.rotation.x = 0.0;
-        transform.transform.rotation.y = 0.0;
-        transform.transform.rotation.z = std::sin(clamped_yaw * 0.5);
-        transform.transform.rotation.w = std::cos(clamped_yaw * 0.5);
-        RCLCPP_WARN(
-          this->get_logger(),
-          "Clamped map->odom correction: reason=%s clamped_delta=(%.3f, %.3f, %.3f) limits=(xy=%.3f yaw=%.3f)",
-          this->map_odom_update_reason_.c_str(),
-          delta_x,
-          delta_y,
-          delta_yaw,
-          this->max_map_odom_correction_xy_per_update_,
-          this->max_map_odom_correction_yaw_per_update_);
-      }
-    }
-  }
-
-  if (this->debug_map_odom_) {
-    const double previous_x = this->previous_map_to_odom_transform_.transform.translation.x;
-    const double previous_y = this->previous_map_to_odom_transform_.transform.translation.y;
-    const double previous_yaw =
-      this->quaternion_yaw(this->previous_map_to_odom_transform_.transform.rotation);
-    const double new_yaw = this->quaternion_yaw(transform.transform.rotation);
-    RCLCPP_INFO(
-      this->get_logger(),
-      "map->odom update: reason=%s prev=(%.3f, %.3f, %.3f) new=(%.3f, %.3f, %.3f) delta=(%.3f, %.3f, %.3f) odom_pose=(%.3f, %.3f, %.3f) map_pose=(%.3f, %.3f, %.3f) scan_frame='%s' scan_age=%.3f odom_age=%.3f",
-      this->map_odom_update_reason_.c_str(),
-      previous_x,
-      previous_y,
-      previous_yaw,
-      transform.transform.translation.x,
-      transform.transform.translation.y,
-      new_yaw,
-      transform.transform.translation.x - previous_x,
-      transform.transform.translation.y - previous_y,
-      this->normalize_angle(new_yaw - previous_yaw),
-      current_odom_pose.pose.position.x,
-      current_odom_pose.pose.position.y,
-      odom_yaw,
-      this->estimated_pose_.pose.position.x,
-      this->estimated_pose_.pose.position.y,
-      map_yaw,
-      this->has_latest_scan_ ? this->latest_scan_.header.frame_id.c_str() : "<none>",
-      scan_age_sec,
-      odom_age_sec);
-  }
-
-  this->previous_map_to_odom_transform_ = transform;
   return transform;
 }
 
@@ -940,83 +765,6 @@ void Localization::update_pose_orientation(
   pose.pose.orientation.w = std::cos(yaw * 0.5);
 }
 
-void Localization::log_input_sanity(const char *context) const
-{
-  std::ostringstream scan_summary;
-  if (this->has_latest_scan_) {
-    scan_summary << std::fixed << std::setprecision(3)
-                 << "frame='" << this->latest_scan_.header.frame_id
-                 << "' angle_min=" << this->latest_scan_.angle_min
-                 << " angle_max=" << this->latest_scan_.angle_max
-                 << " angle_increment=" << this->latest_scan_.angle_increment
-                 << " range_min=" << this->latest_scan_.range_min
-                 << " range_max=" << this->latest_scan_.range_max
-                 << " ranges=" << this->latest_scan_.ranges.size();
-  } else {
-    scan_summary << "unavailable";
-  }
-
-  std::ostringstream odom_summary;
-  if (this->has_latest_odom_) {
-    odom_summary << std::fixed << std::setprecision(3)
-                 << "frame='" << this->latest_odom_.header.frame_id
-                 << "' cov_row0=["
-                 << this->latest_odom_.pose.covariance[0] << ", "
-                 << this->latest_odom_.pose.covariance[1] << ", "
-                 << this->latest_odom_.pose.covariance[2] << ", "
-                 << this->latest_odom_.pose.covariance[3] << ", "
-                 << this->latest_odom_.pose.covariance[4] << ", "
-                 << this->latest_odom_.pose.covariance[5] << "]"
-                 << " yaw_cov=" << this->latest_odom_.pose.covariance[35];
-  } else {
-    odom_summary << "unavailable";
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Localization input sanity (%s): map_frame='%s' odom_frame='%s' base_frame='%s' scan_topic='%s' scan=%s odom=%s initial_pose_received=%s",
-    context,
-    this->map_frame_.c_str(),
-    this->odom_frame_.c_str(),
-    this->base_frame_.c_str(),
-    this->scan_topic_.c_str(),
-    scan_summary.str().c_str(),
-    odom_summary.str().c_str(),
-    this->has_initial_pose_ ? "true" : "false");
-}
-
-void Localization::maybe_log_input_sanity()
-{
-  if (!this->debug_map_odom_) {
-    return;
-  }
-
-  const auto now_ns = this->now().nanoseconds();
-  if (
-    this->last_input_sanity_log_ns_ == 0 ||
-    (now_ns - this->last_input_sanity_log_ns_) >= kInputSanityLogIntervalNs)
-  {
-    this->last_input_sanity_log_ns_ = now_ns;
-    this->log_input_sanity("periodic");
-  }
-}
-
-double Localization::stamp_age_seconds(
-  const builtin_interfaces::msg::Time &stamp,
-  const rclcpp::Time &now) const
-{
-  if (stamp.sec == 0 && stamp.nanosec == 0U) {
-    return -1.0;
-  }
-
-  return (now - rclcpp::Time(stamp)).seconds();
-}
-
-double Localization::planar_distance(const double delta_x, const double delta_y) const
-{
-  return std::sqrt((delta_x * delta_x) + (delta_y * delta_y));
-}
-
 void Localization::reset_state()
 {
   this->latest_odom_ = nav_msgs::msg::Odometry();
@@ -1033,10 +781,6 @@ void Localization::reset_state()
   this->has_initial_pose_ = false;
   this->particles_initialized_ = false;
   this->auto_initial_pose_published_ = false;
-  this->has_previous_map_to_odom_transform_ = false;
-  this->previous_map_to_odom_transform_ = geometry_msgs::msg::TransformStamped();
-  this->map_odom_update_reason_ = "reset";
-  this->last_input_sanity_log_ns_ = 0;
 }
 
 }  // namespace amr::localization::estimator

@@ -4,14 +4,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdint>
 #include <limits>
 #include <memory>
 #include <random>
 #include <string>
 #include <vector>
 
-#include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
@@ -62,7 +60,7 @@ private:
   void resample_particles();
   void update_estimated_pose_from_particles(const rclcpp::Time &stamp);
   void publish_outputs(const rclcpp::Time &stamp);
-  geometry_msgs::msg::TransformStamped build_map_to_odom_transform(const rclcpp::Time &stamp);
+  geometry_msgs::msg::TransformStamped build_map_to_odom_transform(const rclcpp::Time &stamp) const;
   geometry_msgs::msg::PoseStamped odometry_pose_to_pose_stamped(
     const nav_msgs::msg::Odometry &odometry) const;
   bool world_to_grid(double world_x, double world_y, int &grid_x, int &grid_y) const;
@@ -75,10 +73,6 @@ private:
   double normalize_angle(double angle) const;
   double quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const;
   void update_pose_orientation(geometry_msgs::msg::PoseStamped &pose, double yaw) const;
-  void log_input_sanity(const char *context) const;
-  void maybe_log_input_sanity();
-  double stamp_age_seconds(const builtin_interfaces::msg::Time &stamp, const rclcpp::Time &now) const;
-  double planar_distance(double delta_x, double delta_y) const;
   void reset_state();
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odometry_subscription_;
@@ -109,12 +103,6 @@ private:
   double auto_initial_pose_covariance_x_;
   double auto_initial_pose_covariance_y_;
   double auto_initial_pose_covariance_yaw_;
-  bool debug_map_odom_;
-  double max_map_odom_jump_xy_;
-  double max_map_odom_jump_yaw_;
-  bool clamp_map_odom_jump_;
-  double max_map_odom_correction_xy_per_update_;
-  double max_map_odom_correction_yaw_per_update_;
   int particle_count_;
   double initial_particle_std_xy_;
   double initial_particle_std_yaw_;
@@ -142,10 +130,6 @@ private:
   bool has_initial_pose_;
   bool particles_initialized_;
   bool auto_initial_pose_published_;
-  bool has_previous_map_to_odom_transform_;
-  geometry_msgs::msg::TransformStamped previous_map_to_odom_transform_;
-  std::string map_odom_update_reason_;
-  std::int64_t last_input_sanity_log_ns_;
 };
 
 }  // namespace amr::localization::estimator

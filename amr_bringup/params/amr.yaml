@@ -53,12 +53,6 @@
         x: 0.25
         y: 0.25
         yaw: 0.06853891945200942
-    debug_map_odom: false
-    max_map_odom_jump_xy: 0.20
-    max_map_odom_jump_yaw: 0.20
-    clamp_map_odom_jump: false
-    max_map_odom_correction_xy_per_update: 0.05
-    max_map_odom_correction_yaw_per_update: 0.05
     amcl:
       particle_count: 200
       initial_particle_std_xy: 0.15
