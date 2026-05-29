@@ -43,6 +43,7 @@
       odom: "odom"
       base: "base_link"
     start_pose:
+      enabled: false
       x: 0.0
       y: 0.0
       yaw: 0.0
@@ -72,7 +73,7 @@
     service_timeout_ms: 5000
     state_poll_interval_ms: 200
     initial_pose:
-      enabled: true
+      enabled: false
       topic: "/amr/localization/initial_pose"
       frame_id: "map"
       delay_sec: 0.5

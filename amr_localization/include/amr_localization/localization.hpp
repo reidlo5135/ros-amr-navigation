@@ -98,6 +98,7 @@ private:
   double initial_x_;
   double initial_y_;
   double initial_yaw_;
+  bool start_pose_enabled_;
   bool auto_initial_pose_enabled_;
   double auto_initial_pose_delay_sec_;
   double auto_initial_pose_covariance_x_;

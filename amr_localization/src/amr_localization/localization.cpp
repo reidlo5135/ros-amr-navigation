@@ -25,6 +25,7 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   initial_x_(0.0),
   initial_y_(0.0),
   initial_yaw_(0.0),
+  start_pose_enabled_(true),
   auto_initial_pose_enabled_(true),
   auto_initial_pose_delay_sec_(3.0),
   auto_initial_pose_covariance_x_(0.25),
@@ -63,6 +64,7 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   this->declare_parameter("start_pose.x", this->initial_x_);
   this->declare_parameter("start_pose.y", this->initial_y_);
   this->declare_parameter("start_pose.yaw", this->initial_yaw_);
+  this->declare_parameter("start_pose.enabled", this->start_pose_enabled_);
   this->declare_parameter("auto_initial_pose.enabled", this->auto_initial_pose_enabled_);
   this->declare_parameter("auto_initial_pose.delay_sec", this->auto_initial_pose_delay_sec_);
   this->declare_parameter(
@@ -100,6 +102,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("start_pose.x", this->initial_x_);
   this->get_parameter("start_pose.y", this->initial_y_);
   this->get_parameter("start_pose.yaw", this->initial_yaw_);
+  this->get_parameter("start_pose.enabled", this->start_pose_enabled_);
   this->get_parameter("auto_initial_pose.enabled", this->auto_initial_pose_enabled_);
   this->get_parameter("auto_initial_pose.delay_sec", this->auto_initial_pose_delay_sec_);
   this->get_parameter(
@@ -145,8 +148,10 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->initial_map_pose_.pose.position.y = this->initial_y_;
   this->initial_map_pose_.pose.position.z = 0.0;
   this->update_pose_orientation(this->initial_map_pose_, this->initial_yaw_);
-  this->has_initial_pose_ = true;
-  this->initialize_particles(this->initial_map_pose_);
+  if (this->start_pose_enabled_) {
+    this->has_initial_pose_ = true;
+    this->initialize_particles(this->initial_map_pose_);
+  }
 
   this->odometry_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
     this->odom_topic_, rclcpp::SystemDefaultsQoS(),
@@ -181,11 +186,18 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d",
+    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d, start_pose_enabled=%s",
     this->odom_topic_.c_str(),
     this->scan_topic_.c_str(),
     this->map_topic_.c_str(),
-    this->particle_count_);
+    this->particle_count_,
+    this->start_pose_enabled_ ? "true" : "false");
+  if (!this->start_pose_enabled_) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Localization will not publish map->odom until an explicit initial pose is received on '%s'",
+      this->initial_pose_topic_.c_str());
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -271,6 +283,9 @@ void Localization::handle_odometry(const nav_msgs::msg::Odometry::SharedPtr mess
   if (!this->has_previous_odom_) {
     this->previous_odom_pose_ = current_odom_pose;
     this->has_previous_odom_ = true;
+    if (!this->particles_initialized_) {
+      return;
+    }
     this->update_estimated_pose_from_particles(message->header.stamp);
     this->publish_outputs(message->header.stamp);
     return;
@@ -535,6 +550,10 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time &stam
 
 void Localization::publish_outputs(const rclcpp::Time &stamp)
 {
+  if (!this->particles_initialized_) {
+    return;
+  }
+
   if (
     !this->estimated_pose_publisher_ || !this->estimated_pose_publisher_->is_activated() ||
     !this->estimated_odometry_publisher_ || !this->estimated_odometry_publisher_->is_activated())
