@@ -801,6 +801,7 @@ void RosWorker::configure_ros_interfaces()
       parse_timer.start();
       robot_description_visuals_ = parse_robot_description(message->data);
       const qint64 parse_elapsed_ms = parse_timer.elapsed();
+      const QString robot_description_xml = QString::fromStdString(message->data);
       RCLCPP_INFO(
         node_->get_logger(),
         "%s",
@@ -813,6 +814,36 @@ void RosWorker::configure_ros_interfaces()
           .arg(robot_description_parse_stats_.mesh_visuals)
           .arg(robot_description_parse_stats_.primitive_visuals)
           .arg(robot_description_parse_stats_.collision_fallbacks).toStdString().c_str());
+      auto parsed_mesh_exists = [this](const QString &frame_id, const QString &uri_fragment) {
+          return std::any_of(
+            robot_description_visuals_.begin(), robot_description_visuals_.end(),
+            [&frame_id, &uri_fragment](const RobotVisual &visual) {
+              return is_urdf_mesh_visual(visual) && visual.frame_id == frame_id &&
+                visual.mesh_filename.contains(uri_fragment);
+            });
+        };
+      auto emit_urdf_mesh_parse_mismatch =
+        [this, &robot_description_xml, &parsed_mesh_exists](
+          const QString &frame_id,
+          const QString &uri_fragment,
+          const QString &mesh_name)
+        {
+          if (!robot_description_xml.contains(uri_fragment)) {
+            return;
+          }
+          if (parsed_mesh_exists(frame_id, uri_fragment)) {
+            return;
+          }
+          RCLCPP_WARN(
+            node_->get_logger(),
+            "%s",
+            QString("URDF mesh parse mismatch: %1 mesh exists in XML but was not parsed (%2)")
+              .arg(frame_id, mesh_name).toStdString().c_str());
+        };
+      emit_urdf_mesh_parse_mismatch("base_link", "burger_base.stl", "burger_base.stl");
+      emit_urdf_mesh_parse_mismatch("wheel_left_link", "left_tire.stl", "left_tire.stl");
+      emit_urdf_mesh_parse_mismatch("wheel_right_link", "right_tire.stl", "right_tire.stl");
+      emit_urdf_mesh_parse_mismatch("base_scan", "lds.stl", "lds.stl");
       if (enable_tf_visualization_) {
         Q_EMIT tfFramesChanged(build_frame_visuals());
       }
@@ -982,6 +1013,8 @@ void RosWorker::emit_robot_visual_diagnostics_once(
   const QString &reason)
 {
   int mesh_visual_count = 0;
+  int unresolved_pose_mesh_visual_count = 0;
+  int resolved_mesh_count = 0;
   int opengl_mesh_candidate_count = 0;
   int proxy_visual_count = 0;
   for (const auto &visual : visuals) {
@@ -990,28 +1023,40 @@ void RosWorker::emit_robot_visual_diagnostics_once(
     }
     if (is_urdf_mesh_visual(visual)) {
       ++mesh_visual_count;
+      if (visual.unresolved_pose) {
+        ++unresolved_pose_mesh_visual_count;
+      }
+      if (!visual.mesh_resolved_path.trimmed().isEmpty()) {
+        ++resolved_mesh_count;
+      }
     }
     if (is_accepted_opengl_mesh_visual(visual)) {
       ++opengl_mesh_candidate_count;
     }
   }
 
-  const QString summary_key = QString("robot_visual_summary:%1:%2:%3:%4:%5")
+  const QString summary_key = QString("robot_visual_summary:%1:%2:%3:%4:%5:%6:%7:%8")
     .arg(reason)
     .arg(visuals.size())
+    .arg(robot_description_parse_stats_.mesh_visuals)
     .arg(mesh_visual_count)
+    .arg(unresolved_pose_mesh_visual_count)
     .arg(proxy_visual_count)
+    .arg(resolved_mesh_count)
     .arg(opengl_mesh_candidate_count);
   if (!diagnostic_event_cache_.contains(summary_key)) {
     diagnostic_event_cache_.insert(summary_key);
     RCLCPP_INFO(
       node_->get_logger(),
       "%s",
-      QString("RobotVisual build diagnostics (%1): total=%2, urdf_mesh_visuals=%3, proxy_visuals=%4, accepted_opengl_meshes=%5")
+      QString("RobotVisual build diagnostics (%1): total_visuals=%2, parse_stage_mesh_visuals=%3, build_stage_urdf_mesh_visuals=%4, urdf_mesh_visuals=%4, unresolved_pose_mesh_visuals=%5, proxy_visuals=%6, resolved_meshes=%7, accepted_opengl_meshes=%8")
         .arg(reason)
         .arg(visuals.size())
+        .arg(robot_description_parse_stats_.mesh_visuals)
         .arg(mesh_visual_count)
+        .arg(unresolved_pose_mesh_visual_count)
         .arg(proxy_visual_count)
+        .arg(resolved_mesh_count)
         .arg(opengl_mesh_candidate_count).toStdString().c_str());
   }
 
@@ -1489,7 +1534,121 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
     Q_EMIT eventReceived(QString("Invalid robot_description URDF: %1").arg(reader.errorString()));
   }
 
+  std::set<QString> existing_visual_meshes;
   for (const auto &visual : visuals) {
+    if (visual.urdf_source == "visual" && visual.type == RobotGeometryType::Mesh) {
+      existing_visual_meshes.insert(visual.frame_id + "|" + visual.mesh_filename);
+    }
+  }
+
+  std::set<QString> recovered_visual_frames;
+  QXmlStreamReader visual_mesh_reader(QString::fromStdString(payload));
+  QString current_link;
+  QString current_block_source;
+  Pose2D current_origin;
+  current_origin.valid = true;
+  bool in_geometry = false;
+  while (!visual_mesh_reader.atEnd()) {
+    visual_mesh_reader.readNext();
+    if (visual_mesh_reader.isStartElement()) {
+      const auto name = visual_mesh_reader.name();
+      if (name == QLatin1String("link")) {
+        current_link = visual_mesh_reader.attributes().value("name").toString();
+        continue;
+      }
+      if ((name == QLatin1String("visual") || name == QLatin1String("collision")) && !current_link.isEmpty()) {
+        current_block_source = name == QLatin1String("visual") ? "visual" : "collision";
+        current_origin = Pose2D{};
+        current_origin.valid = true;
+        in_geometry = false;
+        continue;
+      }
+      if (name == QLatin1String("origin") && !current_block_source.isEmpty()) {
+        current_origin = parse_origin_attributes(visual_mesh_reader.attributes());
+        continue;
+      }
+      if (name == QLatin1String("geometry") && !current_block_source.isEmpty()) {
+        in_geometry = true;
+        continue;
+      }
+      if (
+        name == QLatin1String("mesh") &&
+        in_geometry &&
+        current_block_source == "visual" &&
+        !current_link.isEmpty())
+      {
+        const QString mesh_filename = visual_mesh_reader.attributes().value("filename").toString();
+        if (mesh_filename.isEmpty()) {
+          continue;
+        }
+        const QString key = current_link + "|" + mesh_filename;
+        if (existing_visual_meshes.count(key) > 0) {
+          continue;
+        }
+        RobotVisual visual;
+        visual.frame_id = current_link;
+        visual.pose = current_origin;
+        visual.pose.valid = true;
+        visual.valid = true;
+        visual.type = RobotGeometryType::Mesh;
+        visual.mesh_filename = mesh_filename;
+        const QVector<double> scale =
+          parse_scalar_list(visual_mesh_reader.attributes().value("scale").toString(), 3);
+        if (scale.size() == 3) {
+          visual.mesh_scale_x = scale[0];
+          visual.mesh_scale_y = scale[1];
+          visual.mesh_scale_z = scale[2];
+        }
+        visual.mesh_resolved_path = resolve_mesh_uri(visual.mesh_filename);
+        visual.urdf_source = "visual";
+        visuals.push_back(visual);
+        existing_visual_meshes.insert(key);
+        recovered_visual_frames.insert(current_link);
+        RCLCPP_WARN(
+          node_->get_logger(),
+          "%s",
+          QString("Recovered URDF visual mesh missed by primary parser: frame_id=%1, uri=%2, resolved_path=%3, scale=%4 %5 %6, origin=%7")
+            .arg(visual.frame_id)
+            .arg(visual.mesh_filename)
+            .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
+            .arg(visual.mesh_scale_x)
+            .arg(visual.mesh_scale_y)
+            .arg(visual.mesh_scale_z)
+            .arg(pose_text(visual.pose)).toStdString().c_str());
+      }
+      continue;
+    }
+
+    if (visual_mesh_reader.isEndElement()) {
+      const auto name = visual_mesh_reader.name();
+      if (name == QLatin1String("geometry")) {
+        in_geometry = false;
+      } else if (name == QLatin1String("visual") || name == QLatin1String("collision")) {
+        current_block_source.clear();
+        in_geometry = false;
+      } else if (name == QLatin1String("link")) {
+        current_link.clear();
+      }
+    }
+  }
+
+  if (!recovered_visual_frames.empty()) {
+    QVector<RobotVisual> filtered_visuals;
+    filtered_visuals.reserve(visuals.size());
+    for (const auto &visual : visuals) {
+      if (visual.urdf_source == "collision" && recovered_visual_frames.count(visual.frame_id) > 0) {
+        continue;
+      }
+      filtered_visuals.push_back(visual);
+    }
+    visuals = filtered_visuals;
+  }
+
+  robot_description_parse_stats_.collision_fallbacks = 0;
+  for (const auto &visual : visuals) {
+    if (visual.urdf_source == "collision") {
+      ++robot_description_parse_stats_.collision_fallbacks;
+    }
     if (visual.type == RobotGeometryType::Mesh) {
       ++robot_description_parse_stats_.mesh_visuals;
     } else {
@@ -1638,6 +1797,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
   visuals.reserve(robot_description_visuals_.size());
   std::set<QString> urdf_visual_frames;
   std::set<QString> urdf_mesh_frames;
+  std::set<QString> emitted_visual_frames;
 
   for (const auto &source_visual : robot_description_visuals_) {
     if (source_visual.frame_id.isEmpty()) {
@@ -1681,11 +1841,16 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.valid = false;
     }
     visuals.push_back(visual);
+    emitted_visual_frames.insert(source_visual.frame_id);
   }
 
   auto add_proxy_visual =
-    [this, &visuals, &urdf_visual_frames, &urdf_mesh_frames](const QString &frame_id) {
-      if (urdf_visual_frames.count(frame_id) > 0 || urdf_mesh_frames.count(frame_id) > 0) {
+    [this, &visuals, &urdf_visual_frames, &urdf_mesh_frames, &emitted_visual_frames](const QString &frame_id) {
+      if (
+        urdf_visual_frames.count(frame_id) > 0 ||
+        urdf_mesh_frames.count(frame_id) > 0 ||
+        emitted_visual_frames.count(frame_id) > 0)
+      {
         return;
       }
 
@@ -1736,6 +1901,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
       visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
       visuals.push_back(visual);
+      emitted_visual_frames.insert(frame_id);
     };
 
   for (const auto &[child_frame, joint] : robot_joints_) {

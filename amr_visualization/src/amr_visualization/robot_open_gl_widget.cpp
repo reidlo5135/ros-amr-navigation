@@ -257,6 +257,11 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
     [](const RobotVisual &visual) {
       return visual.proxy_visual;
     });
+  last_unresolved_pose_mesh_visual_count_ = std::count_if(
+    visuals.begin(), visuals.end(),
+    [](const RobotVisual &visual) {
+      return is_urdf_mesh_visual(visual) && visual.unresolved_pose;
+    });
   last_resolved_mesh_visual_count_ = std::count_if(
     visuals.begin(), visuals.end(),
     [](const RobotVisual &visual) {
@@ -1688,11 +1693,12 @@ void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
   const int loaded = loadedMeshCount();
   const int rejected = rejectedMeshCount();
   const int uploaded = uploadedMeshCount();
-  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11:%12:%13:%14:%15")
+  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11:%12:%13:%14:%15:%16")
     .arg(reason)
     .arg(last_received_visual_count_)
     .arg(last_received_urdf_mesh_visual_count_)
     .arg(last_received_proxy_visual_count_)
+    .arg(last_unresolved_pose_mesh_visual_count_)
     .arg(last_resolved_mesh_visual_count_)
     .arg(visuals_.size())
     .arg(loaded)
@@ -1709,10 +1715,11 @@ void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
   }
   last_opengl_mesh_summary_ = summary;
   qCInfo(amrVizOpenGLLog).noquote() <<
-    QString("OpenGL mesh summary: total_visuals=%1, urdf_mesh_visuals=%2, proxy_visuals=%3, accepted_opengl_meshes=%4, resolved_meshes=%5, loaded_meshes=%6, validation_rejected_meshes=%7, uploaded_meshes=%8, draw_calls=%9, stl_draw_calls=%10, fallback_cube_draw_calls=%11, rendered_stl_triangles=%12, rendered_triangles=%13, gl_error=%14")
+    QString("OpenGL mesh summary: total_visuals=%1, build_stage_urdf_mesh_visuals=%2, urdf_mesh_visuals=%2, proxy_visuals=%3, unresolved_pose_mesh_visuals=%4, accepted_opengl_meshes=%5, resolved_meshes=%6, loaded_meshes=%7, validation_rejected_meshes=%8, uploaded_meshes=%9, draw_calls=%10, stl_draw_calls=%11, fallback_cube_draw_calls=%12, rendered_stl_triangles=%13, rendered_triangles=%14, gl_error=%15")
       .arg(last_received_visual_count_)
       .arg(last_received_urdf_mesh_visual_count_)
       .arg(last_received_proxy_visual_count_)
+      .arg(last_unresolved_pose_mesh_visual_count_)
       .arg(visuals_.size())
       .arg(last_resolved_mesh_visual_count_)
       .arg(loaded)

@@ -184,6 +184,7 @@ private:
   int last_received_visual_count_{0};
   int last_received_urdf_mesh_visual_count_{0};
   int last_received_proxy_visual_count_{0};
+  int last_unresolved_pose_mesh_visual_count_{0};
   int last_resolved_mesh_visual_count_{0};
   QVector3D focal_point_{0.0F, 0.0F, 0.0F};
   double camera_yaw_{0.0};
