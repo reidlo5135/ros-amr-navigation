@@ -28,6 +28,10 @@ Key parameters:
 - `mesh_max_projected_extent_px`: default `3000`
 - `robot_mesh_auto_unit_scale`: default `false`
 - `robot_mesh_unit_scale`: default `1.0`
+- `robot_opengl_debug_camera`: default `false`, centers the OpenGL robot view on the robot mesh
+  or pose instead of the map camera for visibility diagnosis.
+- `robot_opengl_debug_axes`: default `false`, draws a small RGB axis and cube at each OpenGL robot
+  visual pose to prove that the overlay, camera, and shader path are visible.
 
 Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and either
 `robot_model_renderer_backend:=opengl` or `robot_model_renderer_backend:=qpainter_wireframe`.

@@ -89,6 +89,9 @@ private:
   void spin();
   void emit_diagnostic_once(const QString &key, const QString &event);
   void emit_robot_model_update(const QString &reason);
+  void emit_robot_visual_diagnostics_once(
+    const QVector<RobotVisual> &visuals,
+    const QString &reason);
   bool should_emit_now(rclcpp::Time &last_emit_time, int period_ms) const;
 
   GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
@@ -163,6 +166,8 @@ private:
   bool mesh_load_async_{false};
   bool robot_mesh_auto_unit_scale_{false};
   bool robot_renderer_loads_mesh_files_{false};
+  bool robot_opengl_debug_camera_{false};
+  bool robot_opengl_debug_axes_{false};
   int costmap_emit_period_ms_{1000};
   int tf_emit_period_ms_{100};
   int robot_model_emit_period_ms_{250};

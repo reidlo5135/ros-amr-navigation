@@ -739,7 +739,7 @@ void SceneWidget::syncOpenGLRobotViewport()
     camera_pitch_,
     camera_distance_,
     scale_);
-  robot_open_gl_widget_->setVisible(show_robot_ && robot_open_gl_widget_->hasRenderableVisuals());
+  robot_open_gl_widget_->setRenderVisible(show_robot_ && robot_open_gl_widget_->hasRenderableVisuals());
   robot_open_gl_widget_->raise();
   if (camera_controls_) {
     camera_controls_->raise();
@@ -1349,7 +1349,7 @@ bool SceneWidget::drawMesh3D(
 bool SceneWidget::isOpenGLMeshRendered(const RobotVisual &visual) const
 {
   return robot_open_gl_widget_ && robot_open_gl_widget_->isVisible() &&
-    robot_open_gl_widget_->hasRenderableMesh(visual);
+    robot_open_gl_widget_->shouldSuppressProxyForVisual(visual);
 }
 
 const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual &visual)

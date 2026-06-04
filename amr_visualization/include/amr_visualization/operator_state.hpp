@@ -63,6 +63,8 @@ struct RobotVisual
   double mesh_max_projected_extent_px{3000.0};
   bool mesh_auto_unit_scale{false};
   double mesh_unit_scale{1.0};
+  bool robot_opengl_debug_camera{false};
+  bool robot_opengl_debug_axes{false};
   bool valid{false};
 };
 

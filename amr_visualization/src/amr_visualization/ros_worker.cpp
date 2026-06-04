@@ -398,6 +398,10 @@ void RosWorker::configure_ros_interfaces()
   node_->set_parameter(rclcpp::Parameter("robot_mesh_render_mode", robot_mesh_render_mode_));
   robot_mesh_auto_unit_scale_ =
     node_->declare_parameter<bool>("robot_mesh_auto_unit_scale", robot_mesh_auto_unit_scale_);
+  robot_opengl_debug_camera_ =
+    node_->declare_parameter<bool>("robot_opengl_debug_camera", robot_opengl_debug_camera_);
+  robot_opengl_debug_axes_ =
+    node_->declare_parameter<bool>("robot_opengl_debug_axes", robot_opengl_debug_axes_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
   tf_emit_period_ms_ =
@@ -435,6 +439,16 @@ void RosWorker::configure_ros_interfaces()
       .arg(mesh_max_rendered_faces_)
       .arg(mesh_max_file_size_mb_));
   Q_EMIT eventReceived(
+    QString("Robot mesh validation thresholds: mesh_max_extent_m=%1, mesh_max_abs_coordinate_m=%2, mesh_max_file_size_mb=%3, mesh_max_loaded_triangles=%4")
+      .arg(mesh_max_extent_m_)
+      .arg(mesh_max_abs_coordinate_m_)
+      .arg(mesh_max_file_size_mb_)
+      .arg(mesh_max_loaded_triangles_));
+  Q_EMIT eventReceived(
+    QString("OpenGL robot debug: camera=%1, axes=%2")
+      .arg(robot_opengl_debug_camera_ ? "true" : "false")
+      .arg(robot_opengl_debug_axes_ ? "true" : "false"));
+  Q_EMIT eventReceived(
     QString("Safe mode: robot model %1, robot meshes %2, mesh render mode %3, mesh async %4")
       .arg(enable_robot_model_ ? "enabled" : "disabled")
       .arg(enable_robot_meshes_ ? "enabled" : "disabled")
@@ -445,13 +459,16 @@ void RosWorker::configure_ros_interfaces()
     QString(
       "Build/runtime feature summary: enable_robot_model=%1, enable_robot_meshes=%2, "
       "robot_mesh_render_mode=%3, mesh_max_loaded_triangles=%4, "
-      "mesh_max_rendered_faces=%5, renderer_backend=%6")
+      "mesh_max_rendered_faces=%5, renderer_backend=%6, "
+      "robot_opengl_debug_camera=%7, robot_opengl_debug_axes=%8")
       .arg(enable_robot_model_ ? "true" : "false")
       .arg(enable_robot_meshes_ ? "true" : "false")
       .arg(QString::fromStdString(robot_mesh_render_mode_))
       .arg(mesh_max_loaded_triangles_)
       .arg(mesh_max_rendered_faces_)
-      .arg(QString::fromStdString(robot_model_renderer_backend_)));
+      .arg(QString::fromStdString(robot_model_renderer_backend_))
+      .arg(robot_opengl_debug_camera_ ? "true" : "false")
+      .arg(robot_opengl_debug_axes_ ? "true" : "false"));
   if (mesh_load_async_) {
     Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
   }
@@ -686,6 +703,7 @@ void RosWorker::emit_robot_model_update(const QString &reason)
   build_timer.start();
   QVector<RobotVisual> visuals = build_robot_visuals();
   const qint64 elapsed_ms = build_timer.elapsed();
+  emit_robot_visual_diagnostics_once(visuals, reason);
   ++robot_model_emit_count_;
   Q_EMIT robotModelChanged(visuals);
   last_robot_model_emit_time_ = node_ ? node_->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
@@ -696,6 +714,71 @@ void RosWorker::emit_robot_model_update(const QString &reason)
         .arg(reason)
         .arg(visuals.size())
         .arg(elapsed_ms));
+  }
+}
+
+void RosWorker::emit_robot_visual_diagnostics_once(
+  const QVector<RobotVisual> &visuals,
+  const QString &reason)
+{
+  int mesh_visual_count = 0;
+  int opengl_mesh_candidate_count = 0;
+  for (const auto &visual : visuals) {
+    if (visual.type != RobotGeometryType::Mesh) {
+      continue;
+    }
+    ++mesh_visual_count;
+    if (
+      visual.mesh_enabled &&
+      visual.mesh_render_mode == "opengl" &&
+      !visual.mesh_resolved_path.isEmpty())
+    {
+      ++opengl_mesh_candidate_count;
+    }
+  }
+
+  emit_diagnostic_once(
+    QString("robot_visual_summary:%1:%2:%3:%4")
+      .arg(reason)
+      .arg(visuals.size())
+      .arg(mesh_visual_count)
+      .arg(opengl_mesh_candidate_count),
+    QString("RobotVisual build diagnostics (%1): total=%2, mesh visual count=%3, opengl mesh candidate count=%4")
+      .arg(reason)
+      .arg(visuals.size())
+      .arg(mesh_visual_count)
+      .arg(opengl_mesh_candidate_count));
+
+  for (const auto &visual : visuals) {
+    if (visual.type != RobotGeometryType::Mesh) {
+      continue;
+    }
+    const QFileInfo file_info(visual.mesh_resolved_path);
+    const QString key = QString("robot_visual_mesh:%1:%2:%3:%4:%5")
+      .arg(visual.frame_id)
+      .arg(visual.mesh_filename)
+      .arg(visual.mesh_resolved_path)
+      .arg(visual.mesh_enabled ? "1" : "0")
+      .arg(visual.mesh_render_mode);
+    emit_diagnostic_once(
+      key,
+      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, exists=%4, readable=%5, mesh_scale=%6 %7 %8, mesh_enabled=%9, mesh_render_mode=%10, pose=(%11,%12,%13,%14,%15,%16)")
+        .arg(visual.frame_id)
+        .arg(visual.mesh_filename)
+        .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
+        .arg(file_info.exists() ? "true" : "false")
+        .arg(file_info.isReadable() ? "true" : "false")
+        .arg(visual.mesh_scale_x)
+        .arg(visual.mesh_scale_y)
+        .arg(visual.mesh_scale_z)
+        .arg(visual.mesh_enabled ? "true" : "false")
+        .arg(visual.mesh_render_mode)
+        .arg(visual.pose.x)
+        .arg(visual.pose.y)
+        .arg(visual.pose.z)
+        .arg(visual.pose.roll)
+        .arg(visual.pose.pitch)
+        .arg(visual.pose.yaw));
   }
 }
 
@@ -1191,6 +1274,8 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual.mesh_max_projected_extent_px = std::max(mesh_max_projected_extent_px_, 1.0);
     visual.mesh_auto_unit_scale = robot_mesh_auto_unit_scale_;
     visual.mesh_unit_scale = std::max(robot_mesh_unit_scale_, 0.000001);
+    visual.robot_opengl_debug_camera = robot_opengl_debug_camera_;
+    visual.robot_opengl_debug_axes = robot_opengl_debug_axes_;
     visual.pose = compose_pose(frame_pose, source_visual.pose);
     visual.valid = visual.pose.valid;
     visuals.push_back(visual);
