@@ -35,6 +35,72 @@ QVector3D scaled_mesh_point(const RobotVisual &visual, const QVector3D &point)
     static_cast<float>(point.z() * visual.mesh_scale_z * unit_scale));
 }
 
+QString utf8_hex_dump(const QString &text)
+{
+  const QByteArray bytes = text.toUtf8();
+  QStringList parts;
+  parts.reserve(bytes.size());
+  for (const char byte : bytes) {
+    parts.push_back(QString("%1").arg(static_cast<unsigned char>(byte), 2, 16, QLatin1Char('0')));
+  }
+  return parts.join(' ');
+}
+
+QString escaped_path_text(const QString &text)
+{
+  QString escaped;
+  escaped.reserve(text.size());
+  for (const QChar character : text) {
+    if (character == '\\') {
+      escaped += "\\\\";
+    } else if (character == '\n') {
+      escaped += "\\n";
+    } else if (character == '\r') {
+      escaped += "\\r";
+    } else if (character == '\t') {
+      escaped += "\\t";
+    } else if (character == '\'') {
+      escaped += "\\'";
+    } else if (character.unicode() < 0x20) {
+      escaped += QString("\\u%1").arg(character.unicode(), 4, 16, QLatin1Char('0'));
+    } else {
+      escaped += character;
+    }
+  }
+  return escaped;
+}
+
+QString file_access_diagnostics_text(const QString &uri, const QString &resolved_path)
+{
+  const QFileInfo file_info(resolved_path);
+  QFile file(resolved_path);
+  const bool qfile_exists = file.exists();
+  const bool qfile_open = file.open(QIODevice::ReadOnly);
+  const QString qfile_error = qfile_open ? QString() : file.errorString();
+  if (qfile_open) {
+    file.close();
+  }
+  return QString(
+    "uri=%1, resolved_path='%2', resolved_path_length=%3, resolved_path_utf8_hex=%4, "
+    "resolved_path_escaped='%5', qfileinfo_absolute=%6, qfileinfo_canonical=%7, "
+    "exists=%8, isFile=%9, readable=%10, size=%11, qfile_exists=%12, open=%13, qfile_open=%14%15")
+    .arg(uri)
+    .arg(resolved_path)
+    .arg(resolved_path.size())
+    .arg(utf8_hex_dump(resolved_path))
+    .arg(escaped_path_text(resolved_path))
+    .arg(file_info.absoluteFilePath())
+    .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
+    .arg(file_info.exists() ? "true" : "false")
+    .arg(file_info.isFile() ? "true" : "false")
+    .arg(file_info.isReadable() ? "true" : "false")
+    .arg(file_info.exists() ? file_info.size() : 0)
+    .arg(qfile_exists ? "true" : "false")
+    .arg(qfile_open ? "true" : "false")
+    .arg(qfile_open ? "true" : "false")
+    .arg(qfile_open ? QString() : QString(", qfile_error=%1").arg(qfile_error));
+}
+
 void append_triangle(
   const QVector3D &a,
   const QVector3D &b,
@@ -505,11 +571,11 @@ void RobotOpenGLWidget::paintGL()
   glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   if (opengl_failed_) {
-    emitPaintDiagnostics(0, 0, 0, 0, glGetError());
+    emitPaintDiagnostics(0, 0, 0, 0, 0, 0, 0, glGetError());
     return;
   }
   if (!program_.isLinked()) {
-    emitPaintDiagnostics(0, 0, 0, 0, glGetError());
+    emitPaintDiagnostics(0, 0, 0, 0, 0, 0, 0, glGetError());
     return;
   }
 
@@ -522,7 +588,9 @@ void RobotOpenGLWidget::paintGL()
   int debug_axis_draw_count = 0;
   int debug_cube_draw_count = 0;
   int rendered_triangles = 0;
+  int rendered_stl_triangles = 0;
   int stl_draw_calls = 0;
+  int fallback_cube_draw_calls = 0;
   GLenum accumulated_draw_error = GL_NO_ERROR;
   for (const auto &visual : visuals_) {
     const int previous_axis_draw_count = debug_axis_draw_count;
@@ -565,7 +633,9 @@ void RobotOpenGLWidget::paintGL()
     }
     ++draw_calls;
     ++stl_draw_calls;
-    rendered_triangles += mesh.indices.size() / 3;
+    const int stl_triangle_count = mesh.indices.size() / 3;
+    rendered_triangles += stl_triangle_count;
+    rendered_stl_triangles += stl_triangle_count;
     if (uploaded_now && parentWidget()) {
       parentWidget()->update();
     }
@@ -580,18 +650,24 @@ void RobotOpenGLWidget::paintGL()
     }
   }
   if (stlOnlyDebugEnabled() && stl_draw_calls == 0) {
-    drawStlOnlyFallbackCube(draw_calls, rendered_triangles);
+    drawStlOnlyFallbackCube(draw_calls, fallback_cube_draw_calls, rendered_triangles);
   }
   const GLenum final_error = glGetError();
   const GLenum draw_error = accumulated_draw_error != GL_NO_ERROR ? accumulated_draw_error : final_error;
   last_draw_calls_ = draw_calls;
+  last_stl_draw_calls_ = stl_draw_calls;
+  last_fallback_cube_draw_calls_ = fallback_cube_draw_calls;
   last_rendered_triangles_ = rendered_triangles;
+  last_rendered_stl_triangles_ = rendered_stl_triangles;
   last_draw_error_code_ = draw_error;
   program_.release();
   emitPaintDiagnostics(
     draw_calls,
+    stl_draw_calls,
+    fallback_cube_draw_calls,
     debug_axis_draw_count,
     debug_cube_draw_count,
+    rendered_stl_triangles,
     rendered_triangles,
     draw_error);
   emitOpenGLMeshSummary("paintGL");
@@ -1125,7 +1201,10 @@ void RobotOpenGLWidget::drawMeshBoundingBox(
   }
 }
 
-void RobotOpenGLWidget::drawStlOnlyFallbackCube(int &draw_calls, int &rendered_triangles)
+void RobotOpenGLWidget::drawStlOnlyFallbackCube(
+  int &draw_calls,
+  int &fallback_cube_draw_calls,
+  int &rendered_triangles)
 {
   if (!uploadDebugCube() || !debug_cube_mesh_.vao.isCreated() || visuals_.isEmpty()) {
     return;
@@ -1137,13 +1216,14 @@ void RobotOpenGLWidget::drawStlOnlyFallbackCube(int &draw_calls, int &rendered_t
   cube.scale(size, size, size);
   drawMesh(debug_cube_mesh_, cube, QVector3D(1.0F, 0.04F, 0.04F));
   ++draw_calls;
+  ++fallback_cube_draw_calls;
   rendered_triangles += debug_cube_mesh_.indices.size() / 3;
-  const QString reason = QString("accepted=%1, loaded=%2, rejected=%3, uploaded=%4, previous_draw_calls=%5")
+  const QString reason = QString("accepted=%1, loaded=%2, rejected=%3, uploaded=%4, stl_draw_calls=0, fallback_cube_draw_calls=%5")
     .arg(visuals_.size())
     .arg(loadedMeshCount())
     .arg(rejectedMeshCount())
     .arg(uploadedMeshCount())
-    .arg(last_draw_calls_);
+    .arg(fallback_cube_draw_calls);
   if (reason != last_stl_fallback_reason_) {
     last_stl_fallback_reason_ = reason;
     Q_EMIT visualizationEvent(
@@ -1329,8 +1409,9 @@ void RobotOpenGLWidget::emitStlLoadDiagnostics(
   }
   stl_load_event_cache_.insert(key);
   Q_EMIT visualizationEvent(
-    QString("OpenGL STL load diagnostics: path=%1, file size=%2, detected=%3, source triangle count=%4, loaded triangle count=%5, bbox min=(%6,%7,%8), max=(%9,%10,%11), extent=(%12,%13,%14), diagonal=%15, limits triangles=%16 file_mb=%17 extent_m=%18 abs_coord_m=%19, status=%20%21")
+    QString("OpenGL STL load diagnostics: path=%1, file_access={%2}, file size=%3, detected=%4, source triangle count=%5, loaded triangle count=%6, bbox min=(%7,%8,%9), max=(%10,%11,%12), extent=(%13,%14,%15), diagonal=%16, limits triangles=%17 file_mb=%18 extent_m=%19 abs_coord_m=%20, status=%21%22")
       .arg(visual.mesh_resolved_path)
+      .arg(file_access_diagnostics_text(visual.mesh_filename, visual.mesh_resolved_path))
       .arg(mesh.file_size_bytes)
       .arg(mesh.stl_format)
       .arg(mesh.source_triangle_count)
@@ -1383,6 +1464,7 @@ void RobotOpenGLWidget::emitMeshStatusTable()
       continue;
     }
     const QFileInfo file_info(visual.mesh_resolved_path);
+    const QString file_access = file_access_diagnostics_text(visual.mesh_filename, visual.mesh_resolved_path);
     QString load_status = visual.mesh_resolved_path.isEmpty() ? "unresolved" : "pending";
     QString validation_status = "pending";
     QString upload_status = "pending";
@@ -1395,13 +1477,20 @@ void RobotOpenGLWidget::emitMeshStatusTable()
       draw_status = it->second->draw_status;
     }
     rows.push_back(
-      QString("frame_id=%1 | uri=%2 | resolved_path=%3 | exists=%4 | readable=%5 | file_size=%6 | scale=%7 %8 %9 | pose=(%10,%11,%12,%13,%14,%15) | accepted_for_opengl=true | load_status=%16 | validation_status=%17 | upload_status=%18 | draw_status=%19")
+      QString("frame_id=%1 | uri=%2 | resolved_path=%3 | resolved_path_length=%4 | resolved_path_utf8_hex=%5 | resolved_path_escaped='%6' | qfileinfo_absolute=%7 | qfileinfo_canonical=%8 | exists=%9 | isFile=%10 | readable=%11 | file_size=%12 | qfile_probe={%13} | scale=%14 %15 %16 | pose=(%17,%18,%19,%20,%21,%22) | accepted_for_opengl=true | load_status=%23 | validation_status=%24 | upload_status=%25 | draw_status=%26")
         .arg(visual.frame_id)
         .arg(visual.mesh_filename)
         .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
+        .arg(visual.mesh_resolved_path.size())
+        .arg(utf8_hex_dump(visual.mesh_resolved_path))
+        .arg(escaped_path_text(visual.mesh_resolved_path))
+        .arg(file_info.absoluteFilePath())
+        .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
         .arg(file_info.exists() ? "true" : "false")
+        .arg(file_info.isFile() ? "true" : "false")
         .arg(file_info.isReadable() ? "true" : "false")
         .arg(file_info.exists() ? file_info.size() : 0)
+        .arg(file_access)
         .arg(visual.mesh_scale_x)
         .arg(visual.mesh_scale_y)
         .arg(visual.mesh_scale_z)
@@ -1432,7 +1521,7 @@ void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
   const int loaded = loadedMeshCount();
   const int rejected = rejectedMeshCount();
   const int uploaded = uploadedMeshCount();
-  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10")
+  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11:%12:%13")
     .arg(reason)
     .arg(last_received_visual_count_)
     .arg(last_received_mesh_visual_count_)
@@ -1441,6 +1530,9 @@ void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
     .arg(rejected)
     .arg(uploaded)
     .arg(last_draw_calls_)
+    .arg(last_stl_draw_calls_)
+    .arg(last_fallback_cube_draw_calls_)
+    .arg(last_rendered_stl_triangles_)
     .arg(last_rendered_triangles_)
     .arg(static_cast<unsigned int>(last_draw_error_code_));
   if (summary == last_opengl_mesh_summary_) {
@@ -1448,7 +1540,7 @@ void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
   }
   last_opengl_mesh_summary_ = summary;
   Q_EMIT visualizationEvent(
-    QString("OpenGL mesh summary: visuals=%1, mesh_visuals=%2, accepted=%3, loaded=%4, rejected=%5, uploaded=%6, draw_calls=%7, rendered_triangles=%8, gl_error=%9")
+    QString("OpenGL mesh summary: visuals=%1, mesh_visuals=%2, accepted=%3, loaded=%4, rejected=%5, uploaded=%6, draw_calls=%7, stl_draw_calls=%8, fallback_cube_draw_calls=%9, rendered_stl_triangles=%10, rendered_triangles=%11, gl_error=%12")
       .arg(last_received_visual_count_)
       .arg(last_received_mesh_visual_count_)
       .arg(visuals_.size())
@@ -1456,14 +1548,20 @@ void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
       .arg(rejected)
       .arg(uploaded)
       .arg(last_draw_calls_)
+      .arg(last_stl_draw_calls_)
+      .arg(last_fallback_cube_draw_calls_)
+      .arg(last_rendered_stl_triangles_)
       .arg(last_rendered_triangles_)
       .arg(static_cast<unsigned int>(last_draw_error_code_)));
 }
 
 void RobotOpenGLWidget::emitPaintDiagnostics(
   const int draw_calls,
+  const int stl_draw_calls,
+  const int fallback_cube_draw_calls,
   const int debug_axis_draw_count,
   const int debug_cube_draw_count,
+  const int rendered_stl_triangles,
   const int rendered_triangles,
   const GLenum error_code)
 {
@@ -1473,7 +1571,7 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
       ++uploaded_mesh_count;
     }
   }
-  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11")
+  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11:%12:%13:%14")
     .arg(isVisible() ? "1" : "0")
     .arg(width())
     .arg(height())
@@ -1481,8 +1579,11 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
     .arg(static_cast<int>(mesh_cache_.size()))
     .arg(uploaded_mesh_count)
     .arg(draw_calls)
+    .arg(stl_draw_calls)
+    .arg(fallback_cube_draw_calls)
     .arg(debug_axis_draw_count)
     .arg(debug_cube_draw_count)
+    .arg(rendered_stl_triangles)
     .arg(rendered_triangles)
     .arg(static_cast<unsigned int>(error_code));
   const bool may_emit = !paint_diagnostic_timer_.isValid() || paint_diagnostic_timer_.elapsed() >= 1000;
@@ -1492,7 +1593,7 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
   last_paint_summary_ = summary;
   paint_diagnostic_timer_.restart();
   Q_EMIT visualizationEvent(
-    QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, uploaded mesh count=%6, draw calls=%7, debug axes draw count=%8, debug cube draw count=%9, rendered triangle count=%10, gl_error=%11, focal=(%12,%13,%14), yaw=%15, pitch=%16, distance=%17, pixels_per_meter=%18, debug_camera=%19, debug_axes=%20, debug_cube=%21, force_visible=%22")
+    QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, uploaded mesh count=%6, draw calls=%7, stl_draw_calls=%8, fallback_cube_draw_calls=%9, debug axes draw count=%10, debug cube draw count=%11, rendered_stl_triangles=%12, rendered triangle count=%13, gl_error=%14, focal=(%15,%16,%17), yaw=%18, pitch=%19, distance=%20, pixels_per_meter=%21, debug_camera=%22, debug_axes=%23, debug_cube=%24, force_visible=%25")
       .arg(isVisible() ? "true" : "false")
       .arg(width())
       .arg(height())
@@ -1500,8 +1601,11 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
       .arg(static_cast<int>(mesh_cache_.size()))
       .arg(uploaded_mesh_count)
       .arg(draw_calls)
+      .arg(stl_draw_calls)
+      .arg(fallback_cube_draw_calls)
       .arg(debug_axis_draw_count)
       .arg(debug_cube_draw_count)
+      .arg(rendered_stl_triangles)
       .arg(rendered_triangles)
       .arg(static_cast<unsigned int>(error_code))
       .arg(effectiveFocalPoint().x())

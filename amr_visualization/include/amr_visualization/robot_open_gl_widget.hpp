@@ -105,7 +105,10 @@ private:
   bool uploadDebugCube();
   void drawMesh(GpuMesh &mesh, const QMatrix4x4 &model, const QVector3D &color);
   void drawMeshBoundingBox(const RobotVisual &visual, const GpuMesh &mesh, int &draw_calls, int &rendered_triangles);
-  void drawStlOnlyFallbackCube(int &draw_calls, int &rendered_triangles);
+  void drawStlOnlyFallbackCube(
+    int &draw_calls,
+    int &fallback_cube_draw_calls,
+    int &rendered_triangles);
   void drawDebugGeometryForVisual(
     const RobotVisual &visual,
     int &axis_draw_count,
@@ -120,8 +123,11 @@ private:
   void emitOpenGLMeshSummary(const QString &reason);
   void emitPaintDiagnostics(
     int draw_calls,
+    int stl_draw_calls,
+    int fallback_cube_draw_calls,
     int debug_axis_draw_count,
     int debug_cube_draw_count,
+    int rendered_stl_triangles,
     int rendered_triangles,
     GLenum error_code);
   void emitMeshVisualDiagnostics();
@@ -158,7 +164,10 @@ private:
   QString last_stl_fallback_reason_;
   QElapsedTimer paint_diagnostic_timer_;
   int last_draw_calls_{0};
+  int last_stl_draw_calls_{0};
+  int last_fallback_cube_draw_calls_{0};
   int last_rendered_triangles_{0};
+  int last_rendered_stl_triangles_{0};
   GLenum last_draw_error_code_{GL_NO_ERROR};
   int last_received_visual_count_{0};
   int last_received_mesh_visual_count_{0};

@@ -3,11 +3,14 @@
 #include "amr_visualization/robot_model_renderer.hpp"
 
 #include <QElapsedTimer>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QOpenGLContext>
 #include <QSurfaceFormat>
+#include <QStringList>
 #include <QUrl>
 #include <QXmlStreamReader>
 
@@ -29,6 +32,124 @@ namespace
 {
 
 using namespace std::chrono_literals;
+
+QString utf8_hex_dump(const QString &value)
+{
+  const QByteArray bytes = value.toUtf8();
+  QStringList chunks;
+  chunks.reserve(bytes.size());
+  for (const char byte : bytes) {
+    chunks.push_back(QString("%1").arg(static_cast<unsigned char>(byte), 2, 16, QChar('0')));
+  }
+  return chunks.join(' ');
+}
+
+QString escaped_text(const QString &value)
+{
+  QString escaped;
+  escaped.reserve(value.size());
+  for (const QChar ch : value) {
+    if (ch == '\\') {
+      escaped += "\\\\";
+    } else if (ch == '\n') {
+      escaped += "\\n";
+    } else if (ch == '\r') {
+      escaped += "\\r";
+    } else if (ch == '\t') {
+      escaped += "\\t";
+    } else if (ch.unicode() < 0x20U || ch.unicode() == 0x7FU) {
+      escaped += QString("\\u%1").arg(ch.unicode(), 4, 16, QChar('0'));
+    } else {
+      escaped += ch;
+    }
+  }
+  return escaped;
+}
+
+QString trim_outer_quotes(QString value)
+{
+  value = value.trimmed();
+  if (value.size() >= 2) {
+    const QChar first = value.front();
+    const QChar last = value.back();
+    if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+      value = value.mid(1, value.size() - 2).trimmed();
+    }
+  }
+  return value;
+}
+
+QString trim_accidental_mesh_suffix(QString value)
+{
+  value = trim_outer_quotes(value);
+  while (value.endsWith(',') || value.endsWith(';')) {
+    if (QFileInfo(QDir::cleanPath(value)).exists()) {
+      break;
+    }
+    const QString stripped = value.left(value.size() - 1).trimmed();
+    if (stripped.isEmpty()) {
+      break;
+    }
+    const bool stripped_exists = QFileInfo(QDir::cleanPath(stripped)).exists();
+    const bool uri_punctuation =
+      (value.startsWith("package://") || value.startsWith("file://")) &&
+      stripped.endsWith(".stl", Qt::CaseInsensitive);
+    if (!stripped_exists && !uri_punctuation) {
+      break;
+    }
+    value = stripped;
+  }
+  return value;
+}
+
+QString normalized_filesystem_path(const QString &path)
+{
+  const QString trimmed = trim_accidental_mesh_suffix(path);
+  if (trimmed.isEmpty()) {
+    return {};
+  }
+  return QFileInfo(QDir::cleanPath(trimmed)).absoluteFilePath();
+}
+
+QString canonical_or_absolute_path(const QFileInfo &file_info)
+{
+  const QString canonical = file_info.canonicalFilePath();
+  if (!canonical.isEmpty()) {
+    return canonical;
+  }
+  return file_info.absoluteFilePath();
+}
+
+QString file_access_diagnostics_text(const QString &uri, const QString &resolved_path)
+{
+  const QFileInfo file_info(resolved_path);
+  QFile file(resolved_path);
+  const bool qfile_exists = file.exists();
+  const bool qfile_open = file.open(QIODevice::ReadOnly);
+  const QString qfile_error = qfile_open ? QString() : file.errorString();
+  if (qfile_open) {
+    file.close();
+  }
+  return QString(
+    "uri=%1, resolved_path='%2', resolved_path_length=%3, resolved_path_utf8_hex=%4, "
+    "resolved_path_escaped='%5', qfileinfo_absolute=%6, qfileinfo_canonical=%7, "
+    "exists=%8, isFile=%9, readable=%10, size=%11, qfile_exists=%12, open=%13, qfile_open=%14%15")
+    .arg(uri)
+    .arg(resolved_path)
+    .arg(resolved_path.size())
+    .arg(utf8_hex_dump(resolved_path))
+    .arg(escaped_text(resolved_path))
+    .arg(file_info.absoluteFilePath())
+    .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
+    .arg(file_info.exists() ? "true" : "false")
+    .arg(file_info.isFile() ? "true" : "false")
+    .arg(file_info.isReadable() ? "true" : "false")
+    .arg(file_info.exists() ? file_info.size() : 0)
+    .arg(qfile_exists ? "true" : "false")
+    .arg(qfile_open ? "true" : "false")
+    .arg(qfile_open ? "true" : "false")
+    .arg(qfile_open ? QString() : QString(", qfile_error=%1").arg(qfile_error));
+}
 
 struct Rotation3D
 {
@@ -410,6 +531,10 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("robot_opengl_stl_only_debug", robot_opengl_stl_only_debug_);
   robot_opengl_debug_mesh_bbox_ =
     node_->declare_parameter<bool>("robot_opengl_debug_mesh_bbox", robot_opengl_debug_mesh_bbox_);
+  robot_opengl_mesh_path_self_test_ =
+    node_->declare_parameter<std::string>(
+      "robot_opengl_mesh_path_self_test",
+      robot_opengl_mesh_path_self_test_);
   robot_opengl_debug_size_m_ =
     node_->declare_parameter<double>("robot_opengl_debug_size_m", robot_opengl_debug_size_m_);
   costmap_emit_period_ms_ =
@@ -463,6 +588,14 @@ void RosWorker::configure_ros_interfaces()
       .arg(robot_opengl_stl_only_debug_ ? "true" : "false")
       .arg(robot_opengl_debug_mesh_bbox_ ? "true" : "false")
       .arg(robot_opengl_debug_size_m_));
+  const QString mesh_self_test_path =
+    normalized_filesystem_path(QString::fromStdString(robot_opengl_mesh_path_self_test_));
+  if (!mesh_self_test_path.isEmpty()) {
+    emit_mesh_path_access_diagnostics(
+      "robot_opengl_mesh_path_self_test",
+      QString::fromStdString(robot_opengl_mesh_path_self_test_),
+      mesh_self_test_path);
+  }
   Q_EMIT eventReceived(
     QString("Safe mode: robot model %1, robot meshes %2, mesh render mode %3, mesh async %4")
       .arg(enable_robot_model_ ? "enabled" : "disabled")
@@ -716,6 +849,17 @@ void RosWorker::emit_diagnostic_once(const QString &key, const QString &event)
   Q_EMIT eventReceived(event);
 }
 
+void RosWorker::emit_mesh_path_access_diagnostics(
+  const QString &label,
+  const QString &uri,
+  const QString &resolved_path)
+{
+  emit_diagnostic_once(
+    QString("mesh_path_access:%1:%2:%3").arg(label, uri, resolved_path),
+    QString("%1 mesh path access diagnostics: %2")
+      .arg(label, file_access_diagnostics_text(uri, resolved_path)));
+}
+
 void RosWorker::emit_robot_model_update(const QString &reason)
 {
   if (!enable_robot_model_) {
@@ -777,6 +921,10 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       continue;
     }
     const QFileInfo file_info(visual.mesh_resolved_path);
+    emit_mesh_path_access_diagnostics(
+      QString("RobotVisual %1").arg(visual.frame_id),
+      visual.mesh_filename,
+      visual.mesh_resolved_path);
     const bool accepted_for_opengl =
       visual.mesh_enabled && visual.mesh_render_mode == "opengl" && !visual.mesh_resolved_path.isEmpty();
     const QString key = QString("robot_visual_mesh:%1:%2:%3:%4:%5")
@@ -787,11 +935,17 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       .arg(visual.mesh_render_mode);
     emit_diagnostic_once(
       key,
-      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, exists=%4, readable=%5, file_size=%6, visual_origin_included_in_pose=true, mesh_scale=%7 %8 %9, mesh_enabled=%10, mesh_render_mode=%11, accepted_for_opengl=%12, pose=(%13,%14,%15,%16,%17,%18), debug_axes=%19, debug_cube=%20, force_visible=%21, stl_only=%22, mesh_bbox=%23, debug_size_m=%24")
+      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, resolved_length=%4, resolved_utf8_hex=%5, resolved_escaped='%6', qfileinfo_absolute=%7, qfileinfo_canonical=%8, exists=%9, isFile=%10, readable=%11, file_size=%12, visual_origin_included_in_pose=true, mesh_scale=%13 %14 %15, mesh_enabled=%16, mesh_render_mode=%17, accepted_for_opengl=%18, pose=(%19,%20,%21,%22,%23,%24), debug_axes=%25, debug_cube=%26, force_visible=%27, stl_only=%28, mesh_bbox=%29, debug_size_m=%30")
         .arg(visual.frame_id)
         .arg(visual.mesh_filename)
         .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
+        .arg(visual.mesh_resolved_path.size())
+        .arg(utf8_hex_dump(visual.mesh_resolved_path))
+        .arg(escaped_text(visual.mesh_resolved_path))
+        .arg(file_info.absoluteFilePath())
+        .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
         .arg(file_info.exists() ? "true" : "false")
+        .arg(file_info.isFile() ? "true" : "false")
         .arg(file_info.isReadable() ? "true" : "false")
         .arg(file_info.exists() ? file_info.size() : 0)
         .arg(visual.mesh_scale_x)
@@ -1219,7 +1373,8 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
 
 QString RosWorker::resolve_mesh_uri(const QString &uri)
 {
-  if (uri.isEmpty()) {
+  const QString normalized_uri = trim_accidental_mesh_suffix(uri);
+  if (normalized_uri.isEmpty()) {
     return {};
   }
 
@@ -1231,56 +1386,109 @@ QString RosWorker::resolve_mesh_uri(const QString &uri)
       Q_EMIT eventReceived(event);
     };
 
-  auto validate_stl_path = [&uri, &emit_mesh_event_once](const QString &path) -> QString {
-      if (path.isEmpty() || !QFileInfo::exists(path)) {
-        emit_mesh_event_once(QString("Robot mesh not found: %1").arg(uri));
+  auto validate_stl_path =
+    [this, &normalized_uri, &emit_mesh_event_once](const QString &path, const QString &label) -> QString {
+      const QString normalized_path = normalized_filesystem_path(path);
+      const QFileInfo file_info(normalized_path);
+      QFile file(normalized_path);
+      const bool qfile_open = file.open(QIODevice::ReadOnly);
+      const QString qfile_error = qfile_open ? QString() : file.errorString();
+      if (qfile_open) {
+        file.close();
+      }
+      emit_mesh_path_access_diagnostics(label, normalized_uri, normalized_path);
+
+      if (normalized_path.isEmpty() || !file_info.exists()) {
+        emit_mesh_event_once(
+          QString("Robot mesh not found: uri=%1, candidate='%2'")
+            .arg(normalized_uri, normalized_path));
+        return {};
+      }
+      if (!file_info.isFile()) {
+        emit_mesh_event_once(
+          QString("Robot mesh candidate is not a file: uri=%1, candidate='%2'")
+            .arg(normalized_uri, normalized_path));
+        return {};
+      }
+      if (!file_info.isReadable() || !qfile_open) {
+        emit_mesh_event_once(
+          QString("Robot mesh candidate is not readable: uri=%1, candidate='%2', QFileInfo.readable=%3, QFile.open=%4%5")
+            .arg(normalized_uri)
+            .arg(normalized_path)
+            .arg(file_info.isReadable() ? "true" : "false")
+            .arg(qfile_open ? "true" : "false")
+            .arg(qfile_open ? QString() : QString(", QFile.error=%1").arg(qfile_error)));
         return {};
       }
 
-      const QFileInfo file_info(path);
       if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
         emit_mesh_event_once(
           QString("Unsupported robot mesh extension for %1: .%2")
-            .arg(uri, file_info.suffix()));
+            .arg(normalized_uri, file_info.suffix()));
         return {};
       }
+      const QString resolved_path = canonical_or_absolute_path(file_info);
       emit_mesh_event_once(
-        QString("Robot mesh resolved: %1 -> %2").arg(uri, file_info.absoluteFilePath()));
-      return file_info.absoluteFilePath();
+        QString("Robot mesh resolved: %1 -> %2").arg(normalized_uri, resolved_path));
+      return resolved_path;
     };
 
-  if (uri.startsWith("package://")) {
-    const QString package_path = uri.mid(QString("package://").size());
+  if (normalized_uri.startsWith("package://")) {
+    const QString package_path = normalized_uri.mid(QString("package://").size());
     const int slash_index = package_path.indexOf('/');
     if (slash_index <= 0 || slash_index == package_path.size() - 1) {
-      emit_mesh_event_once(QString("Invalid package mesh URI: %1").arg(uri));
+      emit_mesh_event_once(QString("Invalid package mesh URI: %1").arg(normalized_uri));
       return {};
     }
 
     const QString package = package_path.left(slash_index);
-    const QString relative_path = package_path.mid(slash_index + 1);
+    const QString relative_path = QDir::cleanPath(package_path.mid(slash_index + 1));
     try {
       const QString share_dir = QString::fromStdString(
         ament_index_cpp::get_package_share_directory(package.toStdString()));
-      return validate_stl_path(QFileInfo(share_dir + "/" + relative_path).absoluteFilePath());
+      const QString candidate_path = normalized_filesystem_path(share_dir + "/" + relative_path);
+      const QFileInfo candidate_info(candidate_path);
+      emit_mesh_event_once(
+        QString("Robot mesh package resolution: uri=%1, package=%2, relative_path=%3, ament_share_dir=%4, candidate='%5', candidate_exists=%6, candidate_readable=%7, candidate_size=%8")
+          .arg(normalized_uri)
+          .arg(package)
+          .arg(relative_path)
+          .arg(share_dir)
+          .arg(candidate_path)
+          .arg(candidate_info.exists() ? "true" : "false")
+          .arg(candidate_info.isReadable() ? "true" : "false")
+          .arg(candidate_info.exists() ? candidate_info.size() : 0));
+      if (!candidate_info.exists() || !candidate_info.isFile() || !candidate_info.isReadable()) {
+        emit_mesh_event_once(
+          QString("Robot mesh package candidate QFileInfo failed: uri=%1, candidate='%2', absolute=%3, canonical=%4, exists=%5, isFile=%6, readable=%7, size=%8")
+            .arg(normalized_uri)
+            .arg(candidate_path)
+            .arg(candidate_info.absoluteFilePath())
+            .arg(candidate_info.canonicalFilePath().isEmpty() ? QString("<empty>") : candidate_info.canonicalFilePath())
+            .arg(candidate_info.exists() ? "true" : "false")
+            .arg(candidate_info.isFile() ? "true" : "false")
+            .arg(candidate_info.isReadable() ? "true" : "false")
+            .arg(candidate_info.exists() ? candidate_info.size() : 0));
+      }
+      return validate_stl_path(candidate_path, QString("package:// %1").arg(package));
     } catch (const std::exception &error) {
       emit_mesh_event_once(
         QString("Robot mesh package resolution failed for %1: %2")
-          .arg(uri, QString::fromLocal8Bit(error.what())));
+          .arg(normalized_uri, QString::fromLocal8Bit(error.what())));
       return {};
     }
   }
 
-  if (uri.startsWith("file://")) {
-    return validate_stl_path(QUrl(uri).toLocalFile());
+  if (normalized_uri.startsWith("file://")) {
+    return validate_stl_path(QUrl(normalized_uri).toLocalFile(), "file://");
   }
 
-  const QFileInfo file_info(uri);
+  const QFileInfo file_info(normalized_uri);
   if (file_info.isAbsolute()) {
-    return validate_stl_path(file_info.absoluteFilePath());
+    return validate_stl_path(file_info.absoluteFilePath(), "absolute mesh path");
   }
 
-  emit_mesh_event_once(QString("Relative robot mesh URI is not supported: %1").arg(uri));
+  emit_mesh_event_once(QString("Relative robot mesh URI is not supported: %1").arg(normalized_uri));
   return {};
 }
 

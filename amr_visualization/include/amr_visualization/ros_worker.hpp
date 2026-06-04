@@ -92,6 +92,10 @@ private:
   void emit_robot_visual_diagnostics_once(
     const QVector<RobotVisual> &visuals,
     const QString &reason);
+  void emit_mesh_path_access_diagnostics(
+    const QString &label,
+    const QString &uri,
+    const QString &resolved_path);
   bool should_emit_now(rclcpp::Time &last_emit_time, int period_ms) const;
 
   GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
@@ -172,6 +176,7 @@ private:
   bool robot_opengl_force_visible_{false};
   bool robot_opengl_stl_only_debug_{false};
   bool robot_opengl_debug_mesh_bbox_{false};
+  std::string robot_opengl_mesh_path_self_test_{};
   double robot_opengl_debug_size_m_{0.20};
   int costmap_emit_period_ms_{1000};
   int tf_emit_period_ms_{100};
