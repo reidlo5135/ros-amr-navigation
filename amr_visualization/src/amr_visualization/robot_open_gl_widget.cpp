@@ -1,5 +1,7 @@
 #include "amr_visualization/robot_open_gl_widget.hpp"
 
+#include "amr_visualization/file_probe.hpp"
+
 #include <QDataStream>
 #include <QFile>
 #include <QFileInfo>
@@ -72,33 +74,8 @@ QString escaped_path_text(const QString &text)
 
 QString file_access_diagnostics_text(const QString &uri, const QString &resolved_path)
 {
-  const QFileInfo file_info(resolved_path);
-  QFile file(resolved_path);
-  const bool qfile_exists = file.exists();
-  const bool qfile_open = file.open(QIODevice::ReadOnly);
-  const QString qfile_error = qfile_open ? QString() : file.errorString();
-  if (qfile_open) {
-    file.close();
-  }
-  return QString(
-    "uri=%1, resolved_path='%2', resolved_path_length=%3, resolved_path_utf8_hex=%4, "
-    "resolved_path_escaped='%5', qfileinfo_absolute=%6, qfileinfo_canonical=%7, "
-    "exists=%8, isFile=%9, readable=%10, size=%11, qfile_exists=%12, open=%13, qfile_open=%14%15")
-    .arg(uri)
-    .arg(resolved_path)
-    .arg(resolved_path.size())
-    .arg(utf8_hex_dump(resolved_path))
-    .arg(escaped_path_text(resolved_path))
-    .arg(file_info.absoluteFilePath())
-    .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
-    .arg(file_info.exists() ? "true" : "false")
-    .arg(file_info.isFile() ? "true" : "false")
-    .arg(file_info.isReadable() ? "true" : "false")
-    .arg(file_info.exists() ? file_info.size() : 0)
-    .arg(qfile_exists ? "true" : "false")
-    .arg(qfile_open ? "true" : "false")
-    .arg(qfile_open ? "true" : "false")
-    .arg(qfile_open ? QString() : QString(", qfile_error=%1").arg(qfile_error));
+  const FileProbe probe = probeFilePath(uri, resolved_path);
+  return fileProbeToDiagnosticText(probe);
 }
 
 void append_triangle(
@@ -801,9 +778,16 @@ QMatrix4x4 RobotOpenGLWidget::projectionMatrix() const
 
 bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
 {
-  const QString path = visual.mesh_resolved_path;
+  const QString path = visual.mesh_resolved_path.trimmed();
   mesh.source_path = path;
   mesh.load_status = "started";
+  if (path.isEmpty()) {
+    mesh.rejected = true;
+    mesh.error = "empty resolved mesh path";
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
+    return false;
+  }
   const QFileInfo file_info(path);
   if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
     mesh.rejected = true;
@@ -1463,8 +1447,33 @@ void RobotOpenGLWidget::emitMeshStatusTable()
     if (visual.type != RobotGeometryType::Mesh) {
       continue;
     }
+    if (visual.mesh_filename.isEmpty()) {
+      continue;
+    }
+    if (visual.mesh_resolved_path.isEmpty()) {
+      rows.push_back(
+        QString("frame_id=%1 | uri=%2 | resolved_path=<empty> | path_probe_status=skipped_empty_resolved_path | accepted_for_opengl=%3 | load_status=unresolved | validation_status=not_run | upload_status=not_run | draw_status=not_run")
+          .arg(visual.frame_id)
+          .arg(visual.mesh_filename)
+          .arg(
+            visual.mesh_enabled && visual.mesh_render_mode == "opengl" ? QString("true") : QString("false")));
+      const QString skipped_key = QString("mesh_unresolved:%1:%2").arg(visual.frame_id, visual.mesh_filename);
+      if (!visual_event_cache_.contains(skipped_key)) {
+        visual_event_cache_.insert(skipped_key);
+        Q_EMIT visualizationEvent(
+          QString("Mesh skipped: unresolved URI, frame=%1, uri=%2")
+            .arg(visual.frame_id, visual.mesh_filename));
+      }
+      continue;
+    }
     const QFileInfo file_info(visual.mesh_resolved_path);
-    const QString file_access = file_access_diagnostics_text(visual.mesh_filename, visual.mesh_resolved_path);
+    auto probe_text_it = file_probe_text_cache_.find(visual.mesh_resolved_path);
+    if (probe_text_it == file_probe_text_cache_.end()) {
+      probe_text_it = file_probe_text_cache_.emplace(
+        visual.mesh_resolved_path,
+        file_access_diagnostics_text(visual.mesh_filename, visual.mesh_resolved_path)).first;
+    }
+    const QString file_access = probe_text_it->second;
     QString load_status = visual.mesh_resolved_path.isEmpty() ? "unresolved" : "pending";
     QString validation_status = "pending";
     QString upload_status = "pending";
@@ -1647,6 +1656,7 @@ void RobotOpenGLWidget::pruneInactiveMeshes(const QSet<QString> &active_paths)
     warning_cache_.remove(it->first);
     success_cache_.remove(it->first);
     render_event_cache_.remove(it->first);
+    file_probe_text_cache_.erase(it->first);
     if (can_destroy_gl && it->second) {
       destroyMeshBuffers(*it->second);
     }

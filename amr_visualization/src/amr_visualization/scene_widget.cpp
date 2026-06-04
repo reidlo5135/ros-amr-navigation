@@ -1373,8 +1373,14 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
 {
   QElapsedTimer load_timer;
   load_timer.start();
-  const QString path = visual.mesh_resolved_path;
+  const QString path = visual.mesh_resolved_path.trimmed();
   Q_EMIT visualizationEvent(QString("Robot mesh load start: %1").arg(visual.mesh_filename));
+  if (path.isEmpty()) {
+    entry.error = "empty resolved mesh path";
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed after %1 ms: %2").arg(load_timer.elapsed()).arg(entry.error));
+    return false;
+  }
   const QFileInfo file_info(path);
   if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
     entry.error = QString("unsupported extension .%1").arg(file_info.suffix());

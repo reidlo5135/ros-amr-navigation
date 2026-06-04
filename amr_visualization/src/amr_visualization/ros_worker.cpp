@@ -1,5 +1,6 @@
 #include "amr_visualization/ros_worker.hpp"
 
+#include "amr_visualization/file_probe.hpp"
 #include "amr_visualization/robot_model_renderer.hpp"
 
 #include <QElapsedTimer>
@@ -122,33 +123,8 @@ QString canonical_or_absolute_path(const QFileInfo &file_info)
 
 QString file_access_diagnostics_text(const QString &uri, const QString &resolved_path)
 {
-  const QFileInfo file_info(resolved_path);
-  QFile file(resolved_path);
-  const bool qfile_exists = file.exists();
-  const bool qfile_open = file.open(QIODevice::ReadOnly);
-  const QString qfile_error = qfile_open ? QString() : file.errorString();
-  if (qfile_open) {
-    file.close();
-  }
-  return QString(
-    "uri=%1, resolved_path='%2', resolved_path_length=%3, resolved_path_utf8_hex=%4, "
-    "resolved_path_escaped='%5', qfileinfo_absolute=%6, qfileinfo_canonical=%7, "
-    "exists=%8, isFile=%9, readable=%10, size=%11, qfile_exists=%12, open=%13, qfile_open=%14%15")
-    .arg(uri)
-    .arg(resolved_path)
-    .arg(resolved_path.size())
-    .arg(utf8_hex_dump(resolved_path))
-    .arg(escaped_text(resolved_path))
-    .arg(file_info.absoluteFilePath())
-    .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
-    .arg(file_info.exists() ? "true" : "false")
-    .arg(file_info.isFile() ? "true" : "false")
-    .arg(file_info.isReadable() ? "true" : "false")
-    .arg(file_info.exists() ? file_info.size() : 0)
-    .arg(qfile_exists ? "true" : "false")
-    .arg(qfile_open ? "true" : "false")
-    .arg(qfile_open ? "true" : "false")
-    .arg(qfile_open ? QString() : QString(", qfile_error=%1").arg(qfile_error));
+  const FileProbe probe = probeFilePath(uri, resolved_path);
+  return fileProbeToDiagnosticText(probe);
 }
 
 struct Rotation3D
@@ -588,13 +564,12 @@ void RosWorker::configure_ros_interfaces()
       .arg(robot_opengl_stl_only_debug_ ? "true" : "false")
       .arg(robot_opengl_debug_mesh_bbox_ ? "true" : "false")
       .arg(robot_opengl_debug_size_m_));
-  const QString mesh_self_test_path =
-    normalized_filesystem_path(QString::fromStdString(robot_opengl_mesh_path_self_test_));
-  if (!mesh_self_test_path.isEmpty()) {
+  const QString mesh_self_test_raw_path = QString::fromStdString(robot_opengl_mesh_path_self_test_);
+  if (!mesh_self_test_raw_path.trimmed().isEmpty()) {
     emit_mesh_path_access_diagnostics(
       "robot_opengl_mesh_path_self_test",
-      QString::fromStdString(robot_opengl_mesh_path_self_test_),
-      mesh_self_test_path);
+      mesh_self_test_raw_path,
+      mesh_self_test_raw_path);
   }
   Q_EMIT eventReceived(
     QString("Safe mode: robot model %1, robot meshes %2, mesh render mode %3, mesh async %4")
@@ -854,8 +829,12 @@ void RosWorker::emit_mesh_path_access_diagnostics(
   const QString &uri,
   const QString &resolved_path)
 {
-  emit_diagnostic_once(
-    QString("mesh_path_access:%1:%2:%3").arg(label, uri, resolved_path),
+  const QString key = QString("mesh_path_access:%1:%2:%3").arg(label, uri, resolved_path);
+  if (diagnostic_event_cache_.contains(key)) {
+    return;
+  }
+  diagnostic_event_cache_.insert(key);
+  Q_EMIT eventReceived(
     QString("%1 mesh path access diagnostics: %2")
       .arg(label, file_access_diagnostics_text(uri, resolved_path)));
 }
@@ -920,13 +899,28 @@ void RosWorker::emit_robot_visual_diagnostics_once(
     if (visual.type != RobotGeometryType::Mesh) {
       continue;
     }
-    const QFileInfo file_info(visual.mesh_resolved_path);
+    const bool opengl_mesh_visual = visual.mesh_enabled && visual.mesh_render_mode == "opengl";
+    if (!opengl_mesh_visual) {
+      continue;
+    }
+    if (visual.mesh_filename.isEmpty()) {
+      continue;
+    }
+    if (visual.mesh_resolved_path.isEmpty()) {
+      emit_diagnostic_once(
+        QString("mesh_unresolved:%1:%2").arg(visual.frame_id, visual.mesh_filename),
+        QString("Mesh skipped: unresolved URI, frame=%1, uri=%2")
+          .arg(visual.frame_id, visual.mesh_filename));
+      continue;
+    }
+    const FileProbe probe = probeFilePath(
+      QString("RobotVisual %1").arg(visual.frame_id),
+      visual.mesh_resolved_path);
     emit_mesh_path_access_diagnostics(
       QString("RobotVisual %1").arg(visual.frame_id),
       visual.mesh_filename,
       visual.mesh_resolved_path);
-    const bool accepted_for_opengl =
-      visual.mesh_enabled && visual.mesh_render_mode == "opengl" && !visual.mesh_resolved_path.isEmpty();
+    const bool accepted_for_opengl = !visual.mesh_resolved_path.isEmpty();
     const QString key = QString("robot_visual_mesh:%1:%2:%3:%4:%5")
       .arg(visual.frame_id)
       .arg(visual.mesh_filename)
@@ -935,19 +929,11 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       .arg(visual.mesh_render_mode);
     emit_diagnostic_once(
       key,
-      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, resolved_length=%4, resolved_utf8_hex=%5, resolved_escaped='%6', qfileinfo_absolute=%7, qfileinfo_canonical=%8, exists=%9, isFile=%10, readable=%11, file_size=%12, visual_origin_included_in_pose=true, mesh_scale=%13 %14 %15, mesh_enabled=%16, mesh_render_mode=%17, accepted_for_opengl=%18, pose=(%19,%20,%21,%22,%23,%24), debug_axes=%25, debug_cube=%26, force_visible=%27, stl_only=%28, mesh_bbox=%29, debug_size_m=%30")
+      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved_path=%3, path_probe_status={%4}, visual_origin_included_in_pose=true, mesh_scale=%5 %6 %7, mesh_enabled=%8, mesh_render_mode=%9, accepted_for_opengl=%10, pose=(%11,%12,%13,%14,%15,%16), debug_axes=%17, debug_cube=%18, force_visible=%19, stl_only=%20, mesh_bbox=%21, debug_size_m=%22")
         .arg(visual.frame_id)
         .arg(visual.mesh_filename)
-        .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
-        .arg(visual.mesh_resolved_path.size())
-        .arg(utf8_hex_dump(visual.mesh_resolved_path))
-        .arg(escaped_text(visual.mesh_resolved_path))
-        .arg(file_info.absoluteFilePath())
-        .arg(file_info.canonicalFilePath().isEmpty() ? QString("<empty>") : file_info.canonicalFilePath())
-        .arg(file_info.exists() ? "true" : "false")
-        .arg(file_info.isFile() ? "true" : "false")
-        .arg(file_info.isReadable() ? "true" : "false")
-        .arg(file_info.exists() ? file_info.size() : 0)
+        .arg(visual.mesh_resolved_path)
+        .arg(fileProbeToDiagnosticText(probe))
         .arg(visual.mesh_scale_x)
         .arg(visual.mesh_scale_y)
         .arg(visual.mesh_scale_z)
@@ -1389,45 +1375,46 @@ QString RosWorker::resolve_mesh_uri(const QString &uri)
   auto validate_stl_path =
     [this, &normalized_uri, &emit_mesh_event_once](const QString &path, const QString &label) -> QString {
       const QString normalized_path = normalized_filesystem_path(path);
-      const QFileInfo file_info(normalized_path);
-      QFile file(normalized_path);
-      const bool qfile_open = file.open(QIODevice::ReadOnly);
-      const QString qfile_error = qfile_open ? QString() : file.errorString();
-      if (qfile_open) {
-        file.close();
-      }
+      const FileProbe probe = probeFilePath(label, normalized_path);
       emit_mesh_path_access_diagnostics(label, normalized_uri, normalized_path);
 
-      if (normalized_path.isEmpty() || !file_info.exists()) {
+      if (normalized_path.isEmpty() || probe.reason == "empty path") {
+        emit_mesh_event_once(
+          QString("Robot mesh candidate path is empty: uri=%1, label=%2")
+            .arg(normalized_uri, label));
+        return {};
+      }
+      if (!probe.exists) {
         emit_mesh_event_once(
           QString("Robot mesh not found: uri=%1, candidate='%2'")
             .arg(normalized_uri, normalized_path));
         return {};
       }
-      if (!file_info.isFile()) {
+      if (!probe.is_file) {
         emit_mesh_event_once(
           QString("Robot mesh candidate is not a file: uri=%1, candidate='%2'")
             .arg(normalized_uri, normalized_path));
         return {};
       }
-      if (!file_info.isReadable() || !qfile_open) {
+      if (!probe.readable || !probe.open_ok) {
         emit_mesh_event_once(
-          QString("Robot mesh candidate is not readable: uri=%1, candidate='%2', QFileInfo.readable=%3, QFile.open=%4%5")
+          QString("Robot mesh candidate is not readable: uri=%1, candidate='%2', readable=%3, open_ok=%4%5")
             .arg(normalized_uri)
             .arg(normalized_path)
-            .arg(file_info.isReadable() ? "true" : "false")
-            .arg(qfile_open ? "true" : "false")
-            .arg(qfile_open ? QString() : QString(", QFile.error=%1").arg(qfile_error)));
+            .arg(probe.readable ? "true" : "false")
+            .arg(probe.open_ok ? "true" : "false")
+            .arg(probe.open_ok ? QString() : QString(", QFile.error=%1").arg(probe.error_string)));
         return {};
       }
 
+      const QFileInfo file_info(probe.cleaned_path);
       if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
         emit_mesh_event_once(
           QString("Unsupported robot mesh extension for %1: .%2")
             .arg(normalized_uri, file_info.suffix()));
         return {};
       }
-      const QString resolved_path = canonical_or_absolute_path(file_info);
+      const QString resolved_path = probe.canonical_path.isEmpty() ? probe.absolute_path : probe.canonical_path;
       emit_mesh_event_once(
         QString("Robot mesh resolved: %1 -> %2").arg(normalized_uri, resolved_path));
       return resolved_path;

@@ -139,6 +139,7 @@ private:
 
   QVector<RobotVisual> visuals_;
   std::map<QString, std::unique_ptr<GpuMesh>> mesh_cache_;
+  std::map<QString, QString> file_probe_text_cache_;
   QSet<QString> warning_cache_;
   QSet<QString> success_cache_;
   QSet<QString> visual_event_cache_;
