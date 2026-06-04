@@ -183,6 +183,25 @@ ros2 run amr_visualization amr_visualization --ros-args \
   -p mesh_max_abs_coordinate_m:=10.0
 ```
 
+Verbose mesh and OpenGL diagnostics are printed to terminal logs instead of the
+Events/Feedback panel. Enable Qt logging categories when collecting renderer details:
+
+```bash
+QT_LOGGING_RULES="amr_visualization.opengl.debug=true;amr_visualization.mesh.debug=true" \
+ros2 run amr_visualization amr_visualization --ros-args \
+  -p enable_robot_meshes:=true \
+  -p robot_model_renderer_backend:=opengl
+```
+
+To show all visualization Qt categories:
+
+```bash
+QT_LOGGING_RULES="amr_visualization.*=true" \
+ros2 run amr_visualization amr_visualization --ros-args \
+  -p enable_robot_meshes:=true \
+  -p robot_model_renderer_backend:=opengl
+```
+
 ## Crash backtrace
 
 If the process crashes or hangs, collect a backtrace:
