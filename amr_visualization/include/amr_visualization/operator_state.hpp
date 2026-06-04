@@ -56,7 +56,7 @@ struct RobotVisual
   double mesh_scale_z{1.0};
   bool mesh_enabled{false};
   QString mesh_render_mode{"proxy"};
-  int mesh_max_loaded_triangles{5000};
+  int mesh_max_loaded_triangles{200000};
   int mesh_max_rendered_faces{500};
   int mesh_max_file_size_mb{64};
   double mesh_max_extent_m{2.0};
@@ -70,6 +70,13 @@ struct RobotVisual
   bool robot_opengl_force_visible{false};
   bool robot_opengl_stl_only_debug{false};
   bool robot_opengl_debug_mesh_bbox{false};
+  bool robot_opengl_verbose_diagnostics{false};
+  bool robot_opengl_auto_software_profile{true};
+  int robot_opengl_target_fps{0};
+  int robot_opengl_software_target_fps{8};
+  int robot_opengl_hardware_target_fps{30};
+  double robot_model_pose_epsilon_m{0.003};
+  double robot_model_yaw_epsilon_rad{0.003};
   double robot_opengl_debug_size_m{0.20};
   bool proxy_visual{false};
   bool unresolved_pose{false};

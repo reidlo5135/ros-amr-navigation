@@ -88,6 +88,7 @@ private:
     quint32 source_triangle_count{0};
     quint32 loaded_triangle_count{0};
     int draw_call_count{0};
+    bool upload_success_repaint_requested{false};
     GLenum upload_error_code{GL_NO_ERROR};
     GLenum draw_error_code{GL_NO_ERROR};
   };
@@ -98,7 +99,23 @@ private:
   bool stlOnlyDebugEnabled() const;
   bool debugMeshBboxEnabled() const;
   bool debugCameraEnabled() const;
+  bool verboseDiagnosticsEnabled() const;
   int uploadedMeshCount() const;
+  bool updateRuntimeOptions(const QVector<RobotVisual> &visuals);
+  void refreshEffectiveTargetFps();
+  bool hasDirtyRenderState() const;
+  void requestRepaint();
+  void requestRepaintIfDirty();
+  bool shouldEmitVerboseDiagnostics();
+  bool cameraChangedMeaningfully(
+    const QVector3D &focal_point,
+    double yaw,
+    double pitch,
+    double distance,
+    double pixels_per_meter) const;
+  bool visualsChangedMeaningfully(const QVector<RobotVisual> &visuals) const;
+  QString openglCandidateSkipReason(const RobotVisual &visual);
+  bool isAcceptedOpenGLMeshVisual(const RobotVisual &visual);
   QVector3D cameraRight() const;
   QVector3D cameraForward() const;
   QVector3D cameraUp() const;
@@ -151,6 +168,7 @@ private:
   QVector<RobotVisual> incoming_visuals_;
   std::map<QString, std::unique_ptr<GpuMesh>> mesh_cache_;
   std::map<QString, QString> file_probe_text_cache_;
+  std::map<QString, QString> candidate_skip_reason_cache_;
   QSet<QString> warning_cache_;
   QSet<QString> success_cache_;
   QSet<QString> visual_event_cache_;
@@ -175,6 +193,8 @@ private:
   QString last_visible_geometry_;
   QString last_stl_fallback_reason_;
   QElapsedTimer paint_diagnostic_timer_;
+  QElapsedTimer repaint_throttle_timer_;
+  QElapsedTimer paint_fps_timer_;
   int last_draw_calls_{0};
   int last_stl_draw_calls_{0};
   int last_fallback_cube_draw_calls_{0};
@@ -186,6 +206,29 @@ private:
   int last_received_proxy_visual_count_{0};
   int last_unresolved_pose_mesh_visual_count_{0};
   int last_resolved_mesh_visual_count_{0};
+  bool verbose_diagnostics_{false};
+  bool auto_software_profile_{true};
+  bool software_renderer_detected_{false};
+  bool renderer_profile_known_{false};
+  bool camera_dirty_{true};
+  bool robot_pose_dirty_{true};
+  bool mesh_upload_dirty_{true};
+  bool resize_dirty_{true};
+  bool debug_dirty_{false};
+  bool repaint_queued_{false};
+  bool software_renderer_warning_emitted_{false};
+  int explicit_target_fps_{0};
+  int software_target_fps_{8};
+  int hardware_target_fps_{30};
+  int target_fps_{30};
+  int skipped_repaint_count_{0};
+  int paint_sample_count_{0};
+  double actual_paint_fps_{0.0};
+  qint64 last_paint_elapsed_ms_{0};
+  qint64 last_set_visuals_elapsed_ms_{0};
+  GLenum last_reported_draw_error_code_{GL_NO_ERROR};
+  double pose_epsilon_m_{0.003};
+  double yaw_epsilon_rad_{0.003};
   QVector3D focal_point_{0.0F, 0.0F, 0.0F};
   double camera_yaw_{0.0};
   double camera_pitch_{1.5707963267948966};

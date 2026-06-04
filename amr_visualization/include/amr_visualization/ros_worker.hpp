@@ -101,6 +101,7 @@ private:
   void emit_robot_visual_diagnostics_once(
     const QVector<RobotVisual> &visuals,
     const QString &reason);
+  bool robot_visuals_changed_meaningfully(const QVector<RobotVisual> &visuals) const;
   void emit_mesh_path_access_diagnostics(
     const QString &label,
     const QString &uri,
@@ -185,13 +186,20 @@ private:
   bool robot_opengl_force_visible_{false};
   bool robot_opengl_stl_only_debug_{false};
   bool robot_opengl_debug_mesh_bbox_{false};
+  bool robot_opengl_verbose_diagnostics_{false};
+  bool robot_opengl_auto_software_profile_{true};
   std::string robot_opengl_mesh_path_self_test_{};
   double robot_opengl_debug_size_m_{0.20};
+  double robot_model_pose_epsilon_m_{0.003};
+  double robot_model_yaw_epsilon_rad_{0.003};
+  int robot_opengl_target_fps_{0};
+  int robot_opengl_software_target_fps_{8};
+  int robot_opengl_hardware_target_fps_{30};
   int costmap_emit_period_ms_{1000};
   int tf_emit_period_ms_{100};
   int robot_model_emit_period_ms_{250};
   int scan_emit_period_ms_{100};
-  int mesh_max_loaded_triangles_{5000};
+  int mesh_max_loaded_triangles_{200000};
   int mesh_max_rendered_faces_{500};
   int mesh_max_file_size_mb_{64};
   double mesh_max_extent_m_{2.0};
@@ -209,7 +217,9 @@ private:
   std::map<std::string, RobotJoint> robot_joints_;
   QSet<QString> mesh_resolution_event_cache_;
   QSet<QString> diagnostic_event_cache_;
+  QVector<RobotVisual> last_robot_model_visuals_;
   int robot_model_emit_count_{0};
+  int robot_model_skip_count_{0};
   int robot_description_link_count_{0};
 };
 

@@ -4,27 +4,30 @@ Qt6 operator visualization app for the AMR navigation stack.
 
 ## Safe-mode parameters
 
-The default runtime prioritizes responsiveness over detailed mesh rendering.
+The packaged launch file uses a low-CPU OpenGL profile by default. It keeps URDF
+STL robot meshes enabled while avoiding debug overlays, verbose per-frame logs,
+aggressive geometry truncation, and excessive repaint rates. The profile lives in
+`config/low_cpu_opengl.yaml` and can be overridden from the CLI.
 
 Key parameters:
 
 - `enable_robot_model`: default `true`
-- `enable_robot_meshes`: default `false`
+- `enable_robot_meshes`: launch default `true`
 - `enable_tf_visualization`: default `true`
 - `enable_scan_visualization`: default `true`
 - `enable_map_visualization`: default `true`
 - `enable_costmap_visualization`: default `true`
-- `robot_model_emit_period_ms`: default `250`
-- `tf_emit_period_ms`: default `100`
+- `robot_model_emit_period_ms`: launch default `500`
+- `tf_emit_period_ms`: launch default `200`
 - `scan_emit_period_ms`: default `100`
 - `mesh_load_async`: default `false`
-- `robot_model_renderer_backend`: default `proxy`, allowed `proxy`, `qpainter_wireframe`, `opengl`
+- `robot_model_renderer_backend`: launch default `opengl`, allowed `proxy`, `qpainter_wireframe`, `opengl`
 - `robot_mesh_render_mode`: internal render mode derived from the backend
-- `mesh_max_loaded_triangles`: default `5000`
+- `mesh_max_loaded_triangles`: launch default `200000`
 - `mesh_max_rendered_faces`: default `500`
-- `mesh_max_file_size_mb`: default `64`
-- `mesh_max_extent_m`: default `2.0`
-- `mesh_max_abs_coordinate_m`: default `5.0`
+- `mesh_max_file_size_mb`: launch default `32`
+- `mesh_max_extent_m`: launch default `100.0`
+- `mesh_max_abs_coordinate_m`: launch default `100.0`
 - `mesh_max_projected_extent_px`: default `3000`
 - `robot_mesh_auto_unit_scale`: default `false`
 - `robot_mesh_unit_scale`: default `1.0`
@@ -40,9 +43,27 @@ Key parameters:
   STL meshes, with a red OpenGL fallback cube if no STL mesh reaches draw.
 - `robot_opengl_debug_mesh_bbox`: default `false`, draws each accepted STL mesh bounding box with
   the same pose path as the mesh to separate transform/camera problems from mesh draw problems.
+- `robot_opengl_verbose_diagnostics`: launch default `false`, enables detailed OpenGL/STL status
+  tables, file probes, and paint diagnostics when set to `true`.
+- `robot_opengl_auto_software_profile`: launch default `true`, selects the software FPS profile
+  when the OpenGL renderer string reports llvmpipe, softpipe, or a software rasterizer.
+- `robot_opengl_target_fps`: launch default `0`, where `0` means auto-select software/hardware
+  FPS. Set a positive value to force an explicit FPS cap.
+- `robot_opengl_software_target_fps`: launch default `8`, used for software OpenGL when no
+  explicit `robot_opengl_target_fps` override is set.
+- `robot_opengl_hardware_target_fps`: launch default `30`, used for hardware OpenGL when no
+  explicit `robot_opengl_target_fps` override is set.
+- `robot_model_pose_epsilon_m`: launch default `0.003`, suppresses tiny robot model pose updates.
+- `robot_model_yaw_epsilon_rad`: launch default `0.003`, suppresses tiny robot model yaw updates.
 - `robot_opengl_debug_size_m`: default `0.20`, controls the size of the OpenGL debug axis/cube.
 
-Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and either
+On llvmpipe, reducing `robot_opengl_software_target_fps` is the safer first CPU lever. Lowering
+`mesh_max_loaded_triangles` too far can truncate STL files and remove visible body plates,
+support/frame geometry, wheel detail, or LDS geometry. For best performance, use hardware GPU
+OpenGL instead of llvmpipe when the Box PC platform allows it.
+
+Detailed STL rendering is enabled by the packaged low-CPU launch profile. For direct `ros2 run`
+invocations without a parameter file, enable it with `enable_robot_meshes:=true` and either
 `robot_model_renderer_backend:=opengl` or `robot_model_renderer_backend:=qpainter_wireframe`.
 The `proxy` backend does not load or draw STL triangles. If `mesh_load_async:=true` is requested,
 mesh file loading is disabled for safety because no asynchronous loader is currently implemented.
@@ -122,10 +143,96 @@ ros2 run amr_visualization amr_visualization --ros-args \
   -p mesh_max_rendered_faces:=200
 ```
 
-Safe default:
+Launch default low-CPU OpenGL profile:
+
+```bash
+ros2 launch amr_visualization amr_visualization.launch.py
+```
+
+Runtime comparison recipes:
+
+```bash
+# Proxy only
+ros2 launch amr_visualization amr_visualization.launch.py \
+  robot_model_renderer_backend:=proxy \
+  enable_robot_meshes:=false
+
+# OpenGL robot only, with map/costmap/scan/TF frame drawing disabled
+ros2 launch amr_visualization amr_visualization.launch.py \
+  enable_map_visualization:=false \
+  enable_costmap_visualization:=false \
+  enable_scan_visualization:=false \
+  enable_tf_visualization:=false \
+  robot_opengl_software_target_fps:=3
+
+# Robot overlay off
+ros2 launch amr_visualization amr_visualization.launch.py \
+  enable_robot_model:=false \
+  enable_robot_meshes:=false
+```
+
+Use a custom parameter file:
+
+```bash
+ros2 launch amr_visualization amr_visualization.launch.py \
+  params_file:=/path/to/custom.yaml
+```
+
+Direct executable without launch defaults:
 
 ```bash
 ros2 run amr_visualization amr_visualization
+```
+
+Low-CPU OpenGL equivalent with `ros2 run`:
+
+```bash
+ros2 run amr_visualization amr_visualization --ros-args \
+  -p enable_robot_meshes:=true \
+  -p robot_model_renderer_backend:=opengl \
+  -p robot_opengl_force_visible:=false \
+  -p robot_opengl_debug_camera:=false \
+  -p robot_opengl_stl_only_debug:=false \
+  -p robot_opengl_debug_mesh_bbox:=false \
+  -p robot_opengl_debug_axes:=false \
+  -p robot_opengl_debug_cube:=false \
+  -p robot_opengl_verbose_diagnostics:=false \
+  -p robot_opengl_auto_software_profile:=true \
+  -p robot_opengl_target_fps:=0 \
+  -p robot_opengl_software_target_fps:=8 \
+  -p robot_opengl_hardware_target_fps:=30 \
+  -p robot_model_emit_period_ms:=500 \
+  -p tf_emit_period_ms:=200 \
+  -p robot_model_pose_epsilon_m:=0.003 \
+  -p robot_model_yaw_epsilon_rad:=0.003 \
+  -p mesh_max_loaded_triangles:=200000 \
+  -p mesh_max_file_size_mb:=32 \
+  -p mesh_max_extent_m:=100.0 \
+  -p mesh_max_abs_coordinate_m:=100.0
+```
+
+Low CPU software OpenGL:
+
+```bash
+ros2 launch amr_visualization amr_visualization.launch.py \
+  robot_opengl_software_target_fps:=8 \
+  mesh_max_loaded_triangles:=200000
+```
+
+Higher quality / hardware OpenGL:
+
+```bash
+ros2 launch amr_visualization amr_visualization.launch.py \
+  robot_opengl_target_fps:=30 \
+  mesh_max_loaded_triangles:=200000
+```
+
+Emergency lowest CPU:
+
+```bash
+ros2 launch amr_visualization amr_visualization.launch.py \
+  robot_opengl_software_target_fps:=3 \
+  mesh_max_loaded_triangles:=200000
 ```
 
 Mesh proxy mode:

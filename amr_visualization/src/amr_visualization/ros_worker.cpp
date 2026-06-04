@@ -158,6 +158,39 @@ QString pose_text(const Pose2D &pose)
     .arg(pose.yaw);
 }
 
+double normalized_angle_delta(const double lhs, const double rhs)
+{
+  constexpr double two_pi = 2.0 * 3.14159265358979323846;
+  constexpr double pi = 3.14159265358979323846;
+  double delta = std::fmod(lhs - rhs, two_pi);
+  if (delta > pi) {
+    delta -= two_pi;
+  } else if (delta < -pi) {
+    delta += two_pi;
+  }
+  return std::abs(delta);
+}
+
+bool pose_changed_meaningfully(
+  const Pose2D &lhs,
+  const Pose2D &rhs,
+  const double pose_epsilon_m,
+  const double yaw_epsilon_rad)
+{
+  if (lhs.valid != rhs.valid) {
+    return true;
+  }
+  const double dx = lhs.x - rhs.x;
+  const double dy = lhs.y - rhs.y;
+  const double dz = lhs.z - rhs.z;
+  if (((dx * dx) + (dy * dy) + (dz * dz)) > (pose_epsilon_m * pose_epsilon_m)) {
+    return true;
+  }
+  return normalized_angle_delta(lhs.roll, rhs.roll) > yaw_epsilon_rad ||
+    normalized_angle_delta(lhs.pitch, rhs.pitch) > yaw_epsilon_rad ||
+    normalized_angle_delta(lhs.yaw, rhs.yaw) > yaw_epsilon_rad;
+}
+
 QString opengl_candidate_skip_reason(const RobotVisual &visual)
 {
   if (visual.unresolved_pose) {
@@ -589,12 +622,34 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("robot_opengl_stl_only_debug", robot_opengl_stl_only_debug_);
   robot_opengl_debug_mesh_bbox_ =
     node_->declare_parameter<bool>("robot_opengl_debug_mesh_bbox", robot_opengl_debug_mesh_bbox_);
+  robot_opengl_verbose_diagnostics_ =
+    node_->declare_parameter<bool>(
+      "robot_opengl_verbose_diagnostics",
+      robot_opengl_verbose_diagnostics_);
+  robot_opengl_auto_software_profile_ =
+    node_->declare_parameter<bool>(
+      "robot_opengl_auto_software_profile",
+      robot_opengl_auto_software_profile_);
+  robot_opengl_target_fps_ =
+    node_->declare_parameter<int>("robot_opengl_target_fps", robot_opengl_target_fps_);
+  robot_opengl_software_target_fps_ =
+    node_->declare_parameter<int>(
+      "robot_opengl_software_target_fps",
+      robot_opengl_software_target_fps_);
+  robot_opengl_hardware_target_fps_ =
+    node_->declare_parameter<int>(
+      "robot_opengl_hardware_target_fps",
+      robot_opengl_hardware_target_fps_);
   robot_opengl_mesh_path_self_test_ =
     node_->declare_parameter<std::string>(
       "robot_opengl_mesh_path_self_test",
       robot_opengl_mesh_path_self_test_);
   robot_opengl_debug_size_m_ =
     node_->declare_parameter<double>("robot_opengl_debug_size_m", robot_opengl_debug_size_m_);
+  robot_model_pose_epsilon_m_ =
+    node_->declare_parameter<double>("robot_model_pose_epsilon_m", robot_model_pose_epsilon_m_);
+  robot_model_yaw_epsilon_rad_ =
+    node_->declare_parameter<double>("robot_model_yaw_epsilon_rad", robot_model_yaw_epsilon_rad_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
   tf_emit_period_ms_ =
@@ -646,13 +701,20 @@ void RosWorker::configure_ros_interfaces()
   RCLCPP_INFO(
     node_->get_logger(),
     "%s",
-    QString("OpenGL robot debug: camera=%1, axes=%2, cube=%3, force_visible=%4, stl_only=%5, mesh_bbox=%6, debug_size_m=%7")
+    QString("OpenGL robot debug/profile: camera=%1, axes=%2, cube=%3, force_visible=%4, stl_only=%5, mesh_bbox=%6, verbose_diagnostics=%7, auto_software_profile=%8, target_fps_override=%9, software_target_fps=%10, hardware_target_fps=%11, pose_epsilon_m=%12, yaw_epsilon_rad=%13, debug_size_m=%14")
       .arg(robot_opengl_debug_camera_ ? "true" : "false")
       .arg(robot_opengl_debug_axes_ ? "true" : "false")
       .arg(robot_opengl_debug_cube_ ? "true" : "false")
       .arg(robot_opengl_force_visible_ ? "true" : "false")
       .arg(robot_opengl_stl_only_debug_ ? "true" : "false")
       .arg(robot_opengl_debug_mesh_bbox_ ? "true" : "false")
+      .arg(robot_opengl_verbose_diagnostics_ ? "true" : "false")
+      .arg(robot_opengl_auto_software_profile_ ? "true" : "false")
+      .arg(std::clamp(robot_opengl_target_fps_, 0, 120))
+      .arg(std::clamp(robot_opengl_software_target_fps_, 1, 120))
+      .arg(std::clamp(robot_opengl_hardware_target_fps_, 1, 120))
+      .arg(std::max(robot_model_pose_epsilon_m_, 0.0))
+      .arg(std::max(robot_model_yaw_epsilon_rad_, 0.0))
       .arg(robot_opengl_debug_size_m_).toStdString().c_str());
   const QString mesh_self_test_raw_path = QString::fromStdString(robot_opengl_mesh_path_self_test_);
   if (!mesh_self_test_raw_path.trimmed().isEmpty()) {
@@ -680,7 +742,10 @@ void RosWorker::configure_ros_interfaces()
       "robot_opengl_debug_camera=%7, robot_opengl_debug_axes=%8, "
       "robot_opengl_debug_cube=%9, robot_opengl_force_visible=%10, "
       "robot_opengl_stl_only_debug=%11, robot_opengl_debug_mesh_bbox=%12, "
-      "robot_opengl_debug_size_m=%13")
+      "robot_opengl_verbose_diagnostics=%13, robot_opengl_auto_software_profile=%14, "
+      "robot_opengl_target_fps=%15, robot_opengl_software_target_fps=%16, "
+      "robot_opengl_hardware_target_fps=%17, robot_model_pose_epsilon_m=%18, "
+      "robot_model_yaw_epsilon_rad=%19, robot_opengl_debug_size_m=%20")
       .arg(enable_robot_model_ ? "true" : "false")
       .arg(enable_robot_meshes_ ? "true" : "false")
       .arg(QString::fromStdString(robot_mesh_render_mode_))
@@ -693,6 +758,13 @@ void RosWorker::configure_ros_interfaces()
       .arg(robot_opengl_force_visible_ ? "true" : "false")
       .arg(robot_opengl_stl_only_debug_ ? "true" : "false")
       .arg(robot_opengl_debug_mesh_bbox_ ? "true" : "false")
+      .arg(robot_opengl_verbose_diagnostics_ ? "true" : "false")
+      .arg(robot_opengl_auto_software_profile_ ? "true" : "false")
+      .arg(std::clamp(robot_opengl_target_fps_, 0, 120))
+      .arg(std::clamp(robot_opengl_software_target_fps_, 1, 120))
+      .arg(std::clamp(robot_opengl_hardware_target_fps_, 1, 120))
+      .arg(std::max(robot_model_pose_epsilon_m_, 0.0))
+      .arg(std::max(robot_model_yaw_epsilon_rad_, 0.0))
       .arg(robot_opengl_debug_size_m_).toStdString().c_str());
   if (mesh_load_async_) {
     Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
@@ -992,9 +1064,16 @@ void RosWorker::emit_robot_model_update(const QString &reason)
   build_timer.start();
   QVector<RobotVisual> visuals = build_robot_visuals();
   const qint64 elapsed_ms = build_timer.elapsed();
+  const bool force_emit = last_robot_model_visuals_.isEmpty() || reason == "robot_description";
+  if (!force_emit && !robot_visuals_changed_meaningfully(visuals)) {
+    ++robot_model_skip_count_;
+    last_robot_model_emit_time_ = node_ ? node_->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
+    return;
+  }
   emit_robot_visual_diagnostics_once(visuals, reason);
   ++robot_model_emit_count_;
   Q_EMIT robotModelChanged(visuals);
+  last_robot_model_visuals_ = visuals;
   last_robot_model_emit_time_ = node_ ? node_->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
   if (robot_model_emit_count_ <= 3 || (robot_model_emit_count_ % 20) == 0 || elapsed_ms > 16) {
     RCLCPP_INFO(
@@ -1006,6 +1085,60 @@ void RosWorker::emit_robot_model_update(const QString &reason)
         .arg(visuals.size())
         .arg(elapsed_ms).toStdString().c_str());
   }
+}
+
+bool RosWorker::robot_visuals_changed_meaningfully(const QVector<RobotVisual> &visuals) const
+{
+  if (last_robot_model_visuals_.size() != visuals.size()) {
+    return true;
+  }
+  const double pose_epsilon_m = std::max(robot_model_pose_epsilon_m_, 0.0);
+  const double yaw_epsilon_rad = std::max(robot_model_yaw_epsilon_rad_, 0.0);
+  for (int i = 0; i < visuals.size(); ++i) {
+    const RobotVisual &previous = last_robot_model_visuals_[i];
+    const RobotVisual &current = visuals[i];
+    if (
+      previous.frame_id != current.frame_id ||
+      previous.type != current.type ||
+      previous.mesh_filename != current.mesh_filename ||
+      previous.mesh_resolved_path != current.mesh_resolved_path ||
+      previous.urdf_source != current.urdf_source ||
+      previous.mesh_enabled != current.mesh_enabled ||
+      previous.mesh_render_mode != current.mesh_render_mode ||
+      previous.mesh_max_loaded_triangles != current.mesh_max_loaded_triangles ||
+      previous.mesh_max_file_size_mb != current.mesh_max_file_size_mb ||
+      previous.mesh_max_extent_m != current.mesh_max_extent_m ||
+      previous.mesh_max_abs_coordinate_m != current.mesh_max_abs_coordinate_m ||
+      previous.size_x != current.size_x ||
+      previous.size_y != current.size_y ||
+      previous.size_z != current.size_z ||
+      previous.radius != current.radius ||
+      previous.length != current.length ||
+      previous.proxy_visual != current.proxy_visual ||
+      previous.unresolved_pose != current.unresolved_pose ||
+      previous.valid != current.valid ||
+      previous.mesh_scale_x != current.mesh_scale_x ||
+      previous.mesh_scale_y != current.mesh_scale_y ||
+      previous.mesh_scale_z != current.mesh_scale_z ||
+      previous.robot_opengl_debug_camera != current.robot_opengl_debug_camera ||
+      previous.robot_opengl_debug_axes != current.robot_opengl_debug_axes ||
+      previous.robot_opengl_debug_cube != current.robot_opengl_debug_cube ||
+      previous.robot_opengl_force_visible != current.robot_opengl_force_visible ||
+      previous.robot_opengl_stl_only_debug != current.robot_opengl_stl_only_debug ||
+      previous.robot_opengl_debug_mesh_bbox != current.robot_opengl_debug_mesh_bbox ||
+      previous.robot_opengl_verbose_diagnostics != current.robot_opengl_verbose_diagnostics ||
+      previous.robot_opengl_auto_software_profile != current.robot_opengl_auto_software_profile ||
+      previous.robot_opengl_target_fps != current.robot_opengl_target_fps ||
+      previous.robot_opengl_software_target_fps != current.robot_opengl_software_target_fps ||
+      previous.robot_opengl_hardware_target_fps != current.robot_opengl_hardware_target_fps)
+    {
+      return true;
+    }
+    if (pose_changed_meaningfully(previous.pose, current.pose, pose_epsilon_m, yaw_epsilon_rad)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void RosWorker::emit_robot_visual_diagnostics_once(
@@ -1828,6 +1961,13 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual.robot_opengl_force_visible = robot_opengl_force_visible_;
     visual.robot_opengl_stl_only_debug = robot_opengl_stl_only_debug_;
     visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
+    visual.robot_opengl_verbose_diagnostics = robot_opengl_verbose_diagnostics_;
+    visual.robot_opengl_auto_software_profile = robot_opengl_auto_software_profile_;
+    visual.robot_opengl_target_fps = std::clamp(robot_opengl_target_fps_, 0, 120);
+    visual.robot_opengl_software_target_fps = std::clamp(robot_opengl_software_target_fps_, 1, 120);
+    visual.robot_opengl_hardware_target_fps = std::clamp(robot_opengl_hardware_target_fps_, 1, 120);
+    visual.robot_model_pose_epsilon_m = std::max(robot_model_pose_epsilon_m_, 0.0);
+    visual.robot_model_yaw_epsilon_rad = std::max(robot_model_yaw_epsilon_rad_, 0.0);
     visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
     if (frame_pose.valid) {
       // Compose world/link pose with the URDF visual origin exactly once. The OpenGL
@@ -1899,6 +2039,13 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.robot_opengl_force_visible = robot_opengl_force_visible_;
       visual.robot_opengl_stl_only_debug = robot_opengl_stl_only_debug_;
       visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
+      visual.robot_opengl_verbose_diagnostics = robot_opengl_verbose_diagnostics_;
+      visual.robot_opengl_auto_software_profile = robot_opengl_auto_software_profile_;
+      visual.robot_opengl_target_fps = std::clamp(robot_opengl_target_fps_, 0, 120);
+      visual.robot_opengl_software_target_fps = std::clamp(robot_opengl_software_target_fps_, 1, 120);
+      visual.robot_opengl_hardware_target_fps = std::clamp(robot_opengl_hardware_target_fps_, 1, 120);
+      visual.robot_model_pose_epsilon_m = std::max(robot_model_pose_epsilon_m_, 0.0);
+      visual.robot_model_yaw_epsilon_rad = std::max(robot_model_yaw_epsilon_rad_, 0.0);
       visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
       visuals.push_back(visual);
       emitted_visual_frames.insert(frame_id);

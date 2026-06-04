@@ -745,7 +745,9 @@ void SceneWidget::syncOpenGLRobotViewport()
   if (!robot_open_gl_widget_) {
     return;
   }
-  robot_open_gl_widget_->setGeometry(rect());
+  if (robot_open_gl_widget_->geometry() != rect()) {
+    robot_open_gl_widget_->setGeometry(rect());
+  }
   robot_open_gl_widget_->setCamera(
     focal_point_,
     camera_yaw_,

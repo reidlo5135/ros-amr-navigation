@@ -10,6 +10,7 @@
 #include <QLoggingCategory>
 #include <QSurfaceFormat>
 #include <QStringList>
+#include <QTimer>
 #include <QVector4D>
 
 #include <algorithm>
@@ -102,7 +103,38 @@ bool is_urdf_mesh_visual(const RobotVisual &visual)
     !visual.proxy_visual;
 }
 
-QString opengl_candidate_skip_reason(const RobotVisual &visual)
+double normalized_angle_delta(const double lhs, const double rhs)
+{
+  double delta = std::fmod(lhs - rhs, 2.0 * k_pi);
+  if (delta > k_pi) {
+    delta -= 2.0 * k_pi;
+  } else if (delta < -k_pi) {
+    delta += 2.0 * k_pi;
+  }
+  return std::abs(delta);
+}
+
+bool pose_changed_meaningfully(
+  const Pose2D &lhs,
+  const Pose2D &rhs,
+  const double pose_epsilon_m,
+  const double yaw_epsilon_rad)
+{
+  if (lhs.valid != rhs.valid) {
+    return true;
+  }
+  const double dx = lhs.x - rhs.x;
+  const double dy = lhs.y - rhs.y;
+  const double dz = lhs.z - rhs.z;
+  if (((dx * dx) + (dy * dy) + (dz * dz)) > (pose_epsilon_m * pose_epsilon_m)) {
+    return true;
+  }
+  return normalized_angle_delta(lhs.roll, rhs.roll) > yaw_epsilon_rad ||
+    normalized_angle_delta(lhs.pitch, rhs.pitch) > yaw_epsilon_rad ||
+    normalized_angle_delta(lhs.yaw, rhs.yaw) > yaw_epsilon_rad;
+}
+
+QString opengl_candidate_precheck_skip_reason(const RobotVisual &visual)
 {
   if (visual.unresolved_pose) {
     return "unresolved pose";
@@ -131,26 +163,7 @@ QString opengl_candidate_skip_reason(const RobotVisual &visual)
   if (visual.mesh_render_mode != "opengl") {
     return QString("mesh render mode is %1").arg(visual.mesh_render_mode);
   }
-
-  const FileProbe probe = probeFilePath(visual.mesh_filename, visual.mesh_resolved_path);
-  if (!probe.exists) {
-    return "local mesh file does not exist";
-  }
-  if (!probe.is_file) {
-    return "local mesh path is not a file";
-  }
-  if (!probe.readable) {
-    return "local mesh file is not readable";
-  }
-  if (!probe.open_ok) {
-    return QString("local mesh file open failed: %1").arg(probe.error_string);
-  }
   return {};
-}
-
-bool is_accepted_opengl_mesh_visual(const RobotVisual &visual)
-{
-  return opengl_candidate_skip_reason(visual).isEmpty();
 }
 
 QString vector_text(const QVector3D &point)
@@ -245,6 +258,7 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
   emitWidgetCreatedOnce();
   QElapsedTimer timer;
   timer.start();
+  const bool runtime_options_changed = updateRuntimeOptions(visuals);
   incoming_visuals_ = visuals;
   last_received_visual_count_ = visuals.size();
   last_received_urdf_mesh_visual_count_ = std::count_if(
@@ -267,19 +281,37 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
     [](const RobotVisual &visual) {
       return is_urdf_mesh_visual(visual) && !visual.mesh_resolved_path.trimmed().isEmpty();
     });
-  visuals_.clear();
+  QVector<RobotVisual> accepted_visuals;
   QSet<QString> active_paths;
   for (const auto &visual : visuals) {
-    if (!is_accepted_opengl_mesh_visual(visual)) {
+    if (!isAcceptedOpenGLMeshVisual(visual)) {
       continue;
     }
-    visuals_.push_back(visual);
+    accepted_visuals.push_back(visual);
     active_paths.insert(visual.mesh_resolved_path.trimmed());
   }
 
-  emitSetVisualsDiagnostics(visuals, active_paths);
+  const bool visuals_changed = visualsChangedMeaningfully(accepted_visuals);
+  if (!visuals_changed && !runtime_options_changed) {
+    last_set_visuals_elapsed_ms_ = timer.elapsed();
+    setRenderVisible(hasRenderableVisuals());
+    requestRepaintIfDirty();
+    return;
+  }
 
+  visuals_ = accepted_visuals;
+  robot_pose_dirty_ = robot_pose_dirty_ || visuals_changed;
+  debug_dirty_ = debug_dirty_ || runtime_options_changed;
+
+  if (verboseDiagnosticsEnabled()) {
+    emitSetVisualsDiagnostics(visuals, active_paths);
+  }
+
+  const int previous_cache_size = static_cast<int>(mesh_cache_.size());
   pruneInactiveMeshes(active_paths);
+  if (static_cast<int>(mesh_cache_.size()) != previous_cache_size) {
+    mesh_upload_dirty_ = true;
+  }
   for (const auto &visual : visuals_) {
     if (visual.mesh_resolved_path.isEmpty()) {
       continue;
@@ -292,7 +324,9 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
     mesh->attempted = true;
     mesh->load_status = "started";
     loadStlMesh(visual, *mesh);
-    emitStlLoadDiagnostics(visual, *mesh);
+    if (verboseDiagnosticsEnabled()) {
+      emitStlLoadDiagnostics(visual, *mesh);
+    }
     if (mesh->rejected || mesh->vertices.isEmpty() || mesh->indices.isEmpty()) {
       if (!warning_cache_.contains(visual.mesh_resolved_path)) {
         warning_cache_.insert(visual.mesh_resolved_path);
@@ -310,19 +344,25 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
           .arg(visual.frame_id);
     }
     mesh_cache_[visual.mesh_resolved_path] = std::move(mesh);
+    mesh_upload_dirty_ = true;
   }
 
-  emitSetVisualsDiagnostics(visuals, active_paths);
+  if (verboseDiagnosticsEnabled()) {
+    emitSetVisualsDiagnostics(visuals, active_paths);
+  }
   emitMeshVisualDiagnostics();
-  emitOpenGLMeshSummary("setRobotVisuals");
-  emitMeshStatusTable();
+  if (verboseDiagnosticsEnabled()) {
+    emitOpenGLMeshSummary("setRobotVisuals");
+    emitMeshStatusTable();
+  }
 
-  if (timer.elapsed() > 33) {
+  last_set_visuals_elapsed_ms_ = timer.elapsed();
+  if (last_set_visuals_elapsed_ms_ > 33) {
     qCWarning(amrVizOpenGLLog).noquote() <<
-      QString("OpenGL robot mesh update slow: %1 ms").arg(timer.elapsed());
+      QString("OpenGL robot mesh update slow: %1 ms").arg(last_set_visuals_elapsed_ms_);
   }
   setRenderVisible(hasRenderableVisuals());
-  update();
+  requestRepaintIfDirty();
 }
 
 void RobotOpenGLWidget::setCamera(
@@ -332,24 +372,149 @@ void RobotOpenGLWidget::setCamera(
   const double distance,
   const double pixels_per_meter)
 {
+  if (!cameraChangedMeaningfully(focal_point, yaw, pitch, distance, pixels_per_meter)) {
+    requestRepaintIfDirty();
+    return;
+  }
   focal_point_ = focal_point;
   camera_yaw_ = yaw;
   camera_pitch_ = pitch;
   camera_distance_ = distance;
   pixels_per_meter_ = std::max(pixels_per_meter, 1.0);
+  camera_dirty_ = true;
   if (isVisible()) {
-    update();
+    requestRepaintIfDirty();
   }
+}
+
+bool RobotOpenGLWidget::updateRuntimeOptions(const QVector<RobotVisual> &visuals)
+{
+  if (visuals.isEmpty()) {
+    return false;
+  }
+  const bool previous_verbose = verbose_diagnostics_;
+  const bool previous_auto_software_profile = auto_software_profile_;
+  const int previous_explicit_target_fps = explicit_target_fps_;
+  const int previous_software_target_fps = software_target_fps_;
+  const int previous_hardware_target_fps = hardware_target_fps_;
+  const int previous_effective_target_fps = target_fps_;
+  const double previous_pose_epsilon_m = pose_epsilon_m_;
+  const double previous_yaw_epsilon_rad = yaw_epsilon_rad_;
+
+  verbose_diagnostics_ = std::any_of(
+    visuals.begin(), visuals.end(),
+    [](const RobotVisual &visual) {
+      return visual.robot_opengl_verbose_diagnostics;
+    });
+  auto_software_profile_ = std::any_of(
+    visuals.begin(), visuals.end(),
+    [](const RobotVisual &visual) {
+      return visual.robot_opengl_auto_software_profile;
+    });
+  explicit_target_fps_ = 0;
+  for (const auto &visual : visuals) {
+    if (visual.robot_opengl_target_fps > 0) {
+      explicit_target_fps_ = std::clamp(visual.robot_opengl_target_fps, 1, 120);
+      break;
+    }
+  }
+  for (const auto &visual : visuals) {
+    if (visual.robot_opengl_software_target_fps > 0) {
+      software_target_fps_ = std::clamp(visual.robot_opengl_software_target_fps, 1, 120);
+      break;
+    }
+  }
+  for (const auto &visual : visuals) {
+    if (visual.robot_opengl_hardware_target_fps > 0) {
+      hardware_target_fps_ = std::clamp(visual.robot_opengl_hardware_target_fps, 1, 120);
+      break;
+    }
+  }
+  for (const auto &visual : visuals) {
+    if (visual.robot_model_pose_epsilon_m > 0.0) {
+      pose_epsilon_m_ = std::clamp(visual.robot_model_pose_epsilon_m, 0.0, 1.0);
+      break;
+    }
+  }
+  for (const auto &visual : visuals) {
+    if (visual.robot_model_yaw_epsilon_rad > 0.0) {
+      yaw_epsilon_rad_ = std::clamp(visual.robot_model_yaw_epsilon_rad, 0.0, 1.0);
+      break;
+    }
+  }
+  refreshEffectiveTargetFps();
+  return previous_verbose != verbose_diagnostics_ ||
+    previous_auto_software_profile != auto_software_profile_ ||
+    previous_explicit_target_fps != explicit_target_fps_ ||
+    previous_software_target_fps != software_target_fps_ ||
+    previous_hardware_target_fps != hardware_target_fps_ ||
+    previous_effective_target_fps != target_fps_ ||
+    previous_pose_epsilon_m != pose_epsilon_m_ ||
+    previous_yaw_epsilon_rad != yaw_epsilon_rad_;
+}
+
+void RobotOpenGLWidget::refreshEffectiveTargetFps()
+{
+  if (explicit_target_fps_ > 0) {
+    target_fps_ = std::clamp(explicit_target_fps_, 1, 120);
+  } else if (auto_software_profile_ && renderer_profile_known_ && software_renderer_detected_) {
+    target_fps_ = std::clamp(software_target_fps_, 1, 120);
+  } else {
+    target_fps_ = std::clamp(hardware_target_fps_, 1, 120);
+  }
+}
+
+bool RobotOpenGLWidget::hasDirtyRenderState() const
+{
+  return camera_dirty_ || robot_pose_dirty_ || mesh_upload_dirty_ || resize_dirty_ || debug_dirty_;
+}
+
+void RobotOpenGLWidget::requestRepaint()
+{
+  const int target_fps = std::clamp(target_fps_, 1, 120);
+  const qint64 min_interval_ms = std::max<qint64>(1, 1000 / target_fps);
+  if (!repaint_throttle_timer_.isValid() || repaint_throttle_timer_.elapsed() >= min_interval_ms) {
+    repaint_queued_ = false;
+    repaint_throttle_timer_.restart();
+    update();
+    return;
+  }
+  if (repaint_queued_) {
+    ++skipped_repaint_count_;
+    return;
+  }
+  repaint_queued_ = true;
+  const int delay_ms = static_cast<int>(std::max<qint64>(1, min_interval_ms - repaint_throttle_timer_.elapsed()));
+  QTimer::singleShot(delay_ms, this, [this]() {
+      repaint_queued_ = false;
+      repaint_throttle_timer_.restart();
+      update();
+    });
+}
+
+void RobotOpenGLWidget::requestRepaintIfDirty()
+{
+  if (!hasDirtyRenderState()) {
+    ++skipped_repaint_count_;
+    return;
+  }
+  requestRepaint();
 }
 
 void RobotOpenGLWidget::setRenderVisible(const bool visible)
 {
   const bool changed = visible != last_render_visible_state_;
   last_render_visible_state_ = visible;
-  setVisible(visible);
+  if (changed) {
+    setVisible(visible);
+  }
   if (visible) {
-    raise();
-    emitWidgetGeometry("setVisible(true)");
+    if (changed) {
+      raise();
+    }
+    if (changed || verboseDiagnosticsEnabled()) {
+      emitWidgetGeometry("setVisible(true)");
+    }
   } else if (changed) {
     qCDebug(amrVizOpenGLLog).noquote() <<
       QString("OpenGL widget visible state: visible=false, size=%1x%2, parent size=%3x%4")
@@ -368,9 +533,7 @@ bool RobotOpenGLWidget::hasRenderableMesh(const RobotVisual &visual) const
   if (opengl_failed_) {
     return false;
   }
-  if (
-    !is_accepted_opengl_mesh_visual(visual))
-  {
+  if (!opengl_candidate_precheck_skip_reason(visual).isEmpty()) {
     return false;
   }
   const auto it = mesh_cache_.find(visual.mesh_resolved_path);
@@ -382,7 +545,7 @@ bool RobotOpenGLWidget::shouldSuppressProxyForVisual(const RobotVisual &visual) 
 {
   if (
     opengl_failed_ ||
-    !is_accepted_opengl_mesh_visual(visual))
+    !opengl_candidate_precheck_skip_reason(visual).isEmpty())
   {
     return false;
   }
@@ -394,7 +557,7 @@ bool RobotOpenGLWidget::shouldSuppressProxyForVisual(const RobotVisual &visual) 
   }
   const auto it = mesh_cache_.find(visual.mesh_resolved_path);
   return it != mesh_cache_.end() && it->second && !it->second->rejected &&
-    !it->second->vertices.isEmpty() && !it->second->indices.isEmpty();
+    it->second->uploaded && initialized_ && program_.isLinked();
 }
 
 bool RobotOpenGLWidget::hasRenderableVisuals() const
@@ -428,10 +591,9 @@ QString RobotOpenGLWidget::meshStatus(const RobotVisual &visual) const
   if (opengl_failed_) {
     return QString("OpenGL unavailable: %1").arg(opengl_failure_reason_);
   }
-  if (
-    !is_accepted_opengl_mesh_visual(visual))
-  {
-    return QString("not an accepted OpenGL mesh visual: %1").arg(opengl_candidate_skip_reason(visual));
+  const QString precheck_reason = opengl_candidate_precheck_skip_reason(visual);
+  if (!precheck_reason.isEmpty()) {
+    return QString("not an accepted OpenGL mesh visual: %1").arg(precheck_reason);
   }
 
   const auto it = mesh_cache_.find(visual.mesh_resolved_path);
@@ -538,6 +700,23 @@ bool RobotOpenGLWidget::debugCameraEnabled() const
     });
 }
 
+bool RobotOpenGLWidget::verboseDiagnosticsEnabled() const
+{
+  return verbose_diagnostics_;
+}
+
+bool RobotOpenGLWidget::shouldEmitVerboseDiagnostics()
+{
+  if (!verboseDiagnosticsEnabled()) {
+    return false;
+  }
+  if (!paint_diagnostic_timer_.isValid() || paint_diagnostic_timer_.elapsed() >= 2000) {
+    paint_diagnostic_timer_.restart();
+    return true;
+  }
+  return false;
+}
+
 int RobotOpenGLWidget::uploadedMeshCount() const
 {
   int count = 0;
@@ -547,6 +726,102 @@ int RobotOpenGLWidget::uploadedMeshCount() const
     }
   }
   return count;
+}
+
+bool RobotOpenGLWidget::cameraChangedMeaningfully(
+  const QVector3D &focal_point,
+  const double yaw,
+  const double pitch,
+  const double distance,
+  const double pixels_per_meter) const
+{
+  constexpr double k_camera_angle_epsilon = 0.001;
+  constexpr double k_camera_distance_epsilon = 0.001;
+  constexpr double k_pixels_per_meter_epsilon = 0.1;
+  if ((focal_point - focal_point_).lengthSquared() > static_cast<float>(pose_epsilon_m_ * pose_epsilon_m_)) {
+    return true;
+  }
+  return normalized_angle_delta(yaw, camera_yaw_) > k_camera_angle_epsilon ||
+    normalized_angle_delta(pitch, camera_pitch_) > k_camera_angle_epsilon ||
+    std::abs(distance - camera_distance_) > k_camera_distance_epsilon ||
+    std::abs(std::max(pixels_per_meter, 1.0) - pixels_per_meter_) > k_pixels_per_meter_epsilon;
+}
+
+bool RobotOpenGLWidget::visualsChangedMeaningfully(const QVector<RobotVisual> &visuals) const
+{
+  if (visuals_.size() != visuals.size()) {
+    return true;
+  }
+  for (int i = 0; i < visuals.size(); ++i) {
+    const RobotVisual &previous = visuals_[i];
+    const RobotVisual &current = visuals[i];
+    if (
+      previous.frame_id != current.frame_id ||
+      previous.type != current.type ||
+      previous.mesh_filename != current.mesh_filename ||
+      previous.mesh_resolved_path != current.mesh_resolved_path ||
+      previous.mesh_enabled != current.mesh_enabled ||
+      previous.mesh_render_mode != current.mesh_render_mode ||
+      previous.mesh_max_loaded_triangles != current.mesh_max_loaded_triangles ||
+      previous.mesh_max_file_size_mb != current.mesh_max_file_size_mb ||
+      previous.mesh_max_extent_m != current.mesh_max_extent_m ||
+      previous.mesh_max_abs_coordinate_m != current.mesh_max_abs_coordinate_m ||
+      previous.size_x != current.size_x ||
+      previous.size_y != current.size_y ||
+      previous.size_z != current.size_z ||
+      previous.radius != current.radius ||
+      previous.length != current.length ||
+      previous.proxy_visual != current.proxy_visual ||
+      previous.unresolved_pose != current.unresolved_pose ||
+      previous.valid != current.valid ||
+      previous.mesh_scale_x != current.mesh_scale_x ||
+      previous.mesh_scale_y != current.mesh_scale_y ||
+      previous.mesh_scale_z != current.mesh_scale_z ||
+      previous.robot_opengl_debug_axes != current.robot_opengl_debug_axes ||
+      previous.robot_opengl_debug_cube != current.robot_opengl_debug_cube ||
+      previous.robot_opengl_force_visible != current.robot_opengl_force_visible ||
+      previous.robot_opengl_stl_only_debug != current.robot_opengl_stl_only_debug ||
+      previous.robot_opengl_debug_mesh_bbox != current.robot_opengl_debug_mesh_bbox)
+    {
+      return true;
+    }
+    if (pose_changed_meaningfully(previous.pose, current.pose, pose_epsilon_m_, yaw_epsilon_rad_)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+QString RobotOpenGLWidget::openglCandidateSkipReason(const RobotVisual &visual)
+{
+  const QString precheck_reason = opengl_candidate_precheck_skip_reason(visual);
+  if (!precheck_reason.isEmpty()) {
+    return precheck_reason;
+  }
+  const QString cache_key = visual.mesh_filename + "\n" + visual.mesh_resolved_path;
+  const auto cached = candidate_skip_reason_cache_.find(cache_key);
+  if (cached != candidate_skip_reason_cache_.end()) {
+    return cached->second;
+  }
+
+  const FileProbe probe = probeFilePath(visual.mesh_filename, visual.mesh_resolved_path);
+  QString reason;
+  if (!probe.exists) {
+    reason = "local mesh file does not exist";
+  } else if (!probe.is_file) {
+    reason = "local mesh path is not a file";
+  } else if (!probe.readable) {
+    reason = "local mesh file is not readable";
+  } else if (!probe.open_ok) {
+    reason = QString("local mesh file open failed: %1").arg(probe.error_string);
+  }
+  candidate_skip_reason_cache_[cache_key] = reason;
+  return reason;
+}
+
+bool RobotOpenGLWidget::isAcceptedOpenGLMeshVisual(const RobotVisual &visual)
+{
+  return openglCandidateSkipReason(visual).isEmpty();
 }
 
 void RobotOpenGLWidget::initializeGL()
@@ -602,10 +877,34 @@ void RobotOpenGLWidget::initializeGL()
   } else {
     const QOpenGLContext *current_context = QOpenGLContext::currentContext();
     const QSurfaceFormat context_format = current_context ? current_context->format() : format();
+    const GLubyte *renderer_bytes = glGetString(GL_RENDERER);
+    const QString renderer_text = renderer_bytes ?
+      QString::fromLatin1(reinterpret_cast<const char *>(renderer_bytes)) : QString("unknown");
     qCInfo(amrVizOpenGLLog).noquote() <<
-      QString("OpenGL available: version %1.%2, depth testing enabled, fallback backend=proxy")
+      QString("OpenGL available: version %1.%2, renderer=%3, depth testing enabled, fallback backend=proxy")
         .arg(context_format.majorVersion())
-        .arg(context_format.minorVersion());
+        .arg(context_format.minorVersion())
+        .arg(renderer_text);
+    const QString renderer_lower = renderer_text.toLower();
+    const bool software_renderer =
+      renderer_lower.contains("llvmpipe") ||
+      renderer_lower.contains("softpipe") ||
+      renderer_lower.contains("software rasterizer");
+    renderer_profile_known_ = true;
+    software_renderer_detected_ = software_renderer;
+    const int previous_target_fps = target_fps_;
+    refreshEffectiveTargetFps();
+    if (previous_target_fps != target_fps_) {
+      debug_dirty_ = true;
+    }
+    if (software_renderer && !software_renderer_warning_emitted_) {
+      software_renderer_warning_emitted_ = true;
+      qCWarning(amrVizOpenGLLog).noquote() <<
+        QString("OpenGL is using software renderer (%1). Effective OpenGL target FPS is %2. CPU usage may be high; hardware GPU acceleration is preferred.")
+          .arg(renderer_text)
+          .arg(target_fps_);
+      Q_EMIT visualizationEvent("OpenGL software renderer active; CPU usage may be high");
+    }
     Q_EMIT visualizationEvent(
       "OpenGL robot renderer enabled; detailed diagnostics are available in terminal logs");
   }
@@ -613,12 +912,36 @@ void RobotOpenGLWidget::initializeGL()
 
 void RobotOpenGLWidget::resizeGL(int, int)
 {
-  emitWidgetGeometry("resizeGL");
-  update();
+  resize_dirty_ = true;
+  if (verboseDiagnosticsEnabled()) {
+    emitWidgetGeometry("resizeGL");
+  }
+  requestRepaintIfDirty();
 }
 
 void RobotOpenGLWidget::paintGL()
 {
+  QElapsedTimer paint_timer;
+  paint_timer.start();
+  auto finish_paint = [this, &paint_timer]() {
+      last_paint_elapsed_ms_ = paint_timer.elapsed();
+      ++paint_sample_count_;
+      if (!paint_fps_timer_.isValid()) {
+        paint_fps_timer_.start();
+      }
+      const qint64 fps_elapsed_ms = paint_fps_timer_.elapsed();
+      if (fps_elapsed_ms >= 1000) {
+        actual_paint_fps_ =
+          (static_cast<double>(paint_sample_count_) * 1000.0) / static_cast<double>(fps_elapsed_ms);
+        paint_sample_count_ = 0;
+        paint_fps_timer_.restart();
+      }
+      camera_dirty_ = false;
+      robot_pose_dirty_ = false;
+      mesh_upload_dirty_ = false;
+      resize_dirty_ = false;
+      debug_dirty_ = false;
+    };
   if (!paint_entered_event_emitted_) {
     paint_entered_event_emitted_ = true;
     qCDebug(amrVizOpenGLLog) << "OpenGL paintGL entered";
@@ -627,11 +950,17 @@ void RobotOpenGLWidget::paintGL()
   glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   if (opengl_failed_) {
-    emitPaintDiagnostics(0, 0, 0, 0, 0, 0, 0, glGetError());
+    if (shouldEmitVerboseDiagnostics()) {
+      emitPaintDiagnostics(0, 0, 0, 0, 0, 0, 0, glGetError());
+    }
+    finish_paint();
     return;
   }
   if (!program_.isLinked()) {
-    emitPaintDiagnostics(0, 0, 0, 0, 0, 0, 0, glGetError());
+    if (shouldEmitVerboseDiagnostics()) {
+      emitPaintDiagnostics(0, 0, 0, 0, 0, 0, 0, glGetError());
+    }
+    finish_paint();
     return;
   }
 
@@ -671,9 +1000,6 @@ void RobotOpenGLWidget::paintGL()
     bool uploaded_now = false;
     if (!mesh.uploaded) {
       if (!uploadMesh(mesh)) {
-        if (parentWidget()) {
-          parentWidget()->update();
-        }
         continue;
       }
       uploaded_now = true;
@@ -692,7 +1018,8 @@ void RobotOpenGLWidget::paintGL()
     const int stl_triangle_count = mesh.indices.size() / 3;
     rendered_triangles += stl_triangle_count;
     rendered_stl_triangles += stl_triangle_count;
-    if (uploaded_now && parentWidget()) {
+    if (uploaded_now && !mesh.upload_success_repaint_requested && parentWidget()) {
+      mesh.upload_success_repaint_requested = true;
       parentWidget()->update();
     }
 
@@ -710,6 +1037,14 @@ void RobotOpenGLWidget::paintGL()
   }
   const GLenum final_error = glGetError();
   const GLenum draw_error = accumulated_draw_error != GL_NO_ERROR ? accumulated_draw_error : final_error;
+  if (draw_error != GL_NO_ERROR && draw_error != last_reported_draw_error_code_) {
+    last_reported_draw_error_code_ = draw_error;
+    qCWarning(amrVizOpenGLLog).noquote() <<
+      QString("OpenGL paint error: gl_error=%1, draw_calls=%2, stl_draw_calls=%3")
+        .arg(static_cast<unsigned int>(draw_error))
+        .arg(draw_calls)
+        .arg(stl_draw_calls);
+  }
   last_draw_calls_ = draw_calls;
   last_stl_draw_calls_ = stl_draw_calls;
   last_fallback_cube_draw_calls_ = fallback_cube_draw_calls;
@@ -717,17 +1052,20 @@ void RobotOpenGLWidget::paintGL()
   last_rendered_stl_triangles_ = rendered_stl_triangles;
   last_draw_error_code_ = draw_error;
   program_.release();
-  emitPaintDiagnostics(
-    draw_calls,
-    stl_draw_calls,
-    fallback_cube_draw_calls,
-    debug_axis_draw_count,
-    debug_cube_draw_count,
-    rendered_stl_triangles,
-    rendered_triangles,
-    draw_error);
-  emitOpenGLMeshSummary("paintGL");
-  emitMeshStatusTable();
+  if (shouldEmitVerboseDiagnostics()) {
+    emitPaintDiagnostics(
+      draw_calls,
+      stl_draw_calls,
+      fallback_cube_draw_calls,
+      debug_axis_draw_count,
+      debug_cube_draw_count,
+      rendered_stl_triangles,
+      rendered_triangles,
+      draw_error);
+    emitOpenGLMeshSummary("paintGL");
+    emitMeshStatusTable();
+  }
+  finish_paint();
 }
 
 QVector3D RobotOpenGLWidget::cameraRight() const
@@ -1227,7 +1565,14 @@ bool RobotOpenGLWidget::uploadMesh(GpuMesh &mesh)
   program_.release();
   mesh.uploaded = true;
   mesh.upload_status = upload_error == GL_NO_ERROR ? "uploaded" : "gl_error";
-  emitUploadDiagnostics(mesh, upload_error);
+  qCInfo(amrVizOpenGLLog).noquote() <<
+    QString("OpenGL mesh uploaded: path=%1, triangles=%2, gl_error=%3")
+      .arg(mesh.source_path)
+      .arg(mesh.indices.size() / 3)
+      .arg(static_cast<unsigned int>(upload_error));
+  if (verboseDiagnosticsEnabled()) {
+    emitUploadDiagnostics(mesh, upload_error);
+  }
   return true;
 }
 
@@ -1601,7 +1946,7 @@ void RobotOpenGLWidget::emitMeshStatusTable()
     if (visual.type != RobotGeometryType::Mesh) {
       continue;
     }
-    const QString skip_reason = opengl_candidate_skip_reason(visual);
+    const QString skip_reason = openglCandidateSkipReason(visual);
     if (!skip_reason.isEmpty()) {
       const QString resolved_text = visual.mesh_resolved_path.trimmed().isEmpty() ?
         QString("<empty>") : visual.mesh_resolved_path;
@@ -1749,7 +2094,7 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
       ++uploaded_mesh_count;
     }
   }
-  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11:%12:%13:%14")
+  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11:%12:%13:%14:%15:%16:%17:%18")
     .arg(isVisible() ? "1" : "0")
     .arg(width())
     .arg(height())
@@ -1763,15 +2108,17 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
     .arg(debug_cube_draw_count)
     .arg(rendered_stl_triangles)
     .arg(rendered_triangles)
-    .arg(static_cast<unsigned int>(error_code));
-  const bool may_emit = !paint_diagnostic_timer_.isValid() || paint_diagnostic_timer_.elapsed() >= 1000;
-  if (summary == last_paint_summary_ || !may_emit) {
+    .arg(static_cast<unsigned int>(error_code))
+    .arg(actual_paint_fps_)
+    .arg(skipped_repaint_count_)
+    .arg(last_paint_elapsed_ms_)
+    .arg(last_set_visuals_elapsed_ms_);
+  if (summary == last_paint_summary_) {
     return;
   }
   last_paint_summary_ = summary;
-  paint_diagnostic_timer_.restart();
   qCInfo(amrVizOpenGLLog).noquote() <<
-    QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, uploaded mesh count=%6, draw calls=%7, stl_draw_calls=%8, fallback_cube_draw_calls=%9, debug axes draw count=%10, debug cube draw count=%11, rendered_stl_triangles=%12, rendered triangle count=%13, gl_error=%14, focal=(%15,%16,%17), yaw=%18, pitch=%19, distance=%20, pixels_per_meter=%21, debug_camera=%22, debug_axes=%23, debug_cube=%24, force_visible=%25")
+    QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, uploaded mesh count=%6, draw calls=%7, stl_draw_calls=%8, fallback_cube_draw_calls=%9, debug axes draw count=%10, debug cube draw count=%11, rendered_stl_triangles=%12, rendered triangle count=%13, gl_error=%14, actual_paint_fps=%15, skipped_repaint_count=%16, last_paint_elapsed_ms=%17, last_set_visuals_elapsed_ms=%18, target_fps=%19, software_renderer=%20, dirty_camera=%21, dirty_robot_pose=%22, dirty_mesh_upload=%23, dirty_resize=%24, dirty_debug=%25, focal=(%26,%27,%28), yaw=%29, pitch=%30, distance=%31, pixels_per_meter=%32, debug_camera=%33, debug_axes=%34, debug_cube=%35, force_visible=%36")
       .arg(isVisible() ? "true" : "false")
       .arg(width())
       .arg(height())
@@ -1786,6 +2133,17 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
       .arg(rendered_stl_triangles)
       .arg(rendered_triangles)
       .arg(static_cast<unsigned int>(error_code))
+      .arg(actual_paint_fps_, 0, 'f', 1)
+      .arg(skipped_repaint_count_)
+      .arg(last_paint_elapsed_ms_)
+      .arg(last_set_visuals_elapsed_ms_)
+      .arg(target_fps_)
+      .arg(software_renderer_detected_ ? "true" : "false")
+      .arg(camera_dirty_ ? "true" : "false")
+      .arg(robot_pose_dirty_ ? "true" : "false")
+      .arg(mesh_upload_dirty_ ? "true" : "false")
+      .arg(resize_dirty_ ? "true" : "false")
+      .arg(debug_dirty_ ? "true" : "false")
       .arg(effectiveFocalPoint().x())
       .arg(effectiveFocalPoint().y())
       .arg(effectiveFocalPoint().z())
@@ -1828,6 +2186,13 @@ void RobotOpenGLWidget::pruneInactiveMeshes(const QSet<QString> &active_paths)
     success_cache_.remove(it->first);
     render_event_cache_.remove(it->first);
     file_probe_text_cache_.erase(it->first);
+    for (auto cache_it = candidate_skip_reason_cache_.begin(); cache_it != candidate_skip_reason_cache_.end();) {
+      if (cache_it->first.endsWith(QString("\n") + it->first)) {
+        cache_it = candidate_skip_reason_cache_.erase(cache_it);
+      } else {
+        ++cache_it;
+      }
+    }
     if (can_destroy_gl && it->second) {
       destroyMeshBuffers(*it->second);
     }
