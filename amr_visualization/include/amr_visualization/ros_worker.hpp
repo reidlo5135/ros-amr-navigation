@@ -79,6 +79,15 @@ private:
   using NavigateToPose = amr_msgs::action::NavigateToPose;
   using NavigateToPoses = amr_msgs::action::NavigateToPoses;
 
+  struct RobotDescriptionParseStats
+  {
+    int visual_blocks{0};
+    int collision_blocks{0};
+    int mesh_visuals{0};
+    int primitive_visuals{0};
+    int collision_fallbacks{0};
+  };
+
   void configure_ros_interfaces();
   void update_global_costmap_subscription();
   void update_local_costmap_subscription();
@@ -196,6 +205,7 @@ private:
   std::map<std::string, FrameVisual> dynamic_frames_;
   std::map<std::string, FrameVisual> static_frames_;
   QVector<RobotVisual> robot_description_visuals_;
+  RobotDescriptionParseStats robot_description_parse_stats_;
   std::map<std::string, RobotJoint> robot_joints_;
   QSet<QString> mesh_resolution_event_cache_;
   QSet<QString> diagnostic_event_cache_;

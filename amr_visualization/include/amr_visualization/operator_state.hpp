@@ -50,6 +50,7 @@ struct RobotVisual
   double length{0.0};
   QString mesh_filename;
   QString mesh_resolved_path;
+  QString urdf_source;
   double mesh_scale_x{1.0};
   double mesh_scale_y{1.0};
   double mesh_scale_z{1.0};
@@ -71,6 +72,7 @@ struct RobotVisual
   bool robot_opengl_debug_mesh_bbox{false};
   double robot_opengl_debug_size_m{0.20};
   bool proxy_visual{false};
+  bool unresolved_pose{false};
   bool valid{false};
 };
 

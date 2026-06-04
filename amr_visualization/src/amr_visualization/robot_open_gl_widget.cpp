@@ -97,13 +97,16 @@ bool is_real_mesh_uri_or_path(const QString &mesh_filename)
 
 bool is_urdf_mesh_visual(const RobotVisual &visual)
 {
-  return visual.valid && visual.type == RobotGeometryType::Mesh &&
+  return visual.type == RobotGeometryType::Mesh &&
     !visual.mesh_filename.trimmed().isEmpty() && is_real_mesh_uri_or_path(visual.mesh_filename) &&
     !visual.proxy_visual;
 }
 
 QString opengl_candidate_skip_reason(const RobotVisual &visual)
 {
+  if (visual.unresolved_pose) {
+    return "unresolved pose";
+  }
   if (!visual.valid) {
     return "invalid visual";
   }

@@ -142,13 +142,27 @@ bool is_real_mesh_uri_or_path(const QString &mesh_filename)
 
 bool is_urdf_mesh_visual(const RobotVisual &visual)
 {
-  return visual.valid && visual.type == RobotGeometryType::Mesh &&
+  return visual.type == RobotGeometryType::Mesh &&
     !visual.mesh_filename.trimmed().isEmpty() && is_real_mesh_uri_or_path(visual.mesh_filename) &&
     !visual.proxy_visual;
 }
 
+QString pose_text(const Pose2D &pose)
+{
+  return QString("(%1,%2,%3,%4,%5,%6)")
+    .arg(pose.x)
+    .arg(pose.y)
+    .arg(pose.z)
+    .arg(pose.roll)
+    .arg(pose.pitch)
+    .arg(pose.yaw);
+}
+
 QString opengl_candidate_skip_reason(const RobotVisual &visual)
 {
+  if (visual.unresolved_pose) {
+    return "unresolved pose";
+  }
   if (!visual.valid) {
     return "invalid visual";
   }
@@ -786,12 +800,22 @@ void RosWorker::configure_ros_interfaces()
       QElapsedTimer parse_timer;
       parse_timer.start();
       robot_description_visuals_ = parse_robot_description(message->data);
-      Q_EMIT eventReceived(
-        QString("parse_robot_description elapsed: %1 ms").arg(parse_timer.elapsed()));
+      const qint64 parse_elapsed_ms = parse_timer.elapsed();
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "%s",
+        QString("parse_robot_description summary: elapsed_ms=%1, parsed_links=%2, parsed_joints=%3, visual_blocks=%4, collision_blocks=%5, mesh_visuals=%6, primitive_visuals=%7, collision_fallbacks=%8")
+          .arg(parse_elapsed_ms)
+          .arg(robot_description_link_count_)
+          .arg(static_cast<int>(robot_joints_.size()))
+          .arg(robot_description_parse_stats_.visual_blocks)
+          .arg(robot_description_parse_stats_.collision_blocks)
+          .arg(robot_description_parse_stats_.mesh_visuals)
+          .arg(robot_description_parse_stats_.primitive_visuals)
+          .arg(robot_description_parse_stats_.collision_fallbacks).toStdString().c_str());
       if (enable_tf_visualization_) {
         Q_EMIT tfFramesChanged(build_frame_visuals());
       }
-      emit_robot_model_update("robot_description");
       const int mesh_visuals = std::count_if(
         robot_description_visuals_.begin(), robot_description_visuals_.end(),
         [](const RobotVisual &visual) {
@@ -818,17 +842,19 @@ void RosWorker::configure_ros_interfaces()
             RCLCPP_INFO(
               node_->get_logger(),
               "%s",
-              QString("Mesh visual: frame=%1, uri=%2, resolved=%3, scale=%4 %5 %6, triangle count=pending, backend=%7")
+              QString("Parsed URDF mesh visual: frame_id=%1, mesh_filename=%2, resolved_path=%3, scale=%4 %5 %6, visual_origin=%7, source=%8")
               .arg(visual.frame_id)
               .arg(visual.mesh_filename)
               .arg(visual.mesh_resolved_path.isEmpty() ? "<unresolved>" : visual.mesh_resolved_path)
               .arg(visual.mesh_scale_x)
               .arg(visual.mesh_scale_y)
               .arg(visual.mesh_scale_z)
-              .arg(QString::fromStdString(robot_model_renderer_backend_)).toStdString().c_str());
+              .arg(pose_text(visual.pose))
+              .arg(visual.urdf_source.isEmpty() ? QString("unknown") : visual.urdf_source).toStdString().c_str());
           }
         }
       }
+      emit_robot_model_update("robot_description");
     });
   tf_subscription_ = node_->create_subscription<tf2_msgs::msg::TFMessage>(
     tf_topic_, live_qos, [this](const tf2_msgs::msg::TFMessage::SharedPtr message) {
@@ -1350,6 +1376,7 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
 {
   robot_joints_.clear();
   robot_description_link_count_ = 0;
+  robot_description_parse_stats_ = RobotDescriptionParseStats{};
   QVector<RobotVisual> visuals;
   QXmlStreamReader reader(QString::fromStdString(payload));
 
@@ -1372,6 +1399,11 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
           if (!is_visual && !is_collision) {
             reader.skipCurrentElement();
             continue;
+          }
+          if (is_visual) {
+            ++robot_description_parse_stats_.visual_blocks;
+          } else {
+            ++robot_description_parse_stats_.collision_blocks;
           }
 
           Pose2D origin;
@@ -1396,6 +1428,7 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
           }
 
           if (parsed) {
+            visual.urdf_source = is_visual ? "visual" : "collision";
             if (visual.type == RobotGeometryType::Mesh) {
               visual.mesh_resolved_path = resolve_mesh_uri(visual.mesh_filename);
             }
@@ -1410,6 +1443,7 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
         if (!link_visuals.isEmpty()) {
           visuals += link_visuals;
         } else {
+          robot_description_parse_stats_.collision_fallbacks += link_collisions.size();
           visuals += link_collisions;
         }
         continue;
@@ -1453,6 +1487,14 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
 
   if (reader.hasError()) {
     Q_EMIT eventReceived(QString("Invalid robot_description URDF: %1").arg(reader.errorString()));
+  }
+
+  for (const auto &visual : visuals) {
+    if (visual.type == RobotGeometryType::Mesh) {
+      ++robot_description_parse_stats_.mesh_visuals;
+    } else {
+      ++robot_description_parse_stats_.primitive_visuals;
+    }
   }
 
   return visuals;
@@ -1594,14 +1636,21 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
 {
   QVector<RobotVisual> visuals;
   visuals.reserve(robot_description_visuals_.size());
-  std::set<QString> visual_frames;
+  std::set<QString> urdf_visual_frames;
+  std::set<QString> urdf_mesh_frames;
+
+  for (const auto &source_visual : robot_description_visuals_) {
+    if (source_visual.frame_id.isEmpty()) {
+      continue;
+    }
+    urdf_visual_frames.insert(source_visual.frame_id);
+    if (is_urdf_mesh_visual(source_visual)) {
+      urdf_mesh_frames.insert(source_visual.frame_id);
+    }
+  }
 
   for (const auto &source_visual : robot_description_visuals_) {
     const Pose2D frame_pose = resolve_robot_link_pose(source_visual.frame_id);
-    if (!frame_pose.valid) {
-      continue;
-    }
-
     RobotVisual visual = source_visual;
     visual.mesh_enabled = enable_robot_meshes_ && robot_renderer_loads_mesh_files_ && !mesh_load_async_;
     visual.mesh_render_mode = QString::fromStdString(robot_mesh_render_mode_);
@@ -1620,16 +1669,23 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual.robot_opengl_stl_only_debug = robot_opengl_stl_only_debug_;
     visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
     visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
-    // Compose world/link pose with the URDF visual origin exactly once. The OpenGL
-    // model matrix later applies only the URDF mesh scale to raw STL vertices.
-    visual.pose = compose_pose(frame_pose, source_visual.pose);
-    visual.valid = visual.pose.valid;
+    if (frame_pose.valid) {
+      // Compose world/link pose with the URDF visual origin exactly once. The OpenGL
+      // model matrix later applies only the URDF mesh scale to raw STL vertices.
+      visual.pose = compose_pose(frame_pose, source_visual.pose);
+      visual.unresolved_pose = false;
+      visual.valid = visual.pose.valid;
+    } else {
+      visual.pose = source_visual.pose;
+      visual.unresolved_pose = true;
+      visual.valid = false;
+    }
     visuals.push_back(visual);
-    visual_frames.insert(source_visual.frame_id);
   }
 
-  auto add_proxy_visual = [this, &visuals, &visual_frames](const QString &frame_id) {
-      if (visual_frames.count(frame_id) > 0) {
+  auto add_proxy_visual =
+    [this, &visuals, &urdf_visual_frames, &urdf_mesh_frames](const QString &frame_id) {
+      if (urdf_visual_frames.count(frame_id) > 0 || urdf_mesh_frames.count(frame_id) > 0) {
         return;
       }
 
@@ -1679,7 +1735,6 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.robot_opengl_stl_only_debug = robot_opengl_stl_only_debug_;
       visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
       visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
-      visual_frames.insert(frame_id);
       visuals.push_back(visual);
     };
 
