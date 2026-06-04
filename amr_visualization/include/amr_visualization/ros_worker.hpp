@@ -87,6 +87,8 @@ private:
     const tf2_msgs::msg::TFMessage &message,
     bool is_static);
   void spin();
+  void emit_diagnostic_once(const QString &key, const QString &event);
+  void emit_robot_model_update(const QString &reason);
   bool should_emit_now(rclcpp::Time &last_emit_time, int period_ms) const;
 
   GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
@@ -152,18 +154,29 @@ private:
   bool subscribe_global_costmap_{true};
   bool subscribe_local_costmap_{true};
   bool subscribe_scan_{true};
+  bool enable_robot_model_{true};
+  bool enable_robot_meshes_{false};
+  bool enable_tf_visualization_{true};
+  bool enable_scan_visualization_{true};
+  bool enable_map_visualization_{true};
+  bool enable_costmap_visualization_{true};
+  bool mesh_load_async_{false};
   int costmap_emit_period_ms_{1000};
   int tf_emit_period_ms_{100};
-  int robot_model_emit_period_ms_{100};
-  int scan_emit_period_ms_{50};
-  int mesh_max_loaded_triangles_{60000};
-  int mesh_max_rendered_faces_{1800};
+  int robot_model_emit_period_ms_{250};
+  int scan_emit_period_ms_{100};
+  int mesh_max_loaded_triangles_{5000};
+  int mesh_max_rendered_faces_{500};
   int mesh_max_file_size_mb_{64};
+  int max_grid_cells_{4000000};
+  int max_scan_points_{1440};
   std::map<std::string, FrameVisual> dynamic_frames_;
   std::map<std::string, FrameVisual> static_frames_;
   QVector<RobotVisual> robot_description_visuals_;
   std::map<std::string, RobotJoint> robot_joints_;
   QSet<QString> mesh_resolution_event_cache_;
+  QSet<QString> diagnostic_event_cache_;
+  int robot_model_emit_count_{0};
   int robot_description_link_count_{0};
 };
 

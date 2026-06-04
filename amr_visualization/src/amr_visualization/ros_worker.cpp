@@ -1,5 +1,6 @@
 #include "amr_visualization/ros_worker.hpp"
 
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -314,6 +315,20 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("subscribe_local_costmap", subscribe_local_costmap_);
   subscribe_scan_ =
     node_->declare_parameter<bool>("subscribe_scan", subscribe_scan_);
+  enable_robot_model_ =
+    node_->declare_parameter<bool>("enable_robot_model", enable_robot_model_);
+  enable_robot_meshes_ =
+    node_->declare_parameter<bool>("enable_robot_meshes", enable_robot_meshes_);
+  enable_tf_visualization_ =
+    node_->declare_parameter<bool>("enable_tf_visualization", enable_tf_visualization_);
+  enable_scan_visualization_ =
+    node_->declare_parameter<bool>("enable_scan_visualization", enable_scan_visualization_);
+  enable_map_visualization_ =
+    node_->declare_parameter<bool>("enable_map_visualization", enable_map_visualization_);
+  enable_costmap_visualization_ =
+    node_->declare_parameter<bool>("enable_costmap_visualization", enable_costmap_visualization_);
+  mesh_load_async_ =
+    node_->declare_parameter<bool>("mesh_load_async", mesh_load_async_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
   tf_emit_period_ms_ =
@@ -328,6 +343,10 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<int>("mesh_max_rendered_faces", mesh_max_rendered_faces_);
   mesh_max_file_size_mb_ =
     node_->declare_parameter<int>("mesh_max_file_size_mb", mesh_max_file_size_mb_);
+  max_grid_cells_ =
+    node_->declare_parameter<int>("max_grid_cells", max_grid_cells_);
+  max_scan_points_ =
+    node_->declare_parameter<int>("max_scan_points", max_scan_points_);
   Q_EMIT eventReceived(
     QString("UI update throttling enabled: TF %1 ms, robot model %2 ms, scan %3 ms")
       .arg(tf_emit_period_ms_)
@@ -338,14 +357,37 @@ void RosWorker::configure_ros_interfaces()
       .arg(mesh_max_loaded_triangles_)
       .arg(mesh_max_rendered_faces_)
       .arg(mesh_max_file_size_mb_));
+  Q_EMIT eventReceived(
+    QString("Safe mode: robot model %1, robot meshes %2, mesh async %3")
+      .arg(enable_robot_model_ ? "enabled" : "disabled")
+      .arg(enable_robot_meshes_ ? "enabled" : "disabled")
+      .arg(mesh_load_async_ ? "requested" : "disabled"));
+  if (mesh_load_async_) {
+    Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
+  }
 
   const auto latched_map_qos = rclcpp::QoS(1).reliable().transient_local();
   const auto live_qos = rclcpp::SystemDefaultsQoS();
 
-  map_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
-    map_topic_, latched_map_qos, [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
-      Q_EMIT mapChanged(convert_grid(*message));
-    });
+  if (enable_map_visualization_) {
+    map_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
+      map_topic_, latched_map_qos, [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
+        emit_diagnostic_once("first_map", "First map received");
+        const uint64_t cell_count =
+          static_cast<uint64_t>(message->info.width) * static_cast<uint64_t>(message->info.height);
+        if (cell_count > static_cast<uint64_t>(std::max(max_grid_cells_, 1))) {
+          emit_diagnostic_once(
+            "huge_map",
+            QString("Map rejected: %1 cell(s) exceeds max_grid_cells=%2")
+              .arg(static_cast<qulonglong>(cell_count))
+              .arg(max_grid_cells_));
+          return;
+        }
+        Q_EMIT mapChanged(convert_grid(*message));
+      });
+  } else {
+    Q_EMIT eventReceived("Map visualization disabled by enable_map_visualization");
+  }
   update_global_costmap_subscription();
   update_local_costmap_subscription();
   update_scan_subscription();
@@ -416,10 +458,22 @@ void RosWorker::configure_ros_interfaces()
   robot_description_subscription_ = node_->create_subscription<std_msgs::msg::String>(
     robot_description_topic_, latched_map_qos,
     [this](const std_msgs::msg::String::SharedPtr message) {
+      emit_diagnostic_once("first_robot_description", "First robot_description received");
+      if (!enable_robot_model_) {
+        emit_diagnostic_once(
+          "robot_model_disabled",
+          "Robot model disabled: skipping robot_description parsing and model emit");
+        return;
+      }
+      QElapsedTimer parse_timer;
+      parse_timer.start();
       robot_description_visuals_ = parse_robot_description(message->data);
-      Q_EMIT tfFramesChanged(build_frame_visuals());
-      Q_EMIT robotModelChanged(build_robot_visuals());
-      last_robot_model_emit_time_ = node_->now();
+      Q_EMIT eventReceived(
+        QString("parse_robot_description elapsed: %1 ms").arg(parse_timer.elapsed()));
+      if (enable_tf_visualization_) {
+        Q_EMIT tfFramesChanged(build_frame_visuals());
+      }
+      emit_robot_model_update("robot_description");
       const int mesh_visuals = std::count_if(
         robot_description_visuals_.begin(), robot_description_visuals_.end(),
         [](const RobotVisual &visual) {
@@ -453,6 +507,9 @@ void RosWorker::configure_ros_interfaces()
 
 void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool is_static)
 {
+  emit_diagnostic_once(
+    is_static ? "first_tf_static" : "first_tf",
+    is_static ? "First tf_static received" : "First tf received");
   auto &storage = is_static ? static_frames_ : dynamic_frames_;
   for (const auto &transform : message.transforms) {
     FrameVisual frame;
@@ -473,15 +530,48 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool 
   }
 
   const bool emit_tf = is_static || should_emit_now(last_tf_emit_time_, tf_emit_period_ms_);
-  if (emit_tf) {
+  if (enable_tf_visualization_ && emit_tf) {
     Q_EMIT tfFramesChanged(build_frame_visuals());
   }
 
   if (
+    enable_robot_model_ &&
     !robot_description_visuals_.isEmpty() &&
     (is_static || should_emit_now(last_robot_model_emit_time_, robot_model_emit_period_ms_)))
   {
-    Q_EMIT robotModelChanged(build_robot_visuals());
+    emit_robot_model_update(is_static ? "tf_static" : "tf");
+  }
+}
+
+void RosWorker::emit_diagnostic_once(const QString &key, const QString &event)
+{
+  if (diagnostic_event_cache_.contains(key)) {
+    return;
+  }
+  diagnostic_event_cache_.insert(key);
+  Q_EMIT eventReceived(event);
+}
+
+void RosWorker::emit_robot_model_update(const QString &reason)
+{
+  if (!enable_robot_model_) {
+    return;
+  }
+
+  QElapsedTimer build_timer;
+  build_timer.start();
+  QVector<RobotVisual> visuals = build_robot_visuals();
+  const qint64 elapsed_ms = build_timer.elapsed();
+  ++robot_model_emit_count_;
+  Q_EMIT robotModelChanged(visuals);
+  last_robot_model_emit_time_ = node_ ? node_->now() : rclcpp::Time(0, 0, RCL_ROS_TIME);
+  if (robot_model_emit_count_ <= 3 || (robot_model_emit_count_ % 20) == 0 || elapsed_ms > 16) {
+    Q_EMIT eventReceived(
+      QString("Robot model emit #%1 (%2): %3 visual(s), build_robot_visuals elapsed %4 ms")
+        .arg(robot_model_emit_count_)
+        .arg(reason)
+        .arg(visuals.size())
+        .arg(elapsed_ms));
   }
 }
 
@@ -569,7 +659,7 @@ QVector<FrameVisual> RosWorker::build_frame_visuals() const
 void RosWorker::update_global_costmap_subscription()
 {
   global_costmap_subscription_.reset();
-  if (!node_ || !subscribe_global_costmap_) {
+  if (!node_ || !subscribe_global_costmap_ || !enable_costmap_visualization_) {
     return;
   }
 
@@ -577,6 +667,17 @@ void RosWorker::update_global_costmap_subscription()
   global_costmap_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
     global_costmap_topic_, costmap_qos,
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
+      emit_diagnostic_once("first_global_costmap", "First global costmap received");
+      const uint64_t cell_count =
+        static_cast<uint64_t>(message->info.width) * static_cast<uint64_t>(message->info.height);
+      if (cell_count > static_cast<uint64_t>(std::max(max_grid_cells_, 1))) {
+        emit_diagnostic_once(
+          "huge_global_costmap",
+          QString("Global costmap rejected: %1 cell(s) exceeds max_grid_cells=%2")
+            .arg(static_cast<qulonglong>(cell_count))
+            .arg(max_grid_cells_));
+        return;
+      }
       const rclcpp::Time now = node_->now();
       if (last_global_costmap_emit_time_.nanoseconds() != 0 &&
         ((now - last_global_costmap_emit_time_).seconds() * 1000.0) < costmap_emit_period_ms_)
@@ -592,7 +693,7 @@ void RosWorker::update_global_costmap_subscription()
 void RosWorker::update_local_costmap_subscription()
 {
   local_costmap_subscription_.reset();
-  if (!node_ || !subscribe_local_costmap_) {
+  if (!node_ || !subscribe_local_costmap_ || !enable_costmap_visualization_) {
     return;
   }
 
@@ -600,6 +701,17 @@ void RosWorker::update_local_costmap_subscription()
   local_costmap_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
     local_costmap_topic_, costmap_qos,
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
+      emit_diagnostic_once("first_local_costmap", "First local costmap received");
+      const uint64_t cell_count =
+        static_cast<uint64_t>(message->info.width) * static_cast<uint64_t>(message->info.height);
+      if (cell_count > static_cast<uint64_t>(std::max(max_grid_cells_, 1))) {
+        emit_diagnostic_once(
+          "huge_local_costmap",
+          QString("Local costmap rejected: %1 cell(s) exceeds max_grid_cells=%2")
+            .arg(static_cast<qulonglong>(cell_count))
+            .arg(max_grid_cells_));
+        return;
+      }
       const rclcpp::Time now = node_->now();
       if (last_local_costmap_emit_time_.nanoseconds() != 0 &&
         ((now - last_local_costmap_emit_time_).seconds() * 1000.0) < costmap_emit_period_ms_)
@@ -615,13 +727,14 @@ void RosWorker::update_local_costmap_subscription()
 void RosWorker::update_scan_subscription()
 {
   scan_subscription_.reset();
-  if (!node_ || !subscribe_scan_) {
+  if (!node_ || !subscribe_scan_ || !enable_scan_visualization_) {
     return;
   }
 
   scan_subscription_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
     scan_topic_, rclcpp::SensorDataQoS(),
     [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
+      emit_diagnostic_once("first_scan", "First scan received");
       if (!should_emit_now(last_scan_emit_time_, scan_emit_period_ms_)) {
         return;
       }
@@ -695,10 +808,17 @@ ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan &message) con
     return scan;
   }
 
-  scan.points.reserve(static_cast<int>(message.ranges.size()));
+  const int max_scan_points = std::max(max_scan_points_, 1);
+  const int stride = std::max(
+    1,
+    static_cast<int>(
+      std::ceil(static_cast<double>(message.ranges.size()) / static_cast<double>(max_scan_points))));
+  scan.points.reserve(std::min(static_cast<int>(message.ranges.size()), max_scan_points));
   double angle = message.angle_min;
-  for (const float range : message.ranges) {
+  for (size_t i = 0; i < message.ranges.size(); ++i) {
+    const float range = message.ranges[i];
     if (
+      (static_cast<int>(i) % stride) == 0 &&
       std::isfinite(range) &&
       range >= message.range_min &&
       range <= message.range_max)
@@ -937,6 +1057,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     }
 
     RobotVisual visual = source_visual;
+    visual.mesh_enabled = enable_robot_meshes_ && !mesh_load_async_;
     visual.mesh_max_loaded_triangles = std::max(mesh_max_loaded_triangles_, 1);
     visual.mesh_max_rendered_faces = std::max(mesh_max_rendered_faces_, 1);
     visual.mesh_max_file_size_mb = std::max(mesh_max_file_size_mb_, 1);

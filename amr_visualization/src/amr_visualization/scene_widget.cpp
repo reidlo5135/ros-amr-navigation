@@ -138,6 +138,8 @@ void SceneWidget::setTfFrames(const QVector<amr::visualization::FrameVisual> &fr
 
 void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &visuals)
 {
+  QElapsedTimer set_timer;
+  set_timer.start();
   robot_visuals_ = visuals;
   QSet<QString> active_mesh_paths;
   for (const auto &visual : robot_visuals_) {
@@ -155,7 +157,17 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
     }
   }
   for (const auto &visual : robot_visuals_) {
-    if (visual.type != RobotGeometryType::Mesh || visual.mesh_resolved_path.isEmpty()) {
+    if (visual.type != RobotGeometryType::Mesh) {
+      continue;
+    }
+    if (!visual.mesh_enabled) {
+      if (!diagnostic_event_cache_.contains("mesh_loading_disabled")) {
+        diagnostic_event_cache_.insert("mesh_loading_disabled");
+        Q_EMIT visualizationEvent("Robot mesh loading disabled; rendering proxy visuals");
+      }
+      continue;
+    }
+    if (visual.mesh_resolved_path.isEmpty()) {
       continue;
     }
     if (mesh_cache_.contains(visual.mesh_resolved_path)) {
@@ -183,6 +195,18 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
           .arg(visual.mesh_filename)
           .arg(entry.triangles.size()));
     }
+  }
+  const qint64 elapsed_ms = set_timer.elapsed();
+  if (!diagnostic_event_cache_.contains("set_robot_model_first")) {
+    diagnostic_event_cache_.insert("set_robot_model_first");
+    Q_EMIT visualizationEvent(
+      QString("setRobotModel elapsed: %1 ms (%2 visual(s))").arg(elapsed_ms).arg(robot_visuals_.size()));
+  } else if (elapsed_ms > 33 && !diagnostic_event_cache_.contains("set_robot_model_slow_33")) {
+    diagnostic_event_cache_.insert("set_robot_model_slow_33");
+    Q_EMIT visualizationEvent(QString("setRobotModel slow: %1 ms (>33 ms)").arg(elapsed_ms));
+  } else if (elapsed_ms > 16 && !diagnostic_event_cache_.contains("set_robot_model_slow_16")) {
+    diagnostic_event_cache_.insert("set_robot_model_slow_16");
+    Q_EMIT visualizationEvent(QString("setRobotModel slow: %1 ms (>16 ms)").arg(elapsed_ms));
   }
   update();
 }
@@ -838,6 +862,8 @@ void SceneWidget::drawRobotModel(QPainter &painter)
     return;
   }
 
+  QElapsedTimer draw_timer;
+  draw_timer.start();
   painter.save();
   painter.setRenderHint(QPainter::Antialiasing, true);
 
@@ -912,6 +938,17 @@ void SceneWidget::drawRobotModel(QPainter &painter)
   }
 
   painter.restore();
+  const qint64 elapsed_ms = draw_timer.elapsed();
+  if (elapsed_ms > 100 && !diagnostic_event_cache_.contains("draw_robot_model_slow_100")) {
+    diagnostic_event_cache_.insert("draw_robot_model_slow_100");
+    Q_EMIT visualizationEvent(QString("drawRobotModel slow: %1 ms (>100 ms)").arg(elapsed_ms));
+  } else if (elapsed_ms > 33 && !diagnostic_event_cache_.contains("draw_robot_model_slow_33")) {
+    diagnostic_event_cache_.insert("draw_robot_model_slow_33");
+    Q_EMIT visualizationEvent(QString("drawRobotModel slow: %1 ms (>33 ms)").arg(elapsed_ms));
+  } else if (elapsed_ms > 16 && !diagnostic_event_cache_.contains("draw_robot_model_slow_16")) {
+    diagnostic_event_cache_.insert("draw_robot_model_slow_16");
+    Q_EMIT visualizationEvent(QString("drawRobotModel slow: %1 ms (>16 ms)").arg(elapsed_ms));
+  }
 }
 
 void SceneWidget::drawBox3D(
@@ -1083,6 +1120,9 @@ bool SceneWidget::drawMesh3D(
   const RobotVisual &visual,
   const QColor &color)
 {
+  if (!visual.mesh_enabled) {
+    return false;
+  }
   const MeshCacheEntry *mesh = meshForVisual(visual);
   if (!mesh || mesh->triangles.isEmpty()) {
     return false;
@@ -1168,16 +1208,23 @@ const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual 
 
 bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
 {
+  QElapsedTimer load_timer;
+  load_timer.start();
   const QString path = visual.mesh_resolved_path;
+  Q_EMIT visualizationEvent(QString("Robot mesh load start: %1").arg(visual.mesh_filename));
   const QFileInfo file_info(path);
   if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
     entry.error = QString("unsupported extension .%1").arg(file_info.suffix());
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed after %1 ms: %2").arg(load_timer.elapsed()).arg(entry.error));
     return false;
   }
 
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly)) {
     entry.error = file.errorString();
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed after %1 ms: %2").arg(load_timer.elapsed()).arg(entry.error));
     return false;
   }
 
@@ -1186,10 +1233,14 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
     static_cast<qint64>(std::max(visual.mesh_max_file_size_mb, 1)) * 1024LL * 1024LL;
   if (file_size <= 0) {
     entry.error = "empty STL file";
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed after %1 ms: %2").arg(load_timer.elapsed()).arg(entry.error));
     return false;
   }
   if (file_size > max_file_size_bytes) {
     entry.error = QString("STL file exceeds %1 MiB limit").arg(visual.mesh_max_file_size_mb);
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed after %1 ms: %2").arg(load_timer.elapsed()).arg(entry.error));
     return false;
   }
 
@@ -1233,6 +1284,10 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
       } else {
         entry.error = entry.triangles.isEmpty() ? "binary STL contained no triangles" : QString();
       }
+      Q_EMIT visualizationEvent(
+        QString("Robot mesh load end: %1 ms, %2 triangle(s)")
+          .arg(load_timer.elapsed())
+          .arg(entry.triangles.size()));
       return !entry.triangles.isEmpty();
     }
   }
@@ -1241,6 +1296,8 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
   const QByteArray header = file.peek(512).trimmed();
   if (!header.startsWith("solid")) {
     entry.error = "not a recognized binary or ASCII STL";
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed after %1 ms: %2").arg(load_timer.elapsed()).arg(entry.error));
     return false;
   }
 
@@ -1282,9 +1339,19 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
   if (!entry.triangles.isEmpty() && parsed_triangles >= max_loaded_triangles) {
     entry.error = QString("loaded first %1 ASCII STL triangle(s)").arg(max_loaded_triangles);
     Q_EMIT visualizationEvent(QString("Robot mesh triangle load capped: %1").arg(entry.error));
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load end: %1 ms, %2 triangle(s)")
+        .arg(load_timer.elapsed())
+        .arg(entry.triangles.size()));
     return true;
   }
   entry.error = entry.triangles.isEmpty() ? "not a supported ASCII or binary STL" : QString();
+  Q_EMIT visualizationEvent(
+    QString("Robot mesh load %1 after %2 ms: %3 triangle(s)%4")
+      .arg(entry.triangles.isEmpty() ? "failed" : "end")
+      .arg(load_timer.elapsed())
+      .arg(entry.triangles.size())
+      .arg(entry.error.isEmpty() ? QString() : QString(" (%1)").arg(entry.error)));
   return !entry.triangles.isEmpty();
 }
 

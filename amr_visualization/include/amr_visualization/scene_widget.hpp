@@ -185,6 +185,7 @@ private:
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> mesh_warning_cache_;
   QSet<QString> mesh_success_cache_;
+  QSet<QString> diagnostic_event_cache_;
 };
 
 }  // namespace amr::visualization

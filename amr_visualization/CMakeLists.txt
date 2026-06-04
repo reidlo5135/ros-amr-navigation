@@ -73,6 +73,11 @@ install(DIRECTORY
 )
 
 install(FILES
+  README.md
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(FILES
   assets/icons/rcs.svg
   DESTINATION share/icons/hicolor/scalable/apps
   RENAME ${PROJECT_NAME}.svg

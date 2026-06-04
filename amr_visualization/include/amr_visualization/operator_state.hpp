@@ -53,8 +53,9 @@ struct RobotVisual
   double mesh_scale_x{1.0};
   double mesh_scale_y{1.0};
   double mesh_scale_z{1.0};
-  int mesh_max_loaded_triangles{60000};
-  int mesh_max_rendered_faces{1800};
+  bool mesh_enabled{false};
+  int mesh_max_loaded_triangles{5000};
+  int mesh_max_rendered_faces{500};
   int mesh_max_file_size_mb{64};
   bool valid{false};
 };
