@@ -16,6 +16,8 @@ struct Pose2D
   double x{0.0};
   double y{0.0};
   double z{0.0};
+  double roll{0.0};
+  double pitch{0.0};
   double yaw{0.0};
   bool valid{false};
 };
@@ -47,6 +49,7 @@ struct RobotVisual
   double radius{0.0};
   double length{0.0};
   QString mesh_filename;
+  QString mesh_resolved_path;
   double mesh_scale_x{1.0};
   double mesh_scale_y{1.0};
   double mesh_scale_z{1.0};

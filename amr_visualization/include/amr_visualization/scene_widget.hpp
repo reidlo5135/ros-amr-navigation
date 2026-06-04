@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPoint>
 #include <QResizeEvent>
+#include <QSet>
 #include <QToolButton>
 #include <QVector3D>
 #include <QWidget>
@@ -66,6 +67,7 @@ Q_SIGNALS:
   void waypointCountChanged(int count);
   void waypointsChanged(const QVector<amr::visualization::Pose2D> &waypoints);
   void selectedWaypointChanged(int index);
+  void visualizationEvent(const QString &event);
 
 protected:
   void paintEvent(QPaintEvent *event) override;
@@ -87,6 +89,7 @@ private:
   {
     bool attempted{false};
     QVector<MeshTriangle> triangles;
+    QString error;
   };
 
   QPointF worldToScreen(const QPointF &point) const;
@@ -111,7 +114,7 @@ private:
   void drawPath(QPainter &painter, const PathData &path, const QColor &color, qreal width) const;
   void drawPose(QPainter &painter, const Pose2D &pose, const QColor &color) const;
   void drawExactFootprint(QPainter &painter) const;
-  void drawRobotModel(QPainter &painter) const;
+  void drawRobotModel(QPainter &painter);
   void drawBox3D(
     QPainter &painter,
     const Pose2D &pose,
@@ -127,10 +130,9 @@ private:
     const QColor &color) const;
   void drawBurgerBaseProxy3D(QPainter &painter, const Pose2D &pose) const;
   void drawWheelProxy3D(QPainter &painter, const Pose2D &pose, const QColor &color) const;
-  bool drawMesh3D(QPainter &painter, const RobotVisual &visual, const QColor &color) const;
-  QString resolveMeshPath(const QString &uri) const;
-  const MeshCacheEntry *meshForVisual(const RobotVisual &visual) const;
-  bool loadStlMesh(const QString &path, MeshCacheEntry &entry) const;
+  bool drawMesh3D(QPainter &painter, const RobotVisual &visual, const QColor &color);
+  const MeshCacheEntry *meshForVisual(const RobotVisual &visual);
+  bool loadStlMesh(const QString &path, MeshCacheEntry &entry);
   QVector3D meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const;
   void drawTfFrames(QPainter &painter) const;
   void drawTfChainLine(QPainter &painter, const Pose2D &from, const Pose2D &to) const;
@@ -180,7 +182,8 @@ private:
   QWidget *camera_controls_{nullptr};
   QToolButton *follow_robot_button_{nullptr};
   QToolButton *reset_view_button_{nullptr};
-  mutable QHash<QString, MeshCacheEntry> mesh_cache_;
+  QHash<QString, MeshCacheEntry> mesh_cache_;
+  QSet<QString> mesh_warning_cache_;
 };
 
 }  // namespace amr::visualization

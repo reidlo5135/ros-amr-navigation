@@ -232,6 +232,7 @@ MainWindow::MainWindow(QWidget *parent)
   setCentralWidget(root);
 
   connect(scene_, &SceneWidget::waypointsChanged, this, &MainWindow::updateWaypointList);
+  connect(scene_, &SceneWidget::visualizationEvent, this, &MainWindow::appendEvent);
   connect(scene_, &SceneWidget::selectedWaypointChanged, this, [this](int index) {
     if (!waypoint_list_) {
       return;

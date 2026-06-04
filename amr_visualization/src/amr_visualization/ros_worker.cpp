@@ -1,9 +1,15 @@
 #include "amr_visualization/ros_worker.hpp"
 
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrl>
 #include <QXmlStreamReader>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -19,6 +25,11 @@ namespace
 
 using namespace std::chrono_literals;
 
+struct Rotation3D
+{
+  std::array<std::array<double, 3>, 3> m{};
+};
+
 geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
 {
   geometry_msgs::msg::Quaternion orientation;
@@ -27,6 +38,81 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   orientation.z = std::sin(yaw * 0.5);
   orientation.w = std::cos(yaw * 0.5);
   return orientation;
+}
+
+Rotation3D rotation_from_rpy(const double roll, const double pitch, const double yaw)
+{
+  const double cr = std::cos(roll);
+  const double sr = std::sin(roll);
+  const double cp = std::cos(pitch);
+  const double sp = std::sin(pitch);
+  const double cy = std::cos(yaw);
+  const double sy = std::sin(yaw);
+
+  Rotation3D rotation;
+  rotation.m = {{
+    {{cy * cp, (cy * sp * sr) - (sy * cr), (cy * sp * cr) + (sy * sr)}},
+    {{sy * cp, (sy * sp * sr) + (cy * cr), (sy * sp * cr) - (cy * sr)}},
+    {{-sp, cp * sr, cp * cr}},
+  }};
+  return rotation;
+}
+
+Rotation3D multiply_rotation(const Rotation3D &lhs, const Rotation3D &rhs)
+{
+  Rotation3D result;
+  for (int row = 0; row < 3; ++row) {
+    for (int column = 0; column < 3; ++column) {
+      result.m[row][column] =
+        (lhs.m[row][0] * rhs.m[0][column]) +
+        (lhs.m[row][1] * rhs.m[1][column]) +
+        (lhs.m[row][2] * rhs.m[2][column]);
+    }
+  }
+  return result;
+}
+
+std::array<double, 3> rotate_point(
+  const Rotation3D &rotation,
+  const double x,
+  const double y,
+  const double z)
+{
+  return {
+    (rotation.m[0][0] * x) + (rotation.m[0][1] * y) + (rotation.m[0][2] * z),
+    (rotation.m[1][0] * x) + (rotation.m[1][1] * y) + (rotation.m[1][2] * z),
+    (rotation.m[2][0] * x) + (rotation.m[2][1] * y) + (rotation.m[2][2] * z),
+  };
+}
+
+Pose2D pose_from_rotation(const Rotation3D &rotation)
+{
+  Pose2D pose;
+  pose.pitch = std::asin(std::clamp(-rotation.m[2][0], -1.0, 1.0));
+  if (std::abs(std::cos(pose.pitch)) > 1e-6) {
+    pose.roll = std::atan2(rotation.m[2][1], rotation.m[2][2]);
+    pose.yaw = std::atan2(rotation.m[1][0], rotation.m[0][0]);
+  } else {
+    pose.roll = 0.0;
+    pose.yaw = std::atan2(-rotation.m[0][1], rotation.m[1][1]);
+  }
+  return pose;
+}
+
+void apply_quaternion_orientation(
+  Pose2D &pose,
+  const double x,
+  const double y,
+  const double z,
+  const double w)
+{
+  const double sinr_cosp = 2.0 * ((w * x) + (y * z));
+  const double cosr_cosp = 1.0 - 2.0 * ((x * x) + (y * y));
+  pose.roll = std::atan2(sinr_cosp, cosr_cosp);
+
+  const double sinp = 2.0 * ((w * y) - (z * x));
+  pose.pitch = std::asin(std::clamp(sinp, -1.0, 1.0));
+  pose.yaw = quaternion_to_yaw(x, y, z, w);
 }
 
 QVector<double> parse_scalar_list(const QString &text, int expected_count)
@@ -60,6 +146,8 @@ Pose2D parse_origin_attributes(const QXmlStreamAttributes &attributes)
   }
   const QVector<double> rpy = parse_scalar_list(attributes.value("rpy").toString(), 3);
   if (rpy.size() == 3) {
+    pose.roll = rpy[0];
+    pose.pitch = rpy[1];
     pose.yaw = rpy[2];
   }
   return pose;
@@ -132,10 +220,17 @@ bool parse_geometry(
 Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
 {
   Pose2D pose;
-  pose.x = parent.x + (std::cos(parent.yaw) * child.x) - (std::sin(parent.yaw) * child.y);
-  pose.y = parent.y + (std::sin(parent.yaw) * child.x) + (std::cos(parent.yaw) * child.y);
-  pose.z = parent.z + child.z;
-  pose.yaw = parent.yaw + child.yaw;
+  const Rotation3D parent_rotation = rotation_from_rpy(parent.roll, parent.pitch, parent.yaw);
+  const auto child_translation = rotate_point(parent_rotation, child.x, child.y, child.z);
+  pose.x = parent.x + child_translation[0];
+  pose.y = parent.y + child_translation[1];
+  pose.z = parent.z + child_translation[2];
+  const Rotation3D child_rotation = rotation_from_rpy(child.roll, child.pitch, child.yaw);
+  const Pose2D composed_orientation =
+    pose_from_rotation(multiply_rotation(parent_rotation, child_rotation));
+  pose.roll = composed_orientation.roll;
+  pose.pitch = composed_orientation.pitch;
+  pose.yaw = composed_orientation.yaw;
   pose.valid = parent.valid && child.valid;
   return pose;
 }
@@ -334,7 +429,8 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool 
     frame.pose.x = transform.transform.translation.x;
     frame.pose.y = transform.transform.translation.y;
     frame.pose.z = transform.transform.translation.z;
-    frame.pose.yaw = quaternion_to_yaw(
+    apply_quaternion_orientation(
+      frame.pose,
       transform.transform.rotation.x,
       transform.transform.rotation.y,
       transform.transform.rotation.z,
@@ -515,7 +611,8 @@ Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) c
   pose.x = message.pose.position.x;
   pose.y = message.pose.position.y;
   pose.z = message.pose.position.z;
-  pose.yaw = quaternion_to_yaw(
+  apply_quaternion_orientation(
+    pose,
     message.pose.orientation.x,
     message.pose.orientation.y,
     message.pose.orientation.z,
@@ -616,6 +713,9 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
           while (reader.readNextStartElement()) {
             if (reader.name() == QLatin1String("origin")) {
               origin = parse_origin_attributes(reader.attributes());
+              if (parsed) {
+                visual.pose = origin;
+              }
               reader.skipCurrentElement();
               continue;
             }
@@ -627,6 +727,9 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
           }
 
           if (parsed) {
+            if (visual.type == RobotGeometryType::Mesh) {
+              visual.mesh_resolved_path = resolve_mesh_uri(visual.mesh_filename);
+            }
             if (is_visual) {
               link_visuals.push_back(visual);
             } else {
@@ -679,7 +782,68 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
     }
   }
 
+  if (reader.hasError()) {
+    Q_EMIT eventReceived(QString("Invalid robot_description URDF: %1").arg(reader.errorString()));
+  }
+
   return visuals;
+}
+
+QString RosWorker::resolve_mesh_uri(const QString &uri)
+{
+  if (uri.isEmpty()) {
+    return {};
+  }
+
+  auto validate_stl_path = [this, &uri](const QString &path) -> QString {
+      if (path.isEmpty() || !QFileInfo::exists(path)) {
+        Q_EMIT eventReceived(QString("Robot mesh not found: %1").arg(uri));
+        return {};
+      }
+
+      const QFileInfo file_info(path);
+      if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
+        Q_EMIT eventReceived(
+          QString("Unsupported robot mesh extension for %1: .%2")
+            .arg(uri, file_info.suffix()));
+        return {};
+      }
+      return file_info.absoluteFilePath();
+    };
+
+  if (uri.startsWith("package://")) {
+    const QString package_path = uri.mid(QString("package://").size());
+    const int slash_index = package_path.indexOf('/');
+    if (slash_index <= 0 || slash_index == package_path.size() - 1) {
+      Q_EMIT eventReceived(QString("Invalid package mesh URI: %1").arg(uri));
+      return {};
+    }
+
+    const QString package = package_path.left(slash_index);
+    const QString relative_path = package_path.mid(slash_index + 1);
+    try {
+      const QString share_dir = QString::fromStdString(
+        ament_index_cpp::get_package_share_directory(package.toStdString()));
+      return validate_stl_path(QFileInfo(share_dir + "/" + relative_path).absoluteFilePath());
+    } catch (const std::exception &error) {
+      Q_EMIT eventReceived(
+        QString("Robot mesh package resolution failed for %1: %2")
+          .arg(uri, QString::fromLocal8Bit(error.what())));
+      return {};
+    }
+  }
+
+  if (uri.startsWith("file://")) {
+    return validate_stl_path(QUrl(uri).toLocalFile());
+  }
+
+  const QFileInfo file_info(uri);
+  if (file_info.isAbsolute()) {
+    return validate_stl_path(file_info.absoluteFilePath());
+  }
+
+  Q_EMIT eventReceived(QString("Relative robot mesh URI is not supported: %1").arg(uri));
+  return {};
 }
 
 QVector<RobotVisual> RosWorker::build_robot_visuals() const

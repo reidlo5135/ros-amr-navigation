@@ -11,6 +11,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -45,6 +46,7 @@ target_include_directories(${PROJECT_NAME}
 
 ament_target_dependencies(${PROJECT_NAME}
   amr_msgs
+  ament_index_cpp
   geometry_msgs
   nav_msgs
   rclcpp

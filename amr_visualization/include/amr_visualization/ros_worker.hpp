@@ -95,6 +95,7 @@ private:
   QVector<RobotVisual> parse_robot_description(const std::string &payload);
   QVector<RobotVisual> build_robot_visuals() const;
   Pose2D resolve_robot_link_pose(const QString &link_frame) const;
+  QString resolve_mesh_uri(const QString &uri);
   QVector<FrameVisual> build_frame_visuals() const;
   static Pose2D compose_pose(const Pose2D &parent, const Pose2D &child);
   Pose2D resolve_frame_pose(const std::string &child_frame) const;

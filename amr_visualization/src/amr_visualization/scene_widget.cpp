@@ -1,7 +1,6 @@
 #include "amr_visualization/scene_widget.hpp"
 
 #include <QDataStream>
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -12,7 +11,6 @@
 #include <QResizeEvent>
 #include <QStyle>
 #include <QTransform>
-#include <QUrl>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -36,7 +34,34 @@ constexpr double k_half_pi = 1.5707963267948966;
 constexpr double k_pi = 3.14159265358979323846;
 constexpr double k_min_camera_pitch = 0.15;
 constexpr double k_max_camera_pitch = k_half_pi;
-constexpr bool k_enable_sync_mesh_rendering = false;
+
+QVector3D rotate_rpy(
+  const QVector3D &point,
+  const double roll,
+  const double pitch,
+  const double yaw)
+{
+  const double cr = std::cos(roll);
+  const double sr = std::sin(roll);
+  const double cp = std::cos(pitch);
+  const double sp = std::sin(pitch);
+  const double cy = std::cos(yaw);
+  const double sy = std::sin(yaw);
+
+  return QVector3D(
+    static_cast<float>(
+      ((cy * cp) * point.x()) +
+      (((cy * sp * sr) - (sy * cr)) * point.y()) +
+      (((cy * sp * cr) + (sy * sr)) * point.z())),
+    static_cast<float>(
+      ((sy * cp) * point.x()) +
+      (((sy * sp * sr) + (cy * cr)) * point.y()) +
+      (((sy * sp * cr) - (cy * sr)) * point.z())),
+    static_cast<float>(
+      ((-sp) * point.x()) +
+      ((cp * sr) * point.y()) +
+      ((cp * cr) * point.z())));
+}
 
 }  // namespace
 
@@ -113,6 +138,20 @@ void SceneWidget::setTfFrames(const QVector<amr::visualization::FrameVisual> &fr
 void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &visuals)
 {
   robot_visuals_ = visuals;
+  QSet<QString> active_mesh_paths;
+  for (const auto &visual : robot_visuals_) {
+    if (visual.type == RobotGeometryType::Mesh && !visual.mesh_resolved_path.isEmpty()) {
+      active_mesh_paths.insert(visual.mesh_resolved_path);
+    }
+  }
+  for (auto it = mesh_cache_.begin(); it != mesh_cache_.end();) {
+    if (active_mesh_paths.contains(it.key())) {
+      ++it;
+    } else {
+      mesh_warning_cache_.remove(it.key());
+      it = mesh_cache_.erase(it);
+    }
+  }
   update();
 }
 
@@ -761,7 +800,7 @@ void SceneWidget::drawExactFootprint(QPainter &painter) const
   painter.drawPolygon(footprint);
 }
 
-void SceneWidget::drawRobotModel(QPainter &painter) const
+void SceneWidget::drawRobotModel(QPainter &painter)
 {
   if (robot_visuals_.isEmpty()) {
     return;
@@ -815,7 +854,7 @@ void SceneWidget::drawRobotModel(QPainter &painter) const
       }
       case RobotGeometryType::Mesh: {
         const QString key = (visual.frame_id + " " + visual.mesh_filename).toLower();
-        if (k_enable_sync_mesh_rendering && drawMesh3D(painter, visual, QColor(74, 78, 84, 230))) {
+        if (drawMesh3D(painter, visual, QColor(74, 78, 84, 230))) {
           break;
         }
         if (key.contains("wheel")) {
@@ -1010,21 +1049,15 @@ void SceneWidget::drawWheelProxy3D(
 bool SceneWidget::drawMesh3D(
   QPainter &painter,
   const RobotVisual &visual,
-  const QColor &color) const
+  const QColor &color)
 {
   const MeshCacheEntry *mesh = meshForVisual(visual);
   if (!mesh || mesh->triangles.isEmpty()) {
     return false;
   }
 
-  const QString key = (visual.frame_id + " " + visual.mesh_filename).toLower();
   QColor base_color = color;
   base_color = QColor(24, 28, 32, 235);
-  // if (key.contains("wheel")) {
-  //   base_color = QColor(24, 28, 32, 235);
-  // } else if (key.contains("scan") || key.contains("lidar") || key.contains("lds")) {
-  //   base_color = QColor(80, 204, 220, 210);
-  // }
 
   struct ProjectedFace
   {
@@ -1084,49 +1117,9 @@ bool SceneWidget::drawMesh3D(
   return true;
 }
 
-QString SceneWidget::resolveMeshPath(const QString &uri) const
+const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual &visual)
 {
-  if (uri.isEmpty()) {
-    return {};
-  }
-
-  if (uri.startsWith("file://")) {
-    const QString path = QUrl(uri).toLocalFile();
-    return QFileInfo::exists(path) ? path : QString();
-  }
-
-  if (QFileInfo::exists(uri)) {
-    return QFileInfo(uri).absoluteFilePath();
-  }
-
-  if (!uri.startsWith("package://")) {
-    return {};
-  }
-
-  const QString package_path = uri.mid(QString("package://").size());
-  const int slash_index = package_path.indexOf('/');
-  if (slash_index <= 0) {
-    return {};
-  }
-
-  const QString package = package_path.left(slash_index);
-  const QString relative_path = package_path.mid(slash_index + 1);
-  QStringList prefixes =
-    QString::fromLocal8Bit(qgetenv("AMENT_PREFIX_PATH")).split(':', Qt::SkipEmptyParts);
-  prefixes += QString::fromLocal8Bit(qgetenv("COLCON_PREFIX_PATH")).split(':', Qt::SkipEmptyParts);
-  prefixes.removeDuplicates();
-  for (const QString &prefix : prefixes) {
-    const QString candidate = QDir(prefix).filePath("share/" + package + "/" + relative_path);
-    if (QFileInfo::exists(candidate)) {
-      return QFileInfo(candidate).absoluteFilePath();
-    }
-  }
-  return {};
-}
-
-const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual &visual) const
-{
-  const QString path = resolveMeshPath(visual.mesh_filename);
+  const QString path = visual.mesh_resolved_path;
   if (path.isEmpty()) {
     return nullptr;
   }
@@ -1138,19 +1131,32 @@ const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual 
     loadStlMesh(path, entry);
     it = mesh_cache_.insert(path, entry);
   }
+  if (it->triangles.isEmpty() && !mesh_warning_cache_.contains(path)) {
+    mesh_warning_cache_.insert(path);
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh load failed for %1: %2").arg(visual.mesh_filename, it->error));
+  }
   if (!it->attempted || it->triangles.isEmpty()) {
     return nullptr;
   }
   return &(*it);
 }
 
-bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry) const
+bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry)
 {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly)) {
+  const QFileInfo file_info(path);
+  if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
+    entry.error = QString("unsupported extension .%1").arg(file_info.suffix());
     return false;
   }
 
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    entry.error = file.errorString();
+    return false;
+  }
+
+  constexpr quint32 k_max_loaded_triangles = 200000U;
   const qint64 file_size = file.size();
   if (file_size >= 84) {
     file.seek(80);
@@ -1160,8 +1166,9 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry) const
     stream >> triangle_count;
     const qint64 expected_size = 84 + (static_cast<qint64>(triangle_count) * 50);
     if (triangle_count > 0 && expected_size == file_size) {
-      entry.triangles.reserve(static_cast<int>(std::min<quint32>(triangle_count, 200000U)));
-      for (quint32 i = 0; i < triangle_count && !stream.atEnd(); ++i) {
+      const quint32 loaded_count = std::min(triangle_count, k_max_loaded_triangles);
+      entry.triangles.reserve(static_cast<int>(loaded_count));
+      for (quint32 i = 0; i < loaded_count && !stream.atEnd(); ++i) {
         float nx = 0.0F;
         float ny = 0.0F;
         float nz = 0.0F;
@@ -1182,6 +1189,7 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry) const
         entry.triangles.push_back(
           MeshTriangle{QVector3D(ax, ay, az), QVector3D(bx, by, bz), QVector3D(cx, cy, cz)});
       }
+      entry.error = entry.triangles.isEmpty() ? "binary STL contained no triangles" : QString();
       return !entry.triangles.isEmpty();
     }
   }
@@ -1215,20 +1223,25 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry) const
       vertices.clear();
     }
   }
+  entry.error = entry.triangles.isEmpty() ? "not a supported ASCII or binary STL" : QString();
   return !entry.triangles.isEmpty();
 }
 
 QVector3D SceneWidget::meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const
 {
-  const double c = std::cos(visual.pose.yaw);
-  const double s = std::sin(visual.pose.yaw);
-  const double local_x = point.x() * visual.mesh_scale_x;
-  const double local_y = point.y() * visual.mesh_scale_y;
-  const double local_z = point.z() * visual.mesh_scale_z;
+  const QVector3D local_point(
+    static_cast<float>(point.x() * visual.mesh_scale_x),
+    static_cast<float>(point.y() * visual.mesh_scale_y),
+    static_cast<float>(point.z() * visual.mesh_scale_z));
+  const QVector3D rotated = rotate_rpy(
+    local_point,
+    visual.pose.roll,
+    visual.pose.pitch,
+    visual.pose.yaw);
   return QVector3D(
-    static_cast<float>(visual.pose.x + (c * local_x) - (s * local_y)),
-    static_cast<float>(visual.pose.y + (s * local_x) + (c * local_y)),
-    static_cast<float>(visual.pose.z + local_z));
+    static_cast<float>(visual.pose.x + rotated.x()),
+    static_cast<float>(visual.pose.y + rotated.y()),
+    static_cast<float>(visual.pose.z + rotated.z()));
 }
 
 void SceneWidget::drawTfFrames(QPainter &painter) const
