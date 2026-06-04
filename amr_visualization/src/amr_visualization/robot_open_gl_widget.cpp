@@ -122,6 +122,12 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
   emitWidgetCreatedOnce();
   QElapsedTimer timer;
   timer.start();
+  last_received_visual_count_ = visuals.size();
+  last_received_mesh_visual_count_ = std::count_if(
+    visuals.begin(), visuals.end(),
+    [](const RobotVisual &visual) {
+      return visual.type == RobotGeometryType::Mesh;
+    });
   visuals_.clear();
   QSet<QString> active_paths;
   for (const auto &visual : visuals) {
@@ -131,7 +137,8 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
       visual.mesh_enabled &&
       visual.mesh_render_mode == "opengl" &&
       (!visual.mesh_resolved_path.isEmpty() || visual.robot_opengl_debug_axes ||
-      visual.robot_opengl_debug_cube || visual.robot_opengl_force_visible))
+      visual.robot_opengl_debug_cube || visual.robot_opengl_force_visible ||
+      visual.robot_opengl_stl_only_debug || visual.robot_opengl_debug_mesh_bbox))
     {
       visuals_.push_back(visual);
       if (!visual.mesh_resolved_path.isEmpty()) {
@@ -153,6 +160,7 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
 
     auto mesh = std::make_unique<GpuMesh>();
     mesh->attempted = true;
+    mesh->load_status = "started";
     loadStlMesh(visual, *mesh);
     emitStlLoadDiagnostics(visual, *mesh);
     if (mesh->rejected || mesh->vertices.isEmpty() || mesh->indices.isEmpty()) {
@@ -176,6 +184,8 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
 
   emitSetVisualsDiagnostics(visuals, active_paths);
   emitMeshVisualDiagnostics();
+  emitOpenGLMeshSummary("setRobotVisuals");
+  emitMeshStatusTable();
 
   if (timer.elapsed() > 33) {
     Q_EMIT visualizationEvent(
@@ -204,11 +214,13 @@ void RobotOpenGLWidget::setCamera(
 
 void RobotOpenGLWidget::setRenderVisible(const bool visible)
 {
+  const bool changed = visible != last_render_visible_state_;
+  last_render_visible_state_ = visible;
   setVisible(visible);
   if (visible) {
     raise();
     emitWidgetGeometry("setVisible(true)");
-  } else {
+  } else if (changed) {
     Q_EMIT visualizationEvent(
       QString("OpenGL widget visible state: visible=false, size=%1x%2, parent size=%3x%4")
         .arg(width())
@@ -251,7 +263,7 @@ bool RobotOpenGLWidget::shouldSuppressProxyForVisual(const RobotVisual &visual) 
   }
   if (
     (visual.robot_opengl_debug_axes || visual.robot_opengl_debug_cube ||
-    visual.robot_opengl_force_visible) && isVisible())
+    visual.robot_opengl_force_visible || visual.robot_opengl_stl_only_debug) && isVisible())
   {
     return true;
   }
@@ -265,7 +277,10 @@ bool RobotOpenGLWidget::hasRenderableVisuals() const
   if (opengl_failed_) {
     return false;
   }
-  if ((debugAxesEnabled() || debugCubeEnabled() || forceVisibleEnabled()) && !visuals_.isEmpty()) {
+  if (
+    (debugAxesEnabled() || debugCubeEnabled() || forceVisibleEnabled() ||
+    stlOnlyDebugEnabled()) && !visuals_.isEmpty())
+  {
     return true;
   }
   for (const auto &visual : visuals_) {
@@ -376,6 +391,24 @@ bool RobotOpenGLWidget::forceVisibleEnabled() const
     });
 }
 
+bool RobotOpenGLWidget::stlOnlyDebugEnabled() const
+{
+  return std::any_of(
+    visuals_.begin(), visuals_.end(),
+    [](const RobotVisual &visual) {
+      return visual.robot_opengl_stl_only_debug;
+    });
+}
+
+bool RobotOpenGLWidget::debugMeshBboxEnabled() const
+{
+  return std::any_of(
+    visuals_.begin(), visuals_.end(),
+    [](const RobotVisual &visual) {
+      return visual.robot_opengl_debug_mesh_bbox;
+    });
+}
+
 bool RobotOpenGLWidget::debugCameraEnabled() const
 {
   return std::any_of(
@@ -383,6 +416,17 @@ bool RobotOpenGLWidget::debugCameraEnabled() const
     [](const RobotVisual &visual) {
       return visual.robot_opengl_debug_camera;
     });
+}
+
+int RobotOpenGLWidget::uploadedMeshCount() const
+{
+  int count = 0;
+  for (const auto &entry : mesh_cache_) {
+    if (entry.second && entry.second->uploaded) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 void RobotOpenGLWidget::initializeGL()
@@ -453,7 +497,10 @@ void RobotOpenGLWidget::resizeGL(int, int)
 
 void RobotOpenGLWidget::paintGL()
 {
-  Q_EMIT visualizationEvent("OpenGL paintGL entered");
+  if (!paint_entered_event_emitted_) {
+    paint_entered_event_emitted_ = true;
+    Q_EMIT visualizationEvent("OpenGL paintGL entered");
+  }
   glViewport(0, 0, width(), height());
   glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -475,6 +522,8 @@ void RobotOpenGLWidget::paintGL()
   int debug_axis_draw_count = 0;
   int debug_cube_draw_count = 0;
   int rendered_triangles = 0;
+  int stl_draw_calls = 0;
+  GLenum accumulated_draw_error = GL_NO_ERROR;
   for (const auto &visual : visuals_) {
     const int previous_axis_draw_count = debug_axis_draw_count;
     const int previous_cube_draw_count = debug_cube_draw_count;
@@ -492,6 +541,9 @@ void RobotOpenGLWidget::paintGL()
       continue;
     }
     GpuMesh &mesh = *it->second;
+    if (visual.robot_opengl_debug_mesh_bbox && mesh.validation_status == "passed") {
+      drawMeshBoundingBox(visual, mesh, draw_calls, rendered_triangles);
+    }
     bool uploaded_now = false;
     if (!mesh.uploaded) {
       if (!uploadMesh(mesh)) {
@@ -508,7 +560,11 @@ void RobotOpenGLWidget::paintGL()
 
     const QMatrix4x4 model = modelMatrixForVisual(visual);
     drawMesh(mesh, model, QVector3D(0.72F, 0.74F, 0.77F));
+    if (mesh.draw_error_code != GL_NO_ERROR) {
+      accumulated_draw_error = mesh.draw_error_code;
+    }
     ++draw_calls;
+    ++stl_draw_calls;
     rendered_triangles += mesh.indices.size() / 3;
     if (uploaded_now && parentWidget()) {
       parentWidget()->update();
@@ -523,7 +579,14 @@ void RobotOpenGLWidget::paintGL()
           .arg(mesh.indices.size() / 3));
     }
   }
-  const GLenum draw_error = glGetError();
+  if (stlOnlyDebugEnabled() && stl_draw_calls == 0) {
+    drawStlOnlyFallbackCube(draw_calls, rendered_triangles);
+  }
+  const GLenum final_error = glGetError();
+  const GLenum draw_error = accumulated_draw_error != GL_NO_ERROR ? accumulated_draw_error : final_error;
+  last_draw_calls_ = draw_calls;
+  last_rendered_triangles_ = rendered_triangles;
+  last_draw_error_code_ = draw_error;
   program_.release();
   emitPaintDiagnostics(
     draw_calls,
@@ -531,6 +594,8 @@ void RobotOpenGLWidget::paintGL()
     debug_cube_draw_count,
     rendered_triangles,
     draw_error);
+  emitOpenGLMeshSummary("paintGL");
+  emitMeshStatusTable();
 }
 
 QVector3D RobotOpenGLWidget::cameraRight() const
@@ -627,6 +692,8 @@ QMatrix4x4 RobotOpenGLWidget::poseMatrixForVisual(const RobotVisual &visual) con
 QMatrix4x4 RobotOpenGLWidget::modelMatrixForVisual(const RobotVisual &visual) const
 {
   QMatrix4x4 model = poseMatrixForVisual(visual);
+  // RobotVisual::pose is already world/link transform composed with the URDF visual origin.
+  // STL vertices stay in raw file units; this matrix applies URDF mesh scale exactly once.
   const double unit_scale = visual.mesh_auto_unit_scale ? visual.mesh_unit_scale : 1.0;
   model.scale(
     static_cast<float>(visual.mesh_scale_x * unit_scale),
@@ -660,10 +727,13 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
 {
   const QString path = visual.mesh_resolved_path;
   mesh.source_path = path;
+  mesh.load_status = "started";
   const QFileInfo file_info(path);
   if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
     mesh.rejected = true;
     mesh.error = QString("unsupported extension .%1").arg(file_info.suffix());
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
     return false;
   }
 
@@ -671,6 +741,8 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
   if (!file.open(QIODevice::ReadOnly)) {
     mesh.rejected = true;
     mesh.error = file.errorString();
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
     return false;
   }
 
@@ -681,11 +753,15 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
   if (file_size <= 0) {
     mesh.rejected = true;
     mesh.error = "empty STL file";
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
     return false;
   }
   if (file_size > max_file_size_bytes) {
     mesh.rejected = true;
     mesh.error = QString("STL file exceeds %1 MiB limit").arg(visual.mesh_max_file_size_mb);
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
     return false;
   }
 
@@ -736,6 +812,7 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
             .arg(loaded_count)
             .arg(triangle_count));
       }
+      mesh.load_status = mesh.indices.isEmpty() ? "rejected" : "loaded";
       return validateMesh(visual, mesh);
     }
   }
@@ -745,6 +822,8 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
   if (!header.startsWith("solid")) {
     mesh.rejected = true;
     mesh.error = "not a recognized binary or ASCII STL";
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
     return false;
   }
 
@@ -794,6 +873,8 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
   if (mesh.indices.isEmpty()) {
     mesh.rejected = true;
     mesh.error = "not a supported ASCII or binary STL";
+    mesh.load_status = "rejected";
+    mesh.validation_status = "not_run";
     return false;
   }
   if (parsed_triangles >= max_loaded_triangles) {
@@ -801,14 +882,17 @@ bool RobotOpenGLWidget::loadStlMesh(const RobotVisual &visual, GpuMesh &mesh)
       QString("OpenGL robot mesh triangle load capped: loaded first %1 ASCII triangle(s)")
         .arg(max_loaded_triangles));
   }
+  mesh.load_status = "loaded";
   return validateMesh(visual, mesh);
 }
 
 bool RobotOpenGLWidget::validateMesh(const RobotVisual &visual, GpuMesh &mesh)
 {
+  mesh.validation_status = "started";
   if (mesh.vertices.isEmpty() || mesh.indices.isEmpty()) {
     mesh.rejected = true;
     mesh.error = "triangle count is zero";
+    mesh.validation_status = "rejected";
     return false;
   }
 
@@ -866,27 +950,33 @@ bool RobotOpenGLWidget::validateMesh(const RobotVisual &visual, GpuMesh &mesh)
   }
 
   if (mesh.rejected) {
+    mesh.validation_status = "rejected";
     mesh.vertices.clear();
     mesh.indices.clear();
     return false;
   }
+  mesh.validation_status = "passed";
   return true;
 }
 
 bool RobotOpenGLWidget::uploadMesh(GpuMesh &mesh)
 {
+  mesh.upload_status = "started";
   if (opengl_failed_ || !initialized_ || mesh.vertices.isEmpty() || mesh.indices.isEmpty()) {
+    mesh.upload_status = "not_ready";
     return false;
   }
   if (!program_.isLinked()) {
     mesh.rejected = true;
     mesh.error = "shader program is not linked";
+    mesh.upload_status = "failed";
     emitFallbackOnce(mesh.error);
     return false;
   }
   if (!mesh.vertex_buffer.create() || !mesh.index_buffer.create() || !mesh.vao.create()) {
     mesh.rejected = true;
     mesh.error = "failed to create OpenGL buffers";
+    mesh.upload_status = "failed";
     destroyMeshBuffers(mesh);
     emitFallbackOnce(mesh.error);
     return false;
@@ -898,6 +988,7 @@ bool RobotOpenGLWidget::uploadMesh(GpuMesh &mesh)
   if (position_location < 0 || normal_location < 0) {
     mesh.rejected = true;
     mesh.error = "shader attribute location missing";
+    mesh.upload_status = "failed";
     destroyMeshBuffers(mesh);
     program_.release();
     emitFallbackOnce(mesh.error);
@@ -934,8 +1025,10 @@ bool RobotOpenGLWidget::uploadMesh(GpuMesh &mesh)
   }
   mesh.index_buffer.release();
   const GLenum upload_error = glGetError();
+  mesh.upload_error_code = upload_error;
   program_.release();
   mesh.uploaded = true;
+  mesh.upload_status = upload_error == GL_NO_ERROR ? "uploaded" : "gl_error";
   emitUploadDiagnostics(mesh, upload_error);
   return true;
 }
@@ -972,6 +1065,91 @@ void RobotOpenGLWidget::drawMesh(
   program_.setUniformValue("material_color", color);
   QOpenGLVertexArrayObject::Binder vao_binder(&mesh.vao);
   glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
+  mesh.draw_error_code = glGetError();
+  mesh.draw_status = mesh.draw_error_code == GL_NO_ERROR ? "drawn" : "gl_error";
+  ++mesh.draw_call_count;
+}
+
+void RobotOpenGLWidget::drawMeshBoundingBox(
+  const RobotVisual &visual,
+  const GpuMesh &mesh,
+  int &draw_calls,
+  int &rendered_triangles)
+{
+  if (!uploadDebugCube() || !debug_cube_mesh_.vao.isCreated()) {
+    return;
+  }
+
+  const QVector3D min_bound = mesh.min_bounds;
+  const QVector3D max_bound = mesh.max_bounds;
+  const QVector3D extent = max_bound - min_bound;
+  if (!finite_vector(min_bound) || !finite_vector(max_bound) || extent.lengthSquared() <= 0.0F) {
+    return;
+  }
+
+  const float thickness = std::max(static_cast<float>(mesh.diagonal) * 0.01F, 0.006F);
+  const QMatrix4x4 pose = poseMatrixForVisual(visual);
+  const QVector3D color(1.0F, 0.18F, 0.12F);
+  auto draw_edge = [&](const QVector3D &center, const QVector3D &scale) {
+      QMatrix4x4 edge = pose;
+      edge.translate(center);
+      edge.scale(
+        std::max(scale.x(), thickness),
+        std::max(scale.y(), thickness),
+        std::max(scale.z(), thickness));
+      drawMesh(debug_cube_mesh_, edge, color);
+      ++draw_calls;
+      rendered_triangles += debug_cube_mesh_.indices.size() / 3;
+    };
+
+  for (const float y : {min_bound.y(), max_bound.y()}) {
+    for (const float z : {min_bound.z(), max_bound.z()}) {
+      draw_edge(
+        QVector3D((min_bound.x() + max_bound.x()) * 0.5F, y, z),
+        QVector3D(std::max(extent.x(), thickness), thickness, thickness));
+    }
+  }
+  for (const float x : {min_bound.x(), max_bound.x()}) {
+    for (const float z : {min_bound.z(), max_bound.z()}) {
+      draw_edge(
+        QVector3D(x, (min_bound.y() + max_bound.y()) * 0.5F, z),
+        QVector3D(thickness, std::max(extent.y(), thickness), thickness));
+    }
+  }
+  for (const float x : {min_bound.x(), max_bound.x()}) {
+    for (const float y : {min_bound.y(), max_bound.y()}) {
+      draw_edge(
+        QVector3D(x, y, (min_bound.z() + max_bound.z()) * 0.5F),
+        QVector3D(thickness, thickness, std::max(extent.z(), thickness)));
+    }
+  }
+}
+
+void RobotOpenGLWidget::drawStlOnlyFallbackCube(int &draw_calls, int &rendered_triangles)
+{
+  if (!uploadDebugCube() || !debug_cube_mesh_.vao.isCreated() || visuals_.isEmpty()) {
+    return;
+  }
+
+  const RobotVisual &visual = visuals_.front();
+  const float size = static_cast<float>(std::clamp(visual.robot_opengl_debug_size_m, 0.01, 5.0));
+  QMatrix4x4 cube = poseMatrixForVisual(visual);
+  cube.scale(size, size, size);
+  drawMesh(debug_cube_mesh_, cube, QVector3D(1.0F, 0.04F, 0.04F));
+  ++draw_calls;
+  rendered_triangles += debug_cube_mesh_.indices.size() / 3;
+  const QString reason = QString("accepted=%1, loaded=%2, rejected=%3, uploaded=%4, previous_draw_calls=%5")
+    .arg(visuals_.size())
+    .arg(loadedMeshCount())
+    .arg(rejectedMeshCount())
+    .arg(uploadedMeshCount())
+    .arg(last_draw_calls_);
+  if (reason != last_stl_fallback_reason_) {
+    last_stl_fallback_reason_ = reason;
+    Q_EMIT visualizationEvent(
+      QString("OpenGL STL-only fallback: no STL mesh was drawn; rendered red fallback cube (%1)")
+        .arg(reason));
+  }
 }
 
 void RobotOpenGLWidget::drawDebugGeometryForVisual(
@@ -1129,6 +1307,9 @@ void RobotOpenGLWidget::emitWidgetGeometry(const QString &reason)
     .arg(parentWidget() ? parentWidget()->width() : 0)
     .arg(parentWidget() ? parentWidget()->height() : 0)
     .arg(isVisible() ? "true" : "false");
+  if (geometry_text == last_visible_geometry_) {
+    return;
+  }
   last_visible_geometry_ = geometry_text;
   Q_EMIT visualizationEvent(
     QString("OpenGL widget geometry (%1): %2").arg(reason, geometry_text));
@@ -1193,6 +1374,92 @@ void RobotOpenGLWidget::emitUploadDiagnostics(const GpuMesh &mesh, const GLenum 
       .arg(static_cast<unsigned int>(error_code)));
 }
 
+void RobotOpenGLWidget::emitMeshStatusTable()
+{
+  QStringList rows;
+  rows.reserve(visuals_.size());
+  for (const auto &visual : visuals_) {
+    if (visual.type != RobotGeometryType::Mesh) {
+      continue;
+    }
+    const QFileInfo file_info(visual.mesh_resolved_path);
+    QString load_status = visual.mesh_resolved_path.isEmpty() ? "unresolved" : "pending";
+    QString validation_status = "pending";
+    QString upload_status = "pending";
+    QString draw_status = "pending";
+    const auto it = mesh_cache_.find(visual.mesh_resolved_path);
+    if (it != mesh_cache_.end() && it->second) {
+      load_status = it->second->load_status;
+      validation_status = it->second->validation_status;
+      upload_status = it->second->upload_status;
+      draw_status = it->second->draw_status;
+    }
+    rows.push_back(
+      QString("frame_id=%1 | uri=%2 | resolved_path=%3 | exists=%4 | readable=%5 | file_size=%6 | scale=%7 %8 %9 | pose=(%10,%11,%12,%13,%14,%15) | accepted_for_opengl=true | load_status=%16 | validation_status=%17 | upload_status=%18 | draw_status=%19")
+        .arg(visual.frame_id)
+        .arg(visual.mesh_filename)
+        .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
+        .arg(file_info.exists() ? "true" : "false")
+        .arg(file_info.isReadable() ? "true" : "false")
+        .arg(file_info.exists() ? file_info.size() : 0)
+        .arg(visual.mesh_scale_x)
+        .arg(visual.mesh_scale_y)
+        .arg(visual.mesh_scale_z)
+        .arg(visual.pose.x)
+        .arg(visual.pose.y)
+        .arg(visual.pose.z)
+        .arg(visual.pose.roll)
+        .arg(visual.pose.pitch)
+        .arg(visual.pose.yaw)
+        .arg(load_status)
+        .arg(validation_status)
+        .arg(upload_status)
+        .arg(draw_status));
+  }
+
+  const QString summary = rows.join("\n");
+  if (summary == last_status_table_summary_) {
+    return;
+  }
+  last_status_table_summary_ = summary;
+  for (const auto &row : rows) {
+    Q_EMIT visualizationEvent(QString("OpenGL mesh status: %1").arg(row));
+  }
+}
+
+void RobotOpenGLWidget::emitOpenGLMeshSummary(const QString &reason)
+{
+  const int loaded = loadedMeshCount();
+  const int rejected = rejectedMeshCount();
+  const int uploaded = uploadedMeshCount();
+  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10")
+    .arg(reason)
+    .arg(last_received_visual_count_)
+    .arg(last_received_mesh_visual_count_)
+    .arg(visuals_.size())
+    .arg(loaded)
+    .arg(rejected)
+    .arg(uploaded)
+    .arg(last_draw_calls_)
+    .arg(last_rendered_triangles_)
+    .arg(static_cast<unsigned int>(last_draw_error_code_));
+  if (summary == last_opengl_mesh_summary_) {
+    return;
+  }
+  last_opengl_mesh_summary_ = summary;
+  Q_EMIT visualizationEvent(
+    QString("OpenGL mesh summary: visuals=%1, mesh_visuals=%2, accepted=%3, loaded=%4, rejected=%5, uploaded=%6, draw_calls=%7, rendered_triangles=%8, gl_error=%9")
+      .arg(last_received_visual_count_)
+      .arg(last_received_mesh_visual_count_)
+      .arg(visuals_.size())
+      .arg(loaded)
+      .arg(rejected)
+      .arg(uploaded)
+      .arg(last_draw_calls_)
+      .arg(last_rendered_triangles_)
+      .arg(static_cast<unsigned int>(last_draw_error_code_)));
+}
+
 void RobotOpenGLWidget::emitPaintDiagnostics(
   const int draw_calls,
   const int debug_axis_draw_count,
@@ -1218,10 +1485,12 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
     .arg(debug_cube_draw_count)
     .arg(rendered_triangles)
     .arg(static_cast<unsigned int>(error_code));
-  if (summary == last_paint_summary_) {
+  const bool may_emit = !paint_diagnostic_timer_.isValid() || paint_diagnostic_timer_.elapsed() >= 1000;
+  if (summary == last_paint_summary_ || !may_emit) {
     return;
   }
   last_paint_summary_ = summary;
+  paint_diagnostic_timer_.restart();
   Q_EMIT visualizationEvent(
     QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, uploaded mesh count=%6, draw calls=%7, debug axes draw count=%8, debug cube draw count=%9, rendered triangle count=%10, gl_error=%11, focal=(%12,%13,%14), yaw=%15, pitch=%16, distance=%17, pixels_per_meter=%18, debug_camera=%19, debug_axes=%20, debug_cube=%21, force_visible=%22")
       .arg(isVisible() ? "true" : "false")

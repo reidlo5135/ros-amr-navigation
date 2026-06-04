@@ -36,6 +36,10 @@ Key parameters:
   pose even when STL loading fails.
 - `robot_opengl_force_visible`: default `false`, keeps the OpenGL overlay visible for widget/camera
   diagnosis even when there are no renderable STL meshes.
+- `robot_opengl_stl_only_debug`: default `false`, suppresses proxy/debug clutter and renders only
+  STL meshes, with a red OpenGL fallback cube if no STL mesh reaches draw.
+- `robot_opengl_debug_mesh_bbox`: default `false`, draws each accepted STL mesh bounding box with
+  the same pose path as the mesh to separate transform/camera problems from mesh draw problems.
 - `robot_opengl_debug_size_m`: default `0.20`, controls the size of the OpenGL debug axis/cube.
 
 Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and either
@@ -160,6 +164,23 @@ ros2 run amr_visualization amr_visualization --ros-args \
   -p robot_opengl_debug_axes:=true \
   -p robot_opengl_debug_cube:=true \
   -p robot_opengl_debug_camera:=true
+```
+
+OpenGL STL-only visibility probe:
+
+```bash
+ros2 run amr_visualization amr_visualization --ros-args \
+  -p enable_robot_meshes:=true \
+  -p robot_model_renderer_backend:=opengl \
+  -p robot_opengl_force_visible:=true \
+  -p robot_opengl_debug_camera:=true \
+  -p robot_opengl_stl_only_debug:=true \
+  -p robot_opengl_debug_mesh_bbox:=true \
+  -p robot_opengl_debug_axes:=false \
+  -p robot_opengl_debug_cube:=false \
+  -p mesh_max_loaded_triangles:=50000 \
+  -p mesh_max_extent_m:=10.0 \
+  -p mesh_max_abs_coordinate_m:=10.0
 ```
 
 ## Crash backtrace

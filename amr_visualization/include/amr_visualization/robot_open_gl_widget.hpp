@@ -71,14 +71,24 @@ private:
     double diagonal{0.0};
     qint64 file_size_bytes{0};
     QString stl_format{"unknown"};
+    QString load_status{"pending"};
+    QString validation_status{"pending"};
+    QString upload_status{"pending"};
+    QString draw_status{"pending"};
     quint32 source_triangle_count{0};
     quint32 loaded_triangle_count{0};
+    int draw_call_count{0};
+    GLenum upload_error_code{GL_NO_ERROR};
+    GLenum draw_error_code{GL_NO_ERROR};
   };
 
   bool debugAxesEnabled() const;
   bool debugCubeEnabled() const;
   bool forceVisibleEnabled() const;
+  bool stlOnlyDebugEnabled() const;
+  bool debugMeshBboxEnabled() const;
   bool debugCameraEnabled() const;
+  int uploadedMeshCount() const;
   QVector3D cameraRight() const;
   QVector3D cameraForward() const;
   QVector3D cameraUp() const;
@@ -94,6 +104,8 @@ private:
   bool uploadMesh(GpuMesh &mesh);
   bool uploadDebugCube();
   void drawMesh(GpuMesh &mesh, const QMatrix4x4 &model, const QVector3D &color);
+  void drawMeshBoundingBox(const RobotVisual &visual, const GpuMesh &mesh, int &draw_calls, int &rendered_triangles);
+  void drawStlOnlyFallbackCube(int &draw_calls, int &rendered_triangles);
   void drawDebugGeometryForVisual(
     const RobotVisual &visual,
     int &axis_draw_count,
@@ -104,6 +116,8 @@ private:
   void emitSetVisualsDiagnostics(const QVector<RobotVisual> &incoming, const QSet<QString> &active_paths);
   void emitStlLoadDiagnostics(const RobotVisual &visual, const GpuMesh &mesh);
   void emitUploadDiagnostics(const GpuMesh &mesh, GLenum error_code);
+  void emitMeshStatusTable();
+  void emitOpenGLMeshSummary(const QString &reason);
   void emitPaintDiagnostics(
     int draw_calls,
     int debug_axis_draw_count,
@@ -132,11 +146,22 @@ private:
   bool fallback_event_emitted_{false};
   bool widget_created_event_emitted_{false};
   bool initialize_entered_event_emitted_{false};
+  bool paint_entered_event_emitted_{false};
+  bool last_render_visible_state_{false};
   QString opengl_failure_reason_;
   QString last_mesh_summary_;
   QString last_set_visuals_summary_;
   QString last_paint_summary_;
+  QString last_status_table_summary_;
+  QString last_opengl_mesh_summary_;
   QString last_visible_geometry_;
+  QString last_stl_fallback_reason_;
+  QElapsedTimer paint_diagnostic_timer_;
+  int last_draw_calls_{0};
+  int last_rendered_triangles_{0};
+  GLenum last_draw_error_code_{GL_NO_ERROR};
+  int last_received_visual_count_{0};
+  int last_received_mesh_visual_count_{0};
   QVector3D focal_point_{0.0F, 0.0F, 0.0F};
   double camera_yaw_{0.0};
   double camera_pitch_{1.5707963267948966};

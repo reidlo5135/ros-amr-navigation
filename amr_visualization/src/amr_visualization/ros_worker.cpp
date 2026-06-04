@@ -406,6 +406,10 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("robot_opengl_debug_cube", robot_opengl_debug_cube_);
   robot_opengl_force_visible_ =
     node_->declare_parameter<bool>("robot_opengl_force_visible", robot_opengl_force_visible_);
+  robot_opengl_stl_only_debug_ =
+    node_->declare_parameter<bool>("robot_opengl_stl_only_debug", robot_opengl_stl_only_debug_);
+  robot_opengl_debug_mesh_bbox_ =
+    node_->declare_parameter<bool>("robot_opengl_debug_mesh_bbox", robot_opengl_debug_mesh_bbox_);
   robot_opengl_debug_size_m_ =
     node_->declare_parameter<double>("robot_opengl_debug_size_m", robot_opengl_debug_size_m_);
   costmap_emit_period_ms_ =
@@ -451,11 +455,13 @@ void RosWorker::configure_ros_interfaces()
       .arg(mesh_max_file_size_mb_)
       .arg(mesh_max_loaded_triangles_));
   Q_EMIT eventReceived(
-    QString("OpenGL robot debug: camera=%1, axes=%2, cube=%3, force_visible=%4, debug_size_m=%5")
+    QString("OpenGL robot debug: camera=%1, axes=%2, cube=%3, force_visible=%4, stl_only=%5, mesh_bbox=%6, debug_size_m=%7")
       .arg(robot_opengl_debug_camera_ ? "true" : "false")
       .arg(robot_opengl_debug_axes_ ? "true" : "false")
       .arg(robot_opengl_debug_cube_ ? "true" : "false")
       .arg(robot_opengl_force_visible_ ? "true" : "false")
+      .arg(robot_opengl_stl_only_debug_ ? "true" : "false")
+      .arg(robot_opengl_debug_mesh_bbox_ ? "true" : "false")
       .arg(robot_opengl_debug_size_m_));
   Q_EMIT eventReceived(
     QString("Safe mode: robot model %1, robot meshes %2, mesh render mode %3, mesh async %4")
@@ -470,7 +476,9 @@ void RosWorker::configure_ros_interfaces()
       "robot_mesh_render_mode=%3, mesh_max_loaded_triangles=%4, "
       "mesh_max_rendered_faces=%5, renderer_backend=%6, "
       "robot_opengl_debug_camera=%7, robot_opengl_debug_axes=%8, "
-      "robot_opengl_debug_cube=%9, robot_opengl_force_visible=%10, robot_opengl_debug_size_m=%11")
+      "robot_opengl_debug_cube=%9, robot_opengl_force_visible=%10, "
+      "robot_opengl_stl_only_debug=%11, robot_opengl_debug_mesh_bbox=%12, "
+      "robot_opengl_debug_size_m=%13")
       .arg(enable_robot_model_ ? "true" : "false")
       .arg(enable_robot_meshes_ ? "true" : "false")
       .arg(QString::fromStdString(robot_mesh_render_mode_))
@@ -481,6 +489,8 @@ void RosWorker::configure_ros_interfaces()
       .arg(robot_opengl_debug_axes_ ? "true" : "false")
       .arg(robot_opengl_debug_cube_ ? "true" : "false")
       .arg(robot_opengl_force_visible_ ? "true" : "false")
+      .arg(robot_opengl_stl_only_debug_ ? "true" : "false")
+      .arg(robot_opengl_debug_mesh_bbox_ ? "true" : "false")
       .arg(robot_opengl_debug_size_m_));
   if (mesh_load_async_) {
     Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
@@ -767,6 +777,8 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       continue;
     }
     const QFileInfo file_info(visual.mesh_resolved_path);
+    const bool accepted_for_opengl =
+      visual.mesh_enabled && visual.mesh_render_mode == "opengl" && !visual.mesh_resolved_path.isEmpty();
     const QString key = QString("robot_visual_mesh:%1:%2:%3:%4:%5")
       .arg(visual.frame_id)
       .arg(visual.mesh_filename)
@@ -775,7 +787,7 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       .arg(visual.mesh_render_mode);
     emit_diagnostic_once(
       key,
-      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, exists=%4, readable=%5, file_size=%6, visual_origin_included_in_pose=true, mesh_scale=%7 %8 %9, mesh_enabled=%10, mesh_render_mode=%11, pose=(%12,%13,%14,%15,%16,%17), debug_axes=%18, debug_cube=%19, force_visible=%20, debug_size_m=%21")
+      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, exists=%4, readable=%5, file_size=%6, visual_origin_included_in_pose=true, mesh_scale=%7 %8 %9, mesh_enabled=%10, mesh_render_mode=%11, accepted_for_opengl=%12, pose=(%13,%14,%15,%16,%17,%18), debug_axes=%19, debug_cube=%20, force_visible=%21, stl_only=%22, mesh_bbox=%23, debug_size_m=%24")
         .arg(visual.frame_id)
         .arg(visual.mesh_filename)
         .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
@@ -787,6 +799,7 @@ void RosWorker::emit_robot_visual_diagnostics_once(
         .arg(visual.mesh_scale_z)
         .arg(visual.mesh_enabled ? "true" : "false")
         .arg(visual.mesh_render_mode)
+        .arg(accepted_for_opengl ? "true" : "false")
         .arg(visual.pose.x)
         .arg(visual.pose.y)
         .arg(visual.pose.z)
@@ -796,6 +809,8 @@ void RosWorker::emit_robot_visual_diagnostics_once(
         .arg(visual.robot_opengl_debug_axes ? "true" : "false")
         .arg(visual.robot_opengl_debug_cube ? "true" : "false")
         .arg(visual.robot_opengl_force_visible ? "true" : "false")
+        .arg(visual.robot_opengl_stl_only_debug ? "true" : "false")
+        .arg(visual.robot_opengl_debug_mesh_bbox ? "true" : "false")
         .arg(visual.robot_opengl_debug_size_m));
   }
 }
@@ -1296,7 +1311,11 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual.robot_opengl_debug_axes = robot_opengl_debug_axes_;
     visual.robot_opengl_debug_cube = robot_opengl_debug_cube_;
     visual.robot_opengl_force_visible = robot_opengl_force_visible_;
+    visual.robot_opengl_stl_only_debug = robot_opengl_stl_only_debug_;
+    visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
     visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
+    // Compose world/link pose with the URDF visual origin exactly once. The OpenGL
+    // model matrix later applies only the URDF mesh scale to raw STL vertices.
     visual.pose = compose_pose(frame_pose, source_visual.pose);
     visual.valid = visual.pose.valid;
     visuals.push_back(visual);
@@ -1335,6 +1354,8 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.robot_opengl_debug_axes = robot_opengl_debug_axes_;
       visual.robot_opengl_debug_cube = robot_opengl_debug_cube_;
       visual.robot_opengl_force_visible = robot_opengl_force_visible_;
+      visual.robot_opengl_stl_only_debug = robot_opengl_stl_only_debug_;
+      visual.robot_opengl_debug_mesh_bbox = robot_opengl_debug_mesh_bbox_;
       visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
       visual_frames.insert(frame_id);
       visuals.push_back(visual);
