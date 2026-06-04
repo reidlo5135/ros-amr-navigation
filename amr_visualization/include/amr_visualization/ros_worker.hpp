@@ -168,6 +168,9 @@ private:
   bool robot_renderer_loads_mesh_files_{false};
   bool robot_opengl_debug_camera_{false};
   bool robot_opengl_debug_axes_{false};
+  bool robot_opengl_debug_cube_{false};
+  bool robot_opengl_force_visible_{false};
+  double robot_opengl_debug_size_m_{0.20};
   int costmap_emit_period_ms_{1000};
   int tf_emit_period_ms_{100};
   int robot_model_emit_period_ms_{250};

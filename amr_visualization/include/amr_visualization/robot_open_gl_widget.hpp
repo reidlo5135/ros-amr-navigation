@@ -76,6 +76,8 @@ private:
   };
 
   bool debugAxesEnabled() const;
+  bool debugCubeEnabled() const;
+  bool forceVisibleEnabled() const;
   bool debugCameraEnabled() const;
   QVector3D cameraRight() const;
   QVector3D cameraForward() const;
@@ -92,11 +94,22 @@ private:
   bool uploadMesh(GpuMesh &mesh);
   bool uploadDebugCube();
   void drawMesh(GpuMesh &mesh, const QMatrix4x4 &model, const QVector3D &color);
-  void drawDebugGeometryForVisual(const RobotVisual &visual);
+  void drawDebugGeometryForVisual(
+    const RobotVisual &visual,
+    int &axis_draw_count,
+    int &cube_draw_count,
+    int &rendered_triangles);
+  void emitWidgetCreatedOnce();
+  void emitWidgetGeometry(const QString &reason);
   void emitSetVisualsDiagnostics(const QVector<RobotVisual> &incoming, const QSet<QString> &active_paths);
   void emitStlLoadDiagnostics(const RobotVisual &visual, const GpuMesh &mesh);
   void emitUploadDiagnostics(const GpuMesh &mesh, GLenum error_code);
-  void emitPaintDiagnostics(int draw_calls, int rendered_triangles, GLenum error_code);
+  void emitPaintDiagnostics(
+    int draw_calls,
+    int debug_axis_draw_count,
+    int debug_cube_draw_count,
+    int rendered_triangles,
+    GLenum error_code);
   void emitMeshVisualDiagnostics();
   void emitFallbackOnce(const QString &reason);
   void pruneInactiveMeshes(const QSet<QString> &active_paths);
@@ -117,6 +130,8 @@ private:
   bool initialized_{false};
   bool opengl_failed_{false};
   bool fallback_event_emitted_{false};
+  bool widget_created_event_emitted_{false};
+  bool initialize_entered_event_emitted_{false};
   QString opengl_failure_reason_;
   QString last_mesh_summary_;
   QString last_set_visuals_summary_;

@@ -402,6 +402,12 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("robot_opengl_debug_camera", robot_opengl_debug_camera_);
   robot_opengl_debug_axes_ =
     node_->declare_parameter<bool>("robot_opengl_debug_axes", robot_opengl_debug_axes_);
+  robot_opengl_debug_cube_ =
+    node_->declare_parameter<bool>("robot_opengl_debug_cube", robot_opengl_debug_cube_);
+  robot_opengl_force_visible_ =
+    node_->declare_parameter<bool>("robot_opengl_force_visible", robot_opengl_force_visible_);
+  robot_opengl_debug_size_m_ =
+    node_->declare_parameter<double>("robot_opengl_debug_size_m", robot_opengl_debug_size_m_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
   tf_emit_period_ms_ =
@@ -445,9 +451,12 @@ void RosWorker::configure_ros_interfaces()
       .arg(mesh_max_file_size_mb_)
       .arg(mesh_max_loaded_triangles_));
   Q_EMIT eventReceived(
-    QString("OpenGL robot debug: camera=%1, axes=%2")
+    QString("OpenGL robot debug: camera=%1, axes=%2, cube=%3, force_visible=%4, debug_size_m=%5")
       .arg(robot_opengl_debug_camera_ ? "true" : "false")
-      .arg(robot_opengl_debug_axes_ ? "true" : "false"));
+      .arg(robot_opengl_debug_axes_ ? "true" : "false")
+      .arg(robot_opengl_debug_cube_ ? "true" : "false")
+      .arg(robot_opengl_force_visible_ ? "true" : "false")
+      .arg(robot_opengl_debug_size_m_));
   Q_EMIT eventReceived(
     QString("Safe mode: robot model %1, robot meshes %2, mesh render mode %3, mesh async %4")
       .arg(enable_robot_model_ ? "enabled" : "disabled")
@@ -460,7 +469,8 @@ void RosWorker::configure_ros_interfaces()
       "Build/runtime feature summary: enable_robot_model=%1, enable_robot_meshes=%2, "
       "robot_mesh_render_mode=%3, mesh_max_loaded_triangles=%4, "
       "mesh_max_rendered_faces=%5, renderer_backend=%6, "
-      "robot_opengl_debug_camera=%7, robot_opengl_debug_axes=%8")
+      "robot_opengl_debug_camera=%7, robot_opengl_debug_axes=%8, "
+      "robot_opengl_debug_cube=%9, robot_opengl_force_visible=%10, robot_opengl_debug_size_m=%11")
       .arg(enable_robot_model_ ? "true" : "false")
       .arg(enable_robot_meshes_ ? "true" : "false")
       .arg(QString::fromStdString(robot_mesh_render_mode_))
@@ -468,7 +478,10 @@ void RosWorker::configure_ros_interfaces()
       .arg(mesh_max_rendered_faces_)
       .arg(QString::fromStdString(robot_model_renderer_backend_))
       .arg(robot_opengl_debug_camera_ ? "true" : "false")
-      .arg(robot_opengl_debug_axes_ ? "true" : "false"));
+      .arg(robot_opengl_debug_axes_ ? "true" : "false")
+      .arg(robot_opengl_debug_cube_ ? "true" : "false")
+      .arg(robot_opengl_force_visible_ ? "true" : "false")
+      .arg(robot_opengl_debug_size_m_));
   if (mesh_load_async_) {
     Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
   }
@@ -762,12 +775,13 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       .arg(visual.mesh_render_mode);
     emit_diagnostic_once(
       key,
-      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, exists=%4, readable=%5, mesh_scale=%6 %7 %8, mesh_enabled=%9, mesh_render_mode=%10, pose=(%11,%12,%13,%14,%15,%16)")
+      QString("RobotVisual mesh diagnostic: frame_id=%1, uri=%2, resolved=%3, exists=%4, readable=%5, file_size=%6, visual_origin_included_in_pose=true, mesh_scale=%7 %8 %9, mesh_enabled=%10, mesh_render_mode=%11, pose=(%12,%13,%14,%15,%16,%17), debug_axes=%18, debug_cube=%19, force_visible=%20, debug_size_m=%21")
         .arg(visual.frame_id)
         .arg(visual.mesh_filename)
         .arg(visual.mesh_resolved_path.isEmpty() ? QString("<unresolved>") : visual.mesh_resolved_path)
         .arg(file_info.exists() ? "true" : "false")
         .arg(file_info.isReadable() ? "true" : "false")
+        .arg(file_info.exists() ? file_info.size() : 0)
         .arg(visual.mesh_scale_x)
         .arg(visual.mesh_scale_y)
         .arg(visual.mesh_scale_z)
@@ -778,7 +792,11 @@ void RosWorker::emit_robot_visual_diagnostics_once(
         .arg(visual.pose.z)
         .arg(visual.pose.roll)
         .arg(visual.pose.pitch)
-        .arg(visual.pose.yaw));
+        .arg(visual.pose.yaw)
+        .arg(visual.robot_opengl_debug_axes ? "true" : "false")
+        .arg(visual.robot_opengl_debug_cube ? "true" : "false")
+        .arg(visual.robot_opengl_force_visible ? "true" : "false")
+        .arg(visual.robot_opengl_debug_size_m));
   }
 }
 
@@ -1276,6 +1294,9 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual.mesh_unit_scale = std::max(robot_mesh_unit_scale_, 0.000001);
     visual.robot_opengl_debug_camera = robot_opengl_debug_camera_;
     visual.robot_opengl_debug_axes = robot_opengl_debug_axes_;
+    visual.robot_opengl_debug_cube = robot_opengl_debug_cube_;
+    visual.robot_opengl_force_visible = robot_opengl_force_visible_;
+    visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
     visual.pose = compose_pose(frame_pose, source_visual.pose);
     visual.valid = visual.pose.valid;
     visuals.push_back(visual);
@@ -1308,6 +1329,13 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.valid = true;
       visual.type = RobotGeometryType::Mesh;
       visual.mesh_filename = frame_id;
+      visual.mesh_enabled = enable_robot_meshes_ && robot_renderer_loads_mesh_files_ && !mesh_load_async_;
+      visual.mesh_render_mode = QString::fromStdString(robot_mesh_render_mode_);
+      visual.robot_opengl_debug_camera = robot_opengl_debug_camera_;
+      visual.robot_opengl_debug_axes = robot_opengl_debug_axes_;
+      visual.robot_opengl_debug_cube = robot_opengl_debug_cube_;
+      visual.robot_opengl_force_visible = robot_opengl_force_visible_;
+      visual.robot_opengl_debug_size_m = std::clamp(robot_opengl_debug_size_m_, 0.01, 5.0);
       visual_frames.insert(frame_id);
       visuals.push_back(visual);
     };

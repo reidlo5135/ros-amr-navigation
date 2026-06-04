@@ -119,6 +119,7 @@ RobotOpenGLWidget::~RobotOpenGLWidget()
 
 void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
 {
+  emitWidgetCreatedOnce();
   QElapsedTimer timer;
   timer.start();
   visuals_.clear();
@@ -129,7 +130,8 @@ void RobotOpenGLWidget::setRobotVisuals(const QVector<RobotVisual> &visuals)
       visual.type == RobotGeometryType::Mesh &&
       visual.mesh_enabled &&
       visual.mesh_render_mode == "opengl" &&
-      (!visual.mesh_resolved_path.isEmpty() || visual.robot_opengl_debug_axes))
+      (!visual.mesh_resolved_path.isEmpty() || visual.robot_opengl_debug_axes ||
+      visual.robot_opengl_debug_cube || visual.robot_opengl_force_visible))
     {
       visuals_.push_back(visual);
       if (!visual.mesh_resolved_path.isEmpty()) {
@@ -203,25 +205,20 @@ void RobotOpenGLWidget::setCamera(
 void RobotOpenGLWidget::setRenderVisible(const bool visible)
 {
   setVisible(visible);
+  if (visible) {
+    raise();
+    emitWidgetGeometry("setVisible(true)");
+  } else {
+    Q_EMIT visualizationEvent(
+      QString("OpenGL widget visible state: visible=false, size=%1x%2, parent size=%3x%4")
+        .arg(width())
+        .arg(height())
+        .arg(parentWidget() ? parentWidget()->width() : 0)
+        .arg(parentWidget() ? parentWidget()->height() : 0));
+  }
   if (!visible) {
     return;
   }
-  const QString geometry_text = QString("%1,%2 %3x%4")
-    .arg(geometry().x())
-    .arg(geometry().y())
-    .arg(geometry().width())
-    .arg(geometry().height());
-  if (geometry_text == last_visible_geometry_) {
-    return;
-  }
-  last_visible_geometry_ = geometry_text;
-  Q_EMIT visualizationEvent(
-    QString("OpenGL robot widget visible: geometry=%1, visible=%2, accepted visuals=%3, loaded meshes=%4, rejected meshes=%5")
-      .arg(geometry_text)
-      .arg(isVisible() ? "true" : "false")
-      .arg(visuals_.size())
-      .arg(loadedMeshCount())
-      .arg(rejectedMeshCount()));
 }
 
 bool RobotOpenGLWidget::hasRenderableMesh(const RobotVisual &visual) const
@@ -252,7 +249,10 @@ bool RobotOpenGLWidget::shouldSuppressProxyForVisual(const RobotVisual &visual) 
   {
     return false;
   }
-  if (visual.robot_opengl_debug_axes && isVisible()) {
+  if (
+    (visual.robot_opengl_debug_axes || visual.robot_opengl_debug_cube ||
+    visual.robot_opengl_force_visible) && isVisible())
+  {
     return true;
   }
   const auto it = mesh_cache_.find(visual.mesh_resolved_path);
@@ -265,7 +265,7 @@ bool RobotOpenGLWidget::hasRenderableVisuals() const
   if (opengl_failed_) {
     return false;
   }
-  if (debugAxesEnabled() && !visuals_.isEmpty()) {
+  if ((debugAxesEnabled() || debugCubeEnabled() || forceVisibleEnabled()) && !visuals_.isEmpty()) {
     return true;
   }
   for (const auto &visual : visuals_) {
@@ -358,6 +358,24 @@ bool RobotOpenGLWidget::debugAxesEnabled() const
     });
 }
 
+bool RobotOpenGLWidget::debugCubeEnabled() const
+{
+  return std::any_of(
+    visuals_.begin(), visuals_.end(),
+    [](const RobotVisual &visual) {
+      return visual.robot_opengl_debug_cube;
+    });
+}
+
+bool RobotOpenGLWidget::forceVisibleEnabled() const
+{
+  return std::any_of(
+    visuals_.begin(), visuals_.end(),
+    [](const RobotVisual &visual) {
+      return visual.robot_opengl_force_visible;
+    });
+}
+
 bool RobotOpenGLWidget::debugCameraEnabled() const
 {
   return std::any_of(
@@ -369,6 +387,10 @@ bool RobotOpenGLWidget::debugCameraEnabled() const
 
 void RobotOpenGLWidget::initializeGL()
 {
+  if (!initialize_entered_event_emitted_) {
+    initialize_entered_event_emitted_ = true;
+    Q_EMIT visualizationEvent("OpenGL initializeGL entered");
+  }
   initializeOpenGLFunctions();
   initialized_ = true;
   opengl_failed_ = false;
@@ -425,20 +447,22 @@ void RobotOpenGLWidget::initializeGL()
 
 void RobotOpenGLWidget::resizeGL(int, int)
 {
+  emitWidgetGeometry("resizeGL");
   update();
 }
 
 void RobotOpenGLWidget::paintGL()
 {
+  Q_EMIT visualizationEvent("OpenGL paintGL entered");
   glViewport(0, 0, width(), height());
   glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   if (opengl_failed_) {
-    emitPaintDiagnostics(0, 0, glGetError());
+    emitPaintDiagnostics(0, 0, 0, 0, glGetError());
     return;
   }
   if (!program_.isLinked()) {
-    emitPaintDiagnostics(0, 0, glGetError());
+    emitPaintDiagnostics(0, 0, 0, 0, glGetError());
     return;
   }
 
@@ -448,15 +472,20 @@ void RobotOpenGLWidget::paintGL()
   program_.bind();
   program_.setUniformValue("light_dir", light_dir);
   int draw_calls = 0;
+  int debug_axis_draw_count = 0;
+  int debug_cube_draw_count = 0;
   int rendered_triangles = 0;
   for (const auto &visual : visuals_) {
-    if (visual.robot_opengl_debug_axes) {
-      drawDebugGeometryForVisual(visual);
-      if (debug_cube_mesh_.uploaded) {
-        draw_calls += 4;
-        rendered_triangles += (debug_cube_mesh_.indices.size() / 3) * 4;
-      }
-    }
+    const int previous_axis_draw_count = debug_axis_draw_count;
+    const int previous_cube_draw_count = debug_cube_draw_count;
+    drawDebugGeometryForVisual(
+      visual,
+      debug_axis_draw_count,
+      debug_cube_draw_count,
+      rendered_triangles);
+    draw_calls +=
+      (debug_axis_draw_count - previous_axis_draw_count) +
+      (debug_cube_draw_count - previous_cube_draw_count);
 
     auto it = mesh_cache_.find(visual.mesh_resolved_path);
     if (it == mesh_cache_.end() || !it->second || it->second->rejected) {
@@ -496,7 +525,12 @@ void RobotOpenGLWidget::paintGL()
   }
   const GLenum draw_error = glGetError();
   program_.release();
-  emitPaintDiagnostics(draw_calls, rendered_triangles, draw_error);
+  emitPaintDiagnostics(
+    draw_calls,
+    debug_axis_draw_count,
+    debug_cube_draw_count,
+    rendered_triangles,
+    draw_error);
 }
 
 QVector3D RobotOpenGLWidget::cameraRight() const
@@ -940,31 +974,57 @@ void RobotOpenGLWidget::drawMesh(
   glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
 }
 
-void RobotOpenGLWidget::drawDebugGeometryForVisual(const RobotVisual &visual)
+void RobotOpenGLWidget::drawDebugGeometryForVisual(
+  const RobotVisual &visual,
+  int &axis_draw_count,
+  int &cube_draw_count,
+  int &rendered_triangles)
 {
+  if (!visual.robot_opengl_debug_axes && !visual.robot_opengl_debug_cube) {
+    return;
+  }
   if (!uploadDebugCube() || !debug_cube_mesh_.vao.isCreated()) {
     return;
   }
 
+  const float size = static_cast<float>(std::clamp(visual.robot_opengl_debug_size_m, 0.01, 5.0));
+  const float half_axis = size * 0.5F;
+  const float axis_length = size;
+  const float axis_thickness = std::max(size * 0.08F, 0.01F);
   QMatrix4x4 base = poseMatrixForVisual(visual);
-  QMatrix4x4 cube = base;
-  cube.scale(0.09F, 0.09F, 0.09F);
-  drawMesh(debug_cube_mesh_, cube, QVector3D(1.0F, 0.86F, 0.12F));
+
+  if (visual.robot_opengl_debug_cube) {
+    QMatrix4x4 cube = base;
+    cube.scale(size, size, size);
+    drawMesh(debug_cube_mesh_, cube, QVector3D(1.0F, 0.86F, 0.12F));
+    ++cube_draw_count;
+    rendered_triangles += debug_cube_mesh_.indices.size() / 3;
+  }
+
+  if (!visual.robot_opengl_debug_axes) {
+    return;
+  }
 
   QMatrix4x4 x_axis = base;
-  x_axis.translate(0.08F, 0.0F, 0.0F);
-  x_axis.scale(0.16F, 0.018F, 0.018F);
+  x_axis.translate(half_axis, 0.0F, 0.0F);
+  x_axis.scale(axis_length, axis_thickness, axis_thickness);
   drawMesh(debug_cube_mesh_, x_axis, QVector3D(1.0F, 0.05F, 0.04F));
+  ++axis_draw_count;
+  rendered_triangles += debug_cube_mesh_.indices.size() / 3;
 
   QMatrix4x4 y_axis = base;
-  y_axis.translate(0.0F, 0.08F, 0.0F);
-  y_axis.scale(0.018F, 0.16F, 0.018F);
+  y_axis.translate(0.0F, half_axis, 0.0F);
+  y_axis.scale(axis_thickness, axis_length, axis_thickness);
   drawMesh(debug_cube_mesh_, y_axis, QVector3D(0.05F, 1.0F, 0.16F));
+  ++axis_draw_count;
+  rendered_triangles += debug_cube_mesh_.indices.size() / 3;
 
   QMatrix4x4 z_axis = base;
-  z_axis.translate(0.0F, 0.0F, 0.08F);
-  z_axis.scale(0.018F, 0.018F, 0.16F);
+  z_axis.translate(0.0F, 0.0F, half_axis);
+  z_axis.scale(axis_thickness, axis_thickness, axis_length);
   drawMesh(debug_cube_mesh_, z_axis, QVector3D(0.08F, 0.32F, 1.0F));
+  ++axis_draw_count;
+  rendered_triangles += debug_cube_mesh_.indices.size() / 3;
 }
 
 void RobotOpenGLWidget::emitMeshVisualDiagnostics()
@@ -1044,6 +1104,36 @@ void RobotOpenGLWidget::emitSetVisualsDiagnostics(
       .arg(rejectedMeshCount()));
 }
 
+void RobotOpenGLWidget::emitWidgetCreatedOnce()
+{
+  if (widget_created_event_emitted_) {
+    return;
+  }
+  widget_created_event_emitted_ = true;
+  Q_EMIT visualizationEvent(
+    QString("OpenGL widget created: size=%1x%2, parent size=%3x%4, visible=%5")
+      .arg(width())
+      .arg(height())
+      .arg(parentWidget() ? parentWidget()->width() : 0)
+      .arg(parentWidget() ? parentWidget()->height() : 0)
+      .arg(isVisible() ? "true" : "false"));
+}
+
+void RobotOpenGLWidget::emitWidgetGeometry(const QString &reason)
+{
+  const QString geometry_text = QString("%1,%2 %3x%4 parent=%5x%6 visible=%7")
+    .arg(geometry().x())
+    .arg(geometry().y())
+    .arg(geometry().width())
+    .arg(geometry().height())
+    .arg(parentWidget() ? parentWidget()->width() : 0)
+    .arg(parentWidget() ? parentWidget()->height() : 0)
+    .arg(isVisible() ? "true" : "false");
+  last_visible_geometry_ = geometry_text;
+  Q_EMIT visualizationEvent(
+    QString("OpenGL widget geometry (%1): %2").arg(reason, geometry_text));
+}
+
 void RobotOpenGLWidget::emitStlLoadDiagnostics(
   const RobotVisual &visual,
   const GpuMesh &mesh)
@@ -1105,16 +1195,27 @@ void RobotOpenGLWidget::emitUploadDiagnostics(const GpuMesh &mesh, const GLenum 
 
 void RobotOpenGLWidget::emitPaintDiagnostics(
   const int draw_calls,
+  const int debug_axis_draw_count,
+  const int debug_cube_draw_count,
   const int rendered_triangles,
   const GLenum error_code)
 {
-  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8")
+  int uploaded_mesh_count = 0;
+  for (const auto &entry : mesh_cache_) {
+    if (entry.second && entry.second->uploaded) {
+      ++uploaded_mesh_count;
+    }
+  }
+  const QString summary = QString("%1:%2:%3:%4:%5:%6:%7:%8:%9:%10:%11")
     .arg(isVisible() ? "1" : "0")
     .arg(width())
     .arg(height())
     .arg(visuals_.size())
     .arg(static_cast<int>(mesh_cache_.size()))
+    .arg(uploaded_mesh_count)
     .arg(draw_calls)
+    .arg(debug_axis_draw_count)
+    .arg(debug_cube_draw_count)
     .arg(rendered_triangles)
     .arg(static_cast<unsigned int>(error_code));
   if (summary == last_paint_summary_) {
@@ -1122,13 +1223,16 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
   }
   last_paint_summary_ = summary;
   Q_EMIT visualizationEvent(
-    QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, draw calls=%6, rendered triangle count=%7, gl_error=%8, focal=(%9,%10,%11), yaw=%12, pitch=%13, distance=%14, pixels_per_meter=%15, debug_camera=%16, debug_axes=%17")
+    QString("OpenGL paintGL diagnostics: visible=%1, size=%2x%3, visuals=%4, mesh cache=%5, uploaded mesh count=%6, draw calls=%7, debug axes draw count=%8, debug cube draw count=%9, rendered triangle count=%10, gl_error=%11, focal=(%12,%13,%14), yaw=%15, pitch=%16, distance=%17, pixels_per_meter=%18, debug_camera=%19, debug_axes=%20, debug_cube=%21, force_visible=%22")
       .arg(isVisible() ? "true" : "false")
       .arg(width())
       .arg(height())
       .arg(visuals_.size())
       .arg(static_cast<int>(mesh_cache_.size()))
+      .arg(uploaded_mesh_count)
       .arg(draw_calls)
+      .arg(debug_axis_draw_count)
+      .arg(debug_cube_draw_count)
       .arg(rendered_triangles)
       .arg(static_cast<unsigned int>(error_code))
       .arg(effectiveFocalPoint().x())
@@ -1139,7 +1243,9 @@ void RobotOpenGLWidget::emitPaintDiagnostics(
       .arg(effectiveCameraDistance())
       .arg(effectivePixelsPerMeter())
       .arg(debugCameraEnabled() ? "true" : "false")
-      .arg(debugAxesEnabled() ? "true" : "false"));
+      .arg(debugAxesEnabled() ? "true" : "false")
+      .arg(debugCubeEnabled() ? "true" : "false")
+      .arg(forceVisibleEnabled() ? "true" : "false"));
 }
 
 void RobotOpenGLWidget::emitFallbackOnce(const QString &reason)

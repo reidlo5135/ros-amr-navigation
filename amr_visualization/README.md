@@ -30,8 +30,13 @@ Key parameters:
 - `robot_mesh_unit_scale`: default `1.0`
 - `robot_opengl_debug_camera`: default `false`, centers the OpenGL robot view on the robot mesh
   or pose instead of the map camera for visibility diagnosis.
-- `robot_opengl_debug_axes`: default `false`, draws a small RGB axis and cube at each OpenGL robot
-  visual pose to prove that the overlay, camera, and shader path are visible.
+- `robot_opengl_debug_axes`: default `false`, draws small RGB axes at each OpenGL robot visual
+  pose to prove that the overlay, camera, and shader path are visible.
+- `robot_opengl_debug_cube`: default `false`, draws a solid debug cube at each OpenGL robot visual
+  pose even when STL loading fails.
+- `robot_opengl_force_visible`: default `false`, keeps the OpenGL overlay visible for widget/camera
+  diagnosis even when there are no renderable STL meshes.
+- `robot_opengl_debug_size_m`: default `0.20`, controls the size of the OpenGL debug axis/cube.
 
 Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and either
 `robot_model_renderer_backend:=opengl` or `robot_model_renderer_backend:=qpainter_wireframe`.
@@ -143,6 +148,18 @@ OpenGL target:
 ros2 run amr_visualization amr_visualization --ros-args \
   -p enable_robot_meshes:=true \
   -p robot_model_renderer_backend:=opengl
+```
+
+OpenGL overlay visibility probe:
+
+```bash
+ros2 run amr_visualization amr_visualization --ros-args \
+  -p enable_robot_meshes:=true \
+  -p robot_model_renderer_backend:=opengl \
+  -p robot_opengl_force_visible:=true \
+  -p robot_opengl_debug_axes:=true \
+  -p robot_opengl_debug_cube:=true \
+  -p robot_opengl_debug_camera:=true
 ```
 
 ## Crash backtrace

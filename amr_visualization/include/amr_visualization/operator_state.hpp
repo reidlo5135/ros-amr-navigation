@@ -65,6 +65,9 @@ struct RobotVisual
   double mesh_unit_scale{1.0};
   bool robot_opengl_debug_camera{false};
   bool robot_opengl_debug_axes{false};
+  bool robot_opengl_debug_cube{false};
+  bool robot_opengl_force_visible{false};
+  double robot_opengl_debug_size_m{0.20};
   bool valid{false};
 };
 
