@@ -316,6 +316,28 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("subscribe_scan", subscribe_scan_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
+  tf_emit_period_ms_ =
+    node_->declare_parameter<int>("tf_emit_period_ms", tf_emit_period_ms_);
+  robot_model_emit_period_ms_ =
+    node_->declare_parameter<int>("robot_model_emit_period_ms", robot_model_emit_period_ms_);
+  scan_emit_period_ms_ =
+    node_->declare_parameter<int>("scan_emit_period_ms", scan_emit_period_ms_);
+  mesh_max_loaded_triangles_ =
+    node_->declare_parameter<int>("mesh_max_loaded_triangles", mesh_max_loaded_triangles_);
+  mesh_max_rendered_faces_ =
+    node_->declare_parameter<int>("mesh_max_rendered_faces", mesh_max_rendered_faces_);
+  mesh_max_file_size_mb_ =
+    node_->declare_parameter<int>("mesh_max_file_size_mb", mesh_max_file_size_mb_);
+  Q_EMIT eventReceived(
+    QString("UI update throttling enabled: TF %1 ms, robot model %2 ms, scan %3 ms")
+      .arg(tf_emit_period_ms_)
+      .arg(robot_model_emit_period_ms_)
+      .arg(scan_emit_period_ms_));
+  Q_EMIT eventReceived(
+    QString("Robot mesh limits: %1 loaded triangle(s), %2 rendered face(s), %3 MiB file size")
+      .arg(mesh_max_loaded_triangles_)
+      .arg(mesh_max_rendered_faces_)
+      .arg(mesh_max_file_size_mb_));
 
   const auto latched_map_qos = rclcpp::QoS(1).reliable().transient_local();
   const auto live_qos = rclcpp::SystemDefaultsQoS();
@@ -397,8 +419,18 @@ void RosWorker::configure_ros_interfaces()
       robot_description_visuals_ = parse_robot_description(message->data);
       Q_EMIT tfFramesChanged(build_frame_visuals());
       Q_EMIT robotModelChanged(build_robot_visuals());
+      last_robot_model_emit_time_ = node_->now();
+      const int mesh_visuals = std::count_if(
+        robot_description_visuals_.begin(), robot_description_visuals_.end(),
+        [](const RobotVisual &visual) {
+          return visual.type == RobotGeometryType::Mesh;
+        });
       Q_EMIT eventReceived(
-        QString("Robot description loaded: %1 visual(s)").arg(robot_description_visuals_.size()));
+        QString("Robot description loaded: %1 link(s), %2 joint(s), %3 visual(s), %4 mesh visual(s)")
+          .arg(robot_description_link_count_)
+          .arg(static_cast<int>(robot_joints_.size()))
+          .arg(robot_description_visuals_.size())
+          .arg(mesh_visuals));
     });
   tf_subscription_ = node_->create_subscription<tf2_msgs::msg::TFMessage>(
     tf_topic_, live_qos, [this](const tf2_msgs::msg::TFMessage::SharedPtr message) {
@@ -439,8 +471,39 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool 
     frame.is_static = is_static;
     storage[transform.child_frame_id] = frame;
   }
-  Q_EMIT tfFramesChanged(build_frame_visuals());
-  Q_EMIT robotModelChanged(build_robot_visuals());
+
+  const bool emit_tf = is_static || should_emit_now(last_tf_emit_time_, tf_emit_period_ms_);
+  if (emit_tf) {
+    Q_EMIT tfFramesChanged(build_frame_visuals());
+  }
+
+  if (
+    !robot_description_visuals_.isEmpty() &&
+    (is_static || should_emit_now(last_robot_model_emit_time_, robot_model_emit_period_ms_)))
+  {
+    Q_EMIT robotModelChanged(build_robot_visuals());
+  }
+}
+
+bool RosWorker::should_emit_now(rclcpp::Time &last_emit_time, const int period_ms) const
+{
+  if (!node_ || period_ms <= 0) {
+    return true;
+  }
+
+  const rclcpp::Time now = node_->now();
+  if (last_emit_time.nanoseconds() == 0 || now.nanoseconds() < last_emit_time.nanoseconds()) {
+    last_emit_time = now;
+    return true;
+  }
+
+  const double elapsed_ms = (now - last_emit_time).seconds() * 1000.0;
+  if (elapsed_ms < period_ms) {
+    return false;
+  }
+
+  last_emit_time = now;
+  return true;
 }
 
 QVector<FrameVisual> RosWorker::build_frame_visuals() const
@@ -559,6 +622,9 @@ void RosWorker::update_scan_subscription()
   scan_subscription_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
     scan_topic_, rclcpp::SensorDataQoS(),
     [this](const sensor_msgs::msg::LaserScan::SharedPtr message) {
+      if (!should_emit_now(last_scan_emit_time_, scan_emit_period_ms_)) {
+        return;
+      }
       Q_EMIT scanChanged(convert_scan(*message));
     });
   Q_EMIT eventReceived("Scan subscription enabled");
@@ -682,6 +748,7 @@ RuntimeSummary RosWorker::parse_runtime_summary(const std::string &payload) cons
 QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &payload)
 {
   robot_joints_.clear();
+  robot_description_link_count_ = 0;
   QVector<RobotVisual> visuals;
   QXmlStreamReader reader(QString::fromStdString(payload));
 
@@ -693,6 +760,7 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
 
     while (reader.readNextStartElement()) {
       if (reader.name() == QLatin1String("link")) {
+        ++robot_description_link_count_;
         const QString frame_id = reader.attributes().value("name").toString();
         QVector<RobotVisual> link_visuals;
         QVector<RobotVisual> link_collisions;
@@ -795,19 +863,29 @@ QString RosWorker::resolve_mesh_uri(const QString &uri)
     return {};
   }
 
-  auto validate_stl_path = [this, &uri](const QString &path) -> QString {
+  auto emit_mesh_event_once = [this](const QString &event) {
+      if (mesh_resolution_event_cache_.contains(event)) {
+        return;
+      }
+      mesh_resolution_event_cache_.insert(event);
+      Q_EMIT eventReceived(event);
+    };
+
+  auto validate_stl_path = [&uri, &emit_mesh_event_once](const QString &path) -> QString {
       if (path.isEmpty() || !QFileInfo::exists(path)) {
-        Q_EMIT eventReceived(QString("Robot mesh not found: %1").arg(uri));
+        emit_mesh_event_once(QString("Robot mesh not found: %1").arg(uri));
         return {};
       }
 
       const QFileInfo file_info(path);
       if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
-        Q_EMIT eventReceived(
+        emit_mesh_event_once(
           QString("Unsupported robot mesh extension for %1: .%2")
             .arg(uri, file_info.suffix()));
         return {};
       }
+      emit_mesh_event_once(
+        QString("Robot mesh resolved: %1 -> %2").arg(uri, file_info.absoluteFilePath()));
       return file_info.absoluteFilePath();
     };
 
@@ -815,7 +893,7 @@ QString RosWorker::resolve_mesh_uri(const QString &uri)
     const QString package_path = uri.mid(QString("package://").size());
     const int slash_index = package_path.indexOf('/');
     if (slash_index <= 0 || slash_index == package_path.size() - 1) {
-      Q_EMIT eventReceived(QString("Invalid package mesh URI: %1").arg(uri));
+      emit_mesh_event_once(QString("Invalid package mesh URI: %1").arg(uri));
       return {};
     }
 
@@ -826,7 +904,7 @@ QString RosWorker::resolve_mesh_uri(const QString &uri)
         ament_index_cpp::get_package_share_directory(package.toStdString()));
       return validate_stl_path(QFileInfo(share_dir + "/" + relative_path).absoluteFilePath());
     } catch (const std::exception &error) {
-      Q_EMIT eventReceived(
+      emit_mesh_event_once(
         QString("Robot mesh package resolution failed for %1: %2")
           .arg(uri, QString::fromLocal8Bit(error.what())));
       return {};
@@ -842,7 +920,7 @@ QString RosWorker::resolve_mesh_uri(const QString &uri)
     return validate_stl_path(file_info.absoluteFilePath());
   }
 
-  Q_EMIT eventReceived(QString("Relative robot mesh URI is not supported: %1").arg(uri));
+  emit_mesh_event_once(QString("Relative robot mesh URI is not supported: %1").arg(uri));
   return {};
 }
 
@@ -859,6 +937,9 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     }
 
     RobotVisual visual = source_visual;
+    visual.mesh_max_loaded_triangles = std::max(mesh_max_loaded_triangles_, 1);
+    visual.mesh_max_rendered_faces = std::max(mesh_max_rendered_faces_, 1);
+    visual.mesh_max_file_size_mb = std::max(mesh_max_file_size_mb_, 1);
     visual.pose = compose_pose(frame_pose, source_visual.pose);
     visual.valid = visual.pose.valid;
     visuals.push_back(visual);

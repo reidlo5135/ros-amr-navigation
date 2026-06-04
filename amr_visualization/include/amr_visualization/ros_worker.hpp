@@ -2,6 +2,7 @@
 #define AMR_VISUALIZATION__ROS_WORKER_HPP_
 
 #include <QObject>
+#include <QSet>
 
 #include <atomic>
 #include <map>
@@ -17,6 +18,7 @@
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "rclcpp/executors/single_threaded_executor.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
@@ -85,6 +87,7 @@ private:
     const tf2_msgs::msg::TFMessage &message,
     bool is_static);
   void spin();
+  bool should_emit_now(rclcpp::Time &last_emit_time, int period_ms) const;
 
   GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
   PathData convert_path(const nav_msgs::msg::Path &message) const;
@@ -101,7 +104,7 @@ private:
   Pose2D resolve_frame_pose(const std::string &child_frame) const;
 
   rclcpp::Node::SharedPtr node_;
-  rclcpp::executors::MultiThreadedExecutor executor_;
+  rclcpp::executors::SingleThreadedExecutor executor_;
   std::thread spin_thread_;
   std::atomic_bool running_{false};
 
@@ -124,6 +127,9 @@ private:
   rclcpp_action::Client<NavigateToPoses>::SharedPtr navigate_to_poses_client_;
   rclcpp::Time last_global_costmap_emit_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_local_costmap_emit_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_tf_emit_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_robot_model_emit_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_scan_emit_time_{0, 0, RCL_ROS_TIME};
 
   std::string default_frame_id_{"map"};
   std::string map_topic_{"/amr/map/data"};
@@ -147,10 +153,18 @@ private:
   bool subscribe_local_costmap_{true};
   bool subscribe_scan_{true};
   int costmap_emit_period_ms_{1000};
+  int tf_emit_period_ms_{100};
+  int robot_model_emit_period_ms_{100};
+  int scan_emit_period_ms_{50};
+  int mesh_max_loaded_triangles_{60000};
+  int mesh_max_rendered_faces_{1800};
+  int mesh_max_file_size_mb_{64};
   std::map<std::string, FrameVisual> dynamic_frames_;
   std::map<std::string, FrameVisual> static_frames_;
   QVector<RobotVisual> robot_description_visuals_;
   std::map<std::string, RobotJoint> robot_joints_;
+  QSet<QString> mesh_resolution_event_cache_;
+  int robot_description_link_count_{0};
 };
 
 }  // namespace amr::visualization

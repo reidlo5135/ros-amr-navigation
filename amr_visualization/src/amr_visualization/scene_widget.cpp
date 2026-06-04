@@ -1,5 +1,6 @@
 #include "amr_visualization/scene_widget.hpp"
 
+#include <QByteArray>
 #include <QDataStream>
 #include <QFile>
 #include <QFileInfo>
@@ -149,7 +150,38 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
       ++it;
     } else {
       mesh_warning_cache_.remove(it.key());
+      mesh_success_cache_.remove(it.key());
       it = mesh_cache_.erase(it);
+    }
+  }
+  for (const auto &visual : robot_visuals_) {
+    if (visual.type != RobotGeometryType::Mesh || visual.mesh_resolved_path.isEmpty()) {
+      continue;
+    }
+    if (mesh_cache_.contains(visual.mesh_resolved_path)) {
+      continue;
+    }
+
+    MeshCacheEntry entry;
+    entry.attempted = true;
+    loadStlMesh(visual, entry);
+    mesh_cache_.insert(visual.mesh_resolved_path, entry);
+
+    if (entry.triangles.isEmpty()) {
+      if (!mesh_warning_cache_.contains(visual.mesh_resolved_path)) {
+        mesh_warning_cache_.insert(visual.mesh_resolved_path);
+        Q_EMIT visualizationEvent(
+          QString("Robot mesh load failed for %1: %2").arg(visual.mesh_filename, entry.error));
+      }
+      continue;
+    }
+
+    if (!mesh_success_cache_.contains(visual.mesh_resolved_path)) {
+      mesh_success_cache_.insert(visual.mesh_resolved_path);
+      Q_EMIT visualizationEvent(
+        QString("Robot mesh loaded: %1 (%2 triangle(s))")
+          .arg(visual.mesh_filename)
+          .arg(entry.triangles.size()));
     }
   }
   update();
@@ -1066,11 +1098,11 @@ bool SceneWidget::drawMesh3D(
     QColor color;
   };
 
-  constexpr int k_max_faces = 4200;
   const int triangle_count = static_cast<int>(mesh->triangles.size());
-  const int stride = std::max(1, triangle_count / k_max_faces);
+  const int max_rendered_faces = std::max(visual.mesh_max_rendered_faces, 1);
+  const int stride = std::max(1, triangle_count / max_rendered_faces);
   QVector<ProjectedFace> faces;
-  faces.reserve(std::min(triangle_count, k_max_faces));
+  faces.reserve(std::min(triangle_count, max_rendered_faces));
   const QVector3D light_direction = (-cameraForward() + QVector3D(0.15F, -0.25F, 0.35F)).normalized();
 
   for (int i = 0; i < triangle_count; i += stride) {
@@ -1126,15 +1158,7 @@ const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual 
 
   auto it = mesh_cache_.find(path);
   if (it == mesh_cache_.end()) {
-    MeshCacheEntry entry;
-    entry.attempted = true;
-    loadStlMesh(path, entry);
-    it = mesh_cache_.insert(path, entry);
-  }
-  if (it->triangles.isEmpty() && !mesh_warning_cache_.contains(path)) {
-    mesh_warning_cache_.insert(path);
-    Q_EMIT visualizationEvent(
-      QString("Robot mesh load failed for %1: %2").arg(visual.mesh_filename, it->error));
+    return nullptr;
   }
   if (!it->attempted || it->triangles.isEmpty()) {
     return nullptr;
@@ -1142,8 +1166,9 @@ const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual 
   return &(*it);
 }
 
-bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry)
+bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
 {
+  const QString path = visual.mesh_resolved_path;
   const QFileInfo file_info(path);
   if (file_info.suffix().compare("stl", Qt::CaseInsensitive) != 0) {
     entry.error = QString("unsupported extension .%1").arg(file_info.suffix());
@@ -1156,8 +1181,18 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry)
     return false;
   }
 
-  constexpr quint32 k_max_loaded_triangles = 200000U;
   const qint64 file_size = file.size();
+  const qint64 max_file_size_bytes =
+    static_cast<qint64>(std::max(visual.mesh_max_file_size_mb, 1)) * 1024LL * 1024LL;
+  if (file_size <= 0) {
+    entry.error = "empty STL file";
+    return false;
+  }
+  if (file_size > max_file_size_bytes) {
+    entry.error = QString("STL file exceeds %1 MiB limit").arg(visual.mesh_max_file_size_mb);
+    return false;
+  }
+
   if (file_size >= 84) {
     file.seek(80);
     QDataStream stream(&file);
@@ -1166,7 +1201,9 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry)
     stream >> triangle_count;
     const qint64 expected_size = 84 + (static_cast<qint64>(triangle_count) * 50);
     if (triangle_count > 0 && expected_size == file_size) {
-      const quint32 loaded_count = std::min(triangle_count, k_max_loaded_triangles);
+      const quint32 max_loaded_triangles =
+        static_cast<quint32>(std::max(visual.mesh_max_loaded_triangles, 1));
+      const quint32 loaded_count = std::min(triangle_count, max_loaded_triangles);
       entry.triangles.reserve(static_cast<int>(loaded_count));
       for (quint32 i = 0; i < loaded_count && !stream.atEnd(); ++i) {
         float nx = 0.0F;
@@ -1189,17 +1226,35 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry)
         entry.triangles.push_back(
           MeshTriangle{QVector3D(ax, ay, az), QVector3D(bx, by, bz), QVector3D(cx, cy, cz)});
       }
-      entry.error = entry.triangles.isEmpty() ? "binary STL contained no triangles" : QString();
+      if (triangle_count > loaded_count) {
+        entry.error =
+          QString("loaded %1 of %2 binary STL triangle(s)").arg(loaded_count).arg(triangle_count);
+        Q_EMIT visualizationEvent(QString("Robot mesh triangle load capped: %1").arg(entry.error));
+      } else {
+        entry.error = entry.triangles.isEmpty() ? "binary STL contained no triangles" : QString();
+      }
       return !entry.triangles.isEmpty();
     }
   }
 
   file.seek(0);
+  const QByteArray header = file.peek(512).trimmed();
+  if (!header.startsWith("solid")) {
+    entry.error = "not a recognized binary or ASCII STL";
+    return false;
+  }
+
   const QString content = QString::fromLatin1(file.readAll());
   QVector<QVector3D> vertices;
   vertices.reserve(3);
+  quint32 parsed_triangles = 0;
+  const quint32 max_loaded_triangles =
+    static_cast<quint32>(std::max(visual.mesh_max_loaded_triangles, 1));
   const QStringList lines = content.split('\n');
   for (const QString &line : lines) {
+    if (parsed_triangles >= max_loaded_triangles) {
+      break;
+    }
     const QString normalized = line.simplified();
     if (!normalized.startsWith("vertex ")) {
       continue;
@@ -1221,7 +1276,13 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry)
     if (vertices.size() == 3) {
       entry.triangles.push_back(MeshTriangle{vertices[0], vertices[1], vertices[2]});
       vertices.clear();
+      ++parsed_triangles;
     }
+  }
+  if (!entry.triangles.isEmpty() && parsed_triangles >= max_loaded_triangles) {
+    entry.error = QString("loaded first %1 ASCII STL triangle(s)").arg(max_loaded_triangles);
+    Q_EMIT visualizationEvent(QString("Robot mesh triangle load capped: %1").arg(entry.error));
+    return true;
   }
   entry.error = entry.triangles.isEmpty() ? "not a supported ASCII or binary STL" : QString();
   return !entry.triangles.isEmpty();

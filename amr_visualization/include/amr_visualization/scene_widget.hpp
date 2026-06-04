@@ -132,7 +132,7 @@ private:
   void drawWheelProxy3D(QPainter &painter, const Pose2D &pose, const QColor &color) const;
   bool drawMesh3D(QPainter &painter, const RobotVisual &visual, const QColor &color);
   const MeshCacheEntry *meshForVisual(const RobotVisual &visual);
-  bool loadStlMesh(const QString &path, MeshCacheEntry &entry);
+  bool loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry);
   QVector3D meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const;
   void drawTfFrames(QPainter &painter) const;
   void drawTfChainLine(QPainter &painter, const Pose2D &from, const Pose2D &to) const;
@@ -184,6 +184,7 @@ private:
   QToolButton *reset_view_button_{nullptr};
   QHash<QString, MeshCacheEntry> mesh_cache_;
   QSet<QString> mesh_warning_cache_;
+  QSet<QString> mesh_success_cache_;
 };
 
 }  // namespace amr::visualization

@@ -242,19 +242,43 @@ MainWindow::MainWindow(QWidget *parent)
 
   connect(ros_worker_.get(), &RosWorker::connectionStateChanged, this, [this](const QString &state) {
     appendEvent(state);
-  });
-  connect(ros_worker_.get(), &RosWorker::mapChanged, scene_, &SceneWidget::setMap);
-  connect(ros_worker_.get(), &RosWorker::tfFramesChanged, scene_, &SceneWidget::setTfFrames);
-  connect(ros_worker_.get(), &RosWorker::robotModelChanged, scene_, &SceneWidget::setRobotModel);
-  connect(ros_worker_.get(), &RosWorker::globalCostmapChanged, scene_, &SceneWidget::setGlobalCostmap);
-  connect(ros_worker_.get(), &RosWorker::localCostmapChanged, scene_, &SceneWidget::setLocalCostmap);
-  connect(ros_worker_.get(), &RosWorker::scanChanged, scene_, &SceneWidget::setScan);
-  connect(ros_worker_.get(), &RosWorker::robotPoseChanged, scene_, &SceneWidget::setRobotPose);
-  connect(ros_worker_.get(), &RosWorker::robotPoseChanged, this, &MainWindow::updateAimPose);
-  connect(ros_worker_.get(), &RosWorker::globalPathChanged, scene_, &SceneWidget::setGlobalPath);
-  connect(ros_worker_.get(), &RosWorker::localPathChanged, scene_, &SceneWidget::setLocalPath);
-  connect(ros_worker_.get(), &RosWorker::motionStatusChanged, this, &MainWindow::updateMotionStatus);
-  connect(ros_worker_.get(), &RosWorker::runtimeSummaryChanged, this, &MainWindow::updateRuntimeSummary);
+  }, Qt::QueuedConnection);
+  connect(ros_worker_.get(), &RosWorker::mapChanged, scene_, &SceneWidget::setMap, Qt::QueuedConnection);
+  connect(ros_worker_.get(), &RosWorker::tfFramesChanged, scene_, &SceneWidget::setTfFrames, Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::robotModelChanged,
+    scene_, &SceneWidget::setRobotModel,
+    Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::globalCostmapChanged,
+    scene_, &SceneWidget::setGlobalCostmap,
+    Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::localCostmapChanged,
+    scene_, &SceneWidget::setLocalCostmap,
+    Qt::QueuedConnection);
+  connect(ros_worker_.get(), &RosWorker::scanChanged, scene_, &SceneWidget::setScan, Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::robotPoseChanged,
+    scene_, &SceneWidget::setRobotPose,
+    Qt::QueuedConnection);
+  connect(ros_worker_.get(), &RosWorker::robotPoseChanged, this, &MainWindow::updateAimPose, Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::globalPathChanged,
+    scene_, &SceneWidget::setGlobalPath,
+    Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::localPathChanged,
+    scene_, &SceneWidget::setLocalPath,
+    Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::motionStatusChanged,
+    this, &MainWindow::updateMotionStatus,
+    Qt::QueuedConnection);
+  connect(
+    ros_worker_.get(), &RosWorker::runtimeSummaryChanged,
+    this, &MainWindow::updateRuntimeSummary,
+    Qt::QueuedConnection);
   connect(ros_worker_.get(), &RosWorker::batteryStateChanged, this, [this](double percentage, bool present) {
     auto refresh_battery_style = [this](const QString &level) {
         battery_bar_->setProperty("level", level);
@@ -280,18 +304,18 @@ MainWindow::MainWindow(QWidget *parent)
     } else {
       refresh_battery_style("low");
     }
-  });
+  }, Qt::QueuedConnection);
   connect(ros_worker_.get(), &RosWorker::goalStateChanged, this, [this](const QString &state) {
     goal_label_->setText(state);
-  });
+  }, Qt::QueuedConnection);
   connect(ros_worker_.get(), &RosWorker::navigationCompleted, this, [this](bool succeeded) {
     setWaypointEditingLocked(false);
     if (succeeded) {
       scene_->clearNavigationOverlays();
       appendEvent("Navigation overlays cleared");
     }
-  });
-  connect(ros_worker_.get(), &RosWorker::eventReceived, this, &MainWindow::appendEvent);
+  }, Qt::QueuedConnection);
+  connect(ros_worker_.get(), &RosWorker::eventReceived, this, &MainWindow::appendEvent, Qt::QueuedConnection);
 
   applyStyle();
   ros_worker_->start();
