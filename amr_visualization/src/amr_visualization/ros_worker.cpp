@@ -127,6 +127,74 @@ QString file_access_diagnostics_text(const QString &uri, const QString &resolved
   return fileProbeToDiagnosticText(probe);
 }
 
+bool is_real_mesh_uri_or_path(const QString &mesh_filename)
+{
+  const QString trimmed = mesh_filename.trimmed();
+  if (trimmed.isEmpty()) {
+    return false;
+  }
+  if (trimmed.startsWith("package://") || trimmed.startsWith("file://")) {
+    return true;
+  }
+  const QFileInfo file_info(trimmed);
+  return file_info.isAbsolute() || file_info.suffix().compare("stl", Qt::CaseInsensitive) == 0;
+}
+
+bool is_urdf_mesh_visual(const RobotVisual &visual)
+{
+  return visual.valid && visual.type == RobotGeometryType::Mesh &&
+    !visual.mesh_filename.trimmed().isEmpty() && is_real_mesh_uri_or_path(visual.mesh_filename) &&
+    !visual.proxy_visual;
+}
+
+QString opengl_candidate_skip_reason(const RobotVisual &visual)
+{
+  if (!visual.valid) {
+    return "invalid visual";
+  }
+  if (visual.type != RobotGeometryType::Mesh) {
+    return visual.proxy_visual ? "proxy visual" : "non-mesh visual";
+  }
+  if (visual.proxy_visual) {
+    return "proxy visual";
+  }
+  if (visual.mesh_filename.trimmed().isEmpty()) {
+    return "empty mesh filename";
+  }
+  if (!is_real_mesh_uri_or_path(visual.mesh_filename)) {
+    return "mesh filename is not a real URI/path";
+  }
+  if (visual.mesh_resolved_path.trimmed().isEmpty()) {
+    return "unresolved mesh path";
+  }
+  if (!visual.mesh_enabled) {
+    return "mesh rendering disabled";
+  }
+  if (visual.mesh_render_mode != "opengl") {
+    return QString("mesh render mode is %1").arg(visual.mesh_render_mode);
+  }
+
+  const FileProbe probe = probeFilePath(visual.mesh_filename, visual.mesh_resolved_path);
+  if (!probe.exists) {
+    return "local mesh file does not exist";
+  }
+  if (!probe.is_file) {
+    return "local mesh path is not a file";
+  }
+  if (!probe.readable) {
+    return "local mesh file is not readable";
+  }
+  if (!probe.open_ok) {
+    return QString("local mesh file open failed: %1").arg(probe.error_string);
+  }
+  return {};
+}
+
+bool is_accepted_opengl_mesh_visual(const RobotVisual &visual)
+{
+  return opengl_candidate_skip_reason(visual).isEmpty();
+}
+
 struct Rotation3D
 {
   std::array<std::array<double, 3>, 3> m{};
@@ -727,7 +795,7 @@ void RosWorker::configure_ros_interfaces()
       const int mesh_visuals = std::count_if(
         robot_description_visuals_.begin(), robot_description_visuals_.end(),
         [](const RobotVisual &visual) {
-          return visual.type == RobotGeometryType::Mesh;
+          return is_urdf_mesh_visual(visual);
         });
       Q_EMIT eventReceived(
         QString("Robot description loaded: %1 link(s), %2 joint(s), %3 visual(s), %4 mesh visual(s)")
@@ -741,20 +809,24 @@ void RosWorker::configure_ros_interfaces()
           "No URDF mesh visuals found; using proxy renderer");
       } else {
         for (const auto &visual : robot_description_visuals_) {
-          if (visual.type != RobotGeometryType::Mesh) {
+          if (!is_urdf_mesh_visual(visual)) {
             continue;
           }
           const QString key = "mesh_visual:" + visual.frame_id + ":" + visual.mesh_filename;
-          emit_diagnostic_once(
-            key,
-            QString("Mesh visual: frame=%1, uri=%2, resolved=%3, scale=%4 %5 %6, triangle count=pending, backend=%7")
+          if (!diagnostic_event_cache_.contains(key)) {
+            diagnostic_event_cache_.insert(key);
+            RCLCPP_INFO(
+              node_->get_logger(),
+              "%s",
+              QString("Mesh visual: frame=%1, uri=%2, resolved=%3, scale=%4 %5 %6, triangle count=pending, backend=%7")
               .arg(visual.frame_id)
               .arg(visual.mesh_filename)
               .arg(visual.mesh_resolved_path.isEmpty() ? "<unresolved>" : visual.mesh_resolved_path)
               .arg(visual.mesh_scale_x)
               .arg(visual.mesh_scale_y)
               .arg(visual.mesh_scale_z)
-              .arg(QString::fromStdString(robot_model_renderer_backend_)));
+              .arg(QString::fromStdString(robot_model_renderer_backend_)).toStdString().c_str());
+          }
         }
       }
     });
@@ -885,57 +957,56 @@ void RosWorker::emit_robot_visual_diagnostics_once(
 {
   int mesh_visual_count = 0;
   int opengl_mesh_candidate_count = 0;
+  int proxy_visual_count = 0;
   for (const auto &visual : visuals) {
-    if (visual.type != RobotGeometryType::Mesh) {
-      continue;
+    if (visual.proxy_visual) {
+      ++proxy_visual_count;
     }
-    ++mesh_visual_count;
-    if (
-      visual.mesh_enabled &&
-      visual.mesh_render_mode == "opengl" &&
-      !visual.mesh_resolved_path.isEmpty())
-    {
+    if (is_urdf_mesh_visual(visual)) {
+      ++mesh_visual_count;
+    }
+    if (is_accepted_opengl_mesh_visual(visual)) {
       ++opengl_mesh_candidate_count;
     }
   }
 
-  const QString summary_key = QString("robot_visual_summary:%1:%2:%3:%4")
+  const QString summary_key = QString("robot_visual_summary:%1:%2:%3:%4:%5")
     .arg(reason)
     .arg(visuals.size())
     .arg(mesh_visual_count)
+    .arg(proxy_visual_count)
     .arg(opengl_mesh_candidate_count);
   if (!diagnostic_event_cache_.contains(summary_key)) {
     diagnostic_event_cache_.insert(summary_key);
     RCLCPP_INFO(
       node_->get_logger(),
       "%s",
-      QString("RobotVisual build diagnostics (%1): total=%2, mesh visual count=%3, opengl mesh candidate count=%4")
+      QString("RobotVisual build diagnostics (%1): total=%2, urdf_mesh_visuals=%3, proxy_visuals=%4, accepted_opengl_meshes=%5")
         .arg(reason)
         .arg(visuals.size())
         .arg(mesh_visual_count)
+        .arg(proxy_visual_count)
         .arg(opengl_mesh_candidate_count).toStdString().c_str());
   }
 
   for (const auto &visual : visuals) {
-    if (visual.type != RobotGeometryType::Mesh) {
+    if (!is_urdf_mesh_visual(visual)) {
       continue;
     }
-    const bool opengl_mesh_visual = visual.mesh_enabled && visual.mesh_render_mode == "opengl";
-    if (!opengl_mesh_visual) {
-      continue;
-    }
-    if (visual.mesh_filename.isEmpty()) {
-      continue;
-    }
-    if (visual.mesh_resolved_path.isEmpty()) {
-      const QString key = QString("mesh_unresolved:%1:%2").arg(visual.frame_id, visual.mesh_filename);
+    const QString skip_reason = opengl_candidate_skip_reason(visual);
+    if (!skip_reason.isEmpty()) {
+      const QString key = QString("mesh_skipped:%1:%2:%3")
+        .arg(visual.frame_id, visual.mesh_filename, skip_reason);
       if (!diagnostic_event_cache_.contains(key)) {
         diagnostic_event_cache_.insert(key);
-        RCLCPP_WARN(
+        RCLCPP_INFO(
           node_->get_logger(),
           "%s",
-          QString("Mesh skipped: unresolved URI, frame=%1, uri=%2")
-            .arg(visual.frame_id, visual.mesh_filename).toStdString().c_str());
+          QString("OpenGL mesh candidate skipped: frame=%1, uri=%2, resolved=%3, reason=%4")
+            .arg(visual.frame_id)
+            .arg(visual.mesh_filename)
+            .arg(visual.mesh_resolved_path.isEmpty() ? QString("<empty>") : visual.mesh_resolved_path)
+            .arg(skip_reason).toStdString().c_str());
       }
       continue;
     }
@@ -946,7 +1017,7 @@ void RosWorker::emit_robot_visual_diagnostics_once(
       QString("RobotVisual %1").arg(visual.frame_id),
       visual.mesh_filename,
       visual.mesh_resolved_path);
-    const bool accepted_for_opengl = !visual.mesh_resolved_path.isEmpty();
+    const bool accepted_for_opengl = true;
     const QString key = QString("robot_visual_mesh:%1:%2:%3:%4:%5")
       .arg(visual.frame_id)
       .arg(visual.mesh_filename)
@@ -1581,10 +1652,26 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
       visual.frame_id = frame_id;
       visual.pose = pose;
       visual.valid = true;
-      visual.type = RobotGeometryType::Mesh;
-      visual.mesh_filename = frame_id;
-      visual.mesh_enabled = enable_robot_meshes_ && robot_renderer_loads_mesh_files_ && !mesh_load_async_;
-      visual.mesh_render_mode = QString::fromStdString(robot_mesh_render_mode_);
+      visual.proxy_visual = true;
+      visual.mesh_enabled = false;
+      visual.mesh_render_mode = "proxy";
+      if (is_wheel) {
+        visual.type = RobotGeometryType::Cylinder;
+        visual.radius = 0.033;
+        visual.length = 0.018;
+      } else if (is_scan) {
+        visual.type = RobotGeometryType::Cylinder;
+        visual.radius = 0.055;
+        visual.length = 0.0315;
+      } else if (is_caster) {
+        visual.type = RobotGeometryType::Sphere;
+        visual.radius = 0.025;
+      } else {
+        visual.type = RobotGeometryType::Box;
+        visual.size_x = 0.14;
+        visual.size_y = 0.14;
+        visual.size_z = 0.05;
+      }
       visual.robot_opengl_debug_camera = robot_opengl_debug_camera_;
       visual.robot_opengl_debug_axes = robot_opengl_debug_axes_;
       visual.robot_opengl_debug_cube = robot_opengl_debug_cube_;

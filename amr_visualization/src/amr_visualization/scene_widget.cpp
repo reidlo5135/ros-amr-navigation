@@ -246,10 +246,18 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
   }
 
   int mesh_visuals = 0;
+  int proxy_visuals = 0;
   int opengl_mesh_candidates = 0;
   QString mesh_render_mode = "proxy";
   for (const auto &visual : robot_visuals_) {
-    if (visual.type != RobotGeometryType::Mesh) {
+    if (visual.proxy_visual) {
+      ++proxy_visuals;
+    }
+    if (
+      visual.type != RobotGeometryType::Mesh ||
+      visual.proxy_visual ||
+      visual.mesh_filename.isEmpty())
+    {
       continue;
     }
     ++mesh_visuals;
@@ -272,17 +280,19 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
         ++loaded_meshes;
       }
     }
-    const QString summary_key = QString("mesh_summary:%1:%2:%3:%4")
+    const QString summary_key = QString("mesh_summary:%1:%2:%3:%4:%5")
       .arg(mesh_render_mode)
       .arg(mesh_visuals)
+      .arg(proxy_visuals)
       .arg(loaded_meshes)
       .arg(rejected_meshes);
     if (!diagnostic_event_cache_.contains(summary_key)) {
       diagnostic_event_cache_.insert(summary_key);
       qCInfo(amrVizSceneMeshLog).noquote() <<
-        QString("Robot description mesh render summary: backend=%1, visual elements=%2, loaded meshes=%3, rejected meshes=%4")
+        QString("Robot description mesh render summary: backend=%1, urdf_mesh_visuals=%2, proxy_visuals=%3, loaded meshes=%4, rejected meshes=%5")
           .arg(mesh_render_mode)
           .arg(mesh_visuals)
+          .arg(proxy_visuals)
           .arg(loaded_meshes)
           .arg(rejected_meshes);
     }
@@ -295,7 +305,7 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
   if (!diagnostic_event_cache_.contains("set_robot_model_first")) {
     diagnostic_event_cache_.insert("set_robot_model_first");
     qCDebug(amrVizSceneMeshLog).noquote() <<
-      QString("setRobotModel elapsed: %1 ms (%2 visual(s))").arg(elapsed_ms).arg(robot_visuals_.size()));
+      QString("setRobotModel elapsed: %1 ms (%2 visual(s))").arg(elapsed_ms).arg(robot_visuals_.size());
   } else if (elapsed_ms > 33 && !diagnostic_event_cache_.contains("set_robot_model_slow_33")) {
     diagnostic_event_cache_.insert("set_robot_model_slow_33");
     qCWarning(amrVizSceneMeshLog).noquote() << QString("setRobotModel slow: %1 ms (>33 ms)").arg(elapsed_ms);
@@ -1420,6 +1430,7 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
     file.seek(80);
     QDataStream stream(&file);
     stream.setByteOrder(QDataStream::LittleEndian);
+    stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
     quint32 triangle_count = 0;
     stream >> triangle_count;
     const qint64 expected_size = 84 + (static_cast<qint64>(triangle_count) * 50);

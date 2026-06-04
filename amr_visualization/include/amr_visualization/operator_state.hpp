@@ -70,6 +70,7 @@ struct RobotVisual
   bool robot_opengl_stl_only_debug{false};
   bool robot_opengl_debug_mesh_bbox{false};
   double robot_opengl_debug_size_m{0.20};
+  bool proxy_visual{false};
   bool valid{false};
 };
 

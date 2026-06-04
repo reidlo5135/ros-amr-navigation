@@ -65,6 +65,10 @@ private:
     QOpenGLVertexArrayObject vao;
     QString error;
     QString source_path;
+    QVector3D raw_min_bounds;
+    QVector3D raw_max_bounds;
+    QVector3D raw_extent;
+    double raw_diagonal{0.0};
     QVector3D min_bounds;
     QVector3D max_bounds;
     QVector3D extent;
@@ -75,6 +79,12 @@ private:
     QString validation_status{"pending"};
     QString upload_status{"pending"};
     QString draw_status{"pending"};
+    bool validation_finite_coordinates{true};
+    bool validation_coordinate_in_range{true};
+    bool validation_scale_applied{false};
+    bool model_matrix_applies_scale{true};
+    double validation_max_abs_coordinate{0.0};
+    double validation_max_extent{0.0};
     quint32 source_triangle_count{0};
     quint32 loaded_triangle_count{0};
     int draw_call_count{0};
@@ -138,6 +148,7 @@ private:
   QString meshBoundsText(const GpuMesh &mesh) const;
 
   QVector<RobotVisual> visuals_;
+  QVector<RobotVisual> incoming_visuals_;
   std::map<QString, std::unique_ptr<GpuMesh>> mesh_cache_;
   std::map<QString, QString> file_probe_text_cache_;
   QSet<QString> warning_cache_;
@@ -171,7 +182,9 @@ private:
   int last_rendered_stl_triangles_{0};
   GLenum last_draw_error_code_{GL_NO_ERROR};
   int last_received_visual_count_{0};
-  int last_received_mesh_visual_count_{0};
+  int last_received_urdf_mesh_visual_count_{0};
+  int last_received_proxy_visual_count_{0};
+  int last_resolved_mesh_visual_count_{0};
   QVector3D focal_point_{0.0F, 0.0F, 0.0F};
   double camera_yaw_{0.0};
   double camera_pitch_{1.5707963267948966};
