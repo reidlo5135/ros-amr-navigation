@@ -17,6 +17,8 @@
 namespace amr::visualization
 {
 
+class RobotOpenGLWidget;
+
 class SceneWidget : public QWidget
 {
   Q_OBJECT
@@ -107,6 +109,7 @@ private:
   void centerViewOnRobot();
   void updateCameraControlsGeometry();
   void updateCameraControlState();
+  void syncOpenGLRobotViewport();
   QToolButton *makeCameraButton(
     const QIcon &icon,
     const QString &text,
@@ -136,6 +139,7 @@ private:
   void drawBurgerBaseProxy3D(QPainter &painter, const Pose2D &pose) const;
   void drawWheelProxy3D(QPainter &painter, const Pose2D &pose, const QColor &color) const;
   bool drawMesh3D(QPainter &painter, const RobotVisual &visual, const QColor &color);
+  bool isOpenGLMeshRendered(const RobotVisual &visual) const;
   const MeshCacheEntry *meshForVisual(const RobotVisual &visual);
   bool loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry);
   bool validateMeshEntry(const RobotVisual &visual, MeshCacheEntry &entry);
@@ -187,6 +191,7 @@ private:
   bool setting_aim_heading_{false};
   QPoint last_mouse_position_;
   QWidget *camera_controls_{nullptr};
+  RobotOpenGLWidget *robot_open_gl_widget_{nullptr};
   QToolButton *follow_robot_button_{nullptr};
   QToolButton *reset_view_button_{nullptr};
   QHash<QString, MeshCacheEntry> mesh_cache_;

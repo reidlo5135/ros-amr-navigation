@@ -29,11 +29,10 @@ Key parameters:
 - `robot_mesh_auto_unit_scale`: default `false`
 - `robot_mesh_unit_scale`: default `1.0`
 
-Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and
-`robot_model_renderer_backend:=qpainter_wireframe`. The `proxy` backend does not load or draw STL
-triangles. The `opengl` backend is reserved for the RViz-like renderer and currently falls back to
-proxy with a clear event log. If `mesh_load_async:=true` is requested, mesh file loading is disabled
-for safety because no asynchronous loader is currently implemented.
+Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and either
+`robot_model_renderer_backend:=opengl` or `robot_model_renderer_backend:=qpainter_wireframe`.
+The `proxy` backend does not load or draw STL triangles. If `mesh_load_async:=true` is requested,
+mesh file loading is disabled for safety because no asynchronous loader is currently implemented.
 
 ## Renderer backend notes
 
@@ -41,15 +40,16 @@ Current backends:
 
 - `proxy`: stable fallback primitives/proxies; this is not RViz-equivalent mesh rendering.
 - `qpainter_wireframe`: bounded STL loading plus guarded wireframe drawing for diagnostics.
-- `opengl`: reserved backend name; currently logs that OpenGL is not implemented and renders proxy.
+- `opengl`: `QOpenGLWidget` overlay that renders URDF STL visuals as shaded solid geometry.
 
-OpenGL backend design target:
+OpenGL backend notes:
 
-- Use a `QOpenGLWidget`-based renderer overlaid with the existing Qt Widgets scene.
-- Load mesh vertices once, upload vertex/index buffers once, and update only per-link transforms.
-- Use OpenGL depth testing, view/projection matrices, and GPU clipping instead of raw `QPainter`
+- Uses a `QOpenGLWidget`-based renderer overlaid with the existing Qt Widgets scene.
+- Loads mesh vertices once, uploads vertex/index buffers once, and updates per-link transforms.
+- Uses OpenGL depth testing, view/projection matrices, and GPU clipping instead of raw `QPainter`
   triangle fills.
-- Keep map/costmap/scan/path/waypoint rendering in `SceneWidget`.
+- Keeps map/costmap/scan/path/waypoint rendering in `SceneWidget`.
+- Falls back to proxy visuals when a mesh cannot be loaded or validated.
 
 ## Runtime isolation recipes
 

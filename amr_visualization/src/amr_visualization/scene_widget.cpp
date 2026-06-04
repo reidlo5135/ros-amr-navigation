@@ -1,5 +1,7 @@
 #include "amr_visualization/scene_widget.hpp"
 
+#include "amr_visualization/robot_open_gl_widget.hpp"
+
 #include <QByteArray>
 #include <QDataStream>
 #include <QFile>
@@ -91,6 +93,14 @@ SceneWidget::SceneWidget(QWidget *parent)
   setMouseTracking(true);
   setMinimumSize(640, 480);
 
+  robot_open_gl_widget_ = new RobotOpenGLWidget(this);
+  connect(
+    robot_open_gl_widget_,
+    &RobotOpenGLWidget::visualizationEvent,
+    this,
+    &SceneWidget::visualizationEvent,
+    Qt::QueuedConnection);
+
   camera_controls_ = new QWidget(this);
   camera_controls_->setObjectName("cameraControls");
   auto *controls_layout = new QHBoxLayout(camera_controls_);
@@ -107,6 +117,7 @@ SceneWidget::SceneWidget(QWidget *parent)
   connect(follow_robot_button_, &QToolButton::toggled, this, &SceneWidget::setFollowRobotEnabled);
   connect(reset_view_button_, &QToolButton::clicked, this, &SceneWidget::resetView);
   updateCameraControlState();
+  syncOpenGLRobotViewport();
   updateCameraControlsGeometry();
 }
 
@@ -139,6 +150,7 @@ void SceneWidget::resetView()
   camera_distance_ = 8.0;
   follow_robot_ = false;
   updateCameraControlState();
+  syncOpenGLRobotViewport();
   update();
 }
 
@@ -165,7 +177,7 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
     if (
       visual.type == RobotGeometryType::Mesh &&
       visual.mesh_enabled &&
-      visual.mesh_render_mode != "proxy" &&
+      visual.mesh_render_mode == "wireframe" &&
       !visual.mesh_resolved_path.isEmpty())
     {
       active_mesh_paths.insert(visual.mesh_resolved_path);
@@ -189,6 +201,9 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
         diagnostic_event_cache_.insert("mesh_loading_disabled");
         Q_EMIT visualizationEvent("Robot mesh triangle rendering disabled; rendering proxy visuals");
       }
+      continue;
+    }
+    if (visual.mesh_render_mode != "wireframe") {
       continue;
     }
     if (visual.mesh_resolved_path.isEmpty()) {
@@ -225,6 +240,10 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
           .arg(visual.frame_id)
           .arg(visual.mesh_render_mode));
     }
+  }
+  if (robot_open_gl_widget_) {
+    robot_open_gl_widget_->setRobotVisuals(robot_visuals_);
+    syncOpenGLRobotViewport();
   }
   const qint64 elapsed_ms = set_timer.elapsed();
   if (!diagnostic_event_cache_.contains("set_robot_model_first")) {
@@ -267,6 +286,7 @@ void SceneWidget::setRobotPose(const Pose2D &pose)
   if (follow_robot_) {
     centerViewOnRobot();
   }
+  syncOpenGLRobotViewport();
   update();
 }
 
@@ -287,7 +307,7 @@ void SceneWidget::setMapVisible(bool visible) { show_map_ = visible; update(); }
 void SceneWidget::setGlobalCostmapVisible(bool visible) { show_global_costmap_ = visible; update(); }
 void SceneWidget::setLocalCostmapVisible(bool visible) { show_local_costmap_ = visible; update(); }
 void SceneWidget::setFootprintVisible(bool visible) { show_footprint_ = visible; update(); }
-void SceneWidget::setRobotVisible(bool visible) { show_robot_ = visible; update(); }
+void SceneWidget::setRobotVisible(bool visible) { show_robot_ = visible; syncOpenGLRobotViewport(); update(); }
 void SceneWidget::setTfVisible(bool visible) { show_tf_ = visible; update(); }
 void SceneWidget::setScanVisible(bool visible) { show_scan_ = visible; update(); }
 void SceneWidget::setGlobalPathVisible(bool visible) { show_global_path_ = visible; update(); }
@@ -491,6 +511,7 @@ void SceneWidget::mouseMoveEvent(QMouseEvent *event)
       k_min_camera_pitch,
       k_max_camera_pitch);
     last_mouse_position_ = event->pos();
+    syncOpenGLRobotViewport();
     update();
     return;
   }
@@ -509,6 +530,7 @@ void SceneWidget::mouseMoveEvent(QMouseEvent *event)
   const QPoint delta = event->pos() - last_mouse_position_;
   panCameraByPixels(delta);
   last_mouse_position_ = event->pos();
+  syncOpenGLRobotViewport();
   update();
 }
 
@@ -544,15 +566,18 @@ void SceneWidget::wheelEvent(QWheelEvent *event)
   if (follow_robot_) {
     centerViewOnRobot();
   }
+  syncOpenGLRobotViewport();
   update();
 }
 
 void SceneWidget::resizeEvent(QResizeEvent *event)
 {
   QWidget::resizeEvent(event);
+  syncOpenGLRobotViewport();
   updateCameraControlsGeometry();
   if (follow_robot_) {
     centerViewOnRobot();
+    syncOpenGLRobotViewport();
   }
 }
 
@@ -656,6 +681,25 @@ void SceneWidget::updateCameraControlState()
     follow_robot_button_->blockSignals(true);
     follow_robot_button_->setChecked(follow_robot_);
     follow_robot_button_->blockSignals(false);
+  }
+}
+
+void SceneWidget::syncOpenGLRobotViewport()
+{
+  if (!robot_open_gl_widget_) {
+    return;
+  }
+  robot_open_gl_widget_->setGeometry(rect());
+  robot_open_gl_widget_->setCamera(
+    focal_point_,
+    camera_yaw_,
+    camera_pitch_,
+    camera_distance_,
+    scale_);
+  robot_open_gl_widget_->setVisible(show_robot_ && robot_open_gl_widget_->hasRenderableVisuals());
+  robot_open_gl_widget_->raise();
+  if (camera_controls_) {
+    camera_controls_->raise();
   }
 }
 
@@ -906,6 +950,9 @@ void SceneWidget::drawRobotModel(QPainter &painter)
 
   for (const auto &visual : ordered_visuals) {
     if (!visual.valid) {
+      continue;
+    }
+    if (isOpenGLMeshRendered(visual)) {
       continue;
     }
 
@@ -1254,6 +1301,12 @@ bool SceneWidget::drawMesh3D(
     }
   }
   return true;
+}
+
+bool SceneWidget::isOpenGLMeshRendered(const RobotVisual &visual) const
+{
+  return robot_open_gl_widget_ && robot_open_gl_widget_->isVisible() &&
+    robot_open_gl_widget_->hasRenderableMesh(visual);
 }
 
 const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual &visual)

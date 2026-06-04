@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>qt6-base-dev</depend>
+  <depend>libqt6opengl6-dev</depend>
   <depend>ament_index_cpp</depend>
   <depend>amr_msgs</depend>
   <depend>geometry_msgs</depend>

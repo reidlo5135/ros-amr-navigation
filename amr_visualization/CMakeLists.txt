@@ -15,7 +15,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL OpenGLWidgets Widgets)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -25,6 +25,7 @@ find_package(tf2_msgs REQUIRED)
 set(${PROJECT_NAME}_SOURCES
   include/amr_visualization/main_window.hpp
   include/amr_visualization/operator_state.hpp
+  include/amr_visualization/robot_open_gl_widget.hpp
   include/amr_visualization/robot_model_renderer.hpp
   include/amr_visualization/ros_worker.hpp
   include/amr_visualization/scene_widget.hpp
@@ -32,6 +33,7 @@ set(${PROJECT_NAME}_SOURCES
   src/main.cpp
   src/amr_visualization/main_window.cpp
   src/amr_visualization/operator_state.cpp
+  src/amr_visualization/robot_open_gl_widget.cpp
   src/amr_visualization/robot_model_renderer.cpp
   src/amr_visualization/ros_worker.cpp
   src/amr_visualization/scene_widget.cpp
@@ -61,6 +63,8 @@ ament_target_dependencies(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   Qt6::Core
   Qt6::Gui
+  Qt6::OpenGL
+  Qt6::OpenGLWidgets
   Qt6::Widgets
 )
 

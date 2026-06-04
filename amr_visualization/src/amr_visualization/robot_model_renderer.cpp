@@ -62,17 +62,17 @@ QString OpenGLRobotRenderer::backendName() const
 
 QString OpenGLRobotRenderer::meshRenderMode() const
 {
-  return "proxy";
+  return "opengl";
 }
 
 bool OpenGLRobotRenderer::loadsMeshFiles() const
 {
-  return false;
+  return true;
 }
 
 QString OpenGLRobotRenderer::statusMessage() const
 {
-  return "Robot renderer backend: opengl; Mesh backend disabled: OpenGL not implemented, rendering proxy";
+  return "Robot renderer backend: opengl; Mesh backend enabled: rendering shaded solid OpenGL";
 }
 
 }  // namespace amr::visualization
