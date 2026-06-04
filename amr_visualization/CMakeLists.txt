@@ -25,12 +25,14 @@ find_package(tf2_msgs REQUIRED)
 set(${PROJECT_NAME}_SOURCES
   include/amr_visualization/main_window.hpp
   include/amr_visualization/operator_state.hpp
+  include/amr_visualization/robot_model_renderer.hpp
   include/amr_visualization/ros_worker.hpp
   include/amr_visualization/scene_widget.hpp
   resources/resources.qrc
   src/main.cpp
   src/amr_visualization/main_window.cpp
   src/amr_visualization/operator_state.cpp
+  src/amr_visualization/robot_model_renderer.cpp
   src/amr_visualization/ros_worker.cpp
   src/amr_visualization/scene_widget.cpp
 )

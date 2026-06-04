@@ -1158,14 +1158,10 @@ bool SceneWidget::drawMesh3D(
     return false;
   }
 
-  QColor base_color = color;
-  base_color = QColor(24, 28, 32, 235);
-
   struct ProjectedFace
   {
     QPolygonF polygon;
     double depth{0.0};
-    QColor color;
   };
 
   const int triangle_count = static_cast<int>(mesh->triangles.size());
@@ -1173,7 +1169,6 @@ bool SceneWidget::drawMesh3D(
   const int stride = std::max(1, triangle_count / max_rendered_faces);
   QVector<ProjectedFace> faces;
   faces.reserve(std::min(triangle_count, max_rendered_faces));
-  const QVector3D light_direction = (-cameraForward() + QVector3D(0.15F, -0.25F, 0.35F)).normalized();
   const double max_projected_extent = std::max(visual.mesh_max_projected_extent_px, 1.0);
   const double max_area = max_projected_extent * max_projected_extent;
   const QRectF viewport(
@@ -1225,13 +1220,6 @@ bool SceneWidget::drawMesh3D(
       QVector3D::dotProduct(b - focal_point_, cameraForward()) +
       QVector3D::dotProduct(c - focal_point_, cameraForward())) / 3.0;
 
-    const double shade =
-      std::clamp(0.52 + (std::abs(QVector3D::dotProduct(normal, light_direction)) * 0.38), 0.35, 1.0);
-    face.color = QColor(
-      static_cast<int>(std::clamp(base_color.red() * shade, 0.0, 255.0)),
-      static_cast<int>(std::clamp(base_color.green() * shade, 0.0, 255.0)),
-      static_cast<int>(std::clamp(base_color.blue() * shade, 0.0, 255.0)),
-      base_color.alpha());
     faces.push_back(face);
   }
 
@@ -1241,7 +1229,9 @@ bool SceneWidget::drawMesh3D(
       return lhs.depth > rhs.depth;
     });
 
-  painter.setPen(QPen(QColor(8, 10, 12, 70), 0.6));
+  QColor edge_color = color;
+  edge_color.setAlpha(std::max(120, color.alpha()));
+  painter.setPen(QPen(edge_color, 0.8));
   if (faces.isEmpty()) {
     return false;
   }
@@ -1258,9 +1248,6 @@ bool SceneWidget::drawMesh3D(
   for (const auto &face : faces) {
     if (visual.mesh_render_mode == "wireframe") {
       painter.setBrush(Qt::NoBrush);
-      painter.drawPolygon(face.polygon);
-    } else if (visual.mesh_render_mode == "solid") {
-      painter.setBrush(face.color);
       painter.drawPolygon(face.polygon);
     } else {
       return false;

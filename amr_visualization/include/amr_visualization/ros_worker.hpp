@@ -162,6 +162,7 @@ private:
   bool enable_costmap_visualization_{true};
   bool mesh_load_async_{false};
   bool robot_mesh_auto_unit_scale_{false};
+  bool robot_renderer_loads_mesh_files_{false};
   int costmap_emit_period_ms_{1000};
   int tf_emit_period_ms_{100};
   int robot_model_emit_period_ms_{250};
@@ -174,6 +175,7 @@ private:
   double mesh_max_projected_extent_px_{3000.0};
   double robot_mesh_unit_scale_{1.0};
   std::string robot_mesh_render_mode_{"proxy"};
+  std::string robot_model_renderer_backend_{"proxy"};
   int max_grid_cells_{4000000};
   int max_scan_points_{1440};
   std::map<std::string, FrameVisual> dynamic_frames_;

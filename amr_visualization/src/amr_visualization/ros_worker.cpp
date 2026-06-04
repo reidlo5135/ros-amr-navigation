@@ -1,5 +1,7 @@
 #include "amr_visualization/ros_worker.hpp"
 
+#include "amr_visualization/robot_model_renderer.hpp"
+
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -331,16 +333,21 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("mesh_load_async", mesh_load_async_);
   robot_mesh_render_mode_ =
     node_->declare_parameter<std::string>("robot_mesh_render_mode", robot_mesh_render_mode_);
-  if (
-    robot_mesh_render_mode_ != "proxy" &&
-    robot_mesh_render_mode_ != "wireframe" &&
-    robot_mesh_render_mode_ != "solid")
-  {
+  robot_model_renderer_backend_ =
+    node_->declare_parameter<std::string>(
+      "robot_model_renderer_backend",
+      robot_model_renderer_backend_);
+  const QString requested_renderer_backend =
+    QString::fromStdString(robot_model_renderer_backend_).trimmed().toLower();
+  auto renderer = RobotModelRenderer::create(requested_renderer_backend);
+  if (renderer->backendName() != requested_renderer_backend) {
     Q_EMIT eventReceived(
-      QString("Invalid robot_mesh_render_mode '%1'; falling back to proxy")
-        .arg(QString::fromStdString(robot_mesh_render_mode_)));
-    robot_mesh_render_mode_ = "proxy";
+      QString("Invalid robot_model_renderer_backend '%1'; falling back to %2")
+        .arg(QString::fromStdString(robot_model_renderer_backend_), renderer->backendName()));
   }
+  robot_model_renderer_backend_ = renderer->backendName().toStdString();
+  robot_mesh_render_mode_ = renderer->meshRenderMode().toStdString();
+  robot_renderer_loads_mesh_files_ = renderer->loadsMeshFiles();
   robot_mesh_auto_unit_scale_ =
     node_->declare_parameter<bool>("robot_mesh_auto_unit_scale", robot_mesh_auto_unit_scale_);
   costmap_emit_period_ms_ =
@@ -385,6 +392,18 @@ void RosWorker::configure_ros_interfaces()
       .arg(enable_robot_meshes_ ? "enabled" : "disabled")
       .arg(QString::fromStdString(robot_mesh_render_mode_))
       .arg(mesh_load_async_ ? "requested" : "disabled"));
+  Q_EMIT eventReceived(renderer->statusMessage());
+  Q_EMIT eventReceived(
+    QString(
+      "Build/runtime feature summary: enable_robot_model=%1, enable_robot_meshes=%2, "
+      "robot_mesh_render_mode=%3, mesh_max_loaded_triangles=%4, "
+      "mesh_max_rendered_faces=%5, renderer_backend=%6")
+      .arg(enable_robot_model_ ? "true" : "false")
+      .arg(enable_robot_meshes_ ? "true" : "false")
+      .arg(QString::fromStdString(robot_mesh_render_mode_))
+      .arg(mesh_max_loaded_triangles_)
+      .arg(mesh_max_rendered_faces_)
+      .arg(QString::fromStdString(robot_model_renderer_backend_)));
   if (mesh_load_async_) {
     Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
   }
@@ -508,6 +527,27 @@ void RosWorker::configure_ros_interfaces()
           .arg(static_cast<int>(robot_joints_.size()))
           .arg(robot_description_visuals_.size())
           .arg(mesh_visuals));
+      if (mesh_visuals == 0) {
+        emit_diagnostic_once(
+          "robot_description_no_mesh_visuals",
+          "Robot description has no mesh visual elements");
+      } else {
+        for (const auto &visual : robot_description_visuals_) {
+          if (visual.type != RobotGeometryType::Mesh) {
+            continue;
+          }
+          const QString key = "mesh_visual:" + visual.frame_id + ":" + visual.mesh_filename;
+          emit_diagnostic_once(
+            key,
+            QString("Mesh visual: frame=%1, uri=%2, resolved=%3, scale=%4 %5 %6")
+              .arg(visual.frame_id)
+              .arg(visual.mesh_filename)
+              .arg(visual.mesh_resolved_path.isEmpty() ? "<unresolved>" : visual.mesh_resolved_path)
+              .arg(visual.mesh_scale_x)
+              .arg(visual.mesh_scale_y)
+              .arg(visual.mesh_scale_z));
+        }
+      }
     });
   tf_subscription_ = node_->create_subscription<tf2_msgs::msg::TFMessage>(
     tf_topic_, live_qos, [this](const tf2_msgs::msg::TFMessage::SharedPtr message) {
@@ -1092,7 +1132,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     }
 
     RobotVisual visual = source_visual;
-    visual.mesh_enabled = enable_robot_meshes_ && !mesh_load_async_;
+    visual.mesh_enabled = enable_robot_meshes_ && robot_renderer_loads_mesh_files_ && !mesh_load_async_;
     visual.mesh_render_mode = QString::fromStdString(robot_mesh_render_mode_);
     visual.mesh_max_loaded_triangles = std::max(mesh_max_loaded_triangles_, 1);
     visual.mesh_max_rendered_faces = std::max(mesh_max_rendered_faces_, 1);

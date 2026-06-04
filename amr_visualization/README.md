@@ -18,7 +18,8 @@ Key parameters:
 - `tf_emit_period_ms`: default `100`
 - `scan_emit_period_ms`: default `100`
 - `mesh_load_async`: default `false`
-- `robot_mesh_render_mode`: default `proxy`, allowed `proxy`, `wireframe`, `solid`
+- `robot_model_renderer_backend`: default `proxy`, allowed `proxy`, `qpainter_wireframe`, `opengl`
+- `robot_mesh_render_mode`: internal render mode derived from the backend
 - `mesh_max_loaded_triangles`: default `5000`
 - `mesh_max_rendered_faces`: default `500`
 - `mesh_max_file_size_mb`: default `64`
@@ -29,9 +30,26 @@ Key parameters:
 - `robot_mesh_unit_scale`: default `1.0`
 
 Detailed STL rendering is opt-in with `enable_robot_meshes:=true` and
-`robot_mesh_render_mode:=wireframe` or `solid`. The `proxy` mode does not load or draw STL
-triangles. If `mesh_load_async:=true` is requested, mesh file loading is disabled for safety because
-no asynchronous loader is currently implemented.
+`robot_model_renderer_backend:=qpainter_wireframe`. The `proxy` backend does not load or draw STL
+triangles. The `opengl` backend is reserved for the RViz-like renderer and currently falls back to
+proxy with a clear event log. If `mesh_load_async:=true` is requested, mesh file loading is disabled
+for safety because no asynchronous loader is currently implemented.
+
+## Renderer backend notes
+
+Current backends:
+
+- `proxy`: stable fallback primitives/proxies; this is not RViz-equivalent mesh rendering.
+- `qpainter_wireframe`: bounded STL loading plus guarded wireframe drawing for diagnostics.
+- `opengl`: reserved backend name; currently logs that OpenGL is not implemented and renders proxy.
+
+OpenGL backend design target:
+
+- Use a `QOpenGLWidget`-based renderer overlaid with the existing Qt Widgets scene.
+- Load mesh vertices once, upload vertex/index buffers once, and update only per-link transforms.
+- Use OpenGL depth testing, view/projection matrices, and GPU clipping instead of raw `QPainter`
+  triangle fills.
+- Keep map/costmap/scan/path/waypoint rendering in `SceneWidget`.
 
 ## Runtime isolation recipes
 
@@ -84,7 +102,7 @@ Mesh opt-in stress test:
 ros2 run amr_visualization amr_visualization --ros-args \
   -p enable_robot_model:=true \
   -p enable_robot_meshes:=true \
-  -p robot_mesh_render_mode:=wireframe \
+  -p robot_model_renderer_backend:=qpainter_wireframe \
   -p mesh_max_loaded_triangles:=1000 \
   -p mesh_max_rendered_faces:=200
 ```
@@ -100,7 +118,7 @@ Mesh proxy mode:
 ```bash
 ros2 run amr_visualization amr_visualization --ros-args \
   -p enable_robot_meshes:=true \
-  -p robot_mesh_render_mode:=proxy
+  -p robot_model_renderer_backend:=proxy
 ```
 
 Mesh wireframe debug:
@@ -108,19 +126,17 @@ Mesh wireframe debug:
 ```bash
 ros2 run amr_visualization amr_visualization --ros-args \
   -p enable_robot_meshes:=true \
-  -p robot_mesh_render_mode:=wireframe \
+  -p robot_model_renderer_backend:=qpainter_wireframe \
   -p mesh_max_loaded_triangles:=1000 \
   -p mesh_max_rendered_faces:=200
 ```
 
-Solid mode after wireframe is stable:
+OpenGL target:
 
 ```bash
 ros2 run amr_visualization amr_visualization --ros-args \
   -p enable_robot_meshes:=true \
-  -p robot_mesh_render_mode:=solid \
-  -p mesh_max_loaded_triangles:=1000 \
-  -p mesh_max_rendered_faces:=200
+  -p robot_model_renderer_backend:=opengl
 ```
 
 ## Crash backtrace
