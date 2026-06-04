@@ -120,7 +120,6 @@ def generate_launch_description() -> LaunchDescription:
                 period=bringup_delay_sec,
                 actions=[
                     localization_launch,
-                    mqtt_server_launch,
                 ],
                 condition=UnlessCondition(navigation_only),
             ),
