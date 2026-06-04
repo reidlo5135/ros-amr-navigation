@@ -329,6 +329,20 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("enable_costmap_visualization", enable_costmap_visualization_);
   mesh_load_async_ =
     node_->declare_parameter<bool>("mesh_load_async", mesh_load_async_);
+  robot_mesh_render_mode_ =
+    node_->declare_parameter<std::string>("robot_mesh_render_mode", robot_mesh_render_mode_);
+  if (
+    robot_mesh_render_mode_ != "proxy" &&
+    robot_mesh_render_mode_ != "wireframe" &&
+    robot_mesh_render_mode_ != "solid")
+  {
+    Q_EMIT eventReceived(
+      QString("Invalid robot_mesh_render_mode '%1'; falling back to proxy")
+        .arg(QString::fromStdString(robot_mesh_render_mode_)));
+    robot_mesh_render_mode_ = "proxy";
+  }
+  robot_mesh_auto_unit_scale_ =
+    node_->declare_parameter<bool>("robot_mesh_auto_unit_scale", robot_mesh_auto_unit_scale_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
   tf_emit_period_ms_ =
@@ -343,6 +357,14 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<int>("mesh_max_rendered_faces", mesh_max_rendered_faces_);
   mesh_max_file_size_mb_ =
     node_->declare_parameter<int>("mesh_max_file_size_mb", mesh_max_file_size_mb_);
+  mesh_max_extent_m_ =
+    node_->declare_parameter<double>("mesh_max_extent_m", mesh_max_extent_m_);
+  mesh_max_abs_coordinate_m_ =
+    node_->declare_parameter<double>("mesh_max_abs_coordinate_m", mesh_max_abs_coordinate_m_);
+  mesh_max_projected_extent_px_ =
+    node_->declare_parameter<double>("mesh_max_projected_extent_px", mesh_max_projected_extent_px_);
+  robot_mesh_unit_scale_ =
+    node_->declare_parameter<double>("robot_mesh_unit_scale", robot_mesh_unit_scale_);
   max_grid_cells_ =
     node_->declare_parameter<int>("max_grid_cells", max_grid_cells_);
   max_scan_points_ =
@@ -358,9 +380,10 @@ void RosWorker::configure_ros_interfaces()
       .arg(mesh_max_rendered_faces_)
       .arg(mesh_max_file_size_mb_));
   Q_EMIT eventReceived(
-    QString("Safe mode: robot model %1, robot meshes %2, mesh async %3")
+    QString("Safe mode: robot model %1, robot meshes %2, mesh render mode %3, mesh async %4")
       .arg(enable_robot_model_ ? "enabled" : "disabled")
       .arg(enable_robot_meshes_ ? "enabled" : "disabled")
+      .arg(QString::fromStdString(robot_mesh_render_mode_))
       .arg(mesh_load_async_ ? "requested" : "disabled"));
   if (mesh_load_async_) {
     Q_EMIT eventReceived("mesh_load_async is not implemented yet; disabling mesh file loading for safety");
@@ -512,6 +535,18 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool 
     is_static ? "First tf_static received" : "First tf received");
   auto &storage = is_static ? static_frames_ : dynamic_frames_;
   for (const auto &transform : message.transforms) {
+    if (
+      !std::isfinite(transform.transform.translation.x) ||
+      !std::isfinite(transform.transform.translation.y) ||
+      !std::isfinite(transform.transform.translation.z) ||
+      !std::isfinite(transform.transform.rotation.x) ||
+      !std::isfinite(transform.transform.rotation.y) ||
+      !std::isfinite(transform.transform.rotation.z) ||
+      !std::isfinite(transform.transform.rotation.w))
+    {
+      emit_diagnostic_once("invalid_tf_transform", "Invalid TF transform ignored: non-finite value");
+      continue;
+    }
     FrameVisual frame;
     frame.parent_frame = QString::fromStdString(transform.header.frame_id);
     frame.child_frame = QString::fromStdString(transform.child_frame_id);
@@ -1058,9 +1093,15 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
 
     RobotVisual visual = source_visual;
     visual.mesh_enabled = enable_robot_meshes_ && !mesh_load_async_;
+    visual.mesh_render_mode = QString::fromStdString(robot_mesh_render_mode_);
     visual.mesh_max_loaded_triangles = std::max(mesh_max_loaded_triangles_, 1);
     visual.mesh_max_rendered_faces = std::max(mesh_max_rendered_faces_, 1);
     visual.mesh_max_file_size_mb = std::max(mesh_max_file_size_mb_, 1);
+    visual.mesh_max_extent_m = std::max(mesh_max_extent_m_, 0.001);
+    visual.mesh_max_abs_coordinate_m = std::max(mesh_max_abs_coordinate_m_, 0.001);
+    visual.mesh_max_projected_extent_px = std::max(mesh_max_projected_extent_px_, 1.0);
+    visual.mesh_auto_unit_scale = robot_mesh_auto_unit_scale_;
+    visual.mesh_unit_scale = std::max(robot_mesh_unit_scale_, 0.000001);
     visual.pose = compose_pose(frame_pose, source_visual.pose);
     visual.valid = visual.pose.valid;
     visuals.push_back(visual);

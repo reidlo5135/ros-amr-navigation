@@ -54,9 +54,15 @@ struct RobotVisual
   double mesh_scale_y{1.0};
   double mesh_scale_z{1.0};
   bool mesh_enabled{false};
+  QString mesh_render_mode{"proxy"};
   int mesh_max_loaded_triangles{5000};
   int mesh_max_rendered_faces{500};
   int mesh_max_file_size_mb{64};
+  double mesh_max_extent_m{2.0};
+  double mesh_max_abs_coordinate_m{5.0};
+  double mesh_max_projected_extent_px{3000.0};
+  bool mesh_auto_unit_scale{false};
+  double mesh_unit_scale{1.0};
   bool valid{false};
 };
 

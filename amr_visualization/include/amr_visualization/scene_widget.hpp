@@ -88,8 +88,13 @@ private:
   struct MeshCacheEntry
   {
     bool attempted{false};
+    bool rejected{false};
     QVector<MeshTriangle> triangles;
     QString error;
+    QVector3D min_bounds;
+    QVector3D max_bounds;
+    QVector3D extent;
+    double diagonal{0.0};
   };
 
   QPointF worldToScreen(const QPointF &point) const;
@@ -133,6 +138,8 @@ private:
   bool drawMesh3D(QPainter &painter, const RobotVisual &visual, const QColor &color);
   const MeshCacheEntry *meshForVisual(const RobotVisual &visual);
   bool loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry);
+  bool validateMeshEntry(const RobotVisual &visual, MeshCacheEntry &entry);
+  QString meshBoundsText(const MeshCacheEntry &entry) const;
   QVector3D meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const;
   void drawTfFrames(QPainter &painter) const;
   void drawTfChainLine(QPainter &painter, const Pose2D &from, const Pose2D &to) const;

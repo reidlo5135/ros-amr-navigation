@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPolygonF>
+#include <QRectF>
 #include <QResizeEvent>
 #include <QStyle>
 #include <QTransform>
@@ -16,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace amr::visualization
 {
@@ -27,6 +29,23 @@ QColor with_alpha(QColor color, int alpha)
 {
   color.setAlpha(alpha);
   return color;
+}
+
+bool finite_vector(const QVector3D &point)
+{
+  return std::isfinite(point.x()) && std::isfinite(point.y()) && std::isfinite(point.z());
+}
+
+bool finite_point(const QPointF &point)
+{
+  return std::isfinite(point.x()) && std::isfinite(point.y());
+}
+
+double triangle_area(const QPointF &a, const QPointF &b, const QPointF &c)
+{
+  return std::abs(
+    ((b.x() - a.x()) * (c.y() - a.y())) -
+    ((b.y() - a.y()) * (c.x() - a.x()))) * 0.5;
 }
 
 constexpr int k_rviz_background = 48;
@@ -143,7 +162,12 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
   robot_visuals_ = visuals;
   QSet<QString> active_mesh_paths;
   for (const auto &visual : robot_visuals_) {
-    if (visual.type == RobotGeometryType::Mesh && !visual.mesh_resolved_path.isEmpty()) {
+    if (
+      visual.type == RobotGeometryType::Mesh &&
+      visual.mesh_enabled &&
+      visual.mesh_render_mode != "proxy" &&
+      !visual.mesh_resolved_path.isEmpty())
+    {
       active_mesh_paths.insert(visual.mesh_resolved_path);
     }
   }
@@ -160,10 +184,10 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
     if (visual.type != RobotGeometryType::Mesh) {
       continue;
     }
-    if (!visual.mesh_enabled) {
+    if (!visual.mesh_enabled || visual.mesh_render_mode == "proxy") {
       if (!diagnostic_event_cache_.contains("mesh_loading_disabled")) {
         diagnostic_event_cache_.insert("mesh_loading_disabled");
-        Q_EMIT visualizationEvent("Robot mesh loading disabled; rendering proxy visuals");
+        Q_EMIT visualizationEvent("Robot mesh triangle rendering disabled; rendering proxy visuals");
       }
       continue;
     }
@@ -191,9 +215,15 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
     if (!mesh_success_cache_.contains(visual.mesh_resolved_path)) {
       mesh_success_cache_.insert(visual.mesh_resolved_path);
       Q_EMIT visualizationEvent(
-        QString("Robot mesh loaded: %1 (%2 triangle(s))")
+        QString("Robot mesh loaded: %1 (%2 triangle(s), bbox=%3, scale=%4 %5 %6, frame=%7, mode=%8)")
           .arg(visual.mesh_filename)
-          .arg(entry.triangles.size()));
+          .arg(entry.triangles.size())
+          .arg(meshBoundsText(entry))
+          .arg(visual.mesh_scale_x)
+          .arg(visual.mesh_scale_y)
+          .arg(visual.mesh_scale_z)
+          .arg(visual.frame_id)
+          .arg(visual.mesh_render_mode));
     }
   }
   const qint64 elapsed_ms = set_timer.elapsed();
@@ -1120,11 +1150,11 @@ bool SceneWidget::drawMesh3D(
   const RobotVisual &visual,
   const QColor &color)
 {
-  if (!visual.mesh_enabled) {
+  if (!visual.mesh_enabled || visual.mesh_render_mode == "proxy") {
     return false;
   }
   const MeshCacheEntry *mesh = meshForVisual(visual);
-  if (!mesh || mesh->triangles.isEmpty()) {
+  if (!mesh || mesh->rejected || mesh->triangles.isEmpty()) {
     return false;
   }
 
@@ -1144,12 +1174,22 @@ bool SceneWidget::drawMesh3D(
   QVector<ProjectedFace> faces;
   faces.reserve(std::min(triangle_count, max_rendered_faces));
   const QVector3D light_direction = (-cameraForward() + QVector3D(0.15F, -0.25F, 0.35F)).normalized();
+  const double max_projected_extent = std::max(visual.mesh_max_projected_extent_px, 1.0);
+  const double max_area = max_projected_extent * max_projected_extent;
+  const QRectF viewport(
+    -max_projected_extent,
+    -max_projected_extent,
+    width() + (2.0 * max_projected_extent),
+    height() + (2.0 * max_projected_extent));
 
   for (int i = 0; i < triangle_count; i += stride) {
     const auto &triangle = mesh->triangles[i];
     const QVector3D a = meshPointToWorld(visual, triangle.a);
     const QVector3D b = meshPointToWorld(visual, triangle.b);
     const QVector3D c = meshPointToWorld(visual, triangle.c);
+    if (!finite_vector(a) || !finite_vector(b) || !finite_vector(c)) {
+      continue;
+    }
     QVector3D normal = QVector3D::crossProduct(b - a, c - a);
     if (normal.lengthSquared() < 1e-9F) {
       continue;
@@ -1157,9 +1197,29 @@ bool SceneWidget::drawMesh3D(
     normal.normalize();
 
     ProjectedFace face;
-    face.polygon << worldToScreen3D(a.x(), a.y(), a.z())
-                 << worldToScreen3D(b.x(), b.y(), b.z())
-                 << worldToScreen3D(c.x(), c.y(), c.z());
+    const QPointF pa = worldToScreen3D(a.x(), a.y(), a.z());
+    const QPointF pb = worldToScreen3D(b.x(), b.y(), b.z());
+    const QPointF pc = worldToScreen3D(c.x(), c.y(), c.z());
+    if (!finite_point(pa) || !finite_point(pb) || !finite_point(pc)) {
+      continue;
+    }
+
+    const QRectF projected_bbox = QPolygonF{pa, pb, pc}.boundingRect();
+    if (!projected_bbox.intersects(viewport)) {
+      continue;
+    }
+    if (
+      projected_bbox.width() > max_projected_extent ||
+      projected_bbox.height() > max_projected_extent)
+    {
+      continue;
+    }
+    const double area = triangle_area(pa, pb, pc);
+    if (!std::isfinite(area) || area < 0.5 || area > max_area) {
+      continue;
+    }
+
+    face.polygon << pa << pb << pc;
     face.depth =
       (QVector3D::dotProduct(a - focal_point_, cameraForward()) +
       QVector3D::dotProduct(b - focal_point_, cameraForward()) +
@@ -1182,9 +1242,29 @@ bool SceneWidget::drawMesh3D(
     });
 
   painter.setPen(QPen(QColor(8, 10, 12, 70), 0.6));
+  if (faces.isEmpty()) {
+    return false;
+  }
+
+  if (!diagnostic_event_cache_.contains("mesh_faces_drawn:" + visual.mesh_resolved_path)) {
+    diagnostic_event_cache_.insert("mesh_faces_drawn:" + visual.mesh_resolved_path);
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh rendered: %1, mode=%2, drawn face(s)=%3")
+        .arg(visual.mesh_filename)
+        .arg(visual.mesh_render_mode)
+        .arg(faces.size()));
+  }
+
   for (const auto &face : faces) {
-    painter.setBrush(face.color);
-    painter.drawPolygon(face.polygon);
+    if (visual.mesh_render_mode == "wireframe") {
+      painter.setBrush(Qt::NoBrush);
+      painter.drawPolygon(face.polygon);
+    } else if (visual.mesh_render_mode == "solid") {
+      painter.setBrush(face.color);
+      painter.drawPolygon(face.polygon);
+    } else {
+      return false;
+    }
   }
   return true;
 }
@@ -1200,7 +1280,7 @@ const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual 
   if (it == mesh_cache_.end()) {
     return nullptr;
   }
-  if (!it->attempted || it->triangles.isEmpty()) {
+  if (!it->attempted || it->rejected || it->triangles.isEmpty()) {
     return nullptr;
   }
   return &(*it);
@@ -1288,7 +1368,7 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
         QString("Robot mesh load end: %1 ms, %2 triangle(s)")
           .arg(load_timer.elapsed())
           .arg(entry.triangles.size()));
-      return !entry.triangles.isEmpty();
+      return validateMeshEntry(visual, entry);
     }
   }
 
@@ -1343,7 +1423,7 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
       QString("Robot mesh load end: %1 ms, %2 triangle(s)")
         .arg(load_timer.elapsed())
         .arg(entry.triangles.size()));
-    return true;
+    return validateMeshEntry(visual, entry);
   }
   entry.error = entry.triangles.isEmpty() ? "not a supported ASCII or binary STL" : QString();
   Q_EMIT visualizationEvent(
@@ -1352,15 +1432,128 @@ bool SceneWidget::loadStlMesh(const RobotVisual &visual, MeshCacheEntry &entry)
       .arg(load_timer.elapsed())
       .arg(entry.triangles.size())
       .arg(entry.error.isEmpty() ? QString() : QString(" (%1)").arg(entry.error)));
-  return !entry.triangles.isEmpty();
+  if (entry.triangles.isEmpty()) {
+    return false;
+  }
+  return validateMeshEntry(visual, entry);
+}
+
+bool SceneWidget::validateMeshEntry(const RobotVisual &visual, MeshCacheEntry &entry)
+{
+  if (entry.triangles.isEmpty()) {
+    entry.rejected = true;
+    entry.error = "triangle count is zero";
+  } else {
+    float min_x = std::numeric_limits<float>::infinity();
+    float min_y = std::numeric_limits<float>::infinity();
+    float min_z = std::numeric_limits<float>::infinity();
+    float max_x = -std::numeric_limits<float>::infinity();
+    float max_y = -std::numeric_limits<float>::infinity();
+    float max_z = -std::numeric_limits<float>::infinity();
+    bool finite = true;
+    bool coordinate_in_range = true;
+    const float max_abs_coordinate =
+      static_cast<float>(std::max(visual.mesh_max_abs_coordinate_m, 0.001));
+    const double unit_scale = visual.mesh_auto_unit_scale ? visual.mesh_unit_scale : 1.0;
+
+    auto update_bounds = [&](const QVector3D &point) {
+        const QVector3D scaled_point(
+          static_cast<float>(point.x() * visual.mesh_scale_x * unit_scale),
+          static_cast<float>(point.y() * visual.mesh_scale_y * unit_scale),
+          static_cast<float>(point.z() * visual.mesh_scale_z * unit_scale));
+        if (!finite_vector(scaled_point)) {
+          finite = false;
+          return;
+        }
+        if (
+          std::abs(scaled_point.x()) > max_abs_coordinate ||
+          std::abs(scaled_point.y()) > max_abs_coordinate ||
+          std::abs(scaled_point.z()) > max_abs_coordinate)
+        {
+          coordinate_in_range = false;
+        }
+        min_x = std::min(min_x, scaled_point.x());
+        min_y = std::min(min_y, scaled_point.y());
+        min_z = std::min(min_z, scaled_point.z());
+        max_x = std::max(max_x, scaled_point.x());
+        max_y = std::max(max_y, scaled_point.y());
+        max_z = std::max(max_z, scaled_point.z());
+      };
+
+    for (const auto &triangle : entry.triangles) {
+      update_bounds(triangle.a);
+      update_bounds(triangle.b);
+      update_bounds(triangle.c);
+    }
+
+    entry.min_bounds = QVector3D(min_x, min_y, min_z);
+    entry.max_bounds = QVector3D(max_x, max_y, max_z);
+    entry.extent = entry.max_bounds - entry.min_bounds;
+    entry.diagonal = static_cast<double>(entry.extent.length());
+
+    if (!finite) {
+      entry.rejected = true;
+      entry.error = "non-finite coordinate";
+    } else if (!coordinate_in_range) {
+      entry.rejected = true;
+      entry.error =
+        QString("coordinate exceeds %1 m absolute limit").arg(visual.mesh_max_abs_coordinate_m);
+    } else if (!std::isfinite(entry.diagonal) || entry.diagonal <= 0.0) {
+      entry.rejected = true;
+      entry.error = "invalid bbox diagonal";
+    } else if (entry.diagonal > visual.mesh_max_extent_m) {
+      entry.rejected = true;
+      entry.error =
+        QString("bbox diagonal %1 m exceeds %2 m").arg(entry.diagonal).arg(visual.mesh_max_extent_m);
+    }
+  }
+
+  if (entry.rejected) {
+    Q_EMIT visualizationEvent(
+      QString("Robot mesh rejected: %1, bbox=%2, reason=%3")
+        .arg(visual.mesh_filename)
+        .arg(meshBoundsText(entry))
+        .arg(entry.error));
+    entry.triangles.clear();
+    return false;
+  }
+
+  Q_EMIT visualizationEvent(
+    QString("Robot mesh diagnostics: path=%1, triangles=%2, vertices=%3, bbox=%4, extent=%5 %6 %7, scale=%8 %9 %10, frame=%11, mode=%12")
+      .arg(visual.mesh_resolved_path)
+      .arg(entry.triangles.size())
+      .arg(entry.triangles.size() * 3)
+      .arg(meshBoundsText(entry))
+      .arg(entry.extent.x())
+      .arg(entry.extent.y())
+      .arg(entry.extent.z())
+      .arg(visual.mesh_scale_x)
+      .arg(visual.mesh_scale_y)
+      .arg(visual.mesh_scale_z)
+      .arg(visual.frame_id)
+      .arg(visual.mesh_render_mode));
+  return true;
+}
+
+QString SceneWidget::meshBoundsText(const MeshCacheEntry &entry) const
+{
+  return QString("min=(%1,%2,%3), max=(%4,%5,%6), diag=%7")
+    .arg(entry.min_bounds.x())
+    .arg(entry.min_bounds.y())
+    .arg(entry.min_bounds.z())
+    .arg(entry.max_bounds.x())
+    .arg(entry.max_bounds.y())
+    .arg(entry.max_bounds.z())
+    .arg(entry.diagonal);
 }
 
 QVector3D SceneWidget::meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const
 {
+  const double unit_scale = visual.mesh_auto_unit_scale ? visual.mesh_unit_scale : 1.0;
   const QVector3D local_point(
-    static_cast<float>(point.x() * visual.mesh_scale_x),
-    static_cast<float>(point.y() * visual.mesh_scale_y),
-    static_cast<float>(point.z() * visual.mesh_scale_z));
+    static_cast<float>(point.x() * visual.mesh_scale_x * unit_scale),
+    static_cast<float>(point.y() * visual.mesh_scale_y * unit_scale),
+    static_cast<float>(point.z() * visual.mesh_scale_z * unit_scale));
   const QVector3D rotated = rotate_rpy(
     local_point,
     visual.pose.roll,
