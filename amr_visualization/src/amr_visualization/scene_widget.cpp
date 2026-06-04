@@ -241,6 +241,49 @@ void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &
           .arg(visual.mesh_render_mode));
     }
   }
+
+  int mesh_visuals = 0;
+  int opengl_mesh_candidates = 0;
+  QString mesh_render_mode = "proxy";
+  for (const auto &visual : robot_visuals_) {
+    if (visual.type != RobotGeometryType::Mesh) {
+      continue;
+    }
+    ++mesh_visuals;
+    mesh_render_mode = visual.mesh_render_mode;
+    if (
+      visual.mesh_enabled &&
+      visual.mesh_render_mode == "opengl" &&
+      !visual.mesh_resolved_path.isEmpty())
+    {
+      ++opengl_mesh_candidates;
+    }
+  }
+  if (mesh_visuals > 0 && (mesh_render_mode != "opengl" || opengl_mesh_candidates == 0)) {
+    int loaded_meshes = 0;
+    int rejected_meshes = 0;
+    for (auto it = mesh_cache_.cbegin(); it != mesh_cache_.cend(); ++it) {
+      if (it->rejected) {
+        ++rejected_meshes;
+      } else if (!it->triangles.isEmpty()) {
+        ++loaded_meshes;
+      }
+    }
+    const QString summary_key = QString("mesh_summary:%1:%2:%3:%4")
+      .arg(mesh_render_mode)
+      .arg(mesh_visuals)
+      .arg(loaded_meshes)
+      .arg(rejected_meshes);
+    if (!diagnostic_event_cache_.contains(summary_key)) {
+      diagnostic_event_cache_.insert(summary_key);
+      Q_EMIT visualizationEvent(
+        QString("Robot description mesh render summary: backend=%1, visual elements=%2, loaded meshes=%3, rejected meshes=%4")
+          .arg(mesh_render_mode)
+          .arg(mesh_visuals)
+          .arg(loaded_meshes)
+          .arg(rejected_meshes));
+    }
+  }
   if (robot_open_gl_widget_) {
     robot_open_gl_widget_->setRobotVisuals(robot_visuals_);
     syncOpenGLRobotViewport();

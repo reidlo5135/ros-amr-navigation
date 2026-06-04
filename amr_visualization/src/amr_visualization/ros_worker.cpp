@@ -6,6 +6,8 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QOpenGLContext>
+#include <QSurfaceFormat>
 #include <QUrl>
 #include <QXmlStreamReader>
 
@@ -218,6 +220,40 @@ bool parse_geometry(
   return false;
 }
 
+QString opengl_module_name(const QOpenGLContext::OpenGLModuleType module_type)
+{
+  switch (module_type) {
+    case QOpenGLContext::LibGL:
+      return "desktop";
+    case QOpenGLContext::LibGLES:
+      return "gles";
+  }
+  return "unknown";
+}
+
+QString probe_opengl_availability(bool &available, QString &failure_reason)
+{
+  QSurfaceFormat requested_format;
+  requested_format.setDepthBufferSize(24);
+  requested_format.setStencilBufferSize(0);
+  requested_format.setSamples(4);
+
+  QOpenGLContext probe_context;
+  probe_context.setFormat(requested_format);
+  available = probe_context.create();
+  if (!available) {
+    failure_reason = "QOpenGLContext::create() returned false";
+    return QString("OpenGL available: no (%1); fallback backend=proxy").arg(failure_reason);
+  }
+
+  const QSurfaceFormat actual_format = probe_context.format();
+  failure_reason.clear();
+  return QString("OpenGL available: yes, module=%1, version=%2.%3")
+    .arg(opengl_module_name(QOpenGLContext::openGLModuleType()))
+    .arg(actual_format.majorVersion())
+    .arg(actual_format.minorVersion());
+}
+
 }  // namespace
 
 Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
@@ -345,9 +381,21 @@ void RosWorker::configure_ros_interfaces()
       QString("Invalid robot_model_renderer_backend '%1'; falling back to %2")
         .arg(QString::fromStdString(robot_model_renderer_backend_), renderer->backendName()));
   }
+  bool opengl_available = false;
+  QString opengl_failure_reason;
+  const QString opengl_status = probe_opengl_availability(opengl_available, opengl_failure_reason);
+  Q_EMIT eventReceived(opengl_status);
+  if (renderer->backendName() == "opengl" && !opengl_available) {
+    Q_EMIT eventReceived(
+      QString("OpenGL robot renderer failed before startup: %1; falling back to proxy backend")
+        .arg(opengl_failure_reason));
+    renderer = RobotModelRenderer::create("proxy");
+  }
   robot_model_renderer_backend_ = renderer->backendName().toStdString();
   robot_mesh_render_mode_ = renderer->meshRenderMode().toStdString();
   robot_renderer_loads_mesh_files_ = renderer->loadsMeshFiles();
+  node_->set_parameter(rclcpp::Parameter("robot_model_renderer_backend", robot_model_renderer_backend_));
+  node_->set_parameter(rclcpp::Parameter("robot_mesh_render_mode", robot_mesh_render_mode_));
   robot_mesh_auto_unit_scale_ =
     node_->declare_parameter<bool>("robot_mesh_auto_unit_scale", robot_mesh_auto_unit_scale_);
   costmap_emit_period_ms_ =
@@ -530,7 +578,7 @@ void RosWorker::configure_ros_interfaces()
       if (mesh_visuals == 0) {
         emit_diagnostic_once(
           "robot_description_no_mesh_visuals",
-          "Robot description has no mesh visual elements");
+          "No URDF mesh visuals found; using proxy renderer");
       } else {
         for (const auto &visual : robot_description_visuals_) {
           if (visual.type != RobotGeometryType::Mesh) {
@@ -539,13 +587,14 @@ void RosWorker::configure_ros_interfaces()
           const QString key = "mesh_visual:" + visual.frame_id + ":" + visual.mesh_filename;
           emit_diagnostic_once(
             key,
-            QString("Mesh visual: frame=%1, uri=%2, resolved=%3, scale=%4 %5 %6")
+            QString("Mesh visual: frame=%1, uri=%2, resolved=%3, scale=%4 %5 %6, triangle count=pending, backend=%7")
               .arg(visual.frame_id)
               .arg(visual.mesh_filename)
               .arg(visual.mesh_resolved_path.isEmpty() ? "<unresolved>" : visual.mesh_resolved_path)
               .arg(visual.mesh_scale_x)
               .arg(visual.mesh_scale_y)
-              .arg(visual.mesh_scale_z));
+              .arg(visual.mesh_scale_z)
+              .arg(QString::fromStdString(robot_model_renderer_backend_)));
         }
       }
     });

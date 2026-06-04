@@ -38,6 +38,9 @@ public:
     double pixels_per_meter);
   bool hasRenderableMesh(const RobotVisual &visual) const;
   bool hasRenderableVisuals() const;
+  QString meshStatus(const RobotVisual &visual) const;
+  int loadedMeshCount() const;
+  int rejectedMeshCount() const;
 
 Q_SIGNALS:
   void visualizationEvent(const QString &event);
@@ -74,6 +77,8 @@ private:
   bool loadStlMesh(const RobotVisual &visual, GpuMesh &mesh);
   bool validateMesh(const RobotVisual &visual, GpuMesh &mesh);
   bool uploadMesh(GpuMesh &mesh);
+  void emitMeshVisualDiagnostics();
+  void emitFallbackOnce(const QString &reason);
   void pruneInactiveMeshes(const QSet<QString> &active_paths);
   void destroyMeshBuffers(GpuMesh &mesh);
   void destroyAllMeshBuffers();
@@ -83,9 +88,14 @@ private:
   std::map<QString, std::unique_ptr<GpuMesh>> mesh_cache_;
   QSet<QString> warning_cache_;
   QSet<QString> success_cache_;
+  QSet<QString> visual_event_cache_;
   QSet<QString> render_event_cache_;
   QOpenGLShaderProgram program_;
   bool initialized_{false};
+  bool opengl_failed_{false};
+  bool fallback_event_emitted_{false};
+  QString opengl_failure_reason_;
+  QString last_mesh_summary_;
   QVector3D focal_point_{0.0F, 0.0F, 0.0F};
   double camera_yaw_{0.0};
   double camera_pitch_{1.5707963267948966};

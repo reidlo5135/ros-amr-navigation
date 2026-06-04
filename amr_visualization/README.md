@@ -48,6 +48,8 @@ OpenGL backend notes:
 - Loads mesh vertices once, uploads vertex/index buffers once, and updates per-link transforms.
 - Uses OpenGL depth testing, view/projection matrices, and GPU clipping instead of raw `QPainter`
   triangle fills.
+- Supports STL visual meshes first. DAE and OBJ URDF meshes are reported as unsupported and fall
+  back to proxy rendering until a robust loader is added.
 - Keeps map/costmap/scan/path/waypoint rendering in `SceneWidget`.
 - Falls back to proxy visuals when a mesh cannot be loaded or validated.
 
