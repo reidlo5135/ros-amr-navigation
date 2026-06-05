@@ -366,6 +366,7 @@ private:
   amr_msgs::msg::MotionCommand latest_command_;
   nav_msgs::msg::Path latest_local_plan_;
   geometry_msgs::msg::PoseStamped current_pose_;
+  geometry_msgs::msg::PoseStamped tracking_target_pose_;
   geometry_msgs::msg::PoseStamped progress_reference_pose_;
   geometry_msgs::msg::PoseStamped recovery_reference_pose_;
   sensor_msgs::msg::LaserScan latest_scan_;
@@ -385,6 +386,7 @@ private:
   bool has_recovery_reference_;
   bool has_tracking_progress_index_;
   bool has_tracking_target_index_;
+  bool has_tracking_target_pose_;
   bool blocked_latched_;
   int blocked_streak_;
   int blocked_clear_streak_;

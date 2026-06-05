@@ -2116,6 +2116,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   has_recovery_reference_(false),
   has_tracking_progress_index_(false),
   has_tracking_target_index_(false),
+  has_tracking_target_pose_(false),
   blocked_latched_(false),
   blocked_streak_(0),
   blocked_clear_streak_(0),
@@ -2427,6 +2428,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->tracking_target_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
@@ -2435,6 +2437,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->has_latest_scan_ = false;
   this->has_tracking_progress_index_ = false;
   this->has_tracking_target_index_ = false;
+  this->has_tracking_target_pose_ = false;
   this->tracking_progress_index_ = 0U;
   this->tracking_target_index_ = 0U;
   this->reset_velocity_controller_state();
@@ -2459,6 +2462,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->tracking_target_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->has_command_ = false;
@@ -2467,6 +2471,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->has_latest_scan_ = false;
   this->has_tracking_progress_index_ = false;
   this->has_tracking_target_index_ = false;
+  this->has_tracking_target_pose_ = false;
   this->tracking_progress_index_ = 0U;
   this->tracking_target_index_ = 0U;
   this->reset_velocity_controller_state();
@@ -2488,6 +2493,7 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
     this->has_local_plan_ = false;
     this->has_tracking_progress_index_ = false;
     this->has_tracking_target_index_ = false;
+    this->has_tracking_target_pose_ = false;
     this->tracking_progress_index_ = 0U;
     this->tracking_target_index_ = 0U;
   }
@@ -2517,20 +2523,16 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
   {
     this->has_tracking_progress_index_ = false;
     this->has_tracking_target_index_ = false;
+    this->has_tracking_target_pose_ = false;
     this->tracking_progress_index_ = 0U;
     this->tracking_target_index_ = 0U;
   }
-  else if (this->has_tracking_progress_index_)
+  else
   {
-    this->tracking_progress_index_ = std::min(
-      this->tracking_progress_index_,
-      message->poses.size() - 1U);
-    if (this->has_tracking_target_index_)
-    {
-      this->tracking_target_index_ = std::min(
-        this->tracking_target_index_,
-        message->poses.size() - 1U);
-    }
+    this->has_tracking_progress_index_ = false;
+    this->has_tracking_target_index_ = false;
+    this->tracking_progress_index_ = 0U;
+    this->tracking_target_index_ = 0U;
   }
   RCLCPP_INFO_THROTTLE(
     this->get_logger(),
@@ -3153,15 +3155,7 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
   }
 
   const std::size_t plan_size = this->latest_local_plan_.poses.size();
-  std::size_t search_start = 0U;
-  if (this->has_tracking_progress_index_)
-  {
-    search_start =
-      this->tracking_progress_index_ > this->tracking_progress_rollback_window_ ?
-      this->tracking_progress_index_ - this->tracking_progress_rollback_window_ :
-      0U;
-    search_start = std::min(search_start, plan_size - 1U);
-  }
+  const std::size_t search_start = 0U;
 
   std::size_t nearest_index = search_start;
   double nearest_distance = std::numeric_limits<double>::max();
@@ -3191,33 +3185,52 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
       break;
     }
   }
-
-  if (!this->has_tracking_target_index_)
+  if (candidate_target_index == nearest_index &&nearest_index + 1U < plan_size)
   {
-    this->tracking_target_index_ = candidate_target_index;
-    this->has_tracking_target_index_ = true;
-    return this->latest_local_plan_.poses[this->tracking_target_index_];
+    candidate_target_index = nearest_index + 1U;
   }
 
-  this->tracking_target_index_ = std::min(this->tracking_target_index_, plan_size - 1U);
-  const std::size_t current_target_index = this->tracking_target_index_;
-  const double current_target_distance = this->pose_distance(
-    this->current_pose_,
-    this->latest_local_plan_.poses[current_target_index]);
-  const double candidate_target_distance = this->pose_distance(
-    this->current_pose_,
-    this->latest_local_plan_.poses[candidate_target_index]);
-  const bool candidate_is_forward = candidate_target_index >= current_target_index;
-  const bool current_target_stale =
-    current_target_index < nearest_index ||
-    current_target_distance >= this->tracking_target_reset_distance_;
-  const bool candidate_materially_better =
-    candidate_target_distance + this->tracking_target_hysteresis_distance_ < current_target_distance;
-
-  if (current_target_stale || (candidate_is_forward &&candidate_materially_better))
+  std::size_t selected_target_index = candidate_target_index;
+  if (this->has_tracking_target_pose_)
   {
-    this->tracking_target_index_ = candidate_target_index;
+    std::size_t retained_target_index = nearest_index;
+    double retained_plan_distance = std::numeric_limits<double>::max();
+    for (std::size_t index = nearest_index; index < plan_size; ++index)
+    {
+      const double distance = this->pose_distance(
+        this->tracking_target_pose_,
+        this->latest_local_plan_.poses[index]);
+      if (distance < retained_plan_distance)
+      {
+        retained_plan_distance = distance;
+        retained_target_index = index;
+      }
+    }
+
+    const double retained_target_distance = this->pose_distance(
+      this->current_pose_,
+      this->latest_local_plan_.poses[retained_target_index]);
+    const double candidate_target_distance = this->pose_distance(
+      this->current_pose_,
+      this->latest_local_plan_.poses[candidate_target_index]);
+    const bool retained_target_matches_plan =
+      retained_plan_distance <= this->tracking_target_reset_distance_;
+    const bool retained_target_is_forward = retained_target_index >= nearest_index;
+    const bool candidate_materially_better =
+      candidate_target_distance + this->tracking_target_hysteresis_distance_ < retained_target_distance;
+
+    if (
+      retained_target_matches_plan &&retained_target_is_forward &&
+      !candidate_materially_better)
+    {
+      selected_target_index = retained_target_index;
+    }
   }
+
+  this->tracking_target_index_ = selected_target_index;
+  this->has_tracking_target_index_ = true;
+  this->tracking_target_pose_ = this->latest_local_plan_.poses[this->tracking_target_index_];
+  this->has_tracking_target_pose_ = true;
 
   return this->latest_local_plan_.poses[this->tracking_target_index_];
 }
