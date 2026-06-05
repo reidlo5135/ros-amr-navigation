@@ -31,11 +31,6 @@ const char *bool_label(const bool value)
   return value ? "true" : "false";
 }
 
-const char *frame_label(const std::string &frame)
-{
-  return frame.empty() ? "none" : frame.c_str();
-}
-
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
@@ -2124,6 +2119,11 @@ const char *motion_mode_label(const uint8_t mode)
 const char *bool_label(const bool value)
 {
   return value ? "true" : "false";
+}
+
+const char *frame_label(const std::string &frame)
+{
+  return frame.empty() ? "none" : frame.c_str();
 }
 
 int throttle_ms_from_sec(const double seconds)
