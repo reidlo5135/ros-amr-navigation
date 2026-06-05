@@ -39,6 +39,8 @@ before it fully drops a previously confirmed blocked decision.
 `/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
 By default, waypoint-style goals can stay heading-free while command-driven final heading align
 still uses a separate tighter tolerance near the goal.
+`goal_checker.xy_hysteresis` keeps the XY-arrived phase latched through small localization
+noise, so final heading alignment does not repeatedly fall back into path tracking.
 When heading alignment is active near the goal, `control.goal_reach_heading_tolerance` and
 `control.final_align_max_angular_speed` tune the final in-place yaw settle behavior separately
 from the looser general waypoint-style yaw tolerance.

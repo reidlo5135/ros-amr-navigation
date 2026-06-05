@@ -2078,6 +2078,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   final_align_heading_deadband_(0.05),
   final_align_settle_time_sec_(0.20),
   goal_checker_xy_tolerance_(0.15),
+  goal_checker_xy_hysteresis_(0.03),
   goal_checker_yaw_tolerance_(0.7853981633974483),
   goal_checker_hold_time_sec_(0.0),
   goal_checker_respect_goal_yaw_(true),
@@ -2108,6 +2109,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   recovery_start_yaw_(0.0),
   goal_checker_holding_(false),
   final_align_holding_(false),
+  goal_xy_latched_(false),
   has_command_(false),
   has_local_plan_(false),
   has_current_pose_(false),
@@ -2155,6 +2157,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter(
     "control.final_align_settle_time_sec", this->final_align_settle_time_sec_);
   this->declare_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
+  this->declare_parameter("goal_checker.xy_hysteresis", this->goal_checker_xy_hysteresis_);
   this->declare_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->declare_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
   this->declare_parameter("goal_checker.respect_goal_yaw", this->goal_checker_respect_goal_yaw_);
@@ -2247,6 +2250,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter(
     "control.final_align_settle_time_sec", this->final_align_settle_time_sec_);
   this->get_parameter("goal_checker.xy_tolerance", this->goal_checker_xy_tolerance_);
+  this->get_parameter("goal_checker.xy_hysteresis", this->goal_checker_xy_hysteresis_);
   this->get_parameter("goal_checker.yaw_tolerance", this->goal_checker_yaw_tolerance_);
   this->get_parameter("goal_checker.hold_time_sec", this->goal_checker_hold_time_sec_);
   this->get_parameter("goal_checker.respect_goal_yaw", this->goal_checker_respect_goal_yaw_);
@@ -2933,6 +2937,7 @@ void MotionController::reset_goal_checker_state()
   this->goal_checker_holding_ = false;
   this->final_align_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
   this->final_align_holding_ = false;
+  this->goal_xy_latched_ = false;
 }
 
 void MotionController::reset_status_semantics_state()
@@ -3242,7 +3247,18 @@ MotionController::GoalCheckResult MotionController::check_goal(
 {
   GoalCheckResult result;
   result.distance_error = this->pose_distance(current_pose, goal_pose);
-  result.distance_reached = result.distance_error <= this->goal_checker_xy_tolerance_;
+  const double xy_tolerance = std::max(0.0, this->goal_checker_xy_tolerance_);
+  const double xy_release_tolerance =
+    xy_tolerance + std::max(0.0, this->goal_checker_xy_hysteresis_);
+  if (this->goal_xy_latched_)
+  {
+    this->goal_xy_latched_ = result.distance_error <= xy_release_tolerance;
+  }
+  else
+  {
+    this->goal_xy_latched_ = result.distance_error <= xy_tolerance;
+  }
+  result.distance_reached = this->goal_xy_latched_;
   result.align_heading =
     (this->goal_checker_respect_goal_yaw_ || this->latest_command_.align_heading_at_goal) &&
     !this->goal_checker_ignore_yaw_;
@@ -3257,7 +3273,13 @@ MotionController::GoalCheckResult MotionController::check_goal(
   const bool reached_now = result.distance_reached &&result.heading_reached;
   if (!reached_now)
   {
-    this->reset_goal_checker_state();
+    this->goal_checker_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+    this->goal_checker_holding_ = false;
+    if (!result.distance_reached)
+    {
+      this->final_align_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+      this->final_align_holding_ = false;
+    }
     result.goal_reached = false;
     return result;
   }

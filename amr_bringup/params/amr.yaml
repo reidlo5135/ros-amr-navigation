@@ -263,6 +263,7 @@
       stalled_confirm_cycles: 2
     goal_checker:
       xy_tolerance: 0.1
+      xy_hysteresis: 0.03
       yaw_tolerance: 0.7853981633974483
       hold_time_sec: 0.0
       respect_goal_yaw: false

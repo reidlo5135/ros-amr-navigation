@@ -331,6 +331,7 @@ private:
   double final_align_heading_deadband_;
   double final_align_settle_time_sec_;
   double goal_checker_xy_tolerance_;
+  double goal_checker_xy_hysteresis_;
   double goal_checker_yaw_tolerance_;
   double goal_checker_hold_time_sec_;
   bool goal_checker_respect_goal_yaw_;
@@ -378,6 +379,7 @@ private:
   double recovery_start_yaw_;
   bool goal_checker_holding_;
   bool final_align_holding_;
+  bool goal_xy_latched_;
   bool has_command_;
   bool has_local_plan_;
   bool has_current_pose_;
