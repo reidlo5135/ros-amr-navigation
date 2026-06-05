@@ -31,6 +31,11 @@ const char *bool_label(const bool value)
   return value ? "true" : "false";
 }
 
+const char *frame_label(const std::string &frame)
+{
+  return frame.empty() ? "none" : frame.c_str();
+}
+
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
@@ -2140,6 +2145,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   linear_speed_(0.07),
   min_linear_speed_(0.05),
   tracking_lookahead_distance_(0.25),
+  tracking_min_target_distance_(0.08),
   tracking_progress_rollback_window_(2U),
   tracking_target_hysteresis_distance_(0.06),
   tracking_target_reset_distance_(0.30),
@@ -2197,12 +2203,17 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   has_tracking_progress_index_(false),
   has_tracking_target_index_(false),
   has_tracking_target_pose_(false),
+  tracking_target_from_plan_(false),
   blocked_latched_(false),
   blocked_streak_(0),
   blocked_clear_streak_(0),
   stalled_streak_(0),
   tracking_progress_index_(0U),
-  tracking_target_index_(0U)
+  tracking_target_index_(0U),
+  tracking_nearest_index_(0U),
+  tracking_candidate_index_(0U),
+  tracking_selected_target_distance_(0.0),
+  tracking_selection_reason_("not_selected")
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
@@ -2215,6 +2226,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter("control.linear_speed", this->linear_speed_);
   this->declare_parameter("control.min_linear_speed", this->min_linear_speed_);
   this->declare_parameter("control.tracking_lookahead_distance", this->tracking_lookahead_distance_);
+  this->declare_parameter("control.tracking_min_target_distance", this->tracking_min_target_distance_);
   this->declare_parameter(
     "control.tracking_progress_rollback_window",
     static_cast<int64_t>(this->tracking_progress_rollback_window_));
@@ -2316,6 +2328,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   this->get_parameter("control.linear_speed", this->linear_speed_);
   this->get_parameter("control.min_linear_speed", this->min_linear_speed_);
   this->get_parameter("control.tracking_lookahead_distance", this->tracking_lookahead_distance_);
+  this->get_parameter("control.tracking_min_target_distance", this->tracking_min_target_distance_);
   this->tracking_progress_rollback_window_ = static_cast<std::size_t>(
     this->get_parameter("control.tracking_progress_rollback_window").as_int());
   this->get_parameter(
@@ -2536,6 +2549,11 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->has_tracking_target_pose_ = false;
   this->tracking_progress_index_ = 0U;
   this->tracking_target_index_ = 0U;
+  this->tracking_nearest_index_ = 0U;
+  this->tracking_candidate_index_ = 0U;
+  this->tracking_selected_target_distance_ = 0.0;
+  this->tracking_selection_reason_ = "reset";
+  this->tracking_target_from_plan_ = false;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
@@ -2570,6 +2588,11 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->has_tracking_target_pose_ = false;
   this->tracking_progress_index_ = 0U;
   this->tracking_target_index_ = 0U;
+  this->tracking_nearest_index_ = 0U;
+  this->tracking_candidate_index_ = 0U;
+  this->tracking_selected_target_distance_ = 0.0;
+  this->tracking_selection_reason_ = "reset";
+  this->tracking_target_from_plan_ = false;
   this->reset_velocity_controller_state();
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
@@ -2592,6 +2615,11 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
     this->has_tracking_target_pose_ = false;
     this->tracking_progress_index_ = 0U;
     this->tracking_target_index_ = 0U;
+    this->tracking_nearest_index_ = 0U;
+    this->tracking_candidate_index_ = 0U;
+    this->tracking_selected_target_distance_ = 0.0;
+    this->tracking_selection_reason_ = "new_command";
+    this->tracking_target_from_plan_ = false;
   }
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
@@ -2628,6 +2656,11 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
     this->has_tracking_target_pose_ = false;
     this->tracking_progress_index_ = 0U;
     this->tracking_target_index_ = 0U;
+    this->tracking_nearest_index_ = 0U;
+    this->tracking_candidate_index_ = 0U;
+    this->tracking_selected_target_distance_ = 0.0;
+    this->tracking_selection_reason_ = "local_plan_empty";
+    this->tracking_target_from_plan_ = false;
   }
   else
   {
@@ -2635,6 +2668,10 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
     this->has_tracking_target_index_ = false;
     this->tracking_progress_index_ = 0U;
     this->tracking_target_index_ = 0U;
+    this->tracking_nearest_index_ = 0U;
+    this->tracking_candidate_index_ = 0U;
+    this->tracking_selected_target_distance_ = 0.0;
+    this->tracking_selection_reason_ = "plan_updated";
   }
   if (this->structured_logging_enabled_)
   {
@@ -2681,6 +2718,7 @@ void MotionController::publish_control()
   std::size_t debug_tracking_target_index = 0U;
   double debug_tracking_target_x = 0.0;
   double debug_tracking_target_y = 0.0;
+  double debug_tracking_target_distance = 0.0;
   double debug_target_jump_m = 0.0;
   amr_msgs::msg::MotionStatus status;
   status.header.stamp = this->now();
@@ -2718,7 +2756,7 @@ void MotionController::publish_control()
       const bool had_tracking_target = this->has_tracking_target_pose_;
       const geometry_msgs::msg::PoseStamped previous_tracking_target = this->tracking_target_pose_;
       const geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target();
-      debug_has_tracking_target = this->has_tracking_target_index_;
+      debug_has_tracking_target = this->has_tracking_target_pose_;
       debug_tracking_progress_index = this->tracking_progress_index_;
       debug_tracking_target_index = this->tracking_target_index_;
       debug_tracking_target_x = tracking_target.pose.position.x;
@@ -2746,6 +2784,7 @@ void MotionController::publish_control()
         this->estimate_remaining_distance(this->latest_local_plan_);
       const double tracking_target_distance =
         this->pose_distance(this->current_pose_, tracking_target);
+      debug_tracking_target_distance = tracking_target_distance;
       const GoalCheckResult goal_check = this->check_goal(
         this->current_pose_, this->latest_command_.goal_pose, current_yaw);
       const double goal_distance = goal_check.distance_error;
@@ -2805,6 +2844,56 @@ void MotionController::publish_control()
       const double steering_heading_error =
         (suppress_small_heading_correction || suppress_final_align_correction) ? 0.0 : heading_error;
       const double steering_abs_heading_error = std::abs(steering_heading_error);
+      const std::string &pose_frame = this->current_pose_.header.frame_id;
+      const std::string &plan_frame = this->latest_local_plan_.header.frame_id;
+      const std::string &target_frame = tracking_target.header.frame_id;
+      const bool pose_plan_mismatch =
+        !pose_frame.empty() &&!plan_frame.empty() &&pose_frame != plan_frame;
+      const bool pose_target_mismatch =
+        !pose_frame.empty() &&!target_frame.empty() &&pose_frame != target_frame;
+      const bool plan_target_mismatch =
+        !plan_frame.empty() &&!target_frame.empty() &&plan_frame != target_frame;
+      if (
+        this->structured_logging_enabled_ &&
+        (pose_plan_mismatch || pose_target_mismatch || plan_target_mismatch))
+      {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+          "AMR_LOG schema=v1 component=controller event=tracking_frame_mismatch node=motion_controller goal_id=%u pose_frame=%s plan_frame=%s target_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu selection_reason=%s",
+          this->latest_command_.command_id,
+          frame_label(pose_frame),
+          frame_label(plan_frame),
+          frame_label(target_frame),
+          this->tracking_nearest_index_,
+          this->tracking_candidate_index_,
+          this->tracking_target_index_,
+          this->tracking_selection_reason_.c_str());
+      }
+      if (this->structured_logging_enabled_)
+      {
+        RCLCPP_INFO_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+          "AMR_LOG schema=v1 component=controller event=tracking_heading_debug node=motion_controller goal_id=%u pose_frame=%s plan_frame=%s target_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu target_dist_m=%.3f target_dx=%.3f target_dy=%.3f current_yaw_rad=%.3f target_heading_rad=%.3f heading_err_rad=%.3f steering_err_rad=%.3f selection_reason=%s",
+          this->latest_command_.command_id,
+          frame_label(pose_frame),
+          frame_label(plan_frame),
+          frame_label(target_frame),
+          this->tracking_nearest_index_,
+          this->tracking_candidate_index_,
+          this->tracking_target_index_,
+          tracking_target_distance,
+          target_dx,
+          target_dy,
+          current_yaw,
+          target_heading,
+          heading_error,
+          steering_heading_error,
+          this->tracking_selection_reason_.c_str());
+      }
       const double angular_speed_limit = final_align_phase ?
         std::min(this->max_angular_speed_, this->final_align_max_angular_speed_) :
         this->max_angular_speed_;
@@ -3085,7 +3174,7 @@ void MotionController::publish_control()
       this->get_logger(),
       *this->get_clock(),
       throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
-      "AMR_LOG schema=v1 component=controller event=tracking_state node=motion_controller goal_id=%u mode=%s phase=%s rejoin=%s tracking=%s target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f lookahead_m=%.3f path_points=%zu dist_goal_m=%.3f heading_err_rad=%.3f blocked=%s safety_blocked=%s recovery=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f",
+      "AMR_LOG schema=v1 component=controller event=tracking_state node=motion_controller goal_id=%u mode=%s phase=%s rejoin=%s tracking=%s target_idx=%zu target_x=%.3f target_y=%.3f target_dist_m=%.3f target_jump_m=%.3f lookahead_m=%.3f path_points=%zu dist_goal_m=%.3f heading_err_rad=%.3f blocked=%s safety_blocked=%s recovery=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f",
       status.command_id,
       motion_mode_label(status.mode),
       debug_goal_state.c_str(),
@@ -3094,6 +3183,7 @@ void MotionController::publish_control()
       debug_tracking_target_index,
       debug_tracking_target_x,
       debug_tracking_target_y,
+      debug_tracking_target_distance,
       debug_target_jump_m,
       this->tracking_lookahead_distance_,
       this->latest_local_plan_.poses.size(),
@@ -3400,9 +3490,30 @@ double MotionController::clamp(
 
 geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
 {
+  const double min_target_distance = std::max(0.0, this->tracking_min_target_distance_);
+  auto select_pose = [this](
+    const geometry_msgs::msg::PoseStamped &target,
+    const std::size_t selected_index,
+    const bool from_plan,
+    const std::string &selection_reason) -> geometry_msgs::msg::PoseStamped
+    {
+      this->tracking_target_index_ = selected_index;
+      this->has_tracking_target_index_ = from_plan;
+      this->tracking_target_pose_ = target;
+      this->has_tracking_target_pose_ = true;
+      this->tracking_target_from_plan_ = from_plan;
+      this->tracking_selected_target_distance_ = this->pose_distance(this->current_pose_, target);
+      this->tracking_selection_reason_ = selection_reason;
+      return target;
+    };
+
   if (this->latest_local_plan_.poses.empty())
   {
-    return this->latest_command_.goal_pose;
+    this->tracking_progress_index_ = 0U;
+    this->tracking_nearest_index_ = 0U;
+    this->tracking_candidate_index_ = 0U;
+    this->has_tracking_progress_index_ = false;
+    return select_pose(this->latest_command_.goal_pose, 0U, false, "local_plan_empty");
   }
 
   const std::size_t plan_size = this->latest_local_plan_.poses.size();
@@ -3421,27 +3532,77 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
   }
 
   this->tracking_progress_index_ = nearest_index;
+  this->tracking_nearest_index_ = nearest_index;
   this->has_tracking_progress_index_ = true;
 
+  if (plan_size == 1U)
+  {
+    this->tracking_candidate_index_ = 0U;
+    const double single_pose_distance = this->pose_distance(
+      this->current_pose_, this->latest_local_plan_.poses.front());
+    const double goal_distance = this->pose_distance(this->current_pose_, this->latest_command_.goal_pose);
+    if (single_pose_distance < min_target_distance &&goal_distance >= min_target_distance)
+    {
+      return select_pose(
+        this->latest_command_.goal_pose, 0U, false, "local_plan_too_short_goal_fallback");
+    }
+    if (single_pose_distance < min_target_distance)
+    {
+      return select_pose(
+        this->latest_local_plan_.poses.front(), 0U, true, "local_plan_too_short_goal_proximity");
+    }
+    return select_pose(this->latest_local_plan_.poses.front(), 0U, true, "local_plan_single_pose");
+  }
+
   std::size_t candidate_target_index = nearest_index;
+  geometry_msgs::msg::PoseStamped candidate_target_pose = this->latest_local_plan_.poses[nearest_index];
+  bool candidate_target_from_plan = true;
+  std::string candidate_selection_reason = nearest_distance < min_target_distance ?
+    "nearest_target_too_close" : "nearest";
   double accumulated_distance = 0.0;
   for (std::size_t index = nearest_index + 1U; index < plan_size; ++index)
   {
     const geometry_msgs::msg::PoseStamped &previous = this->latest_local_plan_.poses[index - 1U];
     const geometry_msgs::msg::PoseStamped &current = this->latest_local_plan_.poses[index];
     accumulated_distance += this->pose_distance(previous, current);
+    const double target_distance = this->pose_distance(this->current_pose_, current);
+    if (target_distance < min_target_distance)
+    {
+      continue;
+    }
+    candidate_target_index = index;
+    candidate_target_pose = current;
+    candidate_selection_reason = accumulated_distance >= this->tracking_lookahead_distance_ ?
+      "candidate_lookahead" : "candidate_min_distance";
     if (accumulated_distance >= this->tracking_lookahead_distance_)
     {
-      candidate_target_index = index;
       break;
     }
   }
-  if (candidate_target_index == nearest_index &&nearest_index + 1U < plan_size)
+  if (candidate_target_index == nearest_index)
   {
-    candidate_target_index = nearest_index + 1U;
+    candidate_target_index = std::min(nearest_index + 1U, plan_size - 1U);
+    candidate_target_pose = this->latest_local_plan_.poses[candidate_target_index];
+    const double candidate_target_distance = this->pose_distance(this->current_pose_, candidate_target_pose);
+    const double goal_distance = this->pose_distance(this->current_pose_, this->latest_command_.goal_pose);
+    if (candidate_target_distance < min_target_distance &&goal_distance >= min_target_distance)
+    {
+      candidate_target_pose = this->latest_command_.goal_pose;
+      candidate_target_from_plan = false;
+      candidate_selection_reason = "candidate_goal_fallback_target_too_close";
+    }
+    else
+    {
+      candidate_selection_reason = candidate_target_distance < min_target_distance ?
+        "candidate_next_pose_too_close" : "candidate_next_pose";
+    }
   }
+  this->tracking_candidate_index_ = candidate_target_index;
 
   std::size_t selected_target_index = candidate_target_index;
+  geometry_msgs::msg::PoseStamped selected_target_pose = candidate_target_pose;
+  bool selected_target_from_plan = candidate_target_from_plan;
+  std::string selected_selection_reason = candidate_selection_reason;
   if (this->has_tracking_target_pose_)
   {
     std::size_t retained_target_index = nearest_index;
@@ -3463,27 +3624,40 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target()
       this->latest_local_plan_.poses[retained_target_index]);
     const double candidate_target_distance = this->pose_distance(
       this->current_pose_,
-      this->latest_local_plan_.poses[candidate_target_index]);
+      candidate_target_pose);
     const bool retained_target_matches_plan =
       retained_plan_distance <= this->tracking_target_reset_distance_;
     const bool retained_target_is_forward = retained_target_index >= nearest_index;
+    const bool retained_target_is_start_pose = retained_target_index == 0U;
+    const bool retained_target_too_close = retained_target_distance < min_target_distance;
     const bool candidate_materially_better =
       candidate_target_distance + this->tracking_target_hysteresis_distance_ < retained_target_distance;
 
     if (
       retained_target_matches_plan &&retained_target_is_forward &&
+      !retained_target_is_start_pose &&!retained_target_too_close &&
       !candidate_materially_better)
     {
       selected_target_index = retained_target_index;
+      selected_target_pose = this->latest_local_plan_.poses[retained_target_index];
+      selected_target_from_plan = true;
+      selected_selection_reason = "retained_target";
+    }
+    else if (retained_target_too_close)
+    {
+      selected_selection_reason = "retained_target_too_close";
+    }
+    else if (retained_target_is_start_pose)
+    {
+      selected_selection_reason = "retained_idx0_current_pose";
     }
   }
 
-  this->tracking_target_index_ = selected_target_index;
-  this->has_tracking_target_index_ = true;
-  this->tracking_target_pose_ = this->latest_local_plan_.poses[this->tracking_target_index_];
-  this->has_tracking_target_pose_ = true;
-
-  return this->latest_local_plan_.poses[this->tracking_target_index_];
+  return select_pose(
+    selected_target_pose,
+    selected_target_index,
+    selected_target_from_plan,
+    selected_selection_reason);
 }
 
 MotionController::GoalCheckResult MotionController::check_goal(
