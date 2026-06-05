@@ -49,6 +49,17 @@ controller hold a quiet final-yaw settle window before it declares the aligned g
 For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
 corrections on straight segments so the robot does not visibly wag with small localization
 or path-sampling noise.
+`control.tracking_heading_release_threshold` adds hysteresis so angular correction resumes
+only after the heading error leaves the deadband by a clear margin.
+Straight-line oscillation reduction is controlled by `control.straight_tracking_enabled`.
+When enabled, the controller detects low-curvature local plan windows with
+`control.straight_curvature_threshold` and `control.straight_lateral_error_threshold`, uses
+`control.straight_tracking_lookahead_distance` for a less noisy target, and applies the
+conservative `control.straight_heading_deadband`, `control.straight_heading_release_threshold`,
+`control.straight_angular_gain`, `control.straight_max_angular_speed`, and
+`control.straight_heading_filter_alpha` only during normal path tracking.
+Goal approach, final heading alignment, backup, spin, and wait recovery commands continue to use
+their existing control paths.
 `control.tracking_progress_rollback_window` limits how far the controller may search backward
 on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
 between old and newly republished nearby poses.

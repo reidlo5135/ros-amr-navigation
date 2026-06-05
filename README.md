@@ -214,7 +214,7 @@ Rosbag profiles are documented in [docs/logging/ROSBAG_PROFILES.md](docs/logging
 3. Test the same start pose and goal three times.
 4. Check recovery entry with `scripts/watch_amr_logs.sh --event recovery_decision`.
 5. Extract `goal_state`, `cmd_quality`, `tracking_state`, and `tracking_heading_debug` with `scripts/extract_nav_quality.sh`.
-6. Compare `recovery_count`, `cmd_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
+6. Compare `recovery_count`, `cmd_ang_sign_flip_count`, `output_ang_sign_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
 
 If RViz shows global/local plans but the robot drives straight, inspect these `AMR_LOG` fields first:
 
@@ -226,6 +226,20 @@ If RViz shows global/local plans but the robot drives straight, inspect these `A
 - `pose_frame`
 - `plan_frame`
 - `selection_reason`
+
+If the robot follows the plan but wags left/right on a visually straight segment, inspect these fields next:
+
+- `straight_segment`
+- `path_curvature_score`
+- `lateral_error_m`
+- `heading_error_raw_rad`
+- `heading_error_filtered_rad`
+- `steering_deadband_active`
+- `steering_hysteresis_state`
+- `cmd_ang_sign_flip_count`
+- `output_ang_sign_flip_count`
+
+Use the `nav_quality_summary` row from `scripts/extract_nav_quality.sh` to compare `cmd_ang_abs_avg`, `output_ang_abs_avg`, and sign flip counts before and after tuning.
 
 ## Hardware Boundary
 
