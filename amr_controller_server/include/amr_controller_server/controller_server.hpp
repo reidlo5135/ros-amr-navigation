@@ -314,6 +314,9 @@ private:
   bool update_blocked_state(bool blocked_candidate);
   bool update_stalled_state(bool stalled_candidate);
   void ensure_recovery_reference_initialized();
+  void reset_rejoin_context_state();
+  void activate_rejoin_context();
+  void update_rejoin_context_state();
   void reset_tracking_diagnostics_state();
   double pose_distance(
     const geometry_msgs::msg::PoseStamped &start,
@@ -369,6 +372,9 @@ private:
   double straight_max_angular_speed_;
   double straight_heading_filter_alpha_;
   double rejoin_target_distance_threshold_;
+  double rejoin_context_timeout_sec_;
+  double rejoin_context_distance_m_;
+  double rejoin_target_jump_threshold_m_;
   double rejoin_heading_gate_threshold_;
   double rejoin_min_linear_scale_;
   double heading_slowdown_threshold_;
@@ -403,9 +409,11 @@ private:
   geometry_msgs::msg::PoseStamped tracking_target_pose_;
   geometry_msgs::msg::PoseStamped progress_reference_pose_;
   geometry_msgs::msg::PoseStamped recovery_reference_pose_;
+  geometry_msgs::msg::PoseStamped rejoin_context_start_pose_;
   sensor_msgs::msg::LaserScan latest_scan_;
   rclcpp::Time progress_reference_time_;
   rclcpp::Time recovery_start_time_;
+  rclcpp::Time rejoin_context_start_time_;
   rclcpp::Time goal_checker_hold_start_time_;
   rclcpp::Time final_align_hold_start_time_;
   rclcpp::Time latest_command_time_;
@@ -425,6 +433,8 @@ private:
   bool tracking_target_from_plan_;
   bool steering_hysteresis_active_;
   bool has_heading_error_filter_;
+  bool rejoin_context_active_;
+  bool rejoin_context_pending_;
   bool blocked_latched_;
   int blocked_streak_;
   int blocked_clear_streak_;

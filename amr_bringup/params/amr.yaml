@@ -263,7 +263,7 @@
       tracking_heading_deadband: 0.05
       tracking_heading_release_threshold: 0.09
       straight_tracking_enabled: true
-      straight_curvature_threshold: 0.08
+      straight_curvature_threshold: 0.15
       straight_lateral_error_threshold: 0.04
       straight_heading_deadband: 0.08
       straight_heading_release_threshold: 0.12
@@ -271,6 +271,9 @@
       straight_max_angular_speed: 0.20
       straight_heading_filter_alpha: 0.35
       rejoin_target_distance_threshold: 0.08
+      rejoin_context_timeout_sec: 2.0
+      rejoin_context_distance_m: 0.35
+      rejoin_target_jump_threshold_m: 0.25
       rejoin_heading_gate_threshold: 0.35
       rejoin_min_linear_scale: 0.35
       rotate_in_place_threshold: 0.45

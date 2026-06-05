@@ -2188,7 +2188,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   tracking_heading_deadband_(0.05),
   tracking_heading_release_threshold_(0.09),
   straight_tracking_enabled_(false),
-  straight_curvature_threshold_(0.08),
+  straight_curvature_threshold_(0.15),
   straight_lateral_error_threshold_(0.04),
   straight_heading_deadband_(0.08),
   straight_heading_release_threshold_(0.12),
@@ -2196,6 +2196,9 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   straight_max_angular_speed_(0.20),
   straight_heading_filter_alpha_(0.35),
   rejoin_target_distance_threshold_(0.08),
+  rejoin_context_timeout_sec_(2.0),
+  rejoin_context_distance_m_(0.35),
+  rejoin_target_jump_threshold_m_(0.25),
   rejoin_heading_gate_threshold_(0.35),
   rejoin_min_linear_scale_(0.35),
   heading_slowdown_threshold_(0.2),
@@ -2235,6 +2238,8 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   tracking_target_from_plan_(false),
   steering_hysteresis_active_(false),
   has_heading_error_filter_(false),
+  rejoin_context_active_(false),
+  rejoin_context_pending_(false),
   blocked_latched_(false),
   blocked_streak_(0),
   blocked_clear_streak_(0),
@@ -2314,6 +2319,12 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "control.straight_heading_filter_alpha", this->straight_heading_filter_alpha_);
   this->declare_parameter(
     "control.rejoin_target_distance_threshold", this->rejoin_target_distance_threshold_);
+  this->declare_parameter(
+    "control.rejoin_context_timeout_sec", this->rejoin_context_timeout_sec_);
+  this->declare_parameter(
+    "control.rejoin_context_distance_m", this->rejoin_context_distance_m_);
+  this->declare_parameter(
+    "control.rejoin_target_jump_threshold_m", this->rejoin_target_jump_threshold_m_);
   this->declare_parameter(
     "control.rejoin_heading_gate_threshold", this->rejoin_heading_gate_threshold_);
   this->declare_parameter(
@@ -2431,6 +2442,12 @@ MotionController::CallbackReturn MotionController::on_configure(
     "control.straight_heading_filter_alpha", this->straight_heading_filter_alpha_);
   this->get_parameter(
     "control.rejoin_target_distance_threshold", this->rejoin_target_distance_threshold_);
+  this->get_parameter(
+    "control.rejoin_context_timeout_sec", this->rejoin_context_timeout_sec_);
+  this->get_parameter(
+    "control.rejoin_context_distance_m", this->rejoin_context_distance_m_);
+  this->get_parameter(
+    "control.rejoin_target_jump_threshold_m", this->rejoin_target_jump_threshold_m_);
   this->get_parameter(
     "control.rejoin_heading_gate_threshold", this->rejoin_heading_gate_threshold_);
   this->get_parameter(
@@ -2628,6 +2645,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
   this->reset_status_semantics_state();
+  this->reset_rejoin_context_state();
   return CallbackReturn::SUCCESS;
 }
 
@@ -2667,11 +2685,15 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->reset_progress_checker_state();
   this->reset_goal_checker_state();
   this->reset_status_semantics_state();
+  this->reset_rejoin_context_state();
   return CallbackReturn::SUCCESS;
 }
 
 void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message)
 {
+  const bool recovery_rejoin_pending =
+    message->mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE &&
+    this->rejoin_context_pending_;
   this->latest_command_ = *message;
   this->has_command_ = true;
   if (message->mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE)
@@ -2690,6 +2712,19 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
     this->tracking_selected_target_distance_ = 0.0;
     this->tracking_selection_reason_ = "new_command";
     this->tracking_target_from_plan_ = false;
+    if (recovery_rejoin_pending &&this->has_current_pose_)
+    {
+      this->activate_rejoin_context();
+    }
+    else if (!recovery_rejoin_pending)
+    {
+      this->reset_rejoin_context_state();
+    }
+  }
+  else
+  {
+    this->reset_rejoin_context_state();
+    this->rejoin_context_pending_ = true;
   }
   this->current_twist_ = geometry_msgs::msg::Twist();
   this->reset_velocity_controller_state();
@@ -2795,6 +2830,7 @@ void MotionController::publish_control()
   double debug_current_yaw = 0.0;
   double debug_target_heading = 0.0;
   bool debug_straight_segment = false;
+  bool debug_rejoin_context_active = false;
   double debug_path_curvature_score = 0.0;
   double debug_lateral_error_m = 0.0;
   double debug_heading_error_raw = 0.0;
@@ -2839,6 +2875,11 @@ void MotionController::publish_control()
 
     if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE)
     {
+      if (this->rejoin_context_pending_ &&this->has_current_pose_)
+      {
+        this->activate_rejoin_context();
+      }
+      this->update_rejoin_context_state();
       const bool had_tracking_target = this->has_tracking_target_pose_;
       const geometry_msgs::msg::PoseStamped previous_tracking_target = this->tracking_target_pose_;
       geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target(
@@ -2849,6 +2890,13 @@ void MotionController::publish_control()
       debug_tracking_target_y = tracking_target.pose.position.y;
       debug_target_jump_m = had_tracking_target ?
         this->pose_distance(previous_tracking_target, tracking_target) : 0.0;
+      if (
+        had_tracking_target &&
+        debug_target_jump_m >= std::max(0.0, this->rejoin_target_jump_threshold_m_))
+      {
+        this->activate_rejoin_context();
+      }
+      this->update_rejoin_context_state();
       const double local_plan_remaining_distance =
         this->estimate_remaining_distance(this->latest_local_plan_);
       double tracking_target_distance = this->pose_distance(this->current_pose_, tracking_target);
@@ -2879,12 +2927,15 @@ void MotionController::publish_control()
       const bool final_align_phase =
         align_heading_at_goal &&
         (distance_reached || goal_distance <= this->rotate_in_place_goal_distance_);
+      const bool rejoin_context_active = this->rejoin_context_active_;
+      debug_rejoin_context_active = rejoin_context_active;
       StraightSegmentAssessment straight_assessment = this->assess_straight_segment(
         this->tracking_nearest_index_,
         this->straight_tracking_lookahead_distance_);
       bool straight_segment =
         this->straight_tracking_enabled_ &&
         straight_assessment.straight_segment &&
+        !rejoin_context_active &&
         !final_align_phase &&
         !distance_reached &&
         goal_distance > this->rotate_in_place_goal_distance_;
@@ -2944,8 +2995,12 @@ void MotionController::publish_control()
           this->target_jump_warn_threshold_m_);
       }
       const bool rejoin_phase =
+        rejoin_context_active &&
         !final_align_phase &&
-        tracking_target_distance >= this->rejoin_target_distance_threshold_;
+        goal_distance > this->rotate_in_place_goal_distance_;
+      const bool rejoin_linear_gate =
+        rejoin_phase &&
+        tracking_target_distance >= std::max(0.0, this->rejoin_target_distance_threshold_);
       const bool heading_settled =
         !align_heading_at_goal ||
         abs_heading_error <= this->final_align_heading_deadband_;
@@ -3239,7 +3294,7 @@ void MotionController::publish_control()
               (steering_abs_heading_error - this->heading_slowdown_threshold_) /
               scale_window);
           }
-          if (rejoin_phase &&steering_abs_heading_error > this->rejoin_heading_gate_threshold_)
+          if (rejoin_linear_gate &&steering_abs_heading_error > this->rejoin_heading_gate_threshold_)
           {
             const double gate_window = std::max(
               3.14159265358979323846 - this->rejoin_heading_gate_threshold_,
@@ -3377,7 +3432,7 @@ void MotionController::publish_control()
         this->get_logger(),
         *this->get_clock(),
         throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
-        "AMR_LOG schema=v1 component=controller event=tracking_heading_debug node=motion_controller goal_id=%u pose_frame=%s plan_frame=%s target_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu target_dist_m=%.3f target_dx=%.3f target_dy=%.3f current_yaw_rad=%.3f target_heading_rad=%.3f heading_err_rad=%.3f steering_err_rad=%.3f straight_segment=%s path_curvature_score=%.3f lateral_error_m=%.3f heading_error_raw_rad=%.3f heading_error_filtered_rad=%.3f steering_deadband_active=%s steering_hysteresis_state=%s cmd_ang_sign=%d cmd_ang_flip_count=%d output_ang_sign=%d output_ang_flip_count=%d selection_reason=%s",
+        "AMR_LOG schema=v1 component=controller event=tracking_heading_debug node=motion_controller goal_id=%u pose_frame=%s plan_frame=%s target_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu target_dist_m=%.3f target_dx=%.3f target_dy=%.3f current_yaw_rad=%.3f target_heading_rad=%.3f heading_err_rad=%.3f steering_err_rad=%.3f rejoin_context_active=%s straight_segment=%s path_curvature_score=%.3f lateral_error_m=%.3f heading_error_raw_rad=%.3f heading_error_filtered_rad=%.3f steering_deadband_active=%s steering_hysteresis_state=%s cmd_ang_sign=%d cmd_ang_flip_count=%d output_ang_sign=%d output_ang_flip_count=%d selection_reason=%s",
         status.command_id,
         frame_label(debug_pose_frame),
         frame_label(debug_plan_frame),
@@ -3392,6 +3447,7 @@ void MotionController::publish_control()
         debug_target_heading,
         debug_heading_error_raw,
         debug_steering_heading_error,
+        bool_label(debug_rejoin_context_active),
         bool_label(debug_straight_segment),
         debug_path_curvature_score,
         debug_lateral_error_m,
@@ -3410,11 +3466,12 @@ void MotionController::publish_control()
       this->get_logger(),
       *this->get_clock(),
       throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
-      "AMR_LOG schema=v1 component=controller event=tracking_state node=motion_controller goal_id=%u mode=%s phase=%s rejoin=%s tracking=%s target_idx=%zu target_x=%.3f target_y=%.3f target_dist_m=%.3f target_jump_m=%.3f lookahead_m=%.3f path_points=%zu dist_goal_m=%.3f heading_err_rad=%.3f straight_segment=%s path_curvature_score=%.3f lateral_error_m=%.3f heading_error_raw_rad=%.3f heading_error_filtered_rad=%.3f steering_deadband_active=%s steering_hysteresis_state=%s blocked=%s safety_blocked=%s recovery=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f cmd_ang_sign=%d cmd_ang_flip_count=%d output_ang_sign=%d output_ang_flip_count=%d",
+      "AMR_LOG schema=v1 component=controller event=tracking_state node=motion_controller goal_id=%u mode=%s phase=%s rejoin=%s rejoin_context_active=%s tracking=%s target_idx=%zu target_x=%.3f target_y=%.3f target_dist_m=%.3f target_jump_m=%.3f lookahead_m=%.3f path_points=%zu dist_goal_m=%.3f heading_err_rad=%.3f straight_segment=%s path_curvature_score=%.3f lateral_error_m=%.3f heading_error_raw_rad=%.3f heading_error_filtered_rad=%.3f steering_deadband_active=%s steering_hysteresis_state=%s blocked=%s safety_blocked=%s recovery=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f cmd_ang_sign=%d cmd_ang_flip_count=%d output_ang_sign=%d output_ang_flip_count=%d",
       status.command_id,
       motion_mode_label(status.mode),
       debug_goal_state.c_str(),
       bool_label(debug_rejoin_state == "rejoin"),
+      bool_label(debug_rejoin_context_active),
       bool_label(debug_has_tracking_target),
       debug_tracking_target_index,
       debug_tracking_target_x,
@@ -3448,7 +3505,7 @@ void MotionController::publish_control()
       this->get_logger(),
       *this->get_clock(),
       throttle_ms_from_sec(this->cmd_quality_log_throttle_sec_),
-      "AMR_LOG schema=v1 component=controller event=cmd_quality node=motion_controller goal_id=%u phase=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f blocked=%s safety_blocked=%s last_cmd_age_sec=%.3f straight_segment=%s steering_deadband_active=%s cmd_ang_sign=%d cmd_ang_flip_count=%d output_ang_sign=%d output_ang_flip_count=%d",
+      "AMR_LOG schema=v1 component=controller event=cmd_quality node=motion_controller goal_id=%u phase=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f blocked=%s safety_blocked=%s last_cmd_age_sec=%.3f rejoin_context_active=%s straight_segment=%s steering_deadband_active=%s cmd_ang_sign=%d cmd_ang_flip_count=%d output_ang_sign=%d output_ang_flip_count=%d",
       status.command_id,
       debug_goal_state.c_str(),
       desired_twist.linear.x,
@@ -3459,6 +3516,7 @@ void MotionController::publish_control()
       bool_label(status.safety_gate_blocked),
       this->latest_command_time_.nanoseconds() > 0 ?
       (this->now() - this->latest_command_time_).seconds() : 0.0,
+      bool_label(debug_rejoin_context_active),
       bool_label(debug_straight_segment),
       bool_label(debug_steering_deadband_active),
       this->cmd_ang_sign_,
@@ -3489,8 +3547,9 @@ void MotionController::publish_control()
         this->get_logger(),
         *this->get_clock(),
         throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
-        "AMR_LOG schema=v1 component=controller event=rejoin_state node=motion_controller goal_id=%u phase=rejoin target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f dist_goal_m=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
+        "AMR_LOG schema=v1 component=controller event=rejoin_state node=motion_controller goal_id=%u phase=rejoin rejoin_context_active=%s target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f dist_goal_m=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
         status.command_id,
+        bool_label(debug_rejoin_context_active),
         debug_tracking_target_index,
         debug_tracking_target_x,
         debug_tracking_target_y,
@@ -3574,6 +3633,44 @@ void MotionController::ensure_recovery_reference_initialized()
   this->recovery_start_time_ = this->now();
   this->recovery_start_yaw_ = this->quaternion_yaw(this->current_pose_.pose.orientation);
   this->has_recovery_reference_ = true;
+}
+
+void MotionController::reset_rejoin_context_state()
+{
+  this->rejoin_context_active_ = false;
+  this->rejoin_context_pending_ = false;
+  this->rejoin_context_start_pose_ = geometry_msgs::msg::PoseStamped();
+  this->rejoin_context_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+}
+
+void MotionController::activate_rejoin_context()
+{
+  this->rejoin_context_active_ = true;
+  this->rejoin_context_pending_ = false;
+  this->rejoin_context_start_pose_ = this->current_pose_;
+  this->rejoin_context_start_time_ = this->now();
+}
+
+void MotionController::update_rejoin_context_state()
+{
+  if (!this->rejoin_context_active_)
+  {
+    return;
+  }
+
+  const double timeout_sec = std::max(0.0, this->rejoin_context_timeout_sec_);
+  const double distance_m = std::max(0.0, this->rejoin_context_distance_m_);
+  const bool timed_out =
+    timeout_sec > 1e-6 &&
+    this->rejoin_context_start_time_.nanoseconds() > 0 &&
+    (this->now() - this->rejoin_context_start_time_).seconds() >= timeout_sec;
+  const bool distance_reached =
+    distance_m > 1e-6 &&
+    this->pose_distance(this->current_pose_, this->rejoin_context_start_pose_) >= distance_m;
+  if (timed_out || distance_reached)
+  {
+    this->rejoin_context_active_ = false;
+  }
 }
 
 MotionController::VelocityControlMode MotionController::parse_velocity_control_mode(
