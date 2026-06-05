@@ -10,9 +10,12 @@ Central launch and parameter package for the AMR runtime stack.
 
 `navigation.launch.py` starts the AMR runtime by default:
 - delayed `localization.launch.py`
-- delayed `amr_mqtt_server.launch.py`
 - delayed controller / recovery / BT navigation nodes
 - delayed runtime observation and lifecycle manager nodes
+
+`navigation.launch.py` does not start TurtleBot3 hardware nodes, `turtlebot3_bringup`,
+`robot_state_publisher`, or AMR robot driver nodes. Hardware bringup must run separately through
+external TurtleBot3 bringup or a robot-side AMR hardware launch.
 
 ## Important Parameter Groups
 
@@ -35,7 +38,13 @@ AMR runtime bringup:
 ros2 launch amr_bringup navigation.launch.py
 ```
 
-Navigation-only mode when localization and MQTT are already running elsewhere:
+Start the optional MQTT bridge only when an MQTT client workflow is needed:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py use_mqtt_server:=true
+```
+
+Navigation-only mode when localization/runtime prerequisites are already running elsewhere:
 
 ```bash
 ros2 launch amr_bringup navigation.launch.py navigation_only:=true

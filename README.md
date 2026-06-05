@@ -122,6 +122,16 @@ Remote-PC AMR navigation/runtime bringup:
 ros2 launch amr_bringup navigation.launch.py
 ```
 
+This launch is the remote-PC navigation/runtime entrypoint. It does not start TurtleBot3
+hardware, `turtlebot3_bringup`, `robot_state_publisher`, or AMR robot driver nodes; run hardware
+bringup separately through external TB3 bringup or a robot-side AMR launch.
+
+The MQTT bridge is disabled by default. Enable it only for MQTT/remote-client workflows:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py use_mqtt_server:=true
+```
+
 RViz-based local operator test console:
 
 ```bash

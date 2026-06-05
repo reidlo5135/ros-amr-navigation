@@ -32,6 +32,12 @@ Start navigation under `nohup`:
 scripts/run_navigation_nohup.sh
 ```
 
+Enable the optional MQTT bridge only when MQTT/remote-client operation is needed:
+
+```bash
+scripts/run_navigation_nohup.sh use_mqtt_server:=true
+```
+
 Start TurtleBot3 bringup under `nohup`:
 
 ```bash
