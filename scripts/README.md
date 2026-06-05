@@ -117,6 +117,7 @@ The extractor includes these event families by default:
 - `tracking_state`
 - `tracking_heading_debug`
 - `tracking_frame_mismatch`
+- `local_path_quality`
 - `target_jump_detected`
 - `recovery_decision`
 
@@ -128,3 +129,7 @@ The final `nav_quality_summary` row reports `cmd_ang_abs_avg`, `cmd_ang_abs_max`
 `output_ang_abs_avg`, `output_ang_abs_max`, `cmd_ang_sign_flip_count`,
 `output_ang_sign_flip_count`, `straight_segment_ratio`, and
 `straight_cmd_ang_interference_count` for before/after comparisons.
+For stair-step path diagnosis, inspect `local_path_quality` columns:
+`raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_length_m`,
+`path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`,
+`collinear_pruned_count`, and `collision_check_passed`.

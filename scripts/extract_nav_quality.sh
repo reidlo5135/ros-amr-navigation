@@ -9,7 +9,8 @@ Extract navigation quality AMR_LOG events from text logs.
 
 Default events:
   goal_state, cmd_quality, tracking_state, tracking_heading_debug,
-  tracking_frame_mismatch, target_jump_detected, recovery_decision
+  tracking_frame_mismatch, local_path_quality, target_jump_detected,
+  recovery_decision
 
 The output also carries rejoin_context_active and appends one nav_quality_summary
 row with straight-line angular interference metrics computed from cmd_quality rows.
@@ -113,18 +114,18 @@ function emit(fields, raw, i) {
   }
 }
 BEGIN {
-  field_count = 45
+  field_count = 52
   if (format == "csv") {
-    print "source,component,event,phase,goal_id,target_idx,selected_idx,nearest_idx,candidate_idx,target_dist_m,target_jump_m,dist_goal_m,heading_err_rad,steering_err_rad,cmd_lin,cmd_ang,output_lin,output_ang,recovery_count,blocked,reason,selection_reason,pose_frame,plan_frame,target_frame,rejoin_context_active,straight_segment,path_curvature_score,lateral_error_m,heading_error_raw_rad,heading_error_filtered_rad,steering_deadband_active,steering_hysteresis_state,cmd_ang_sign,cmd_ang_flip_count,output_ang_sign,output_ang_flip_count,cmd_ang_abs_avg,cmd_ang_abs_max,output_ang_abs_avg,output_ang_abs_max,cmd_ang_sign_flip_count,output_ang_sign_flip_count,straight_segment_ratio,straight_cmd_ang_interference_count,raw"
+    print "source,component,event,phase,goal_id,target_idx,selected_idx,nearest_idx,candidate_idx,target_dist_m,target_jump_m,dist_goal_m,heading_err_rad,steering_err_rad,cmd_lin,cmd_ang,output_lin,output_ang,recovery_count,blocked,reason,selection_reason,pose_frame,plan_frame,target_frame,rejoin_context_active,straight_segment,path_curvature_score,lateral_error_m,heading_error_raw_rad,heading_error_filtered_rad,steering_deadband_active,steering_hysteresis_state,cmd_ang_sign,cmd_ang_flip_count,output_ang_sign,output_ang_flip_count,cmd_ang_abs_avg,cmd_ang_abs_max,output_ang_abs_avg,output_ang_abs_max,cmd_ang_sign_flip_count,output_ang_sign_flip_count,straight_segment_ratio,straight_cmd_ang_interference_count,raw_path_points,simplified_path_points,refined_path_points,path_length_m,line_of_sight_simplified,collinear_pruned_count,collision_check_passed,raw"
   } else {
-    print "source\tcomponent\tevent\tphase\tgoal_id\ttarget_idx\tselected_idx\tnearest_idx\tcandidate_idx\ttarget_dist_m\ttarget_jump_m\tdist_goal_m\theading_err_rad\tsteering_err_rad\tcmd_lin\tcmd_ang\toutput_lin\toutput_ang\trecovery_count\tblocked\treason\tselection_reason\tpose_frame\tplan_frame\ttarget_frame\trejoin_context_active\tstraight_segment\tpath_curvature_score\tlateral_error_m\theading_error_raw_rad\theading_error_filtered_rad\tsteering_deadband_active\tsteering_hysteresis_state\tcmd_ang_sign\tcmd_ang_flip_count\toutput_ang_sign\toutput_ang_flip_count\tcmd_ang_abs_avg\tcmd_ang_abs_max\toutput_ang_abs_avg\toutput_ang_abs_max\tcmd_ang_sign_flip_count\toutput_ang_sign_flip_count\tstraight_segment_ratio\tstraight_cmd_ang_interference_count\traw"
+    print "source\tcomponent\tevent\tphase\tgoal_id\ttarget_idx\tselected_idx\tnearest_idx\tcandidate_idx\ttarget_dist_m\ttarget_jump_m\tdist_goal_m\theading_err_rad\tsteering_err_rad\tcmd_lin\tcmd_ang\toutput_lin\toutput_ang\trecovery_count\tblocked\treason\tselection_reason\tpose_frame\tplan_frame\ttarget_frame\trejoin_context_active\tstraight_segment\tpath_curvature_score\tlateral_error_m\theading_error_raw_rad\theading_error_filtered_rad\tsteering_deadband_active\tsteering_hysteresis_state\tcmd_ang_sign\tcmd_ang_flip_count\toutput_ang_sign\toutput_ang_flip_count\tcmd_ang_abs_avg\tcmd_ang_abs_max\toutput_ang_abs_avg\toutput_ang_abs_max\tcmd_ang_sign_flip_count\toutput_ang_sign_flip_count\tstraight_segment_ratio\tstraight_cmd_ang_interference_count\traw_path_points\tsimplified_path_points\trefined_path_points\tpath_length_m\tline_of_sight_simplified\tcollinear_pruned_count\tcollision_check_passed\traw"
   }
 }
 /AMR_LOG/ {
   pos = index($0, "AMR_LOG")
   entry = substr($0, pos)
   event = value_of(entry, "event")
-  if (event != "goal_state" && event != "cmd_quality" && event != "tracking_state" && event != "tracking_heading_debug" && event != "tracking_frame_mismatch" && event != "target_jump_detected" && event != "recovery_decision") {
+  if (event != "goal_state" && event != "cmd_quality" && event != "tracking_state" && event != "tracking_heading_debug" && event != "tracking_frame_mismatch" && event != "local_path_quality" && event != "target_jump_detected" && event != "recovery_decision") {
     next
   }
   target_idx = value_of(entry, "target_idx")
@@ -170,6 +171,13 @@ BEGIN {
   fields[35] = value_of(entry, "cmd_ang_flip_count")
   fields[36] = value_of(entry, "output_ang_sign")
   fields[37] = value_of(entry, "output_ang_flip_count")
+  fields[46] = value_of(entry, "raw_path_points")
+  fields[47] = value_of(entry, "simplified_path_points")
+  fields[48] = value_of(entry, "refined_path_points")
+  fields[49] = value_of(entry, "path_length_m")
+  fields[50] = value_of(entry, "line_of_sight_simplified")
+  fields[51] = value_of(entry, "collinear_pruned_count")
+  fields[52] = value_of(entry, "collision_check_passed")
   if (event == "cmd_quality") {
     cmd_ang = fields[16]
     output_ang = fields[18]

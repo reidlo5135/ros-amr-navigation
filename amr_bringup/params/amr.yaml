@@ -210,6 +210,12 @@
       interpolate_distance: 0.15
       heading_assignment_enabled: true
       preserve_goal_orientation: true
+      line_of_sight_simplification_enabled: true
+      line_of_sight_sample_distance: 0.05
+      line_of_sight_max_skip: 12
+      collinear_pruning_enabled: true
+      collinear_angle_threshold: 0.12
+      collinear_lateral_deviation_threshold: 0.025
       corner_smoothing_enabled: true
       corner_smoothing_max_offset: 0.12
       corner_smoothing_angle_threshold: 0.35

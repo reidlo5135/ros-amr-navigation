@@ -43,6 +43,20 @@ double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
     1.0 - 2.0 * ((quaternion.y * quaternion.y) + (quaternion.z * quaternion.z)));
 }
 
+double normalize_angle(double angle)
+{
+  constexpr double kPi = 3.14159265358979323846;
+  while (angle > kPi)
+  {
+    angle -= 2.0 * kPi;
+  }
+  while (angle < -kPi)
+  {
+    angle += 2.0 * kPi;
+  }
+  return angle;
+}
+
 struct GridCell
 {
   int x;
@@ -410,6 +424,12 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   path_refiner_interpolate_distance_(0.15),
   path_refiner_heading_assignment_enabled_(true),
   path_refiner_preserve_goal_orientation_(true),
+  path_refiner_line_of_sight_simplification_enabled_(true),
+  path_refiner_line_of_sight_sample_distance_(0.05),
+  path_refiner_line_of_sight_max_skip_(12),
+  path_refiner_collinear_pruning_enabled_(true),
+  path_refiner_collinear_angle_threshold_(0.12),
+  path_refiner_collinear_lateral_deviation_threshold_(0.025),
   path_refiner_corner_smoothing_enabled_(true),
   path_refiner_corner_smoothing_max_offset_(0.12),
   path_refiner_corner_smoothing_angle_threshold_(0.35),
@@ -464,6 +484,21 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     "path_refiner.heading_assignment_enabled", this->path_refiner_heading_assignment_enabled_);
   this->declare_parameter(
     "path_refiner.preserve_goal_orientation", this->path_refiner_preserve_goal_orientation_);
+  this->declare_parameter(
+    "path_refiner.line_of_sight_simplification_enabled",
+    this->path_refiner_line_of_sight_simplification_enabled_);
+  this->declare_parameter(
+    "path_refiner.line_of_sight_sample_distance",
+    this->path_refiner_line_of_sight_sample_distance_);
+  this->declare_parameter(
+    "path_refiner.line_of_sight_max_skip", this->path_refiner_line_of_sight_max_skip_);
+  this->declare_parameter(
+    "path_refiner.collinear_pruning_enabled", this->path_refiner_collinear_pruning_enabled_);
+  this->declare_parameter(
+    "path_refiner.collinear_angle_threshold", this->path_refiner_collinear_angle_threshold_);
+  this->declare_parameter(
+    "path_refiner.collinear_lateral_deviation_threshold",
+    this->path_refiner_collinear_lateral_deviation_threshold_);
   this->declare_parameter(
     "path_refiner.corner_smoothing_enabled", this->path_refiner_corner_smoothing_enabled_);
   this->declare_parameter(
@@ -538,6 +573,21 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     "path_refiner.heading_assignment_enabled", this->path_refiner_heading_assignment_enabled_);
   this->get_parameter(
     "path_refiner.preserve_goal_orientation", this->path_refiner_preserve_goal_orientation_);
+  this->get_parameter(
+    "path_refiner.line_of_sight_simplification_enabled",
+    this->path_refiner_line_of_sight_simplification_enabled_);
+  this->get_parameter(
+    "path_refiner.line_of_sight_sample_distance",
+    this->path_refiner_line_of_sight_sample_distance_);
+  this->get_parameter(
+    "path_refiner.line_of_sight_max_skip", this->path_refiner_line_of_sight_max_skip_);
+  this->get_parameter(
+    "path_refiner.collinear_pruning_enabled", this->path_refiner_collinear_pruning_enabled_);
+  this->get_parameter(
+    "path_refiner.collinear_angle_threshold", this->path_refiner_collinear_angle_threshold_);
+  this->get_parameter(
+    "path_refiner.collinear_lateral_deviation_threshold",
+    this->path_refiner_collinear_lateral_deviation_threshold_);
   this->get_parameter(
     "path_refiner.corner_smoothing_enabled", this->path_refiner_corner_smoothing_enabled_);
   this->get_parameter(
@@ -820,9 +870,10 @@ void LocalPlanner::publish_local_plan()
   }
 
   LocalPlanBuildResult build_result = this->build_local_plan(this->latest_command_, this->current_pose_);
+  LocalPathQualityMetrics path_quality;
   if (build_result.local_plan_valid)
   {
-    build_result.plan = this->refine_local_plan(build_result.plan);
+    build_result.plan = this->refine_local_plan(build_result.plan, &path_quality);
   }
   this->local_plan_publisher_->publish(build_result.plan);
 
@@ -843,6 +894,25 @@ void LocalPlanner::publish_local_plan()
 
   if (this->structured_logging_enabled_)
   {
+    if (build_result.local_plan_valid)
+    {
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        throttle_ms_from_sec(this->state_log_throttle_sec_),
+        "AMR_LOG schema=v1 component=controller event=local_path_quality node=local_planner goal_id=%u raw_path_points=%zu simplified_path_points=%zu refined_path_points=%zu path_length_m=%.3f path_curvature_score=%.3f lateral_error_m=%.3f line_of_sight_simplified=%s collinear_pruned_count=%d collision_check_passed=%s",
+        this->latest_command_.command_id,
+        path_quality.raw_path_points,
+        path_quality.simplified_path_points,
+        path_quality.refined_path_points,
+        path_quality.path_length_m,
+        path_quality.path_curvature_score,
+        path_quality.lateral_error_m,
+        bool_label(path_quality.line_of_sight_simplified),
+        path_quality.collinear_pruned_count,
+        bool_label(path_quality.collision_check_passed));
+    }
+
     RCLCPP_INFO_THROTTLE(
       this->get_logger(),
       *this->get_clock(),
@@ -1453,14 +1523,43 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
   return local_plan;
 }
 
-nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &plan) const
+nav_msgs::msg::Path LocalPlanner::refine_local_plan(
+  const nav_msgs::msg::Path &plan,
+  LocalPathQualityMetrics *quality_metrics) const
 {
+  if (quality_metrics != nullptr)
+  {
+    quality_metrics->raw_path_points = plan.poses.size();
+    quality_metrics->simplified_path_points = plan.poses.size();
+    quality_metrics->refined_path_points = plan.poses.size();
+    quality_metrics->path_length_m = this->estimate_path_length(plan);
+    quality_metrics->path_curvature_score = this->estimate_path_curvature_score(plan);
+    quality_metrics->lateral_error_m = this->estimate_path_lateral_error(plan);
+    quality_metrics->line_of_sight_simplified = false;
+    quality_metrics->collinear_pruned_count = 0;
+    quality_metrics->collision_check_passed =
+      !this->path_refiner_collision_check_enabled_ || this->is_path_collision_free(plan);
+  }
+
   if (!this->path_refiner_enabled_ || plan.poses.size() < 2U)
   {
     return plan;
   }
 
-  nav_msgs::msg::Path refined_plan = this->prune_and_interpolate_path(plan);
+  bool line_of_sight_simplified = false;
+  nav_msgs::msg::Path simplified_plan = this->simplify_path_line_of_sight(
+    plan,
+    line_of_sight_simplified);
+  int collinear_pruned_count = 0;
+  simplified_plan = this->prune_collinear_path(simplified_plan, collinear_pruned_count);
+  if (quality_metrics != nullptr)
+  {
+    quality_metrics->line_of_sight_simplified = line_of_sight_simplified;
+    quality_metrics->collinear_pruned_count = collinear_pruned_count;
+    quality_metrics->simplified_path_points = simplified_plan.poses.size();
+  }
+
+  nav_msgs::msg::Path refined_plan = this->prune_and_interpolate_path(simplified_plan);
   if (this->path_refiner_heading_assignment_enabled_)
   {
     this->assign_path_headings(refined_plan);
@@ -1476,6 +1575,15 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &p
 
     if (this->is_smoothed_path_acceptable(refined_plan, smoothed_plan))
     {
+      if (quality_metrics != nullptr)
+      {
+        quality_metrics->refined_path_points = smoothed_plan.poses.size();
+        quality_metrics->path_length_m = this->estimate_path_length(smoothed_plan);
+        quality_metrics->path_curvature_score = this->estimate_path_curvature_score(smoothed_plan);
+        quality_metrics->lateral_error_m = this->estimate_path_lateral_error(smoothed_plan);
+        quality_metrics->collision_check_passed =
+          !this->path_refiner_collision_check_enabled_ || this->is_path_collision_free(smoothed_plan);
+      }
       return smoothed_plan;
     }
 
@@ -1484,7 +1592,144 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(const nav_msgs::msg::Path &p
       "Path refiner rejected smoothed path because the acceptance checks failed");
   }
 
+  if (quality_metrics != nullptr)
+  {
+    quality_metrics->refined_path_points = refined_plan.poses.size();
+    quality_metrics->path_length_m = this->estimate_path_length(refined_plan);
+    quality_metrics->path_curvature_score = this->estimate_path_curvature_score(refined_plan);
+    quality_metrics->lateral_error_m = this->estimate_path_lateral_error(refined_plan);
+    quality_metrics->collision_check_passed =
+      !this->path_refiner_collision_check_enabled_ || this->is_path_collision_free(refined_plan);
+  }
   return refined_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::simplify_path_line_of_sight(
+  const nav_msgs::msg::Path &plan,
+  bool &line_of_sight_simplified) const
+{
+  line_of_sight_simplified = false;
+  if (
+    !this->path_refiner_line_of_sight_simplification_enabled_ ||
+    plan.poses.size() < 3U ||
+    !this->has_map_ || !this->map_occupancy_grid_ || this->map_occupancy_grid_->data.empty())
+  {
+    return plan;
+  }
+
+  nav_msgs::msg::Path simplified_plan;
+  simplified_plan.header = plan.header;
+  simplified_plan.header.stamp = this->now();
+  simplified_plan.poses.reserve(plan.poses.size());
+  simplified_plan.poses.push_back(plan.poses.front());
+
+  const std::size_t max_skip = static_cast<std::size_t>(
+    std::max(1, this->path_refiner_line_of_sight_max_skip_));
+  const double sample_distance = std::max(this->path_refiner_line_of_sight_sample_distance_, 1e-3);
+  std::size_t current_index = 0U;
+  while (current_index + 1U < plan.poses.size())
+  {
+    std::size_t selected_index = current_index + 1U;
+    const std::size_t max_candidate_index = std::min(
+      plan.poses.size() - 1U,
+      current_index + max_skip);
+    for (std::size_t candidate_index = max_candidate_index; candidate_index > current_index + 1U; --candidate_index)
+    {
+      if (this->is_path_segment_collision_free(
+          plan.poses[current_index],
+          plan.poses[candidate_index],
+          sample_distance))
+      {
+        selected_index = candidate_index;
+        line_of_sight_simplified = true;
+        break;
+      }
+    }
+
+    simplified_plan.poses.push_back(plan.poses[selected_index]);
+    current_index = selected_index;
+  }
+
+  return simplified_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::prune_collinear_path(
+  const nav_msgs::msg::Path &plan,
+  int &collinear_pruned_count) const
+{
+  collinear_pruned_count = 0;
+  if (!this->path_refiner_collinear_pruning_enabled_ || plan.poses.size() < 3U)
+  {
+    return plan;
+  }
+
+  nav_msgs::msg::Path pruned_plan;
+  pruned_plan.header = plan.header;
+  pruned_plan.header.stamp = this->now();
+  pruned_plan.poses.reserve(plan.poses.size());
+  pruned_plan.poses.push_back(plan.poses.front());
+
+  const double angle_threshold = std::max(0.0, this->path_refiner_collinear_angle_threshold_);
+  const double lateral_threshold = std::max(
+    0.0,
+    this->path_refiner_collinear_lateral_deviation_threshold_);
+  const double sample_distance = std::max(this->path_refiner_line_of_sight_sample_distance_, 1e-3);
+
+  for (std::size_t index = 1U; index + 1U < plan.poses.size(); ++index)
+  {
+    const geometry_msgs::msg::PoseStamped &previous_pose = pruned_plan.poses.back();
+    const geometry_msgs::msg::PoseStamped &current_pose = plan.poses[index];
+    const geometry_msgs::msg::PoseStamped &next_pose = plan.poses[index + 1U];
+    const double prev_dx = current_pose.pose.position.x - previous_pose.pose.position.x;
+    const double prev_dy = current_pose.pose.position.y - previous_pose.pose.position.y;
+    const double next_dx = next_pose.pose.position.x - current_pose.pose.position.x;
+    const double next_dy = next_pose.pose.position.y - current_pose.pose.position.y;
+    const double prev_distance = std::sqrt((prev_dx * prev_dx) + (prev_dy * prev_dy));
+    const double next_distance = std::sqrt((next_dx * next_dx) + (next_dy * next_dy));
+    if (prev_distance <= 1e-6 || next_distance <= 1e-6)
+    {
+      ++collinear_pruned_count;
+      continue;
+    }
+
+    const double dot = std::clamp(
+      ((prev_dx / prev_distance) * (next_dx / next_distance)) +
+      ((prev_dy / prev_distance) * (next_dy / next_distance)),
+      -1.0,
+      1.0);
+    const double angle = std::acos(dot);
+    const double line_dx = next_pose.pose.position.x - previous_pose.pose.position.x;
+    const double line_dy = next_pose.pose.position.y - previous_pose.pose.position.y;
+    const double line_length = std::sqrt((line_dx * line_dx) + (line_dy * line_dy));
+    double lateral_deviation = 0.0;
+    if (line_length > 1e-6)
+    {
+      const double point_dx = current_pose.pose.position.x - previous_pose.pose.position.x;
+      const double point_dy = current_pose.pose.position.y - previous_pose.pose.position.y;
+      lateral_deviation = std::abs((point_dx * line_dy) - (point_dy * line_dx)) / line_length;
+    }
+
+    const bool near_collinear = angle <= angle_threshold && lateral_deviation <= lateral_threshold;
+    const bool safe_to_skip =
+      near_collinear &&
+      this->is_path_segment_collision_free(previous_pose, next_pose, sample_distance);
+    if (safe_to_skip)
+    {
+      ++collinear_pruned_count;
+      continue;
+    }
+
+    pruned_plan.poses.push_back(current_pose);
+  }
+
+  pruned_plan.poses.push_back(plan.poses.back());
+  if (this->path_refiner_collision_check_enabled_ && !this->is_path_collision_free(pruned_plan))
+  {
+    collinear_pruned_count = 0;
+    return plan;
+  }
+
+  return pruned_plan;
 }
 
 nav_msgs::msg::Path LocalPlanner::prune_and_interpolate_path(const nav_msgs::msg::Path &plan) const
@@ -1738,6 +1983,126 @@ double LocalPlanner::estimate_pose_distance_to_path(
   }
 
   return min_distance;
+}
+
+double LocalPlanner::estimate_path_curvature_score(const nav_msgs::msg::Path &path) const
+{
+  if (path.poses.size() < 2U)
+  {
+    return 0.0;
+  }
+
+  const geometry_msgs::msg::Point &start = path.poses.front().pose.position;
+  const geometry_msgs::msg::Point &end = path.poses.back().pose.position;
+  const double baseline_dx = end.x - start.x;
+  const double baseline_dy = end.y - start.y;
+  if ((baseline_dx * baseline_dx) + (baseline_dy * baseline_dy) <= 1e-8)
+  {
+    return 0.0;
+  }
+
+  const double baseline_heading = std::atan2(baseline_dy, baseline_dx);
+  double max_heading_delta = 0.0;
+  for (std::size_t index = 1U; index < path.poses.size(); ++index)
+  {
+    const geometry_msgs::msg::Point &previous = path.poses[index - 1U].pose.position;
+    const geometry_msgs::msg::Point &current = path.poses[index].pose.position;
+    const double segment_dx = current.x - previous.x;
+    const double segment_dy = current.y - previous.y;
+    if ((segment_dx * segment_dx) + (segment_dy * segment_dy) <= 1e-8)
+    {
+      continue;
+    }
+
+    const double segment_heading = std::atan2(segment_dy, segment_dx);
+    max_heading_delta = std::max(
+      max_heading_delta,
+      std::abs(normalize_angle(segment_heading - baseline_heading)));
+  }
+
+  return max_heading_delta;
+}
+
+double LocalPlanner::estimate_path_lateral_error(const nav_msgs::msg::Path &path) const
+{
+  if (path.poses.size() < 3U)
+  {
+    return 0.0;
+  }
+
+  const geometry_msgs::msg::Point &start = path.poses.front().pose.position;
+  const geometry_msgs::msg::Point &end = path.poses.back().pose.position;
+  const double line_dx = end.x - start.x;
+  const double line_dy = end.y - start.y;
+  const double line_length = std::sqrt((line_dx * line_dx) + (line_dy * line_dy));
+  if (line_length <= 1e-6)
+  {
+    return 0.0;
+  }
+
+  double max_lateral_error = 0.0;
+  for (std::size_t index = 1U; index + 1U < path.poses.size(); ++index)
+  {
+    const geometry_msgs::msg::Point &point = path.poses[index].pose.position;
+    const double point_dx = point.x - start.x;
+    const double point_dy = point.y - start.y;
+    const double lateral_error = std::abs((point_dx * line_dy) - (point_dy * line_dx)) / line_length;
+    max_lateral_error = std::max(max_lateral_error, lateral_error);
+  }
+
+  return max_lateral_error;
+}
+
+bool LocalPlanner::is_path_segment_collision_free(
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal,
+  const double sample_distance) const
+{
+  if (!this->has_map_ || !this->map_occupancy_grid_ || this->map_occupancy_grid_->data.empty())
+  {
+    return false;
+  }
+
+  const double dx = goal.pose.position.x - start.pose.position.x;
+  const double dy = goal.pose.position.y - start.pose.position.y;
+  const double segment_distance = std::sqrt((dx * dx) + (dy * dy));
+  if (segment_distance <= 1e-6)
+  {
+    return this->is_pose_collision_free(start);
+  }
+
+  const double segment_heading = std::atan2(dy, dx);
+  geometry_msgs::msg::PoseStamped start_sample = start;
+  geometry_msgs::msg::PoseStamped goal_sample = goal;
+  start_sample.pose.orientation = this->yaw_to_quaternion(segment_heading);
+  goal_sample.pose.orientation = this->yaw_to_quaternion(segment_heading);
+  if (!this->is_pose_collision_free(start_sample) || !this->is_pose_collision_free(goal_sample))
+  {
+    return false;
+  }
+
+  const double effective_sample_distance = std::max(sample_distance, 1e-3);
+  const int sample_count = static_cast<int>(std::floor(segment_distance / effective_sample_distance));
+  for (int sample_index = 1; sample_index <= sample_count; ++sample_index)
+  {
+    const double ratio = std::clamp(
+      (static_cast<double>(sample_index) * effective_sample_distance) / segment_distance,
+      0.0,
+      1.0);
+    if (ratio >= 1.0)
+    {
+      continue;
+    }
+
+    geometry_msgs::msg::PoseStamped sample_pose = this->interpolate_pose(start_sample, goal_sample, ratio);
+    sample_pose.pose.orientation = this->yaw_to_quaternion(segment_heading);
+    if (!this->is_pose_collision_free(sample_pose))
+    {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool LocalPlanner::is_path_collision_free(const nav_msgs::msg::Path &plan) const

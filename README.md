@@ -171,7 +171,7 @@ Common fields:
 
 Useful event families:
 
-- controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`
+- controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`
 - navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`
 - planner/recovery: `plan_requested`, `plan_succeeded`, `plan_failed`, `recovery_plan_selected`
 - observation: `runtime_summary`, `runtime_event`
@@ -213,7 +213,7 @@ Rosbag profiles are documented in [docs/logging/ROSBAG_PROFILES.md](docs/logging
 2. Record a light bag with `scripts/record_nav_bag_light.sh`.
 3. Test the same start pose and goal three times.
 4. Check recovery entry with `scripts/watch_amr_logs.sh --event recovery_decision`.
-5. Extract `goal_state`, `cmd_quality`, `tracking_state`, and `tracking_heading_debug` with `scripts/extract_nav_quality.sh`.
+5. Extract `goal_state`, `cmd_quality`, `tracking_state`, `tracking_heading_debug`, and `local_path_quality` with `scripts/extract_nav_quality.sh`.
 6. Compare `recovery_count`, `cmd_ang_sign_flip_count`, `output_ang_sign_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
 
 If RViz shows global/local plans but the robot drives straight, inspect these `AMR_LOG` fields first:
@@ -240,10 +240,22 @@ If the robot follows the plan but wags left/right on a visually straight segment
 - `steering_hysteresis_state`
 - `cmd_ang_sign_flip_count`
 - `output_ang_sign_flip_count`
+- `local_path_quality.raw_path_points`
+- `local_path_quality.simplified_path_points`
+- `local_path_quality.refined_path_points`
+- `local_path_quality.line_of_sight_simplified`
+- `local_path_quality.collinear_pruned_count`
+- `local_path_quality.collision_check_passed`
 
 Normal straight tracking should read as `phase=tracking`, `rejoin=false`,
 `rejoin_context_active=false`, `straight_segment=true`, and near-zero `cmd_ang` / `output_ang`.
 `rejoin=true` is reserved for bounded path return after recovery, escape, or a large tracking target reacquisition.
+If `straight_segment=false` while the RViz path looks straight, compare visual straightness with the
+actual local plan geometry in `local_path_quality`; high `path_curvature_score` means the controller
+is following stair-stepped local points.
+For straight-line tracking tests that should ignore final yaw, set
+`/amr/motion_controller.goal_checker.ignore_yaw: true`; this only disables final heading alignment
+for that test configuration.
 
 Use the `nav_quality_summary` row from `scripts/extract_nav_quality.sh` to compare `cmd_ang_abs_avg`, `output_ang_abs_avg`, and sign flip counts before and after tuning.
 

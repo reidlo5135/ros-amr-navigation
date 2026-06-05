@@ -46,6 +46,9 @@ When heading alignment is active near the goal, `control.goal_reach_heading_tole
 from the looser general waypoint-style yaw tolerance.
 `control.final_align_heading_deadband` and `control.final_align_settle_time_sec` let the
 controller hold a quiet final-yaw settle window before it declares the aligned goal complete.
+For straight-line tracking tests where final yaw should be ignored, set
+`goal_checker.ignore_yaw` to `true`; this leaves recovery and normal tracking intact but skips
+goal yaw alignment in the motion controller.
 For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
 corrections on straight segments so the robot does not visibly wag with small localization
 or path-sampling noise.
@@ -60,6 +63,12 @@ conservative `control.straight_heading_deadband`, `control.straight_heading_rele
 `control.straight_heading_filter_alpha` only during normal path tracking.
 Goal approach, final heading alignment, backup, spin, and wait recovery commands continue to use
 their existing control paths.
+The local planner also reduces grid stair-steps before the motion controller sees them.
+`path_refiner.line_of_sight_simplification_enabled` skips intermediate poses when the footprint can
+travel directly between non-adjacent path points, and `path_refiner.collinear_pruning_enabled`
+removes near-collinear residual points after that line-of-sight pass.
+The `local_path_quality` log reports raw, simplified, and refined point counts plus curvature,
+lateral error, pruning count, and collision-check status.
 `control.tracking_progress_rollback_window` limits how far the controller may search backward
 on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
 between old and newly republished nearby poses.

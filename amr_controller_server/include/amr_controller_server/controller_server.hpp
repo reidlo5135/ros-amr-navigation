@@ -47,6 +47,19 @@ private:
     double blocked_distance{0.0};
   };
 
+  struct LocalPathQualityMetrics
+  {
+    std::size_t raw_path_points{0U};
+    std::size_t simplified_path_points{0U};
+    std::size_t refined_path_points{0U};
+    double path_length_m{0.0};
+    double path_curvature_score{0.0};
+    double lateral_error_m{0.0};
+    bool line_of_sight_simplified{false};
+    int collinear_pruned_count{0};
+    bool collision_check_passed{true};
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -130,7 +143,15 @@ private:
     double origin_y,
     double heading,
     double lateral_sign) const;
-  nav_msgs::msg::Path refine_local_plan(const nav_msgs::msg::Path &plan) const;
+  nav_msgs::msg::Path refine_local_plan(
+    const nav_msgs::msg::Path &plan,
+    LocalPathQualityMetrics *quality_metrics = nullptr) const;
+  nav_msgs::msg::Path simplify_path_line_of_sight(
+    const nav_msgs::msg::Path &plan,
+    bool &line_of_sight_simplified) const;
+  nav_msgs::msg::Path prune_collinear_path(
+    const nav_msgs::msg::Path &plan,
+    int &collinear_pruned_count) const;
   nav_msgs::msg::Path prune_and_interpolate_path(const nav_msgs::msg::Path &plan) const;
   nav_msgs::msg::Path apply_path_smoother(const nav_msgs::msg::Path &plan) const;
   nav_msgs::msg::Path smooth_path_corners(const nav_msgs::msg::Path &plan) const;
@@ -141,6 +162,12 @@ private:
   double estimate_pose_distance_to_path(
     const geometry_msgs::msg::PoseStamped &pose,
     const nav_msgs::msg::Path &path) const;
+  double estimate_path_curvature_score(const nav_msgs::msg::Path &path) const;
+  double estimate_path_lateral_error(const nav_msgs::msg::Path &path) const;
+  bool is_path_segment_collision_free(
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal,
+    double sample_distance) const;
   bool is_path_collision_free(const nav_msgs::msg::Path &plan) const;
   bool is_pose_collision_free(const geometry_msgs::msg::PoseStamped &pose) const;
   void assign_path_headings(nav_msgs::msg::Path &plan) const;
@@ -173,6 +200,12 @@ private:
   double path_refiner_interpolate_distance_;
   bool path_refiner_heading_assignment_enabled_;
   bool path_refiner_preserve_goal_orientation_;
+  bool path_refiner_line_of_sight_simplification_enabled_;
+  double path_refiner_line_of_sight_sample_distance_;
+  int path_refiner_line_of_sight_max_skip_;
+  bool path_refiner_collinear_pruning_enabled_;
+  double path_refiner_collinear_angle_threshold_;
+  double path_refiner_collinear_lateral_deviation_threshold_;
   bool path_refiner_corner_smoothing_enabled_;
   double path_refiner_corner_smoothing_max_offset_;
   double path_refiner_corner_smoothing_angle_threshold_;
