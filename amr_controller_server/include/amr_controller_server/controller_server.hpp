@@ -182,6 +182,8 @@ private:
   bool path_refiner_collision_check_enabled_;
   double path_refiner_collision_sample_distance_;
   bool dynamic_obstacle_enabled_;
+  bool structured_logging_enabled_;
+  double state_log_throttle_sec_;
   double dynamic_obstacle_replan_lookahead_distance_;
   double dynamic_obstacle_escape_forward_distance_;
   double dynamic_obstacle_escape_lateral_distance_;
@@ -352,6 +354,10 @@ private:
   int status_blocked_confirm_cycles_;
   int status_blocked_clear_cycles_;
   int status_stalled_confirm_cycles_;
+  bool structured_logging_enabled_;
+  double tracking_state_log_throttle_sec_;
+  double cmd_quality_log_throttle_sec_;
+  double target_jump_warn_threshold_m_;
   bool safety_gate_enabled_;
   bool safety_gate_allow_rotate_in_place_;
   double safety_gate_stop_distance_;

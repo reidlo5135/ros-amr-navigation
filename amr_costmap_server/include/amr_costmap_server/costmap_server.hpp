@@ -78,6 +78,7 @@ private:
   int dynamic_static_clearance_cells_;
   bool publish_global_on_scan_;
   int local_publish_min_period_ms_;
+  bool structured_logging_enabled_;
   bool local_window_enabled_;
   double local_window_radius_;
   std::vector<double> footprint_polygon_;

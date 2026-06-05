@@ -191,6 +191,8 @@ private:
   int recovery_max_retries_;
   int recovery_retry_delay_ms_;
   int recovery_reacquire_settle_ms_;
+  bool structured_logging_enabled_;
+  bool recovery_decision_logging_enabled_;
   double nominal_speed_;
   uint32_t next_command_id_;
   geometry_msgs::msg::PoseStamped current_pose_;

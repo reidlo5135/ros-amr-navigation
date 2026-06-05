@@ -8,6 +8,19 @@ namespace
 
 constexpr double kPi = 3.14159265358979323846;
 
+std::string log_value(std::string value)
+{
+  if (value.empty()) {
+    return "none";
+  }
+  for (char &character : value) {
+    if (character == ' ' || character == '\t' || character == '\n' || character == '\r' || character == '=') {
+      character = '_';
+    }
+  }
+  return value;
+}
+
 }  // namespace
 
 RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
@@ -17,7 +30,8 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
   wait_duration_sec_(1.0),
   backup_distance_(0.20),
   backup_speed_(0.06),
-  spin_angle_rad_(1.5707963267948966)
+  spin_angle_rad_(1.5707963267948966),
+  structured_logging_enabled_(true)
 {
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_name_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
@@ -25,6 +39,7 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
   this->declare_parameter("recovery.backup_distance", this->backup_distance_);
   this->declare_parameter("recovery.backup_speed", this->backup_speed_);
   this->declare_parameter("recovery.spin_angle_rad", this->spin_angle_rad_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 }
 
 RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecycle::State &state)
@@ -36,6 +51,7 @@ RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecyc
   this->get_parameter("recovery.backup_distance", this->backup_distance_);
   this->get_parameter("recovery.backup_speed", this->backup_speed_);
   this->get_parameter("recovery.spin_angle_rad", this->spin_angle_rad_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 
   if (this->plan_recovery_service_name_.empty()) {
     RCLCPP_ERROR(this->get_logger(), "Recovery server service name must not be empty");
@@ -87,27 +103,60 @@ void RecoveryServer::handle_plan_recovery(
   const std::shared_ptr<amr_msgs::srv::PlanRecovery::Request> request,
   std::shared_ptr<amr_msgs::srv::PlanRecovery::Response> response)
 {
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=recovery_server event=recovery_plan_requested recovery_type=%s pose_x=%.3f pose_y=%.3f",
+      request->behavior.empty() ? "none" : request->behavior.c_str(),
+      request->current_pose.pose.position.x,
+      request->current_pose.pose.position.y);
+  }
+
   if (request->behavior == "wait") {
     response->command = this->build_wait_command(request->current_pose);
     response->success = true;
     response->message = "Planned wait recovery.";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=recovery_server event=recovery_plan_selected recovery_type=wait reason=requested_wait cmd_lin=0.000 cmd_ang=0.000 duration_sec=%.3f",
+        response->command.recovery_duration);
+    }
     return;
   }
   if (request->behavior == "backup") {
     response->command = this->build_backup_command(request->current_pose);
     response->success = true;
     response->message = "Planned backup recovery.";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=recovery_server event=recovery_plan_selected recovery_type=backup reason=requested_backup cmd_lin=%.3f cmd_ang=0.000 duration_sec=%.3f",
+        -response->command.recovery_speed,
+        response->command.recovery_duration);
+    }
     return;
   }
   if (request->behavior == "spin") {
     response->command = this->build_spin_command(request->current_pose);
     response->success = true;
     response->message = "Planned spin recovery.";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=recovery_server event=recovery_plan_selected recovery_type=spin reason=requested_spin cmd_lin=0.000 cmd_ang=%.3f duration_sec=0.000",
+        response->command.recovery_angle);
+    }
     return;
   }
 
   response->success = false;
   response->message = "Unknown recovery behavior: " + request->behavior;
+  RCLCPP_WARN(
+    this->get_logger(),
+    "AMR_LOG schema=v1 component=recovery_server event=recovery_plan_failed recovery_type=%s reason=%s",
+    request->behavior.empty() ? "none" : request->behavior.c_str(),
+    log_value(response->message).c_str());
 }
 
 amr_msgs::msg::MotionCommand RecoveryServer::build_backup_command(

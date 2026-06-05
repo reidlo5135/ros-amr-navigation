@@ -130,6 +130,7 @@ private:
   bool has_initial_pose_;
   bool particles_initialized_;
   bool auto_initial_pose_published_;
+  bool structured_logging_enabled_;
 };
 
 }  // namespace amr::localization::estimator

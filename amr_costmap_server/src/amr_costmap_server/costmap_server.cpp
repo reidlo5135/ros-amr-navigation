@@ -9,6 +9,11 @@ namespace
 constexpr int kUnknownCellValue = -1;
 constexpr double kPi = 3.14159265358979323846;
 
+const char *bool_label(const bool value)
+{
+  return value ? "true" : "false";
+}
+
 }  // namespace
 
 CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
@@ -29,6 +34,7 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
   dynamic_static_clearance_cells_(4),
   publish_global_on_scan_(false),
   local_publish_min_period_ms_(100),
+  structured_logging_enabled_(true),
   local_window_enabled_(true),
   local_window_radius_(2.5),
   footprint_polygon_(),
@@ -56,6 +62,7 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
   this->declare_parameter("dynamic.static_clearance_cells", this->dynamic_static_clearance_cells_);
   this->declare_parameter("publish.global_on_scan", this->publish_global_on_scan_);
   this->declare_parameter("publish.local_min_period_ms", this->local_publish_min_period_ms_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->declare_parameter("local_window.enabled", this->local_window_enabled_);
   this->declare_parameter("local_window.radius", this->local_window_radius_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_);
@@ -82,6 +89,7 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   this->get_parameter("dynamic.static_clearance_cells", this->dynamic_static_clearance_cells_);
   this->get_parameter("publish.global_on_scan", this->publish_global_on_scan_);
   this->get_parameter("publish.local_min_period_ms", this->local_publish_min_period_ms_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->get_parameter("local_window.enabled", this->local_window_enabled_);
   this->get_parameter("local_window.radius", this->local_window_radius_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_);
@@ -134,21 +142,21 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
     this->local_costmap_topic_,
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable());
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Configured costmap server with map='%s', pose='%s', scan='%s', global='%s', local='%s', clear='%s', footprint_radius=%.3f m padding=%.3f m, global_on_scan=%s, local_min_period_ms=%d, local_window=%s radius=%.2f m",
-    this->map_topic_.c_str(),
-    this->pose_topic_.c_str(),
-    this->scan_topic_.c_str(),
-    this->global_costmap_topic_.c_str(),
-    this->local_costmap_topic_.c_str(),
-    this->clear_costmap_service_name_.c_str(),
-    this->footprint_circumscribed_radius_,
-    this->footprint_padding_,
-    this->publish_global_on_scan_ ? "true" : "false",
-    this->local_publish_min_period_ms_,
-    this->local_window_enabled_ ? "true" : "false",
-    this->local_window_radius_);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=costmap_server event=costmap_state state=configured map_topic=%s scan_topic=%s global_topic=%s local_topic=%s footprint_radius_m=%.3f padding_m=%.3f global_on_scan=%s local_min_period_ms=%d local_window=%s local_window_radius_m=%.3f",
+      this->map_topic_.c_str(),
+      this->scan_topic_.c_str(),
+      this->global_costmap_topic_.c_str(),
+      this->local_costmap_topic_.c_str(),
+      this->footprint_circumscribed_radius_,
+      this->footprint_padding_,
+      bool_label(this->publish_global_on_scan_),
+      this->local_publish_min_period_ms_,
+      bool_label(this->local_window_enabled_),
+      this->local_window_radius_);
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -247,7 +255,21 @@ void CostmapServer::handle_clear_costmap(
   if (!this->has_map_ || !this->map_) {
     response->success = false;
     response->message = "Static map is not available yet.";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=costmap_server event=costmap_error reason=map_unavailable result=failed");
+    }
     return;
+  }
+
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=costmap_server event=costmap_clear_requested local_only=%s has_scan=%s has_map=%s",
+      bool_label(request->local_only),
+      bool_label(this->has_scan_),
+      bool_label(this->has_map_));
   }
 
   if (request->local_only) {
@@ -257,6 +279,11 @@ void CostmapServer::handle_clear_costmap(
     this->publish_local_costmap();
     response->success = true;
     response->message = "Cleared local dynamic obstacle layer.";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=costmap_server event=costmap_clear_done local_only=true result=success");
+    }
     return;
   }
 
@@ -267,6 +294,11 @@ void CostmapServer::handle_clear_costmap(
   this->publish_costmaps();
   response->success = true;
   response->message = "Rebuilt global and local costmaps from the static map.";
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=costmap_server event=costmap_clear_done local_only=false result=success");
+  }
 }
 
 void CostmapServer::rebuild_global_costmap()

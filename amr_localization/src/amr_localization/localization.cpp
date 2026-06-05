@@ -9,6 +9,11 @@ namespace
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kMinimumWeight = 1e-6;
 
+const char *bool_label(const bool value)
+{
+  return value ? "true" : "false";
+}
+
 }  // namespace
 
 Localization::Localization(const rclcpp::NodeOptions &options)
@@ -49,7 +54,8 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   has_previous_odom_(false),
   has_initial_pose_(false),
   particles_initialized_(false),
-  auto_initial_pose_published_(false)
+  auto_initial_pose_published_(false),
+  structured_logging_enabled_(true)
 {
   this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
@@ -83,6 +89,7 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   this->declare_parameter("amcl.max_beams", this->max_beams_);
   this->declare_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->declare_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 }
 
 Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::State &state)
@@ -120,6 +127,7 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("amcl.max_beams", this->max_beams_);
   this->get_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->get_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 
   if (
     this->odom_topic_.empty() || this->scan_topic_.empty() || this->map_topic_.empty() ||
@@ -179,13 +187,18 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     this->estimated_odom_topic_, rclcpp::SystemDefaultsQoS());
   this->transform_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Configured AMCL-lite localization with odom='%s', scan='%s', map='%s', particles=%d",
-    this->odom_topic_.c_str(),
-    this->scan_topic_.c_str(),
-    this->map_topic_.c_str(),
-    this->particle_count_);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=localization event=localization_state state=configured odom_topic=%s scan_topic=%s map_topic=%s frame_from=%s frame_to=%s particles=%d auto_initial_pose=%s",
+      this->odom_topic_.c_str(),
+      this->scan_topic_.c_str(),
+      this->map_topic_.c_str(),
+      this->odom_frame_.c_str(),
+      this->map_frame_.c_str(),
+      this->particle_count_,
+      bool_label(this->auto_initial_pose_enabled_));
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -308,13 +321,15 @@ void Localization::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
 {
   this->map_occupancy_grid_ = message;
   this->has_map_ = true;
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Received map: frame='%s' size=%u x %u resolution=%.3f",
-    message->header.frame_id.c_str(),
-    message->info.width,
-    message->info.height,
-    message->info.resolution);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=localization event=localization_state state=map_received frame_to=%s map_width=%u map_height=%u resolution_m=%.3f",
+      message->header.frame_id.c_str(),
+      message->info.width,
+      message->info.height,
+      message->info.resolution);
+  }
 }
 
 void Localization::handle_initial_pose(
@@ -343,13 +358,15 @@ void Localization::handle_initial_pose(
   this->update_estimated_pose_from_particles(stamp);
   this->publish_outputs(stamp);
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Applied initial pose: frame='%s' x=%.3f y=%.3f yaw=%.3f",
-    this->initial_map_pose_.header.frame_id.c_str(),
-    this->initial_map_pose_.pose.position.x,
-    this->initial_map_pose_.pose.position.y,
-    this->quaternion_yaw(this->initial_map_pose_.pose.orientation));
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=localization event=initial_pose_received frame_to=%s pose_x=%.3f pose_y=%.3f pose_yaw=%.3f tf_ok=true",
+      this->initial_map_pose_.header.frame_id.c_str(),
+      this->initial_map_pose_.pose.position.x,
+      this->initial_map_pose_.pose.position.y,
+      this->quaternion_yaw(this->initial_map_pose_.pose.orientation));
+  }
 }
 
 void Localization::publish_auto_initial_pose()
@@ -380,13 +397,15 @@ void Localization::publish_auto_initial_pose()
   this->initial_pose_publisher_->publish(initial_pose);
   this->auto_initial_pose_published_ = true;
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Published auto initial pose: frame='%s' x=%.3f y=%.3f yaw=%.3f",
-    initial_pose.header.frame_id.c_str(),
-    initial_pose.pose.pose.position.x,
-    initial_pose.pose.pose.position.y,
-    this->initial_yaw_);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=localization event=initial_pose_received state=auto_published frame_to=%s pose_x=%.3f pose_y=%.3f pose_yaw=%.3f tf_ok=true",
+      initial_pose.header.frame_id.c_str(),
+      initial_pose.pose.pose.position.x,
+      initial_pose.pose.pose.position.y,
+      this->initial_yaw_);
+  }
 }
 
 void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped &pose)

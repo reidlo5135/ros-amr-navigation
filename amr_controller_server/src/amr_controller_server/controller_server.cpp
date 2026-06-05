@@ -26,6 +26,16 @@ const char *local_plan_decision_label(const uint8_t decision)
   }
 }
 
+const char *bool_label(const bool value)
+{
+  return value ? "true" : "false";
+}
+
+int throttle_ms_from_sec(const double seconds)
+{
+  return static_cast<int>(std::max(0.1, seconds) * 1000.0);
+}
+
 double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
 {
   return std::atan2(
@@ -409,6 +419,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   path_refiner_collision_check_enabled_(true),
   path_refiner_collision_sample_distance_(0.05),
   dynamic_obstacle_enabled_(true),
+  structured_logging_enabled_(true),
+  state_log_throttle_sec_(1.0),
   dynamic_obstacle_replan_lookahead_distance_(1.4),
   dynamic_obstacle_escape_forward_distance_(1.2),
   dynamic_obstacle_escape_lateral_distance_(0.55),
@@ -471,6 +483,8 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     "path_refiner.collision_sample_distance", this->path_refiner_collision_sample_distance_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->declare_parameter("logging.state_log_throttle_sec", this->state_log_throttle_sec_);
   this->declare_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
   this->declare_parameter(
@@ -543,6 +557,8 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     "path_refiner.collision_sample_distance", this->path_refiner_collision_sample_distance_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->get_parameter("logging.state_log_throttle_sec", this->state_log_throttle_sec_);
   this->get_parameter(
     "dynamic_obstacle.replan_lookahead_distance", this->dynamic_obstacle_replan_lookahead_distance_);
   this->get_parameter(
@@ -825,20 +841,23 @@ void LocalPlanner::publish_local_plan()
   status.blocked_distance = build_result.blocked_distance;
   this->local_plan_status_publisher_->publish(status);
 
-  RCLCPP_INFO_THROTTLE(
-    this->get_logger(),
-    *this->get_clock(),
-    2000,
-    "Local planner status cmd=%u progress_index=%zu poses=%zu decision=%s recovery=%s blocked=%s blocked_distance=%.3f blocked_streak=%d clear_streak=%d",
-    this->latest_command_.command_id,
-    this->last_progress_index_,
-    build_result.plan.poses.size(),
-    local_plan_decision_label(build_result.decision),
-    build_result.recovery_required ? "true" : "false",
-    build_result.has_blocked_pose ? "true" : "false",
-    build_result.blocked_distance,
-    this->dynamic_blocked_streak_,
-    this->dynamic_clear_streak_);
+  if (this->structured_logging_enabled_)
+  {
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      throttle_ms_from_sec(this->state_log_throttle_sec_),
+      "AMR_LOG schema=v1 component=controller event=local_blocked_state node=local_planner goal_id=%u target_idx=%zu path_points=%zu decision=%s recovery=%s blocked=%s blocked_distance_m=%.3f blocked_streak=%d clear_streak=%d",
+      this->latest_command_.command_id,
+      this->last_progress_index_,
+      build_result.plan.poses.size(),
+      local_plan_decision_label(build_result.decision),
+      bool_label(build_result.recovery_required),
+      bool_label(build_result.has_blocked_pose),
+      build_result.blocked_distance,
+      this->dynamic_blocked_streak_,
+      this->dynamic_clear_streak_);
+  }
 }
 
 LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
@@ -2097,6 +2116,16 @@ const char *motion_mode_label(const uint8_t mode)
   }
 }
 
+const char *bool_label(const bool value)
+{
+  return value ? "true" : "false";
+}
+
+int throttle_ms_from_sec(const double seconds)
+{
+  return static_cast<int>(std::max(0.1, seconds) * 1000.0);
+}
+
 }  // namespace
 
 MotionController::MotionController(const rclcpp::NodeOptions &options)
@@ -2144,6 +2173,10 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   status_blocked_confirm_cycles_(2),
   status_blocked_clear_cycles_(2),
   status_stalled_confirm_cycles_(2),
+  structured_logging_enabled_(true),
+  tracking_state_log_throttle_sec_(1.0),
+  cmd_quality_log_throttle_sec_(1.0),
+  target_jump_warn_threshold_m_(0.35),
   safety_gate_enabled_(true),
   safety_gate_allow_rotate_in_place_(true),
   safety_gate_stop_distance_(3.0),
@@ -2235,6 +2268,13 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "status.blocked_clear_cycles", this->status_blocked_clear_cycles_);
   this->declare_parameter(
     "status.stalled_confirm_cycles", this->status_stalled_confirm_cycles_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->declare_parameter(
+    "logging.tracking_state_throttle_sec", this->tracking_state_log_throttle_sec_);
+  this->declare_parameter(
+    "logging.cmd_quality_throttle_sec", this->cmd_quality_log_throttle_sec_);
+  this->declare_parameter(
+    "logging.target_jump_warn_threshold_m", this->target_jump_warn_threshold_m_);
 
   this->declare_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->declare_parameter(
@@ -2328,6 +2368,13 @@ MotionController::CallbackReturn MotionController::on_configure(
     "status.blocked_clear_cycles", this->status_blocked_clear_cycles_);
   this->get_parameter(
     "status.stalled_confirm_cycles", this->status_stalled_confirm_cycles_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->get_parameter(
+    "logging.tracking_state_throttle_sec", this->tracking_state_log_throttle_sec_);
+  this->get_parameter(
+    "logging.cmd_quality_throttle_sec", this->cmd_quality_log_throttle_sec_);
+  this->get_parameter(
+    "logging.target_jump_warn_threshold_m", this->target_jump_warn_threshold_m_);
 
   this->get_parameter("safety_gate.enabled", this->safety_gate_enabled_);
   this->get_parameter(
@@ -2555,13 +2602,19 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
   this->recovery_start_time_ = this->now();
   this->recovery_start_yaw_ = 0.0;
   this->latest_command_time_ = this->now();
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Received motion command %u mode=%u with goal x=%.3f y=%.3f",
-    message->command_id,
-    message->mode,
-    message->goal_pose.pose.position.x,
-    message->goal_pose.pose.position.y);
+  if (this->structured_logging_enabled_)
+  {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=controller event=motion_command node=motion_controller goal_id=%u mode=%s route_id=%s target_x=%.3f target_y=%.3f recovery=%s recovery_type=%s",
+      message->command_id,
+      motion_mode_label(message->mode),
+      message->route_id.empty() ? "none" : message->route_id.c_str(),
+      message->goal_pose.pose.position.x,
+      message->goal_pose.pose.position.y,
+      bool_label(message->mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE),
+      motion_mode_label(message->mode));
+  }
 }
 
 void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr message)
@@ -2583,12 +2636,18 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
     this->tracking_progress_index_ = 0U;
     this->tracking_target_index_ = 0U;
   }
-  RCLCPP_INFO_THROTTLE(
-    this->get_logger(),
-    *this->get_clock(),
-    2000,
-    "Updated local plan with %zu poses",
-    message->poses.size());
+  if (this->structured_logging_enabled_)
+  {
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+      "AMR_LOG schema=v1 component=controller event=tracking_target_selected node=motion_controller path_points=%zu target_idx=%zu target_x=%.3f target_y=%.3f result=plan_updated",
+      message->poses.size(),
+      this->tracking_target_index_,
+      this->has_tracking_target_pose_ ? this->tracking_target_pose_.pose.position.x : 0.0,
+      this->has_tracking_target_pose_ ? this->tracking_target_pose_.pose.position.y : 0.0);
+  }
 }
 
 void MotionController::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
@@ -2622,6 +2681,7 @@ void MotionController::publish_control()
   std::size_t debug_tracking_target_index = 0U;
   double debug_tracking_target_x = 0.0;
   double debug_tracking_target_y = 0.0;
+  double debug_target_jump_m = 0.0;
   amr_msgs::msg::MotionStatus status;
   status.header.stamp = this->now();
   status.header.frame_id =
@@ -2655,12 +2715,33 @@ void MotionController::publish_control()
 
     if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE)
     {
+      const bool had_tracking_target = this->has_tracking_target_pose_;
+      const geometry_msgs::msg::PoseStamped previous_tracking_target = this->tracking_target_pose_;
       const geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target();
       debug_has_tracking_target = this->has_tracking_target_index_;
       debug_tracking_progress_index = this->tracking_progress_index_;
       debug_tracking_target_index = this->tracking_target_index_;
       debug_tracking_target_x = tracking_target.pose.position.x;
       debug_tracking_target_y = tracking_target.pose.position.y;
+      debug_target_jump_m = had_tracking_target ?
+        this->pose_distance(previous_tracking_target, tracking_target) : 0.0;
+      if (
+        this->structured_logging_enabled_ &&
+        had_tracking_target &&
+        debug_target_jump_m >= this->target_jump_warn_threshold_m_)
+      {
+        RCLCPP_WARN_THROTTLE(
+          this->get_logger(),
+          *this->get_clock(),
+          throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+          "AMR_LOG schema=v1 component=controller event=target_jump_detected node=motion_controller goal_id=%u target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f threshold_m=%.3f",
+          this->latest_command_.command_id,
+          this->tracking_target_index_,
+          debug_tracking_target_x,
+          debug_tracking_target_y,
+          debug_target_jump_m,
+          this->target_jump_warn_threshold_m_);
+      }
       const double local_plan_remaining_distance =
         this->estimate_remaining_distance(this->latest_local_plan_);
       const double tracking_target_distance =
@@ -2818,10 +2899,15 @@ void MotionController::publish_control()
         this->reset_progress_checker_state();
         this->reset_goal_checker_state();
         this->reset_status_semantics_state();
-        RCLCPP_INFO(
-          this->get_logger(),
-          "Goal reached for command %u",
-          status.command_id);
+        if (this->structured_logging_enabled_)
+        {
+          RCLCPP_INFO(
+            this->get_logger(),
+            "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=reached xy_reached=true yaw_reached=true dist_goal_m=%.3f heading_err_rad=%.3f result=success",
+            status.command_id,
+            goal_distance,
+            heading_error);
+        }
       }
       else if (distance_reached &&(!align_heading_at_goal || final_align_stable))
       {
@@ -2840,13 +2926,23 @@ void MotionController::publish_control()
             -angular_speed_limit,
             angular_speed_limit);
         }
-        RCLCPP_INFO_THROTTLE(
-          this->get_logger(),
-          *this->get_clock(),
-          1000,
-          "Navigation hold: blocked=%s stalled=%s",
-          status.blocked ? "true" : "false",
-          status.stalled ? "true" : "false");
+        if (this->structured_logging_enabled_)
+        {
+          RCLCPP_WARN_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+            "AMR_LOG schema=v1 component=controller event=local_blocked_state node=motion_controller goal_id=%u phase=%s blocked=%s stalled=%s safety_blocked=%s dist_goal_m=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
+            status.command_id,
+            debug_goal_state.c_str(),
+            bool_label(status.blocked),
+            bool_label(status.stalled),
+            bool_label(status.safety_gate_blocked),
+            goal_distance,
+            heading_error,
+            desired_twist.linear.x,
+            desired_twist.angular.z);
+        }
       }
       else
       {
@@ -2958,10 +3054,16 @@ void MotionController::publish_control()
         this->reset_progress_checker_state();
         this->reset_goal_checker_state();
         this->reset_status_semantics_state();
-        RCLCPP_INFO(
-          this->get_logger(),
-          "Recovery command %u completed",
-          status.command_id);
+        if (this->structured_logging_enabled_)
+        {
+          RCLCPP_INFO(
+            this->get_logger(),
+            "AMR_LOG schema=v1 component=controller event=motion_command node=motion_controller goal_id=%u mode=%s recovery=true recovery_type=%s result=completed duration_sec=%.3f",
+            status.command_id,
+            motion_mode_label(status.mode),
+            motion_mode_label(status.mode),
+            elapsed_sec);
+        }
       }
     }
   }
@@ -2977,32 +3079,84 @@ void MotionController::publish_control()
   this->cmd_vel_publisher_->publish(output_twist);
   this->motion_status_publisher_->publish(status);
 
-  if (status.active)
+  if (status.active &&this->structured_logging_enabled_)
   {
     RCLCPP_INFO_THROTTLE(
       this->get_logger(),
       *this->get_clock(),
-      1000,
-      "Control cmd=%u mode=%s phase=%s rejoin=%s track=%s progress_index=%zu target_index=%zu target=(%.3f,%.3f) target_cmd=(%.3f,%.3f) output=(%.3f,%.3f) remaining=%.3f heading=%.3f blocked=%s stalled=%s safety=%s local_plan=%s",
+      throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+      "AMR_LOG schema=v1 component=controller event=tracking_state node=motion_controller goal_id=%u mode=%s phase=%s rejoin=%s tracking=%s target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f lookahead_m=%.3f path_points=%zu dist_goal_m=%.3f heading_err_rad=%.3f blocked=%s safety_blocked=%s recovery=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f",
       status.command_id,
       motion_mode_label(status.mode),
       debug_goal_state.c_str(),
-      debug_rejoin_state.c_str(),
-      debug_has_tracking_target ? "true" : "false",
-      debug_tracking_progress_index,
+      bool_label(debug_rejoin_state == "rejoin"),
+      bool_label(debug_has_tracking_target),
       debug_tracking_target_index,
       debug_tracking_target_x,
       debug_tracking_target_y,
+      debug_target_jump_m,
+      this->tracking_lookahead_distance_,
+      this->latest_local_plan_.poses.size(),
+      debug_remaining_distance,
+      status.heading_error,
+      bool_label(status.blocked || status.stalled),
+      bool_label(status.safety_gate_blocked),
+      bool_label(status.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE),
+      desired_twist.linear.x,
+      desired_twist.angular.z,
+      output_twist.linear.x,
+      output_twist.angular.z);
+
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      throttle_ms_from_sec(this->cmd_quality_log_throttle_sec_),
+      "AMR_LOG schema=v1 component=controller event=cmd_quality node=motion_controller goal_id=%u phase=%s cmd_lin=%.3f cmd_ang=%.3f output_lin=%.3f output_ang=%.3f blocked=%s safety_blocked=%s last_cmd_age_sec=%.3f",
+      status.command_id,
+      debug_goal_state.c_str(),
       desired_twist.linear.x,
       desired_twist.angular.z,
       output_twist.linear.x,
       output_twist.angular.z,
-      debug_remaining_distance,
-      status.heading_error,
-      status.blocked ? "true" : "false",
-      status.stalled ? "true" : "false",
-      status.safety_gate_blocked ? "true" : "false",
-      status.local_plan_valid ? "true" : "false");
+      bool_label(status.blocked || status.stalled),
+      bool_label(status.safety_gate_blocked),
+      this->latest_command_time_.nanoseconds() > 0 ?
+      (this->now() - this->latest_command_time_).seconds() : 0.0);
+
+    if (debug_goal_state != "tracking" &&debug_goal_state != "idle")
+    {
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+        "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=%s xy_reached=%s yaw_reached=%s dist_goal_m=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
+        status.command_id,
+        debug_goal_state.c_str(),
+        bool_label(this->goal_xy_latched_),
+        bool_label(std::abs(status.heading_error) <= this->goal_reach_heading_tolerance_),
+        status.remaining_distance,
+        status.heading_error,
+        desired_twist.linear.x,
+        desired_twist.angular.z);
+    }
+
+    if (debug_rejoin_state == "rejoin")
+    {
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
+        "AMR_LOG schema=v1 component=controller event=rejoin_state node=motion_controller goal_id=%u phase=rejoin target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f dist_goal_m=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
+        status.command_id,
+        debug_tracking_target_index,
+        debug_tracking_target_x,
+        debug_tracking_target_y,
+        debug_target_jump_m,
+        status.remaining_distance,
+        status.heading_error,
+        desired_twist.linear.x,
+        desired_twist.angular.z);
+    }
   }
 }
 

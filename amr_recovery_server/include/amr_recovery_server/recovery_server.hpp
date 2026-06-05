@@ -49,6 +49,7 @@ private:
   double backup_distance_;
   double backup_speed_;
   double spin_angle_rad_;
+  bool structured_logging_enabled_;
 };
 
 }  // namespace amr::recovery::server

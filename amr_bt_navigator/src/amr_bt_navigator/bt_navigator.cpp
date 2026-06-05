@@ -30,6 +30,24 @@ const char *local_plan_decision_label(const uint8_t decision)
   }
 }
 
+const char *bool_label(const bool value)
+{
+  return value ? "true" : "false";
+}
+
+std::string log_value(std::string value)
+{
+  if (value.empty()) {
+    return "none";
+  }
+  for (char &character : value) {
+    if (character == ' ' || character == '\t' || character == '\n' || character == '\r' || character == '=') {
+      character = '_';
+    }
+  }
+  return value;
+}
+
 std::string get_default_behavior_tree_xml_path()
 {
   try {
@@ -91,6 +109,8 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   recovery_max_retries_(3),
   recovery_retry_delay_ms_(700),
   recovery_reacquire_settle_ms_(700),
+  structured_logging_enabled_(true),
+  recovery_decision_logging_enabled_(true),
   nominal_speed_(0.075),
   next_command_id_(1U),
   has_current_pose_(false),
@@ -118,6 +138,9 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   this->declare_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
   this->declare_parameter(
     "recovery.reacquire_settle_ms", this->recovery_reacquire_settle_ms_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->declare_parameter(
+    "logging.recovery_decision_logging", this->recovery_decision_logging_enabled_);
   this->declare_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 }
 
@@ -151,6 +174,9 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
   this->get_parameter(
     "recovery.reacquire_settle_ms", this->recovery_reacquire_settle_ms_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->get_parameter(
+    "logging.recovery_decision_logging", this->recovery_decision_logging_enabled_);
   this->get_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 
   if (this->behavior_tree_xml_path_.empty()) {
@@ -327,26 +353,33 @@ rclcpp_action::GoalResponse Btnavigator::handle_goal(
   if (this->has_active_goal()) {
     RCLCPP_WARN(
       this->get_logger(),
-      "Rejecting goal while another navigate goal is still active");
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_pose result=rejected reason=active_goal_exists");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
-    RCLCPP_WARN(this->get_logger(), "Rejecting goal while navigator is inactive");
+    RCLCPP_WARN(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_pose result=rejected reason=navigator_inactive");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
   if (goal->goal_pose.header.frame_id.empty()) {
-    RCLCPP_WARN(this->get_logger(), "Rejecting goal with empty frame_id");
+    RCLCPP_WARN(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_pose result=rejected reason=empty_frame_id");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Accepted navigate goal: frame='%s' x=%.3f y=%.3f",
-    goal->goal_pose.header.frame_id.c_str(),
-    goal->goal_pose.pose.position.x,
-    goal->goal_pose.pose.position.y);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_pose result=accepted goal_id=%u frame=%s target_x=%.3f target_y=%.3f",
+      this->next_command_id_,
+      goal->goal_pose.header.frame_id.c_str(),
+      goal->goal_pose.pose.position.x,
+      goal->goal_pose.pose.position.y);
+  }
 
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -359,17 +392,21 @@ rclcpp_action::GoalResponse Btnavigator::handle_goals(
   if (this->has_active_goal()) {
     RCLCPP_WARN(
       this->get_logger(),
-      "Rejecting waypoint route while another navigation goal is still active");
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_poses result=rejected reason=active_goal_exists");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
-    RCLCPP_WARN(this->get_logger(), "Rejecting waypoint route while navigator is inactive");
+    RCLCPP_WARN(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_poses result=rejected reason=navigator_inactive");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
   if (goal->goal_poses.empty()) {
-    RCLCPP_WARN(this->get_logger(), "Rejecting waypoint route with no goal poses");
+    RCLCPP_WARN(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_poses result=rejected reason=empty_goal_poses");
     return rclcpp_action::GoalResponse::REJECT;
   }
 
@@ -377,7 +414,7 @@ rclcpp_action::GoalResponse Btnavigator::handle_goals(
     if (goal->goal_poses[index].header.frame_id.empty()) {
       RCLCPP_WARN(
         this->get_logger(),
-        "Rejecting waypoint route because goal %zu has empty frame_id",
+        "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_poses result=rejected reason=empty_frame_id goal_index=%zu",
         index);
       return rclcpp_action::GoalResponse::REJECT;
     }
@@ -385,14 +422,17 @@ rclcpp_action::GoalResponse Btnavigator::handle_goals(
 
   const auto &first_goal = goal->goal_poses.front();
   const auto &last_goal = goal->goal_poses.back();
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Accepted waypoint route with %zu goals: first=(%.3f, %.3f) last=(%.3f, %.3f)",
-    goal->goal_poses.size(),
-    first_goal.pose.position.x,
-    first_goal.pose.position.y,
-    last_goal.pose.position.x,
-    last_goal.pose.position.y);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_received route_id=navigate_to_poses result=accepted goal_id=%u goal_count=%zu start_x=%.3f start_y=%.3f target_x=%.3f target_y=%.3f",
+      this->next_command_id_,
+      goal->goal_poses.size(),
+      first_goal.pose.position.x,
+      first_goal.pose.position.y,
+      last_goal.pose.position.x,
+      last_goal.pose.position.y);
+  }
 
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -401,7 +441,11 @@ rclcpp_action::CancelResponse Btnavigator::handle_cancel(
   const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
   (void)goal_handle;
-  RCLCPP_INFO(this->get_logger(), "Cancel requested for active navigate goal");
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_canceled route_id=navigate_to_pose reason=cancel_requested result=accepted");
+  }
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -409,7 +453,11 @@ rclcpp_action::CancelResponse Btnavigator::handle_cancel_goals(
   const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle)
 {
   (void)goal_handle;
-  RCLCPP_INFO(this->get_logger(), "Cancel requested for active waypoint route");
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_canceled route_id=navigate_to_poses reason=cancel_requested result=accepted");
+  }
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -596,13 +644,17 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     int32_t,
     const rclcpp::Duration &)> &publish_feedback)
 {
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Starting BT navigation execution: route='%s' frame='%s' x=%.3f y=%.3f",
-    route_id.c_str(),
-    goal_pose.header.frame_id.c_str(),
-    goal_pose.pose.position.x,
-    goal_pose.pose.position.y);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=goal_started route_id=%s goal_id=%u frame=%s target_x=%.3f target_y=%.3f align_heading=%s",
+      route_id.c_str(),
+      this->next_command_id_,
+      goal_pose.header.frame_id.c_str(),
+      goal_pose.pose.position.x,
+      goal_pose.pose.position.y,
+      bool_label(align_heading_at_goal));
+  }
 
   BT::BehaviorTreeFactory factory;
   auto blackboard = BT::Blackboard::create();
@@ -671,27 +723,31 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       nav_msgs::msg::Path plan;
       std::string error_message;
-      RCLCPP_INFO(
-        navigator->get_logger(),
-        "BT: requesting global plan from (%.3f, %.3f) to (%.3f, %.3f)",
-        current_pose.pose.position.x,
-        current_pose.pose.position.y,
-        goal_pose.pose.position.x,
-        goal_pose.pose.position.y);
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan start_x=%.3f start_y=%.3f goal_x=%.3f goal_y=%.3f",
+          current_pose.pose.position.x,
+          current_pose.pose.position.y,
+          goal_pose.pose.position.x,
+          goal_pose.pose.position.y);
+      }
       if (!navigator->request_global_plan(
           current_pose, goal_pose, plan, error_message, cancel_requested))
       {
         RCLCPP_WARN(
           navigator->get_logger(),
-          "BT: global plan request failed: %s",
-          error_message.c_str());
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan result=failed reason=%s",
+          log_value(error_message).c_str());
         blackboard->set("status_message", error_message);
         return BT::NodeStatus::FAILURE;
       }
-      RCLCPP_INFO(
-        navigator->get_logger(),
-        "BT: global plan ready with %zu poses",
-        plan.poses.size());
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan result=success path_points=%zu",
+          plan.poses.size());
+      }
       blackboard->set("planned_path", plan);
       return BT::NodeStatus::SUCCESS;
     });
@@ -706,11 +762,14 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto plan = blackboard->get<nav_msgs::msg::Path>("planned_path");
       auto command = navigator->build_motion_command(goal_pose, route_id, plan, align_heading_at_goal);
       navigator->publish_motion_command(command);
-      RCLCPP_INFO(
-        navigator->get_logger(),
-        "BT: motion command %u dispatched with %zu poses",
-        command.command_id,
-        plan.poses.size());
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s path_points=%zu result=dispatched",
+          command.command_id,
+          route_id.c_str(),
+          plan.poses.size());
+      }
       blackboard->set("active_command", command);
       blackboard->set("active_command_dispatch_ns", navigator->now().nanoseconds());
       blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
@@ -768,12 +827,16 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
           blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
           blackboard->set("local_escape_dispatched", false);
-          RCLCPP_INFO(
-            navigator->get_logger(),
-            "BT: recovery exit confirmed for command %u; navigation reacquired with local_plan_valid=%s planner_decision=%s",
-            command.command_id,
-            status.local_plan_valid ? "true" : "false",
-            local_plan_decision_label(local_plan_status.decision));
+          if (navigator->structured_logging_enabled_) {
+            RCLCPP_INFO(
+              navigator->get_logger(),
+              "AMR_LOG schema=v1 component=bt_navigator event=recovery_finished goal_id=%u result=reacquired recovery_skipped=true reason=navigation_reacquired planner_ok=%s controller_ok=%s local_plan_valid=%s planner_decision=%s",
+              command.command_id,
+              bool_label(!local_plan_status.recovery_required),
+              bool_label(!status.blocked && !status.stalled),
+              bool_label(status.local_plan_valid),
+              local_plan_decision_label(local_plan_status.decision));
+          }
           blackboard->set(
             "status_message",
             std::string("Recovery exit confirmed after a stable navigation reacquire."));
@@ -826,21 +889,25 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       }
 
       if (recovery_needed) {
-        RCLCPP_WARN_THROTTLE(
-          navigator->get_logger(),
-          *navigator->get_clock(),
-          1000,
-          "BT: recovery trigger cmd=%u motion(blocked=%s stalled=%s local_plan=%s safety=%s) planner(active=%s recovery=%s decision=%s blocked=%s distance=%.3f)",
-          command.command_id,
-          status.blocked ? "true" : "false",
-          status.stalled ? "true" : "false",
-          status.local_plan_valid ? "true" : "false",
-          status.safety_gate_blocked ? "true" : "false",
-          local_plan_status.active ? "true" : "false",
-          local_plan_status.recovery_required ? "true" : "false",
-          local_plan_decision_label(local_plan_status.decision),
-          local_plan_status.has_blocked_pose ? "true" : "false",
-          local_plan_status.blocked_distance);
+        const std::string recovery_reason = planner_recovery_needed ?
+          local_plan_decision_label(local_plan_status.decision) :
+          (status.blocked ? std::string("controller_blocked") : std::string("controller_stalled"));
+        if (navigator->structured_logging_enabled_ && navigator->recovery_decision_logging_enabled_) {
+          RCLCPP_WARN_THROTTLE(
+            navigator->get_logger(),
+            *navigator->get_clock(),
+            1000,
+            "AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=%u reason=%s recovery_type=pending recovery_skipped=false planner_ok=%s controller_ok=%s blocked=%s safety_blocked=%s local_plan_valid=%s planner_decision=%s blocked_distance_m=%.3f",
+            command.command_id,
+            recovery_reason.c_str(),
+            bool_label(!planner_recovery_needed),
+            bool_label(!status.blocked && !status.stalled),
+            bool_label(status.blocked || status.stalled || local_plan_status.recovery_required),
+            bool_label(status.safety_gate_blocked),
+            bool_label(status.local_plan_valid),
+            local_plan_decision_label(local_plan_status.decision),
+            local_plan_status.blocked_distance);
+        }
         if (planner_recovery_needed) {
           switch (local_plan_status.decision) {
             case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
@@ -918,10 +985,16 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         return BT::NodeStatus::SUCCESS;
       };
 
-      RCLCPP_WARN(
-        navigator->get_logger(),
-        "BT: recovery needed; starting attempt %d",
-        attempts + 1);
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_WARN(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=recovery_started goal_id=%u attempt=%d reason=%s planner_decision=%s path_points=%zu",
+          active_command.command_id,
+          attempts + 1,
+          local_plan_decision_label(local_plan_status.decision),
+          local_plan_decision_label(local_plan_status.decision),
+          planned_path.poses.size());
+      }
 
       if (cancel_requested()) {
         return finish_canceled();
@@ -942,11 +1015,16 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           blackboard->set(
             "status_message",
             std::string("Recovery skipped because navigation had already reacquired tracking."));
-          RCLCPP_INFO(
-            navigator->get_logger(),
-            "BT: skipped recovery attempt for command %u because navigation reacquired; planner_decision=%s",
-            active_command.command_id,
-            local_plan_decision_label(refreshed_local_plan_status.decision));
+          if (navigator->structured_logging_enabled_) {
+            RCLCPP_INFO(
+              navigator->get_logger(),
+              "AMR_LOG schema=v1 component=bt_navigator event=recovery_skipped goal_id=%u skipped=true recovery_skipped=true reason=already_reacquired planner_ok=%s controller_ok=%s local_plan_valid=%s planner_decision=%s",
+              active_command.command_id,
+              bool_label(!refreshed_local_plan_status.recovery_required),
+              bool_label(!refreshed_motion_status.blocked && !refreshed_motion_status.stalled),
+              bool_label(refreshed_motion_status.local_plan_valid),
+              local_plan_decision_label(refreshed_local_plan_status.decision));
+          }
           return BT::NodeStatus::SUCCESS;
         }
       }
@@ -972,8 +1050,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         }
         RCLCPP_WARN(
           navigator->get_logger(),
-          "BT: clear local costmap failed: %s",
-          error_message.c_str());
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=clear_local_costmap result=failed reason=%s",
+          log_value(error_message).c_str());
       }
 
       const bool local_escape_candidate =
@@ -993,6 +1071,13 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           arm_recovery_reacquire(command);
           blackboard->set("local_escape_dispatched", true);
           blackboard->set("planned_path", escape_plan);
+          if (navigator->structured_logging_enabled_) {
+            RCLCPP_INFO(
+              navigator->get_logger(),
+              "AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=%u reason=planner_hard_blocked recovery_type=local_escape recovery_skipped=false planner_ok=false controller_ok=true path_points=%zu result=dispatched",
+              command.command_id,
+              escape_plan.poses.size());
+          }
           blackboard->set(
             "status_message",
             std::string("Local escape plan dispatched; waiting for a stable navigation reacquire."));
@@ -1004,8 +1089,9 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         }
         RCLCPP_WARN(
           navigator->get_logger(),
-          "BT: local escape planning failed, falling back to recovery behaviors: %s",
-          error_message.c_str());
+          "AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=%u reason=local_escape_failed recovery_type=local_escape recovery_skipped=true planner_ok=false controller_ok=false result=failed detail=%s",
+          active_command.command_id,
+          log_value(error_message).c_str());
         blackboard->set(
           "status_message",
           std::string("Local escape was rejected; falling back to heavier recovery behaviors. ") +
@@ -1042,6 +1128,13 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           navigator->publish_motion_command(command);
           arm_recovery_reacquire(command);
           blackboard->set("planned_path", replanned_path);
+          if (navigator->structured_logging_enabled_) {
+            RCLCPP_INFO(
+              navigator->get_logger(),
+              "AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=%u reason=global_replan_required recovery_type=global_replan recovery_skipped=false planner_ok=false controller_ok=true path_points=%zu result=dispatched",
+              command.command_id,
+              replanned_path.poses.size());
+          }
           blackboard->set(
             "status_message",
             std::string("Planner requested global replanning; waiting for a stable navigation reacquire."));
@@ -1070,6 +1163,15 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         }
         else
         {
+          if (navigator->structured_logging_enabled_) {
+            RCLCPP_WARN(
+              navigator->get_logger(),
+              "AMR_LOG schema=v1 component=bt_navigator event=recovery_started goal_id=%u recovery_type=%s reason=%s attempt=%d",
+              recovery_command.command_id,
+              recovery_behavior.c_str(),
+              local_plan_decision_label(local_plan_status.decision),
+              attempts + 1);
+          }
           navigator->publish_motion_command(recovery_command);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
@@ -1081,10 +1183,23 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
             {
               return finish_canceled();
             }
+            RCLCPP_WARN(
+              navigator->get_logger(),
+              "AMR_LOG schema=v1 component=bt_navigator event=recovery_finished goal_id=%u recovery_type=%s result=failed reason=command_timeout detail=%s",
+              recovery_command.command_id,
+              recovery_behavior.c_str(),
+              log_value(error_message).c_str());
             blackboard->set("status_message", error_message);
           }
           else
           {
+            if (navigator->structured_logging_enabled_) {
+              RCLCPP_INFO(
+                navigator->get_logger(),
+                "AMR_LOG schema=v1 component=bt_navigator event=recovery_finished goal_id=%u recovery_type=%s result=completed reason=command_completed",
+                recovery_command.command_id,
+                recovery_behavior.c_str());
+            }
             const bool redispatch_existing_plan =
               navigator->should_redispatch_existing_plan_after_recovery(
               active_command,
@@ -1106,6 +1221,14 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
                 goal_pose, route_id, planned_path, align_heading_at_goal);
               navigator->publish_motion_command(command);
               arm_recovery_reacquire(command);
+              if (navigator->structured_logging_enabled_) {
+                RCLCPP_INFO(
+                  navigator->get_logger(),
+                  "AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=%u reason=redispatch_existing_plan recovery_type=%s recovery_skipped=false planner_ok=false controller_ok=true path_points=%zu result=dispatched",
+                  command.command_id,
+                  recovery_behavior.c_str(),
+                  planned_path.poses.size());
+              }
               blackboard->set(
                 "status_message",
                 navigator->describe_recovery_policy(
@@ -1157,6 +1280,15 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       navigator->publish_motion_command(command);
       arm_recovery_reacquire(command);
       blackboard->set("planned_path", replanned_path);
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=%u reason=fresh_global_replan recovery_type=global_replan recovery_skipped=false planner_ok=%s controller_ok=%s path_points=%zu result=dispatched",
+          command.command_id,
+          bool_label(!planner_owned_recovery),
+          bool_label(planner_owned_recovery),
+          replanned_path.poses.size());
+      }
       blackboard->set(
         "status_message",
         planner_owned_recovery ?
@@ -1171,9 +1303,11 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto *navigator = blackboard->get<Btnavigator *>("navigator");
       navigator->publish_stop_command();
       blackboard->set("status_message", std::string("Stop command dispatched."));
-      RCLCPP_WARN(
-        navigator->get_logger(),
-        "BT: stop command dispatched");
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_WARN(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_stop_command result=dispatched");
+      }
       return BT::NodeStatus::SUCCESS;
     });
 
@@ -1248,15 +1382,35 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     const auto outcome = static_cast<BtOutcome>(blackboard->get<int>("bt_outcome"));
     const auto message = blackboard->get<std::string>("status_message");
     if (outcome == BtOutcome::kSucceeded) {
-      RCLCPP_INFO(this->get_logger(), "BT: goal succeeded: %s", message.c_str());
+      if (this->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          this->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=goal_succeeded route_id=%s result=success reason=goal_reached recovery_count=%d duration_sec=%.3f",
+          route_id.c_str(),
+          blackboard->get<int>("recovery_attempts"),
+          (this->now() - goal_start).seconds());
+      }
       return ExecutionResult{true, false, message, 0U};
     }
     if (outcome == BtOutcome::kCanceled) {
-      RCLCPP_INFO(this->get_logger(), "BT: goal canceled: %s", message.c_str());
+      if (this->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          this->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=goal_canceled route_id=%s result=canceled reason=cancel_requested recovery_count=%d duration_sec=%.3f",
+          route_id.c_str(),
+          blackboard->get<int>("recovery_attempts"),
+          (this->now() - goal_start).seconds());
+      }
       return ExecutionResult{false, true, message, 0U};
     }
     if (outcome == BtOutcome::kStopped) {
-      RCLCPP_ERROR(this->get_logger(), "BT: goal aborted: %s", message.c_str());
+      RCLCPP_ERROR(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=goal_failed route_id=%s result=failed reason=%s recovery_count=%d duration_sec=%.3f",
+        route_id.c_str(),
+        log_value(message).c_str(),
+        blackboard->get<int>("recovery_attempts"),
+        (this->now() - goal_start).seconds());
       return ExecutionResult{false, false, message, 9000U};
     }
   }
@@ -1433,13 +1587,15 @@ bool Btnavigator::request_global_plan(
   request->start = start;
   request->goal = goal;
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Requesting global plan: start=(%.3f, %.3f) goal=(%.3f, %.3f)",
-    request->start.pose.position.x,
-    request->start.pose.position.y,
-    request->goal.pose.position.x,
-    request->goal.pose.position.y);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan start_x=%.3f start_y=%.3f goal_x=%.3f goal_y=%.3f",
+      request->start.pose.position.x,
+      request->start.pose.position.y,
+      request->goal.pose.position.x,
+      request->goal.pose.position.y);
+  }
 
   auto future = this->plan_segment_client_->async_send_request(request);
   int elapsed_ms = 0;
@@ -1467,7 +1623,12 @@ bool Btnavigator::request_global_plan(
   }
 
   plan = response->plan;
-  RCLCPP_INFO(this->get_logger(), "Received global plan with %zu poses", plan.poses.size());
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan result=success path_points=%zu",
+      plan.poses.size());
+  }
   error_message.clear();
   return true;
 }
@@ -1833,12 +1994,16 @@ void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand &com
     return;
   }
   this->motion_command_publisher_->publish(command);
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Published motion command %u toward goal x=%.3f y=%.3f",
-    command.command_id,
-    command.goal_pose.pose.position.x,
-    command.goal_pose.pose.position.y);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s mode=%u target_x=%.3f target_y=%.3f result=published",
+      command.command_id,
+      command.route_id.empty() ? "none" : command.route_id.c_str(),
+      command.mode,
+      command.goal_pose.pose.position.x,
+      command.goal_pose.pose.position.y);
+  }
 }
 
 void Btnavigator::publish_stop_command()
@@ -1860,10 +2025,12 @@ void Btnavigator::publish_stop_command()
   stop_command.align_heading_at_goal = false;
   stop_command.recovery_duration = 0.0;
   this->motion_command_publisher_->publish(stop_command);
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Published stop command %u",
-    stop_command.command_id);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_stop_command goal_id=%u result=published",
+      stop_command.command_id);
+  }
 }
 
 }  // namespace amr::bt::navigator

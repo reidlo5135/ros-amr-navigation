@@ -15,6 +15,35 @@ double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
     1.0 - (2.0 * ((quaternion.y * quaternion.y) + (quaternion.z * quaternion.z))));
 }
 
+std::string log_value(std::string value)
+{
+  if (value.empty()) {
+    return "none";
+  }
+  for (char &character : value) {
+    if (character == ' ' || character == '\t' || character == '\n' || character == '\r' || character == '=') {
+      character = '_';
+    }
+  }
+  return value;
+}
+
+double estimate_path_length(const nav_msgs::msg::Path &path)
+{
+  double length = 0.0;
+  if (path.poses.size() < 2U) {
+    return length;
+  }
+  for (std::size_t index = 1U; index < path.poses.size(); ++index) {
+    const auto &previous = path.poses[index - 1U].pose.position;
+    const auto &current = path.poses[index].pose.position;
+    const double dx = current.x - previous.x;
+    const double dy = current.y - previous.y;
+    length += std::sqrt((dx * dx) + (dy * dy));
+  }
+  return length;
+}
+
 }  // namespace
 
 PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
@@ -32,7 +61,8 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
   start_row_hold_penalty_(1.25),
   goal_row_align_distance_cells_(6),
   goal_row_align_penalty_(1.75),
-  nearest_free_search_radius_cells_(4)
+  nearest_free_search_radius_cells_(4),
+  structured_logging_enabled_(true)
 {
   this->declare_parameter("topics.costmap", this->costmap_topic_);
   this->declare_parameter("topics.plan", this->computed_plan_topic_);
@@ -50,6 +80,7 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
     "planner.goal_row_align_distance_cells", this->goal_row_align_distance_cells_);
   this->declare_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
 
@@ -73,6 +104,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   this->get_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
 
   if (
@@ -191,6 +223,17 @@ void PlannerServer::handle_plan_segment(
   response->plan = nav_msgs::msg::Path();
   response->message.clear();
 
+  const rclcpp::Time started_at = this->now();
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=global_planner event=plan_requested start_x=%.3f start_y=%.3f goal_x=%.3f goal_y=%.3f",
+      request->start.pose.position.x,
+      request->start.pose.position.y,
+      request->goal.pose.position.x,
+      request->goal.pose.position.y);
+  }
+
   response->success = this->compute_plan_between_poses(
     request->start, request->goal, response->plan, response->message);
 
@@ -199,6 +242,28 @@ void PlannerServer::handle_plan_segment(
     if (this->computed_plan_publisher_ &&this->computed_plan_publisher_->is_activated()) {
       this->computed_plan_publisher_->publish(this->planned_path_);
     }
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=global_planner event=plan_succeeded start_x=%.3f start_y=%.3f goal_x=%.3f goal_y=%.3f path_points=%zu path_length_m=%.3f duration_sec=%.3f",
+        request->start.pose.position.x,
+        request->start.pose.position.y,
+        request->goal.pose.position.x,
+        request->goal.pose.position.y,
+        response->plan.poses.size(),
+        estimate_path_length(response->plan),
+        (this->now() - started_at).seconds());
+    }
+  } else if (this->structured_logging_enabled_) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=global_planner event=plan_failed start_x=%.3f start_y=%.3f goal_x=%.3f goal_y=%.3f duration_sec=%.3f reason=%s",
+      request->start.pose.position.x,
+      request->start.pose.position.y,
+      request->goal.pose.position.x,
+      request->goal.pose.position.y,
+      (this->now() - started_at).seconds(),
+      log_value(response->message).c_str());
   }
 }
 
@@ -209,6 +274,16 @@ void PlannerServer::handle_plan_route(
   response->success = false;
   response->plans.clear();
   response->message.clear();
+
+  const rclcpp::Time started_at = this->now();
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=global_planner event=plan_requested route_segments=%zu start_x=%.3f start_y=%.3f",
+      request->waypoints.size(),
+      request->start.pose.position.x,
+      request->start.pose.position.y);
+  }
 
   auto current = request->start;
   for (std::size_t index = 0; index < request->waypoints.size(); ++index) {
@@ -221,6 +296,15 @@ void PlannerServer::handle_plan_route(
       response->message =
         "Failed to compute segment " + std::to_string(index) + ": " + segment_message;
       response->plans.clear();
+      if (this->structured_logging_enabled_) {
+        RCLCPP_WARN(
+          this->get_logger(),
+          "AMR_LOG schema=v1 component=global_planner event=plan_failed route_segments=%zu segment_idx=%zu duration_sec=%.3f reason=%s",
+          request->waypoints.size(),
+          index,
+          (this->now() - started_at).seconds(),
+          log_value(response->message).c_str());
+      }
       return;
     }
 
@@ -233,6 +317,15 @@ void PlannerServer::handle_plan_route(
   this->planned_path_ = this->merge_paths(response->plans);
   if (this->computed_plan_publisher_ &&this->computed_plan_publisher_->is_activated()) {
     this->computed_plan_publisher_->publish(this->planned_path_);
+  }
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=global_planner event=plan_succeeded route_segments=%zu path_points=%zu path_length_m=%.3f duration_sec=%.3f",
+      request->waypoints.size(),
+      this->planned_path_.poses.size(),
+      estimate_path_length(this->planned_path_),
+      (this->now() - started_at).seconds());
   }
 }
 

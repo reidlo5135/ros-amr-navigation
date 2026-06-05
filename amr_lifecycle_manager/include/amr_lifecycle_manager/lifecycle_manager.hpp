@@ -59,6 +59,7 @@ private:
   double initial_pose_covariance_x_;
   double initial_pose_covariance_y_;
   double initial_pose_covariance_yaw_;
+  bool structured_logging_enabled_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_publisher_;
   std::thread bringup_thread_;
   std::atomic<bool> shutdown_requested_;

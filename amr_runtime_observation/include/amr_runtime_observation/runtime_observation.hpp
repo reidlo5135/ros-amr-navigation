@@ -95,6 +95,9 @@ private:
   int route_stale_timeout_ms_;
   double progress_stall_window_sec_;
   double progress_epsilon_;
+  bool structured_logging_enabled_;
+  double summary_log_throttle_sec_;
+  bool heavy_topic_observation_enabled_;
 
   amr_msgs::msg::MotionCommand latest_motion_command_;
   amr_msgs::msg::MotionStatus latest_motion_status_;

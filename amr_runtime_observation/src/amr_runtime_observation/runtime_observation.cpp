@@ -7,6 +7,21 @@
 namespace amr::runtime::observation
 {
 
+namespace
+{
+
+const char *bool_label(const bool value)
+{
+  return value ? "true" : "false";
+}
+
+int throttle_ms_from_sec(const double seconds)
+{
+  return static_cast<int>(std::max(0.1, seconds) * 1000.0);
+}
+
+}  // namespace
+
 RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
 : rclcpp::Node("runtime_observation", options)
 {
@@ -20,6 +35,9 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
   this->declare_parameter("observation.route_stale_timeout_ms", 1500);
   this->declare_parameter("observation.progress_stall_window_sec", 3.0);
   this->declare_parameter("observation.progress_epsilon", 0.05);
+  this->declare_parameter("logging.structured_enabled", true);
+  this->declare_parameter("logging.summary_throttle_sec", 1.0);
+  this->declare_parameter("logging.heavy_topic_observation_enabled", false);
 
   this->get_parameter("topics.motion_status", this->motion_status_topic_);
   this->get_parameter("topics.motion_command", this->motion_command_topic_);
@@ -31,6 +49,10 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
   this->get_parameter("observation.route_stale_timeout_ms", this->route_stale_timeout_ms_);
   this->get_parameter("observation.progress_stall_window_sec", this->progress_stall_window_sec_);
   this->get_parameter("observation.progress_epsilon", this->progress_epsilon_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+  this->get_parameter("logging.summary_throttle_sec", this->summary_log_throttle_sec_);
+  this->get_parameter(
+    "logging.heavy_topic_observation_enabled", this->heavy_topic_observation_enabled_);
 
   const std::string feedback_topic = this->navigate_to_poses_action_name_ + "/_action/feedback";
   const std::string status_topic = this->navigate_to_poses_action_name_ + "/_action/status";
@@ -72,17 +94,17 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
     std::chrono::milliseconds(std::max(50, this->publish_period_ms_)),
     std::bind(&RuntimeObservation::publish_observation, this));
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Configured runtime observation with motion_command='%s', motion_status='%s', local_plan_status='%s', "
-    "navigate_feedback='%s', navigate_status='%s', summary='%s', events='%s'",
-    this->motion_command_topic_.c_str(),
-    this->motion_status_topic_.c_str(),
-    this->local_plan_status_topic_.c_str(),
-    feedback_topic.c_str(),
-    status_topic.c_str(),
-    this->observation_summary_topic_.c_str(),
-    this->observation_event_topic_.c_str());
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_summary phase=configured motion_command_topic=%s motion_status_topic=%s local_plan_status_topic=%s summary_topic=%s events_topic=%s heavy_topic_observation_enabled=%s",
+      this->motion_command_topic_.c_str(),
+      this->motion_status_topic_.c_str(),
+      this->local_plan_status_topic_.c_str(),
+      this->observation_summary_topic_.c_str(),
+      this->observation_event_topic_.c_str(),
+      bool_label(this->heavy_topic_observation_enabled_));
+  }
 }
 
 void RuntimeObservation::handle_motion_command(
@@ -439,6 +461,21 @@ void RuntimeObservation::publish_event(
   std_msgs::msg::String message;
   message.data = this->build_event_json(event_type, reason, snapshot, now);
   this->observation_event_publisher_->publish(message);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_event phase=%s state=%s reason=%s route_active=%s recovery=%s recovery_count=%d blocked=%s blocked_count=%d dist_goal_m=%.3f heading_err_rad=%.3f",
+      event_type.c_str(),
+      snapshot.runtime_state.c_str(),
+      reason.c_str(),
+      bool_label(snapshot.route_active),
+      bool_label(snapshot.recovery_triggered),
+      snapshot.number_of_recoveries,
+      bool_label(snapshot.motion_blocked || snapshot.progress_stalled || snapshot.local_recovery_required),
+      (snapshot.motion_blocked || snapshot.progress_stalled || snapshot.local_recovery_required) ? 1 : 0,
+      this->has_motion_status_ ? this->latest_motion_status_.remaining_distance : 0.0,
+      this->has_motion_status_ ? this->latest_motion_status_.heading_error : 0.0);
+  }
 }
 
 void RuntimeObservation::publish_observation()
@@ -450,6 +487,22 @@ void RuntimeObservation::publish_observation()
   summary.data = this->build_summary_json(snapshot, now);
   this->observation_summary_publisher_->publish(summary);
   this->publish_event_if_needed(snapshot, now);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      throttle_ms_from_sec(this->summary_log_throttle_sec_),
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_summary phase=%s route_active=%s dist_goal_m=%.3f heading_err_rad=%.3f recovery_count=%d blocked_count=%d progress_stalled=%s recovery=%s reason=%s",
+      snapshot.runtime_state.c_str(),
+      bool_label(snapshot.route_active),
+      this->has_motion_status_ ? this->latest_motion_status_.remaining_distance : 0.0,
+      this->has_motion_status_ ? this->latest_motion_status_.heading_error : 0.0,
+      snapshot.number_of_recoveries,
+      (snapshot.motion_blocked || snapshot.progress_stalled || snapshot.local_recovery_required) ? 1 : 0,
+      bool_label(snapshot.progress_stalled),
+      bool_label(snapshot.recovery_triggered),
+      snapshot.recovery_reason.c_str());
+  }
 }
 
 std::string RuntimeObservation::build_summary_json(

@@ -5,6 +5,25 @@ namespace amr::lifecycle::manager
 
 using namespace std::chrono_literals;
 
+namespace
+{
+
+const char *transition_event_name(const std::uint8_t transition_id)
+{
+  switch (transition_id) {
+    case lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE:
+      return "lifecycle_configure";
+    case lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE:
+      return "lifecycle_activate";
+    case lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE:
+      return "lifecycle_deactivate";
+    default:
+      return "lifecycle_error";
+  }
+}
+
+}  // namespace
+
 LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
 : rclcpp::Node("lifecycle_manager", options),
   autostart_(true),
@@ -20,6 +39,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
   initial_pose_covariance_x_(0.25),
   initial_pose_covariance_y_(0.25),
   initial_pose_covariance_yaw_(0.06853891945200942),
+  structured_logging_enabled_(true),
   shutdown_requested_(false)
 {
   this->declare_parameter("managed_nodes", this->managed_node_names_);
@@ -36,6 +56,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
   this->declare_parameter("initial_pose.covariance.x", this->initial_pose_covariance_x_);
   this->declare_parameter("initial_pose.covariance.y", this->initial_pose_covariance_y_);
   this->declare_parameter("initial_pose.covariance.yaw", this->initial_pose_covariance_yaw_);
+  this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 
   this->get_parameter("managed_nodes", this->managed_node_names_);
   this->get_parameter("autostart", this->autostart_);
@@ -51,6 +72,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
   this->get_parameter("initial_pose.covariance.x", this->initial_pose_covariance_x_);
   this->get_parameter("initial_pose.covariance.y", this->initial_pose_covariance_y_);
   this->get_parameter("initial_pose.covariance.yaw", this->initial_pose_covariance_yaw_);
+  this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 
   if (this->initial_pose_enabled_) {
     this->initial_pose_publisher_ =
@@ -69,11 +91,14 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
     this->managed_nodes_.push_back(managed_node);
   }
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Configured lifecycle manager '%s' with %zu managed nodes",
-    this->get_fully_qualified_name(),
-    this->managed_nodes_.size());
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_configure node=%s result=configured managed_nodes=%zu autostart=%s",
+      this->get_fully_qualified_name(),
+      this->managed_nodes_.size(),
+      this->autostart_ ? "true" : "false");
+  }
 
   if (this->autostart_) {
     this->bringup_thread_ = std::thread([this]() { this->run_bringup(); });
@@ -100,10 +125,12 @@ void LifecycleManager::run_bringup()
       return;
     }
 
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Configuring managed node '%s'",
-      managed_node.name.c_str());
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_configure node=%s result=requested",
+        managed_node.name.c_str());
+    }
     if (!this->request_transition(
         managed_node,
         lifecycle_msgs::msg::Transition::TRANSITION_CONFIGURE,
@@ -116,10 +143,12 @@ void LifecycleManager::run_bringup()
       return;
     }
 
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Activating managed node '%s'",
-      managed_node.name.c_str());
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_activate node=%s result=requested",
+        managed_node.name.c_str());
+    }
     if (!this->request_transition(
         managed_node,
         lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE,
@@ -133,7 +162,12 @@ void LifecycleManager::run_bringup()
     }
   }
 
-  RCLCPP_INFO(this->get_logger(), "All managed nodes are active");
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_activate result=success managed_nodes=%zu",
+      this->managed_nodes_.size());
+  }
 
   if (this->initial_pose_enabled_) {
     const auto delay = std::chrono::duration<double>(std::max(0.0, this->initial_pose_delay_sec_));
@@ -150,14 +184,14 @@ bool LifecycleManager::wait_for_service_clients(const ManagedNode &managed_node)
   if (!managed_node.get_state_client->wait_for_service(timeout)) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Timed out waiting for get_state service of '%s'",
+      "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_error node=%s result=failed reason=get_state_service_timeout",
       managed_node.name.c_str());
     return false;
   }
   if (!managed_node.change_state_client->wait_for_service(timeout)) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Timed out waiting for change_state service of '%s'",
+      "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_error node=%s result=failed reason=change_state_service_timeout",
       managed_node.name.c_str());
     return false;
   }
@@ -175,9 +209,10 @@ bool LifecycleManager::request_transition(
   if (future.wait_for(timeout) != std::future_status::ready) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Timed out requesting transition %u for '%s'",
-      static_cast<unsigned int>(transition_id),
-      managed_node.name.c_str());
+      "AMR_LOG schema=v1 component=lifecycle_manager event=%s node=%s result=failed reason=transition_request_timeout transition_id=%u",
+      transition_event_name(transition_id),
+      managed_node.name.c_str(),
+      static_cast<unsigned int>(transition_id));
     return false;
   }
 
@@ -185,9 +220,10 @@ bool LifecycleManager::request_transition(
   if (!response->success) {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Transition %u was rejected by '%s'",
-      static_cast<unsigned int>(transition_id),
-      managed_node.name.c_str());
+      "AMR_LOG schema=v1 component=lifecycle_manager event=%s node=%s result=failed reason=transition_rejected transition_id=%u",
+      transition_event_name(transition_id),
+      managed_node.name.c_str(),
+      static_cast<unsigned int>(transition_id));
     return false;
   }
 
@@ -219,7 +255,7 @@ bool LifecycleManager::wait_for_state(
 
   RCLCPP_ERROR(
     this->get_logger(),
-    "Timed out waiting for '%s' to reach state id %u",
+    "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_error node=%s result=failed reason=state_timeout state=%u",
     managed_node.name.c_str(),
     static_cast<unsigned int>(target_state_id));
   return false;
@@ -247,13 +283,15 @@ void LifecycleManager::publish_initial_pose()
   initial_pose.pose.covariance[35] = this->initial_pose_covariance_yaw_;
   this->initial_pose_publisher_->publish(initial_pose);
 
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Published managed initial pose on '%s': x=%.3f y=%.3f yaw=%.3f",
-    this->initial_pose_topic_.c_str(),
-    this->initial_pose_x_,
-    this->initial_pose_y_,
-    this->initial_pose_yaw_);
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=lifecycle_manager event=lifecycle_activate result=initial_pose_published topic=%s pose_x=%.3f pose_y=%.3f pose_yaw=%.3f",
+      this->initial_pose_topic_.c_str(),
+      this->initial_pose_x_,
+      this->initial_pose_y_,
+      this->initial_pose_yaw_);
+  }
 }
 
 }  // namespace amr::lifecycle::manager

@@ -96,6 +96,7 @@ private:
   int goal_row_align_distance_cells_;
   double goal_row_align_penalty_;
   int nearest_free_search_radius_cells_;
+  bool structured_logging_enabled_;
   std::vector<double> footprint_polygon_param_;
   amr::geometry::FootprintPolygon footprint_polygon_;
 };
