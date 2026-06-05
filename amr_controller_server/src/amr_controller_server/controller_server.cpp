@@ -3194,6 +3194,11 @@ void MotionController::publish_control()
   double debug_target_dy = 0.0;
   double debug_current_yaw = 0.0;
   double debug_target_heading = 0.0;
+  double debug_goal_yaw = 0.0;
+  bool debug_command_align_heading_at_goal = false;
+  bool debug_final_heading_required = false;
+  bool debug_xy_reached = false;
+  bool debug_yaw_reached = true;
   bool debug_straight_segment = false;
   bool debug_rejoin_context_active = false;
   double debug_path_curvature_score = 0.0;
@@ -3273,6 +3278,11 @@ void MotionController::publish_control()
       const bool distance_reached = goal_check.distance_reached;
       const bool align_heading_at_goal = goal_check.align_heading;
       const double goal_yaw = goal_check.target_yaw;
+      debug_command_align_heading_at_goal = this->latest_command_.align_heading_at_goal;
+      debug_final_heading_required = align_heading_at_goal;
+      debug_xy_reached = distance_reached;
+      debug_yaw_reached = goal_check.heading_reached;
+      debug_goal_yaw = goal_yaw;
       double target_dx =
         tracking_target.pose.position.x - this->current_pose_.pose.position.x;
       double target_dy =
@@ -3589,9 +3599,16 @@ void MotionController::publish_control()
         {
           RCLCPP_INFO(
             this->get_logger(),
-            "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=reached xy_reached=true yaw_reached=true dist_goal_m=%.3f heading_err_rad=%.3f result=success",
+            "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=reached xy_reached=true yaw_reached=%s align_heading_at_goal=%s respect_goal_yaw=%s ignore_yaw=%s final_heading_required=%s dist_goal_m=%.3f goal_yaw_rad=%.3f current_yaw_rad=%.3f heading_err_rad=%.3f result=success",
             status.command_id,
+            bool_label(goal_check.heading_reached),
+            bool_label(this->latest_command_.align_heading_at_goal),
+            bool_label(this->goal_checker_respect_goal_yaw_),
+            bool_label(this->goal_checker_ignore_yaw_),
+            bool_label(align_heading_at_goal),
             goal_distance,
+            goal_yaw,
+            current_yaw,
             heading_error);
         }
       }
@@ -3895,12 +3912,18 @@ void MotionController::publish_control()
         this->get_logger(),
         *this->get_clock(),
         throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
-        "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=%s xy_reached=%s yaw_reached=%s dist_goal_m=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
+        "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=%s xy_reached=%s yaw_reached=%s align_heading_at_goal=%s respect_goal_yaw=%s ignore_yaw=%s final_heading_required=%s dist_goal_m=%.3f goal_yaw_rad=%.3f current_yaw_rad=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f",
         status.command_id,
         debug_goal_state.c_str(),
-        bool_label(this->goal_xy_latched_),
-        bool_label(std::abs(status.heading_error) <= this->goal_reach_heading_tolerance_),
+        bool_label(debug_xy_reached),
+        bool_label(debug_yaw_reached),
+        bool_label(debug_command_align_heading_at_goal),
+        bool_label(this->goal_checker_respect_goal_yaw_),
+        bool_label(this->goal_checker_ignore_yaw_),
+        bool_label(debug_final_heading_required),
         status.remaining_distance,
+        debug_goal_yaw,
+        debug_current_yaw,
         status.heading_error,
         desired_twist.linear.x,
         desired_twist.angular.z);

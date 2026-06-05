@@ -52,6 +52,16 @@ recovery visibility.
   - `motion_stalled`
 - route-level progress fallback remains `progress_stalled`
 
+Goal approach and final heading alignment are not recovery. When the controller is intentionally
+rotating in place near the goal to satisfy yaw, observation reports `controller_phase` as
+`goal_approach` or `final_heading_align`, suppresses the route-level `progress_stalled` fallback,
+and keeps `recovery_triggered=false` unless the controller or current local-plan status reports a
+real block/recovery condition.
+
+Runtime summary and event payloads expose `controller_phase`, `controller_recovery`,
+`controller_goal_reached`, `dist_goal_delta_m`, and `progress_stall_window_sec` so stale observation
+state can be distinguished from controller-owned blocked/stalled/recovery status.
+
 This keeps `0.15.9` focused on observable recovery diagnosis. Recovery policy changes such as
 `local_escape-first` were intentionally left for the next patch line.
 

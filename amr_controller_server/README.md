@@ -37,8 +37,9 @@ recovery-tuning line.
 `dynamic_obstacle.clear_confirm_cycles` lets the local planner require a short clear streak
 before it fully drops a previously confirmed blocked decision.
 `/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
-By default, waypoint-style goals can stay heading-free while command-driven final heading align
-still uses a separate tighter tolerance near the goal.
+By default, AMR navigation goals are full pose targets and command-driven final heading alignment
+remains enabled. `/amr/navigator.execution.align_heading_at_goal` defaults to `true`; set it to
+`false` only for explicit XY-only tests or workflows.
 `goal_checker.xy_hysteresis` keeps the XY-arrived phase latched through small localization
 noise, so final heading alignment does not repeatedly fall back into path tracking.
 When heading alignment is active near the goal, `control.goal_reach_heading_tolerance` and
@@ -46,9 +47,9 @@ When heading alignment is active near the goal, `control.goal_reach_heading_tole
 from the looser general waypoint-style yaw tolerance.
 `control.final_align_heading_deadband` and `control.final_align_settle_time_sec` let the
 controller hold a quiet final-yaw settle window before it declares the aligned goal complete.
-For straight-line tracking tests where final yaw should be ignored, set
+For straight-line tracking tests where final yaw should be ignored at the controller layer, set
 `goal_checker.ignore_yaw` to `true`; this leaves recovery and normal tracking intact but skips
-goal yaw alignment in the motion controller.
+goal yaw alignment only for that configuration.
 For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
 corrections on straight segments so the robot does not visibly wag with small localization
 or path-sampling noise.

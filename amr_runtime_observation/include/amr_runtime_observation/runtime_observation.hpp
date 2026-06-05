@@ -32,6 +32,7 @@ private:
     bool motion_stalled{false};
     bool local_recovery_required{false};
     bool motion_goal_reached{false};
+    bool controller_recovery{false};
     uint32_t current_goal_index{0U};
     uint32_t goal_count{0U};
     int16_t number_of_recoveries{0};
@@ -43,6 +44,8 @@ private:
     std::string recovery_reason{"none"};
     std::string recovery_phase{"idle"};
     std::string runtime_state{"idle"};
+    std::string controller_phase{"idle"};
+    double dist_goal_delta_m{0.0};
   };
 
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
@@ -54,7 +57,13 @@ private:
 
   bool is_route_active(const rclcpp::Time &now) const;
   bool is_progress_stalled(const rclcpp::Time &now) const;
+  bool is_controller_recovery() const;
+  bool is_controller_clear() const;
+  bool is_local_plan_status_current() const;
+  bool is_goal_approach_context() const;
+  bool is_final_heading_alignment_context() const;
   int8_t resolve_action_status() const;
+  std::string resolve_controller_phase() const;
   std::string resolve_blocked_context(bool progress_stalled) const;
   std::string resolve_recovery_reason(bool progress_stalled) const;
   std::string resolve_recovery_phase(bool route_active, bool recovery_triggered) const;
@@ -95,6 +104,8 @@ private:
   int route_stale_timeout_ms_;
   double progress_stall_window_sec_;
   double progress_epsilon_;
+  double goal_approach_distance_;
+  double final_heading_alignment_distance_;
   bool structured_logging_enabled_;
   double summary_log_throttle_sec_;
   bool heavy_topic_observation_enabled_;
@@ -117,6 +128,9 @@ private:
   rclcpp::Time best_progress_time_{0, 0, RCL_ROS_TIME};
   float best_distance_remaining_{0.0f};
   bool has_progress_baseline_{false};
+  double previous_motion_distance_remaining_{0.0};
+  double last_dist_goal_delta_m_{0.0};
+  bool has_previous_motion_distance_{false};
   uint32_t local_escape_command_id_{0U};
   bool local_escape_command_active_{false};
   Snapshot previous_snapshot_;

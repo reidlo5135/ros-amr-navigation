@@ -9,7 +9,7 @@
 ```text
 AMR_LOG schema=v1 component=controller event=tracking_state phase=tracking target_idx=18 target_x=1.240 target_y=0.820 dist_goal_m=1.420 heading_err_rad=0.210 blocked=false recovery=false
 AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=3 reason=blocked recovery_type=backup recovery_skipped=false planner_ok=false controller_ok=false
-AMR_LOG schema=v1 component=controller event=goal_state phase=final_heading_align xy_reached=true yaw_reached=false dist_goal_m=0.041 heading_err_rad=0.180 cmd_lin=0.000 cmd_ang=0.120
+AMR_LOG schema=v1 component=controller event=goal_state phase=final_heading_align xy_reached=true yaw_reached=false align_heading_at_goal=true respect_goal_yaw=false ignore_yaw=false final_heading_required=true dist_goal_m=0.041 goal_yaw_rad=1.570 current_yaw_rad=1.390 heading_err_rad=0.180 cmd_lin=0.000 cmd_ang=0.120
 ```
 
 규칙:
@@ -70,6 +70,12 @@ Navigation 필드:
 | `selection_reason` | tracking target 선택 이유. 예: `candidate_min_distance`, `retained_target_too_close` |
 | `xy_reached` | goal XY tolerance 도달 여부 |
 | `yaw_reached` | goal yaw tolerance 도달 여부 |
+| `align_heading_at_goal` | MotionCommand가 final heading alignment를 요구하는지 여부 |
+| `respect_goal_yaw` | controller `goal_checker.respect_goal_yaw` parameter |
+| `ignore_yaw` | controller `goal_checker.ignore_yaw` parameter |
+| `final_heading_required` | command/parameter와 yaw-ignore를 반영한 실제 final yaw 요구 여부 |
+| `goal_yaw_rad` | goal pose yaw |
+| `current_yaw_rad` | current pose yaw |
 | `blocked` | local/controller blocked 상태 |
 | `safety_blocked` | safety gate blocked 상태 |
 | `rejoin` | path rejoin phase 여부 |
@@ -200,6 +206,8 @@ ERROR:
 
 정상 직선 주행 기대값은 `phase=tracking`, `rejoin=false`, `rejoin_context_active=false`, `straight_segment=true`, `steering_deadband_active=true` 또는 `steering_hysteresis_state=suppressed`, `cmd_ang`과 `output_ang`이 0에 가까운 상태다.
 
-Final heading alignment는 path tracking 진동과 별도 단계다. `phase=final_heading_align`에서 `cmd_lin=0.000`과 큰 `cmd_ang`가 보이면 goal yaw 정렬 중인 것이며, 직선 추종 테스트에서는 `/amr/motion_controller.goal_checker.ignore_yaw=true`로 yaw 정렬을 끄고 비교할 수 있다. 기본 동작을 전역 제거하지 않는다.
+Final heading alignment는 path tracking 진동과 별도 단계다. AMR navigation goal은 기본적으로 `x`, `y`, `yaw`를 모두 포함한 full pose target이며, `/amr/navigator.execution.align_heading_at_goal=true`가 기본값이다. `phase=final_heading_align`에서 `cmd_lin=0.000`과 nonzero `cmd_ang`가 보이면 goal yaw 정렬 중인 정상 동작이다. XY-only 테스트에서는 `/amr/navigator.execution.align_heading_at_goal=false` 또는 `/amr/motion_controller.goal_checker.ignore_yaw=true`를 명시적으로 설정해 비교할 수 있지만, 기본 동작을 전역 제거하지 않는다.
+
+`amr_runtime_observation`은 `controller_phase=goal_approach` 또는 `controller_phase=final_heading_align`를 recovery로 분류하지 않는다. 이 구간의 `runtime_summary`는 `controller_blocked`, `controller_stalled`, `controller_recovery`, `controller_goal_reached`, `dist_goal_delta_m`, `progress_stall_window_sec`, `progress_stalled`, `recovery_reason`을 함께 보고해야 하며, 정상 final heading alignment에서는 `progress_stalled=false`, `recovery=false`, `recovery_reason=none`이 기대값이다.
 
 관련 parameter는 `/amr/local_planner`의 `path_refiner.line_of_sight_simplification_enabled`, `path_refiner.line_of_sight_sample_distance`, `path_refiner.line_of_sight_max_skip`, `path_refiner.collinear_pruning_enabled`, `path_refiner.collinear_angle_threshold`, `path_refiner.collinear_lateral_deviation_threshold`와 `/amr/motion_controller`의 `control.straight_tracking_enabled`, `control.straight_tracking_lookahead_distance`, `control.straight_curvature_threshold`, `control.straight_lateral_error_threshold`, `control.straight_heading_deadband`, `control.straight_heading_release_threshold`, `control.straight_angular_gain`, `control.straight_max_angular_speed`, `control.straight_heading_filter_alpha`, `control.tracking_heading_release_threshold`, `control.rejoin_context_timeout_sec`, `control.rejoin_context_distance_m`, `control.rejoin_target_jump_threshold_m`이다. Straight mode는 tracking 구간에서만 적용되며 goal approach, final heading alignment, recovery command에는 적용하지 않는다.

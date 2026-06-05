@@ -109,6 +109,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   recovery_max_retries_(3),
   recovery_retry_delay_ms_(700),
   recovery_reacquire_settle_ms_(700),
+  align_heading_at_goal_(true),
   structured_logging_enabled_(true),
   recovery_decision_logging_enabled_(true),
   nominal_speed_(0.075),
@@ -138,6 +139,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   this->declare_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
   this->declare_parameter(
     "recovery.reacquire_settle_ms", this->recovery_reacquire_settle_ms_);
+  this->declare_parameter("execution.align_heading_at_goal", this->align_heading_at_goal_);
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->declare_parameter(
     "logging.recovery_decision_logging", this->recovery_decision_logging_enabled_);
@@ -174,6 +176,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("recovery.retry_delay_ms", this->recovery_retry_delay_ms_);
   this->get_parameter(
     "recovery.reacquire_settle_ms", this->recovery_reacquire_settle_ms_);
+  this->get_parameter("execution.align_heading_at_goal", this->align_heading_at_goal_);
   this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->get_parameter(
     "logging.recovery_decision_logging", this->recovery_decision_logging_enabled_);
@@ -494,7 +497,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   const auto result = this->execute_goal_pose(
     goal->goal_pose,
     "navigate_to_pose",
-    true,
+    this->align_heading_at_goal_,
     [goal_handle]() { return goal_handle->is_canceling(); },
     [goal_handle, this](
       const geometry_msgs::msg::PoseStamped &pose,
@@ -570,7 +573,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
     }
 
     const auto route_goal_pose = make_route_goal_pose(goal->goal_poses, index);
-    const bool align_heading_at_goal = (index + 1U) >= goal->goal_poses.size();
+    const bool align_heading_at_goal =
+      this->align_heading_at_goal_ && (index + 1U) >= goal->goal_poses.size();
     const auto waypoint_result = this->execute_goal_pose(
       route_goal_pose,
       "navigate_to_poses",
@@ -1997,12 +2001,13 @@ void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand &com
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s mode=%u target_x=%.3f target_y=%.3f result=published",
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s mode=%u target_x=%.3f target_y=%.3f align_heading_at_goal=%s result=published",
       command.command_id,
       command.route_id.empty() ? "none" : command.route_id.c_str(),
       command.mode,
       command.goal_pose.pose.position.x,
-      command.goal_pose.pose.position.y);
+      command.goal_pose.pose.position.y,
+      bool_label(command.align_heading_at_goal));
   }
 }
 

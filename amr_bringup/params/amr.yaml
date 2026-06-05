@@ -350,6 +350,7 @@
     execution:
       planner_wait_timeout_ms: 2000
       feedback_period_ms: 100
+      align_heading_at_goal: true
       nominal_linear_speed: 0.075
     recovery:
       max_retries: 4
@@ -388,6 +389,8 @@
       route_stale_timeout_ms: 1500
       progress_stall_window_sec: 3.0
       progress_epsilon: 0.05
+      goal_approach_distance: 0.18
+      final_heading_alignment_distance: 0.10
     logging:
       structured_enabled: true
       summary_throttle_sec: 1.0

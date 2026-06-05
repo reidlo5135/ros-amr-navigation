@@ -191,6 +191,7 @@ private:
   int recovery_max_retries_;
   int recovery_retry_delay_ms_;
   int recovery_reacquire_settle_ms_;
+  bool align_heading_at_goal_;
   bool structured_logging_enabled_;
   bool recovery_decision_logging_enabled_;
   double nominal_speed_;
