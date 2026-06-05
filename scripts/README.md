@@ -120,8 +120,8 @@ The extractor includes these event families by default:
 - `target_jump_detected`
 - `recovery_decision`
 
-For straight-line oscillation checks, the extractor also carries through `straight_segment`,
-`path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`,
+For straight-line oscillation checks, the extractor also carries through `rejoin_context_active`,
+`straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`,
 `heading_error_filtered_rad`, `steering_deadband_active`, `steering_hysteresis_state`,
 `cmd_ang_sign`, `cmd_ang_flip_count`, `output_ang_sign`, and `output_ang_flip_count`.
 The final `nav_quality_summary` row reports `cmd_ang_abs_avg`, `cmd_ang_abs_max`,

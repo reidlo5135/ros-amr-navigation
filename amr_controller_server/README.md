@@ -63,9 +63,14 @@ their existing control paths.
 `control.tracking_progress_rollback_window` limits how far the controller may search backward
 on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
 between old and newly republished nearby poses.
-`control.tracking_target_hysteresis_distance`, `control.tracking_target_reset_distance`, and
-the `control.rejoin_*` parameters slow down target switching and linear push during path rejoin
-so recovery exit and off-path correction do not wag left/right as aggressively.
+`control.tracking_target_hysteresis_distance` and `control.tracking_target_reset_distance` slow
+down target switching during normal tracking.
+The `control.rejoin_*` parameters apply only while bounded rejoin context is active after recovery,
+escape, or a large target reacquisition; normal lookahead tracking no longer becomes rejoin just
+because `target_dist_m` is greater than the configured target-distance threshold.
+`control.rejoin_context_timeout_sec`, `control.rejoin_context_distance_m`, and
+`control.rejoin_target_jump_threshold_m` bound that context so straight-line damping can remain
+active during ordinary straight tracking.
 `status.*` parameters debounce blocked/stalled publication so fresh command dispatch, safety-gate
 flicker, and final-align settling do not immediately look like hard recovery conditions.
 Throttled controller logs include the current tracking index, selected target point, goal phase,

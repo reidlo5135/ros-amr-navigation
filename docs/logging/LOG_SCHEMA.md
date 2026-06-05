@@ -178,7 +178,7 @@ ERROR:
 - 상태 전이는 즉시 INFO/WARN으로 남긴다.
 - `target_idx`, `target_x`, `target_y`, `target_dist_m`, `target_jump_m`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`는 같은 이름을 유지한다.
 - plan은 존재하지만 로봇이 직진만 하는 경우 `tracking_heading_debug`의 `nearest_idx`, `candidate_idx`, `selected_idx`, `target_dist_m`, `pose_frame`, `plan_frame`, `target_frame`, `heading_err_rad`, `steering_err_rad`, `selection_reason`을 우선 확인한다.
-- 직선 plan에서 좌우 흔들림이 있으면 `tracking_heading_debug`의 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`, `heading_error_filtered_rad`, `steering_deadband_active`, `steering_hysteresis_state`, `cmd_ang_sign`, `cmd_ang_flip_count`, `output_ang_sign`, `output_ang_flip_count`를 함께 확인한다.
+- 직선 plan에서 좌우 흔들림이 있으면 `tracking_state`의 `rejoin`, `rejoin_context_active`와 `tracking_heading_debug`의 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`, `heading_error_filtered_rad`, `steering_deadband_active`, `steering_hysteresis_state`, `cmd_ang_sign`, `cmd_ang_flip_count`, `output_ang_sign`, `output_ang_flip_count`를 함께 확인한다.
 - recovery 실행 또는 skip 판단은 `reason`, `recovery_type`, `recovery_skipped`, `planner_ok`, `controller_ok`를 포함한다.
 - costmap grid, scan ranges, map data 등 대량 데이터는 log에 직접 출력하지 않는다.
 - rosbag2 profile에서 필요한 heavy topic을 선택적으로 기록한다.
@@ -188,11 +188,14 @@ ERROR:
 직선 plan 구간에서 `/cmd_vel.angular.z`가 작은 값으로 좌우 반복되면 controller 로그를 다음 순서로 본다.
 
 1. `cmd_quality`에서 `cmd_ang_sign_flip_count`와 `output_ang_sign_flip_count`를 비교한다. `cmd_ang`부터 흔들리면 tracking heading/deadband 문제이고, `output_ang`만 흔들리면 velocity controller 응답이나 derivative 영향이 크다.
-2. `tracking_heading_debug`에서 `target_dist_m`과 `lookahead_m`을 확인한다. 직선 구간인데 target이 너무 가까우면 local plan point noise에 민감하다.
-3. `straight_segment=true`인데 `heading_error_raw_rad`가 작고 `heading_error_filtered_rad`가 deadband 근처라면 `straight_heading_deadband`와 `straight_heading_release_threshold`를 먼저 조정한다.
-4. `path_curvature_score` 또는 `lateral_error_m`이 threshold보다 크면 local plan 자체가 grid/refinement 영향으로 미세 zigzag일 수 있다.
-5. `straight_segment=true`에서 `cmd_ang_abs_avg`, `output_ang_abs_avg`, sign flip count가 줄었는지 `scripts/extract_nav_quality.sh`의 `nav_quality_summary` row로 수정 전후를 비교한다.
-6. deadband 조정 후에도 흔들리면 `straight_angular_gain`, `straight_max_angular_speed`, `straight_tracking_lookahead_distance`를 보수적으로 조정한다.
-7. 마지막으로 `velocity_controller.angular.kd`를 0.00과 비교해 derivative가 작은 부호 전환을 키우는지 확인한다.
+2. `tracking_state`에서 `rejoin=false`, `rejoin_context_active=false`인지 확인한다. `rejoin=true`는 정상 tracking이 아니라 recovery/escape 이후 path 복귀 컨텍스트만 의미한다.
+3. `tracking_heading_debug`에서 `target_dist_m`과 `lookahead_m`을 확인한다. 직선 구간인데 target이 너무 가까우면 local plan point noise에 민감하다.
+4. `straight_segment=true`인데 `heading_error_raw_rad`가 작고 `heading_error_filtered_rad`가 deadband 근처라면 `straight_heading_deadband`와 `straight_heading_release_threshold`를 먼저 조정한다.
+5. `path_curvature_score` 또는 `lateral_error_m`이 threshold보다 크면 local plan 자체가 grid/refinement 영향으로 미세 zigzag일 수 있다.
+6. `straight_segment=true`에서 `cmd_ang_abs_avg`, `output_ang_abs_avg`, sign flip count가 줄었는지 `scripts/extract_nav_quality.sh`의 `nav_quality_summary` row로 수정 전후를 비교한다.
+7. deadband 조정 후에도 흔들리면 `straight_angular_gain`, `straight_max_angular_speed`, `straight_tracking_lookahead_distance`를 보수적으로 조정한다.
+8. 마지막으로 `velocity_controller.angular.kd`를 0.00과 비교해 derivative가 작은 부호 전환을 키우는지 확인한다.
 
-관련 parameter는 `/amr/motion_controller`의 `control.straight_tracking_enabled`, `control.straight_tracking_lookahead_distance`, `control.straight_curvature_threshold`, `control.straight_lateral_error_threshold`, `control.straight_heading_deadband`, `control.straight_heading_release_threshold`, `control.straight_angular_gain`, `control.straight_max_angular_speed`, `control.straight_heading_filter_alpha`, `control.tracking_heading_release_threshold`이다. Straight mode는 tracking 구간에서만 적용되며 goal approach, final heading alignment, recovery command에는 적용하지 않는다.
+정상 직선 주행 기대값은 `phase=tracking`, `rejoin=false`, `rejoin_context_active=false`, `straight_segment=true`, `steering_deadband_active=true` 또는 `steering_hysteresis_state=suppressed`, `cmd_ang`과 `output_ang`이 0에 가까운 상태다.
+
+관련 parameter는 `/amr/motion_controller`의 `control.straight_tracking_enabled`, `control.straight_tracking_lookahead_distance`, `control.straight_curvature_threshold`, `control.straight_lateral_error_threshold`, `control.straight_heading_deadband`, `control.straight_heading_release_threshold`, `control.straight_angular_gain`, `control.straight_max_angular_speed`, `control.straight_heading_filter_alpha`, `control.tracking_heading_release_threshold`, `control.rejoin_context_timeout_sec`, `control.rejoin_context_distance_m`, `control.rejoin_target_jump_threshold_m`이다. Straight mode는 tracking 구간에서만 적용되며 goal approach, final heading alignment, recovery command에는 적용하지 않는다.

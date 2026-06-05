@@ -229,6 +229,8 @@ If RViz shows global/local plans but the robot drives straight, inspect these `A
 
 If the robot follows the plan but wags left/right on a visually straight segment, inspect these fields next:
 
+- `rejoin`
+- `rejoin_context_active`
 - `straight_segment`
 - `path_curvature_score`
 - `lateral_error_m`
@@ -238,6 +240,10 @@ If the robot follows the plan but wags left/right on a visually straight segment
 - `steering_hysteresis_state`
 - `cmd_ang_sign_flip_count`
 - `output_ang_sign_flip_count`
+
+Normal straight tracking should read as `phase=tracking`, `rejoin=false`,
+`rejoin_context_active=false`, `straight_segment=true`, and near-zero `cmd_ang` / `output_ang`.
+`rejoin=true` is reserved for bounded path return after recovery, escape, or a large tracking target reacquisition.
 
 Use the `nav_quality_summary` row from `scripts/extract_nav_quality.sh` to compare `cmd_ang_abs_avg`, `output_ang_abs_avg`, and sign flip counts before and after tuning.
 

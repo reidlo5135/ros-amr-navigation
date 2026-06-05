@@ -11,8 +11,8 @@ Default events:
   goal_state, cmd_quality, tracking_state, tracking_heading_debug,
   tracking_frame_mismatch, target_jump_detected, recovery_decision
 
-The output also appends one nav_quality_summary row with straight-line angular
-interference metrics computed from cmd_quality rows.
+The output also carries rejoin_context_active and appends one nav_quality_summary
+row with straight-line angular interference metrics computed from cmd_quality rows.
 
 Environment overrides:
   AMR_NOHUP_ROOT   Default log directory.
@@ -113,11 +113,11 @@ function emit(fields, raw, i) {
   }
 }
 BEGIN {
-  field_count = 44
+  field_count = 45
   if (format == "csv") {
-    print "source,component,event,phase,goal_id,target_idx,selected_idx,nearest_idx,candidate_idx,target_dist_m,target_jump_m,dist_goal_m,heading_err_rad,steering_err_rad,cmd_lin,cmd_ang,output_lin,output_ang,recovery_count,blocked,reason,selection_reason,pose_frame,plan_frame,target_frame,straight_segment,path_curvature_score,lateral_error_m,heading_error_raw_rad,heading_error_filtered_rad,steering_deadband_active,steering_hysteresis_state,cmd_ang_sign,cmd_ang_flip_count,output_ang_sign,output_ang_flip_count,cmd_ang_abs_avg,cmd_ang_abs_max,output_ang_abs_avg,output_ang_abs_max,cmd_ang_sign_flip_count,output_ang_sign_flip_count,straight_segment_ratio,straight_cmd_ang_interference_count,raw"
+    print "source,component,event,phase,goal_id,target_idx,selected_idx,nearest_idx,candidate_idx,target_dist_m,target_jump_m,dist_goal_m,heading_err_rad,steering_err_rad,cmd_lin,cmd_ang,output_lin,output_ang,recovery_count,blocked,reason,selection_reason,pose_frame,plan_frame,target_frame,rejoin_context_active,straight_segment,path_curvature_score,lateral_error_m,heading_error_raw_rad,heading_error_filtered_rad,steering_deadband_active,steering_hysteresis_state,cmd_ang_sign,cmd_ang_flip_count,output_ang_sign,output_ang_flip_count,cmd_ang_abs_avg,cmd_ang_abs_max,output_ang_abs_avg,output_ang_abs_max,cmd_ang_sign_flip_count,output_ang_sign_flip_count,straight_segment_ratio,straight_cmd_ang_interference_count,raw"
   } else {
-    print "source\tcomponent\tevent\tphase\tgoal_id\ttarget_idx\tselected_idx\tnearest_idx\tcandidate_idx\ttarget_dist_m\ttarget_jump_m\tdist_goal_m\theading_err_rad\tsteering_err_rad\tcmd_lin\tcmd_ang\toutput_lin\toutput_ang\trecovery_count\tblocked\treason\tselection_reason\tpose_frame\tplan_frame\ttarget_frame\tstraight_segment\tpath_curvature_score\tlateral_error_m\theading_error_raw_rad\theading_error_filtered_rad\tsteering_deadband_active\tsteering_hysteresis_state\tcmd_ang_sign\tcmd_ang_flip_count\toutput_ang_sign\toutput_ang_flip_count\tcmd_ang_abs_avg\tcmd_ang_abs_max\toutput_ang_abs_avg\toutput_ang_abs_max\tcmd_ang_sign_flip_count\toutput_ang_sign_flip_count\tstraight_segment_ratio\tstraight_cmd_ang_interference_count\traw"
+    print "source\tcomponent\tevent\tphase\tgoal_id\ttarget_idx\tselected_idx\tnearest_idx\tcandidate_idx\ttarget_dist_m\ttarget_jump_m\tdist_goal_m\theading_err_rad\tsteering_err_rad\tcmd_lin\tcmd_ang\toutput_lin\toutput_ang\trecovery_count\tblocked\treason\tselection_reason\tpose_frame\tplan_frame\ttarget_frame\trejoin_context_active\tstraight_segment\tpath_curvature_score\tlateral_error_m\theading_error_raw_rad\theading_error_filtered_rad\tsteering_deadband_active\tsteering_hysteresis_state\tcmd_ang_sign\tcmd_ang_flip_count\toutput_ang_sign\toutput_ang_flip_count\tcmd_ang_abs_avg\tcmd_ang_abs_max\toutput_ang_abs_avg\toutput_ang_abs_max\tcmd_ang_sign_flip_count\toutput_ang_sign_flip_count\tstraight_segment_ratio\tstraight_cmd_ang_interference_count\traw"
   }
 }
 /AMR_LOG/ {
@@ -158,17 +158,18 @@ BEGIN {
   fields[23] = value_of(entry, "pose_frame")
   fields[24] = value_of(entry, "plan_frame")
   fields[25] = value_of(entry, "target_frame")
-  fields[26] = value_of(entry, "straight_segment")
-  fields[27] = value_of(entry, "path_curvature_score")
-  fields[28] = value_of(entry, "lateral_error_m")
-  fields[29] = value_of(entry, "heading_error_raw_rad")
-  fields[30] = value_of(entry, "heading_error_filtered_rad")
-  fields[31] = value_of(entry, "steering_deadband_active")
-  fields[32] = value_of(entry, "steering_hysteresis_state")
-  fields[33] = value_of(entry, "cmd_ang_sign")
-  fields[34] = value_of(entry, "cmd_ang_flip_count")
-  fields[35] = value_of(entry, "output_ang_sign")
-  fields[36] = value_of(entry, "output_ang_flip_count")
+  fields[26] = value_of(entry, "rejoin_context_active")
+  fields[27] = value_of(entry, "straight_segment")
+  fields[28] = value_of(entry, "path_curvature_score")
+  fields[29] = value_of(entry, "lateral_error_m")
+  fields[30] = value_of(entry, "heading_error_raw_rad")
+  fields[31] = value_of(entry, "heading_error_filtered_rad")
+  fields[32] = value_of(entry, "steering_deadband_active")
+  fields[33] = value_of(entry, "steering_hysteresis_state")
+  fields[34] = value_of(entry, "cmd_ang_sign")
+  fields[35] = value_of(entry, "cmd_ang_flip_count")
+  fields[36] = value_of(entry, "output_ang_sign")
+  fields[37] = value_of(entry, "output_ang_flip_count")
   if (event == "cmd_quality") {
     cmd_ang = fields[16]
     output_ang = fields[18]
@@ -188,18 +189,18 @@ BEGIN {
         output_ang_abs_max = output_abs
       }
     }
-    if (fields[26] != "") {
+    if (fields[27] != "") {
       straight_segment_samples += 1
-      if (fields[26] == "true") {
+      if (fields[27] == "true") {
         straight_segment_count += 1
         if (cmd_ang != "" && abs_value(cmd_ang + 0.0) > 0.02) {
           straight_cmd_ang_interference_count += 1
         }
       }
     }
-    if (fields[34] != "") {
+    if (fields[35] != "") {
       cmd_flip_key = fields[5] == "" ? FILENAME : fields[5]
-      cmd_flip_value = fields[34] + 0
+      cmd_flip_value = fields[35] + 0
       if (!(cmd_flip_key in last_cmd_flip_count) || cmd_flip_value < last_cmd_flip_count[cmd_flip_key]) {
         cmd_ang_sign_flip_count += cmd_flip_value
       } else {
@@ -207,9 +208,9 @@ BEGIN {
       }
       last_cmd_flip_count[cmd_flip_key] = cmd_flip_value
     }
-    if (fields[36] != "") {
+    if (fields[37] != "") {
       output_flip_key = fields[5] == "" ? FILENAME : fields[5]
-      output_flip_value = fields[36] + 0
+      output_flip_value = fields[37] + 0
       if (!(output_flip_key in last_output_flip_count) || output_flip_value < last_output_flip_count[output_flip_key]) {
         output_ang_sign_flip_count += output_flip_value
       } else {
@@ -225,14 +226,14 @@ END {
   fields[1] = "summary"
   fields[2] = "controller"
   fields[3] = "nav_quality_summary"
-  fields[37] = cmd_ang_abs_count > 0 ? sprintf("%.6f", cmd_ang_abs_sum / cmd_ang_abs_count) : ""
-  fields[38] = cmd_ang_abs_count > 0 ? sprintf("%.6f", cmd_ang_abs_max) : ""
-  fields[39] = output_ang_abs_count > 0 ? sprintf("%.6f", output_ang_abs_sum / output_ang_abs_count) : ""
-  fields[40] = output_ang_abs_count > 0 ? sprintf("%.6f", output_ang_abs_max) : ""
-  fields[41] = sprintf("%d", cmd_ang_sign_flip_count)
-  fields[42] = sprintf("%d", output_ang_sign_flip_count)
-  fields[43] = straight_segment_samples > 0 ? sprintf("%.6f", straight_segment_count / straight_segment_samples) : ""
-  fields[44] = sprintf("%d", straight_cmd_ang_interference_count)
+  fields[38] = cmd_ang_abs_count > 0 ? sprintf("%.6f", cmd_ang_abs_sum / cmd_ang_abs_count) : ""
+  fields[39] = cmd_ang_abs_count > 0 ? sprintf("%.6f", cmd_ang_abs_max) : ""
+  fields[40] = output_ang_abs_count > 0 ? sprintf("%.6f", output_ang_abs_sum / output_ang_abs_count) : ""
+  fields[41] = output_ang_abs_count > 0 ? sprintf("%.6f", output_ang_abs_max) : ""
+  fields[42] = sprintf("%d", cmd_ang_sign_flip_count)
+  fields[43] = sprintf("%d", output_ang_sign_flip_count)
+  fields[44] = straight_segment_samples > 0 ? sprintf("%.6f", straight_segment_count / straight_segment_samples) : ""
+  fields[45] = sprintf("%d", straight_cmd_ang_interference_count)
   emit(fields, "AMR_LOG schema=v1 component=controller event=nav_quality_summary source=extract_nav_quality")
 }
 ' "${files[@]}")
