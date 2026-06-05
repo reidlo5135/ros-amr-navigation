@@ -256,6 +256,16 @@ private:
     double target_yaw{0.0};
   };
 
+  struct StraightSegmentAssessment
+  {
+    bool straight_segment{false};
+    double path_curvature_score{0.0};
+    double lateral_error_m{0.0};
+    double segment_length_m{0.0};
+    std::size_t start_index{0U};
+    std::size_t end_index{0U};
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -290,7 +300,12 @@ private:
   double quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const;
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
-  geometry_msgs::msg::PoseStamped select_tracking_target();
+  StraightSegmentAssessment assess_straight_segment(
+    std::size_t start_index,
+    double lookahead_distance) const;
+  geometry_msgs::msg::PoseStamped select_tracking_target(
+    double lookahead_distance,
+    bool allow_retained_target);
   GoalCheckResult check_goal(
     const geometry_msgs::msg::PoseStamped &current_pose,
     const geometry_msgs::msg::PoseStamped &goal_pose,
@@ -299,6 +314,7 @@ private:
   bool update_blocked_state(bool blocked_candidate);
   bool update_stalled_state(bool stalled_candidate);
   void ensure_recovery_reference_initialized();
+  void reset_tracking_diagnostics_state();
   double pose_distance(
     const geometry_msgs::msg::PoseStamped &start,
     const geometry_msgs::msg::PoseStamped &goal) const;
@@ -321,6 +337,7 @@ private:
   double linear_speed_;
   double min_linear_speed_;
   double tracking_lookahead_distance_;
+  double straight_tracking_lookahead_distance_;
   double tracking_min_target_distance_;
   std::size_t tracking_progress_rollback_window_;
   double tracking_target_hysteresis_distance_;
@@ -342,6 +359,15 @@ private:
   double rotate_in_place_threshold_;
   double rotate_in_place_goal_distance_;
   double tracking_heading_deadband_;
+  double tracking_heading_release_threshold_;
+  bool straight_tracking_enabled_;
+  double straight_curvature_threshold_;
+  double straight_lateral_error_threshold_;
+  double straight_heading_deadband_;
+  double straight_heading_release_threshold_;
+  double straight_angular_gain_;
+  double straight_max_angular_speed_;
+  double straight_heading_filter_alpha_;
   double rejoin_target_distance_threshold_;
   double rejoin_heading_gate_threshold_;
   double rejoin_min_linear_scale_;
@@ -397,14 +423,23 @@ private:
   bool has_tracking_target_index_;
   bool has_tracking_target_pose_;
   bool tracking_target_from_plan_;
+  bool steering_hysteresis_active_;
+  bool has_heading_error_filter_;
   bool blocked_latched_;
   int blocked_streak_;
   int blocked_clear_streak_;
   int stalled_streak_;
+  int cmd_ang_sign_;
+  int last_cmd_ang_sign_;
+  int cmd_ang_flip_count_;
+  int output_ang_sign_;
+  int last_output_ang_sign_;
+  int output_ang_flip_count_;
   std::size_t tracking_progress_index_;
   std::size_t tracking_target_index_;
   std::size_t tracking_nearest_index_;
   std::size_t tracking_candidate_index_;
+  double heading_error_filtered_;
   double tracking_selected_target_distance_;
   std::string tracking_selection_reason_;
 

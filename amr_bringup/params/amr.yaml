@@ -247,6 +247,7 @@
       linear_speed: 0.10
       min_linear_speed: 0.06
       tracking_lookahead_distance: 0.18
+      straight_tracking_lookahead_distance: 0.35
       tracking_min_target_distance: 0.08
       tracking_progress_rollback_window: 2
       tracking_target_hysteresis_distance: 0.06
@@ -260,6 +261,15 @@
       final_align_heading_deadband: 0.05
       final_align_settle_time_sec: 0.20
       tracking_heading_deadband: 0.05
+      tracking_heading_release_threshold: 0.09
+      straight_tracking_enabled: true
+      straight_curvature_threshold: 0.08
+      straight_lateral_error_threshold: 0.04
+      straight_heading_deadband: 0.08
+      straight_heading_release_threshold: 0.12
+      straight_angular_gain: 1.2
+      straight_max_angular_speed: 0.20
+      straight_heading_filter_alpha: 0.35
       rejoin_target_distance_threshold: 0.08
       rejoin_heading_gate_threshold: 0.35
       rejoin_min_linear_scale: 0.35
@@ -299,7 +309,7 @@
       angular:
         kp: 0.45
         ki: 0.00
-        kd: 0.02
+        kd: 0.00
         integral_limit: 0.30
       max_linear_accel: 0.10
       max_angular_accel: 0.8
