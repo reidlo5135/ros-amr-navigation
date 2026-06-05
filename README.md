@@ -138,6 +138,66 @@ ros2 launch amr_visualization amr_visualization.launch.py
 Global/local costmap layers are opt-in from the UI because full costmap streams can be heavy on
 TurtleBot3-class hardware.
 
+## Structured Logging
+
+Runtime decision logs use the `AMR_LOG` prefix and `key=value` fields. The schema is documented in
+[docs/logging/LOG_SCHEMA.md](docs/logging/LOG_SCHEMA.md). Cross-package state summaries and events
+remain owned by `amr_runtime_observation`; other packages log only decisions and outcomes in their
+own responsibility area.
+
+Common fields:
+
+- `schema=v1`
+- `component=<package_role>`
+- `event=<event_name>`
+
+Useful event families:
+
+- controller: `tracking_state`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`
+- navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`
+- planner/recovery: `plan_requested`, `plan_succeeded`, `plan_failed`, `recovery_plan_selected`
+- observation: `runtime_summary`, `runtime_event`
+
+Structured logging defaults are configured in [amr_bringup/params/amr.yaml](amr_bringup/params/amr.yaml)
+under each package's `logging` section.
+
+## Field Debug Scripts
+
+Field scripts live in [scripts](scripts). They share `scripts/amr_logging_env.sh`, which prepares ROS 2
+Humble, the local workspace overlay, log directories, bag directories, and a run id.
+
+Common commands:
+
+```bash
+scripts/run_navigation_nohup.sh
+scripts/run_turtlebot3_nohup.sh
+scripts/record_nav_bag_light.sh
+scripts/watch_amr_logs.sh --event recovery_decision
+scripts/extract_nav_quality.sh --output /tmp/nav_quality.tsv
+scripts/stop_nohup_process.sh --label all
+```
+
+See [scripts/README.md](scripts/README.md) for options and environment overrides.
+
+## Rosbag2 Recording Profiles
+
+Rosbag profiles are documented in [docs/logging/ROSBAG_PROFILES.md](docs/logging/ROSBAG_PROFILES.md).
+
+| Profile | Script | Use |
+| --- | --- | --- |
+| `light` | `scripts/record_nav_bag_light.sh` | Repeated navigation quality tests without heavy scan/TF/grid capture |
+| `debug` | `scripts/record_nav_bag_debug.sh` | Planner/controller/costmap diagnosis with paths, local costmap, scan, odometry, and TF |
+| `full` | `scripts/record_nav_bag_full.sh` | Short targeted all-topic captures |
+
+## Navigation Quality Debugging Workflow
+
+1. Run navigation with `scripts/run_navigation_nohup.sh`.
+2. Record a light bag with `scripts/record_nav_bag_light.sh`.
+3. Test the same start pose and goal three times.
+4. Check recovery entry with `scripts/watch_amr_logs.sh --event recovery_decision`.
+5. Extract `goal_state`, `cmd_quality`, and `tracking_state` with `scripts/extract_nav_quality.sh`.
+6. Compare `recovery_count`, `cmd_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
+
 ## Hardware Boundary
 
 The AMR-facing hardware contract remains:
