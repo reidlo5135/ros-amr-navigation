@@ -57,6 +57,9 @@ the `control.rejoin_*` parameters slow down target switching and linear push dur
 so recovery exit and off-path correction do not wag left/right as aggressively.
 `status.*` parameters debounce blocked/stalled publication so fresh command dispatch, safety-gate
 flicker, and final-align settling do not immediately look like hard recovery conditions.
+Throttled controller logs include the current tracking index, selected target point, goal phase,
+rejoin phase, and blocked/safety state so path-following quality issues can be inspected without
+changing the motion status topic contract.
 
 ## Important Interfaces
 

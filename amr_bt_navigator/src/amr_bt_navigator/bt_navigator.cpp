@@ -14,6 +14,22 @@ enum class BtOutcome
   kStopped
 };
 
+const char *local_plan_decision_label(const uint8_t decision)
+{
+  switch (decision) {
+    case amr_msgs::msg::LocalPlanStatus::DECISION_OK:
+      return "ok";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+      return "goal_proximity_blocked";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+      return "global_replan_required";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+      return "hard_blocked";
+    default:
+      return "unknown";
+  }
+}
+
 std::string get_default_behavior_tree_xml_path()
 {
   try {
@@ -752,6 +768,12 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
           blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
           blackboard->set("local_escape_dispatched", false);
+          RCLCPP_INFO(
+            navigator->get_logger(),
+            "BT: recovery exit confirmed for command %u; navigation reacquired with local_plan_valid=%s planner_decision=%s",
+            command.command_id,
+            status.local_plan_valid ? "true" : "false",
+            local_plan_decision_label(local_plan_status.decision));
           blackboard->set(
             "status_message",
             std::string("Recovery exit confirmed after a stable navigation reacquire."));
@@ -804,6 +826,21 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       }
 
       if (recovery_needed) {
+        RCLCPP_WARN_THROTTLE(
+          navigator->get_logger(),
+          *navigator->get_clock(),
+          1000,
+          "BT: recovery trigger cmd=%u motion(blocked=%s stalled=%s local_plan=%s safety=%s) planner(active=%s recovery=%s decision=%s blocked=%s distance=%.3f)",
+          command.command_id,
+          status.blocked ? "true" : "false",
+          status.stalled ? "true" : "false",
+          status.local_plan_valid ? "true" : "false",
+          status.safety_gate_blocked ? "true" : "false",
+          local_plan_status.active ? "true" : "false",
+          local_plan_status.recovery_required ? "true" : "false",
+          local_plan_decision_label(local_plan_status.decision),
+          local_plan_status.has_blocked_pose ? "true" : "false",
+          local_plan_status.blocked_distance);
         if (planner_recovery_needed) {
           switch (local_plan_status.decision) {
             case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
@@ -888,6 +925,30 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
 
       if (cancel_requested()) {
         return finish_canceled();
+      }
+
+      {
+        const auto refreshed_motion_status = navigator->get_motion_status_copy();
+        const auto refreshed_local_plan_status = navigator->get_local_plan_status_copy();
+        if (navigator->has_reacquired_navigation(
+            active_command,
+            refreshed_motion_status,
+            refreshed_local_plan_status))
+        {
+          blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
+          blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
+          blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
+          blackboard->set("local_escape_dispatched", false);
+          blackboard->set(
+            "status_message",
+            std::string("Recovery skipped because navigation had already reacquired tracking."));
+          RCLCPP_INFO(
+            navigator->get_logger(),
+            "BT: skipped recovery attempt for command %u because navigation reacquired; planner_decision=%s",
+            active_command.command_id,
+            local_plan_decision_label(refreshed_local_plan_status.decision));
+          return BT::NodeStatus::SUCCESS;
+        }
       }
 
       navigator->publish_stop_command();

@@ -30,6 +30,9 @@ an escape plan from stale planner state.
 After any recovery-driven navigate re-dispatch, the navigator also waits through a short
 post-recovery reacquire window before it considers recovery exited, so stale blocked flags do
 not immediately bounce the BT back into another recovery cycle.
+Before running a heavier recovery behavior, the navigator now re-checks whether normal tracking
+has already been reacquired and skips the recovery command when the latest controller/planner
+state is clean.
 The fixed recovery policy is now:
 - `DECISION_HARD_BLOCKED`: one planner-local escape attempt, then `backup`, then `spin`, then fresh global replan
 - `DECISION_GOAL_PROXIMITY_BLOCKED`: skip local escape, `wait`, and re-dispatch the current plan before escalating further

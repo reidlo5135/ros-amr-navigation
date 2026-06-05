@@ -9,6 +9,23 @@ namespace
 
 constexpr int kUnknownCellValue = -1;
 
+const char *local_plan_decision_label(const uint8_t decision)
+{
+  switch (decision)
+  {
+    case amr_msgs::msg::LocalPlanStatus::DECISION_OK:
+      return "ok";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED:
+      return "goal_proximity_blocked";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_GLOBAL_REPLAN_REQUIRED:
+      return "global_replan_required";
+    case amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED:
+      return "hard_blocked";
+    default:
+      return "unknown";
+  }
+}
+
 double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
 {
   return std::atan2(
@@ -812,10 +829,16 @@ void LocalPlanner::publish_local_plan()
     this->get_logger(),
     *this->get_clock(),
     2000,
-    "Publishing local plan for command %u from progress index %zu with %zu poses",
+    "Local planner status cmd=%u progress_index=%zu poses=%zu decision=%s recovery=%s blocked=%s blocked_distance=%.3f blocked_streak=%d clear_streak=%d",
     this->latest_command_.command_id,
     this->last_progress_index_,
-    build_result.plan.poses.size());
+    build_result.plan.poses.size(),
+    local_plan_decision_label(build_result.decision),
+    build_result.recovery_required ? "true" : "false",
+    build_result.has_blocked_pose ? "true" : "false",
+    build_result.blocked_distance,
+    this->dynamic_blocked_streak_,
+    this->dynamic_clear_streak_);
 }
 
 LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
@@ -2054,6 +2077,28 @@ double LocalPlanner::pose_distance(
 namespace amr::motion::controller
 {
 
+namespace
+{
+
+const char *motion_mode_label(const uint8_t mode)
+{
+  switch (mode)
+  {
+    case amr_msgs::msg::MotionCommand::MODE_NAVIGATE:
+      return "navigate";
+    case amr_msgs::msg::MotionCommand::MODE_BACKUP:
+      return "backup";
+    case amr_msgs::msg::MotionCommand::MODE_SPIN:
+      return "spin";
+    case amr_msgs::msg::MotionCommand::MODE_WAIT:
+      return "wait";
+    default:
+      return "unknown";
+  }
+}
+
+}  // namespace
+
 MotionController::MotionController(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("motion_controller", options),
   command_topic_(""),
@@ -2570,6 +2615,13 @@ void MotionController::publish_control()
   geometry_msgs::msg::Twist desired_twist;
   geometry_msgs::msg::Twist output_twist;
   double debug_remaining_distance = 0.0;
+  std::string debug_goal_state = "idle";
+  std::string debug_rejoin_state = "inactive";
+  bool debug_has_tracking_target = false;
+  std::size_t debug_tracking_progress_index = 0U;
+  std::size_t debug_tracking_target_index = 0U;
+  double debug_tracking_target_x = 0.0;
+  double debug_tracking_target_y = 0.0;
   amr_msgs::msg::MotionStatus status;
   status.header.stamp = this->now();
   status.header.frame_id =
@@ -2604,6 +2656,11 @@ void MotionController::publish_control()
     if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE)
     {
       const geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target();
+      debug_has_tracking_target = this->has_tracking_target_index_;
+      debug_tracking_progress_index = this->tracking_progress_index_;
+      debug_tracking_target_index = this->tracking_target_index_;
+      debug_tracking_target_x = tracking_target.pose.position.x;
+      debug_tracking_target_y = tracking_target.pose.position.y;
       const double local_plan_remaining_distance =
         this->estimate_remaining_distance(this->latest_local_plan_);
       const double tracking_target_distance =
@@ -2692,6 +2749,27 @@ void MotionController::publish_control()
         goal_check.goal_reached;
       status.remaining_distance = goal_distance;
       status.heading_error = heading_error;
+      if (status.goal_reached)
+      {
+        debug_goal_state = "reached";
+      }
+      else if (final_heading_phase)
+      {
+        debug_goal_state = final_align_stable ? "final_heading_settled" : "final_heading_align";
+      }
+      else if (distance_reached)
+      {
+        debug_goal_state = "xy_reached";
+      }
+      else if (goal_distance <= this->rotate_in_place_goal_distance_)
+      {
+        debug_goal_state = "goal_approach";
+      }
+      else
+      {
+        debug_goal_state = "tracking";
+      }
+      debug_rejoin_state = rejoin_phase ? "rejoin" : "tracking";
 
       if (!this->has_progress_reference_)
       {
@@ -2822,6 +2900,8 @@ void MotionController::publish_control()
     {
       this->reset_status_semantics_state();
       this->ensure_recovery_reference_initialized();
+      debug_goal_state = std::string("recovery_") + motion_mode_label(this->latest_command_.mode);
+      debug_rejoin_state = "recovery";
       const double elapsed_sec = (this->now() - this->recovery_start_time_).seconds();
 
       if (this->latest_command_.mode == amr_msgs::msg::MotionCommand::MODE_BACKUP)
@@ -2903,14 +2983,26 @@ void MotionController::publish_control()
       this->get_logger(),
       *this->get_clock(),
       1000,
-      "Control cmd=%u target(v=%.3f,w=%.3f) output(v=%.3f,w=%.3f) remaining=%.3f heading=%.3f",
+      "Control cmd=%u mode=%s phase=%s rejoin=%s track=%s progress_index=%zu target_index=%zu target=(%.3f,%.3f) target_cmd=(%.3f,%.3f) output=(%.3f,%.3f) remaining=%.3f heading=%.3f blocked=%s stalled=%s safety=%s local_plan=%s",
       status.command_id,
+      motion_mode_label(status.mode),
+      debug_goal_state.c_str(),
+      debug_rejoin_state.c_str(),
+      debug_has_tracking_target ? "true" : "false",
+      debug_tracking_progress_index,
+      debug_tracking_target_index,
+      debug_tracking_target_x,
+      debug_tracking_target_y,
       desired_twist.linear.x,
       desired_twist.angular.z,
       output_twist.linear.x,
       output_twist.angular.z,
       debug_remaining_distance,
-      status.heading_error);
+      status.heading_error,
+      status.blocked ? "true" : "false",
+      status.stalled ? "true" : "false",
+      status.safety_gate_blocked ? "true" : "false",
+      status.local_plan_valid ? "true" : "false");
   }
 }
 
