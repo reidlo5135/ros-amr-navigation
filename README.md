@@ -126,6 +126,14 @@ This launch is the remote-PC navigation/runtime entrypoint. It does not start Tu
 hardware, `turtlebot3_bringup`, `robot_state_publisher`, or AMR robot driver nodes; run hardware
 bringup separately through external TB3 bringup or a robot-side AMR launch.
 
+When using the existing TurtleBot3 bringup separately, keep the structure split across the robot
+hardware bringup and the AMR navigation runtime:
+
+```bash
+ros2 launch turtlebot3_bringup robot.launch.py
+ros2 launch amr_bringup navigation.launch.py
+```
+
 The MQTT bridge is disabled by default. Enable it only for MQTT/remote-client workflows:
 
 ```bash
@@ -163,7 +171,7 @@ Common fields:
 
 Useful event families:
 
-- controller: `tracking_state`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`
+- controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`
 - navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`
 - planner/recovery: `plan_requested`, `plan_succeeded`, `plan_failed`, `recovery_plan_selected`
 - observation: `runtime_summary`, `runtime_event`
@@ -205,8 +213,19 @@ Rosbag profiles are documented in [docs/logging/ROSBAG_PROFILES.md](docs/logging
 2. Record a light bag with `scripts/record_nav_bag_light.sh`.
 3. Test the same start pose and goal three times.
 4. Check recovery entry with `scripts/watch_amr_logs.sh --event recovery_decision`.
-5. Extract `goal_state`, `cmd_quality`, and `tracking_state` with `scripts/extract_nav_quality.sh`.
+5. Extract `goal_state`, `cmd_quality`, `tracking_state`, and `tracking_heading_debug` with `scripts/extract_nav_quality.sh`.
 6. Compare `recovery_count`, `cmd_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
+
+If RViz shows global/local plans but the robot drives straight, inspect these `AMR_LOG` fields first:
+
+- `target_idx`
+- `selected_idx`
+- `target_dist_m`
+- `heading_err_rad`
+- `cmd_ang`
+- `pose_frame`
+- `plan_frame`
+- `selection_reason`
 
 ## Hardware Boundary
 

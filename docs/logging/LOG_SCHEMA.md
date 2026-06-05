@@ -54,14 +54,20 @@ Navigation 필드:
 | Field | Meaning |
 | --- | --- |
 | `target_idx` | 선택된 tracking target index |
+| `nearest_idx` | current pose와 가장 가까운 local plan index |
+| `candidate_idx` | lookahead/min-distance 기준 candidate index |
+| `selected_idx` | 실제 선택된 tracking target index |
 | `target_x` | 선택된 target x position |
 | `target_y` | 선택된 target y position |
+| `target_dist_m` | current pose에서 선택 target까지 거리 |
 | `target_jump_m` | 이전 target과 새 target 사이의 거리 |
 | `lookahead_m` | lookahead distance |
 | `path_points` | path pose count |
 | `path_length_m` | path length |
 | `dist_goal_m` | 현재 pose에서 goal까지 거리 |
 | `heading_err_rad` | heading error |
+| `steering_err_rad` | deadband/final-align suppression 이후 실제 steering에 쓰는 heading error |
+| `selection_reason` | tracking target 선택 이유. 예: `candidate_min_distance`, `retained_target_too_close` |
 | `xy_reached` | goal XY tolerance 도달 여부 |
 | `yaw_reached` | goal yaw tolerance 도달 여부 |
 | `blocked` | local/controller blocked 상태 |
@@ -88,6 +94,9 @@ TF/Localization 필드:
 | --- | --- |
 | `frame_from` | source frame |
 | `frame_to` | target frame |
+| `pose_frame` | current pose frame |
+| `plan_frame` | local/global plan frame |
+| `target_frame` | selected tracking target frame |
 | `tf_ok` | TF 상태 |
 | `tf_age_sec` | TF age |
 | `pose_x` | pose x |
@@ -143,7 +152,7 @@ ERROR:
 
 | Package | Component | 책임 | 주요 event |
 | --- | --- | --- | --- |
-| `amr_controller_server` | `controller` | local planner, tracking target selection, motion command generation, goal approach, final heading alignment, local blocked/rejoin 판단 | `tracking_state`, `tracking_target_selected`, `target_jump_detected`, `goal_state`, `cmd_quality`, `local_blocked_state`, `rejoin_state`, `motion_command` |
+| `amr_controller_server` | `controller` | local planner, tracking target selection, motion command generation, goal approach, final heading alignment, local blocked/rejoin 판단 | `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `tracking_target_selected`, `target_jump_detected`, `goal_state`, `cmd_quality`, `local_blocked_state`, `rejoin_state`, `motion_command` |
 | `amr_bt_navigator` | `bt_navigator` | goal orchestration, planner/controller/recovery decision, recovery 진입/스킵 판단, action result 관리 | `goal_received`, `goal_started`, `goal_succeeded`, `goal_failed`, `goal_canceled`, `recovery_decision`, `recovery_skipped`, `recovery_started`, `recovery_finished`, `bt_phase_transition` |
 | `amr_global_planner` | `global_planner` | global plan generation, plan request/result/failure reason | `plan_requested`, `plan_succeeded`, `plan_failed`, `plan_quality` |
 | `amr_recovery_server` | `recovery_server` | wait/backup/spin recovery command generation | `recovery_plan_requested`, `recovery_plan_selected`, `recovery_plan_failed`, `recovery_command` |
@@ -167,7 +176,8 @@ ERROR:
 - 매 control cycle마다 INFO 로그를 찍지 않는다.
 - 상태 요약은 throttle 로그로 제한한다.
 - 상태 전이는 즉시 INFO/WARN으로 남긴다.
-- `target_idx`, `target_x`, `target_y`, `target_jump_m`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`는 같은 이름을 유지한다.
+- `target_idx`, `target_x`, `target_y`, `target_dist_m`, `target_jump_m`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`는 같은 이름을 유지한다.
+- plan은 존재하지만 로봇이 직진만 하는 경우 `tracking_heading_debug`의 `nearest_idx`, `candidate_idx`, `selected_idx`, `target_dist_m`, `pose_frame`, `plan_frame`, `target_frame`, `heading_err_rad`, `steering_err_rad`, `selection_reason`을 우선 확인한다.
 - recovery 실행 또는 skip 판단은 `reason`, `recovery_type`, `recovery_skipped`, `planner_ok`, `controller_ok`를 포함한다.
 - costmap grid, scan ranges, map data 등 대량 데이터는 log에 직접 출력하지 않는다.
 - rosbag2 profile에서 필요한 heavy topic을 선택적으로 기록한다.

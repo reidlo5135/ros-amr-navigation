@@ -115,5 +115,7 @@ The extractor includes these event families by default:
 - `goal_state`
 - `cmd_quality`
 - `tracking_state`
+- `tracking_heading_debug`
+- `tracking_frame_mismatch`
 - `target_jump_detected`
 - `recovery_decision`
