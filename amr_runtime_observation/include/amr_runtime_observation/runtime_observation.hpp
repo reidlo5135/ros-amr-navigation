@@ -45,6 +45,7 @@ private:
     std::string recovery_phase{"idle"};
     std::string runtime_state{"idle"};
     std::string controller_phase{"idle"};
+    std::string progress_clear_reason{"none"};
     double dist_goal_delta_m{0.0};
   };
 
@@ -60,10 +61,12 @@ private:
   bool is_controller_recovery() const;
   bool is_controller_clear() const;
   bool is_local_plan_status_current() const;
+  bool has_explicit_non_controller_recovery() const;
   bool is_goal_approach_context() const;
   bool is_final_heading_alignment_context() const;
   int8_t resolve_action_status() const;
   std::string resolve_controller_phase() const;
+  std::string resolve_progress_clear_reason(bool progress_stalled, bool route_active) const;
   std::string resolve_blocked_context(bool progress_stalled) const;
   std::string resolve_recovery_reason(bool progress_stalled) const;
   std::string resolve_recovery_phase(bool route_active, bool recovery_triggered) const;
@@ -104,6 +107,7 @@ private:
   int route_stale_timeout_ms_;
   double progress_stall_window_sec_;
   double progress_epsilon_;
+  double progress_clear_delta_m_;
   double goal_approach_distance_;
   double final_heading_alignment_distance_;
   bool structured_logging_enabled_;

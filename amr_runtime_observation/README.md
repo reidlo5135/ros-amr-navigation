@@ -50,7 +50,8 @@ recovery visibility.
   - `motion_costmap_blocked`
   - `motion_blocked`
   - `motion_stalled`
-- route-level progress fallback remains `progress_stalled`
+- route-level progress fallback remains `progress_stalled`, but controller status is authoritative
+  for blocked/stalled/recovery when it is current and clear
 
 Goal approach and final heading alignment are not recovery. When the controller is intentionally
 rotating in place near the goal to satisfy yaw, observation reports `controller_phase` as
@@ -59,8 +60,14 @@ and keeps `recovery_triggered=false` unless the controller or current local-plan
 real block/recovery condition.
 
 Runtime summary and event payloads expose `controller_phase`, `controller_recovery`,
-`controller_goal_reached`, `dist_goal_delta_m`, and `progress_stall_window_sec` so stale observation
-state can be distinguished from controller-owned blocked/stalled/recovery status.
+`controller_goal_reached`, `dist_goal_delta_m`, `progress_stall_window_sec`,
+`progress_clear_delta_m`, and `progress_clear_reason` so stale observation state can be
+distinguished from controller-owned blocked/stalled/recovery status.
+During normal tracking, `controller_blocked=false`, `controller_stalled=false`, and
+`controller_recovery=false` clear observation-owned `progress_stalled` and recovery unless the
+current local planner status reports an explicit recovery source. A small positive goal-distance
+decrease counts as progress; the default `observation.progress_clear_delta_m` is `0.005` m for
+low-speed TB3 operation.
 
 This keeps `0.15.9` focused on observable recovery diagnosis. Recovery policy changes such as
 `local_escape-first` were intentionally left for the next patch line.

@@ -260,6 +260,10 @@ with `/amr/navigator.execution.align_heading_at_goal: false` or
 `/amr/motion_controller.goal_checker.ignore_yaw: true`.
 Runtime observation should report `controller_phase=final_heading_align` with
 `progress_stalled=false`, `recovery=false`, and `recovery_reason=none` in that intentional rotate-in-place phase.
+During normal tracking, current controller clear status is authoritative: if `controller_blocked=false`,
+`controller_stalled=false`, `controller_recovery=false`, and `dist_goal_delta_m` is at least
+`progress_clear_delta_m`, runtime observation should stay at `phase=tracking` with
+`progress_clear_reason=controller_normal_progress`.
 
 Use the `nav_quality_summary` row from `scripts/extract_nav_quality.sh` to compare `cmd_ang_abs_avg`, `output_ang_abs_avg`, and sign flip counts before and after tuning.
 

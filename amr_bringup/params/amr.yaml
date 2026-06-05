@@ -389,6 +389,7 @@
       route_stale_timeout_ms: 1500
       progress_stall_window_sec: 3.0
       progress_epsilon: 0.05
+      progress_clear_delta_m: 0.005
       goal_approach_distance: 0.18
       final_heading_alignment_distance: 0.10
     logging:

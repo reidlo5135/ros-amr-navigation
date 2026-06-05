@@ -35,6 +35,7 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
   this->declare_parameter("observation.route_stale_timeout_ms", 1500);
   this->declare_parameter("observation.progress_stall_window_sec", 3.0);
   this->declare_parameter("observation.progress_epsilon", 0.05);
+  this->declare_parameter("observation.progress_clear_delta_m", 0.005);
   this->declare_parameter("observation.goal_approach_distance", 0.18);
   this->declare_parameter("observation.final_heading_alignment_distance", 0.10);
   this->declare_parameter("logging.structured_enabled", true);
@@ -51,6 +52,7 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
   this->get_parameter("observation.route_stale_timeout_ms", this->route_stale_timeout_ms_);
   this->get_parameter("observation.progress_stall_window_sec", this->progress_stall_window_sec_);
   this->get_parameter("observation.progress_epsilon", this->progress_epsilon_);
+  this->get_parameter("observation.progress_clear_delta_m", this->progress_clear_delta_m_);
   this->get_parameter("observation.goal_approach_distance", this->goal_approach_distance_);
   this->get_parameter(
     "observation.final_heading_alignment_distance", this->final_heading_alignment_distance_);
@@ -175,7 +177,8 @@ void RuntimeObservation::handle_motion_status(const amr_msgs::msg::MotionStatus:
     message->mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE &&
     (!this->has_progress_baseline_ ||
     message->remaining_distance <
-      static_cast<double>(this->best_distance_remaining_) - this->progress_epsilon_))
+      static_cast<double>(this->best_distance_remaining_) - this->progress_epsilon_ ||
+    this->last_dist_goal_delta_m_ >= std::max(0.0, this->progress_clear_delta_m_)))
   {
     this->best_distance_remaining_ = static_cast<float>(message->remaining_distance);
     this->best_progress_time_ = now;
@@ -212,8 +215,11 @@ void RuntimeObservation::handle_navigate_feedback(
   this->has_navigate_feedback_ = true;
   this->last_navigate_feedback_time_ = this->now();
 
+  const double progress_threshold = this->is_controller_clear() ?
+    std::max(0.0, this->progress_clear_delta_m_) :
+    std::max(0.0, this->progress_epsilon_);
   if (!this->has_progress_baseline_ ||
-    message->feedback.distance_remaining < (this->best_distance_remaining_ - this->progress_epsilon_))
+    message->feedback.distance_remaining < (this->best_distance_remaining_ - progress_threshold))
   {
     this->best_distance_remaining_ = message->feedback.distance_remaining;
     this->best_progress_time_ = this->last_navigate_feedback_time_;
@@ -265,7 +271,10 @@ bool RuntimeObservation::is_progress_stalled(const rclcpp::Time &now) const
   if (this->is_goal_approach_context() || this->is_final_heading_alignment_context()) {
     return false;
   }
-  if (this->last_dist_goal_delta_m_ >= this->progress_epsilon_) {
+  if (this->last_dist_goal_delta_m_ >= std::max(0.0, this->progress_clear_delta_m_)) {
+    return false;
+  }
+  if (this->is_controller_clear() && !this->has_explicit_non_controller_recovery()) {
     return false;
   }
 
@@ -296,6 +305,13 @@ bool RuntimeObservation::is_local_plan_status_current() const
     this->has_local_plan_status_ &&
     (!this->has_motion_status_ ||
     this->latest_local_plan_status_.command_id == this->latest_motion_status_.command_id);
+}
+
+bool RuntimeObservation::has_explicit_non_controller_recovery() const
+{
+  return
+    this->is_local_plan_status_current() &&
+    this->latest_local_plan_status_.recovery_required;
 }
 
 bool RuntimeObservation::is_goal_approach_context() const
@@ -388,6 +404,59 @@ std::string RuntimeObservation::resolve_controller_phase() const
   return "tracking";
 }
 
+std::string RuntimeObservation::resolve_progress_clear_reason(
+  const bool progress_stalled,
+  const bool route_active) const
+{
+  if (progress_stalled)
+  {
+    return "none";
+  }
+  if (this->resolve_action_status() == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED)
+  {
+    return "route_succeeded";
+  }
+  if (!route_active)
+  {
+    return "route_inactive";
+  }
+  if (!this->has_motion_status_)
+  {
+    return "no_controller_status";
+  }
+  if (!this->latest_motion_status_.active)
+  {
+    return "controller_inactive";
+  }
+  if (this->latest_motion_status_.goal_reached)
+  {
+    return "controller_goal_reached";
+  }
+  if (this->is_final_heading_alignment_context())
+  {
+    return "final_heading_align";
+  }
+  if (this->is_goal_approach_context())
+  {
+    return "goal_approach";
+  }
+  if (
+    this->is_controller_clear() &&
+    this->last_dist_goal_delta_m_ >= std::max(0.0, this->progress_clear_delta_m_))
+  {
+    return "controller_normal_progress";
+  }
+  if (this->last_dist_goal_delta_m_ >= std::max(0.0, this->progress_clear_delta_m_))
+  {
+    return "distance_progress";
+  }
+  if (this->is_controller_clear() && !this->has_explicit_non_controller_recovery())
+  {
+    return "controller_clear";
+  }
+  return "not_stalled";
+}
+
 std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) const
 {
   const std::string controller_phase = this->resolve_controller_phase();
@@ -396,6 +465,11 @@ std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) c
     controller_phase == "final_heading_align" ||
     controller_phase == "reached";
   if (goal_hold_context && this->is_controller_clear())
+  {
+    return "clear";
+  }
+
+  if (this->is_controller_clear() && !this->has_explicit_non_controller_recovery())
   {
     return "clear";
   }
@@ -514,7 +588,7 @@ std::string RuntimeObservation::resolve_runtime_state(
   if (this->has_motion_status_ && this->latest_motion_status_.goal_reached) {
     return "goal_reached";
   }
-  if (this->is_local_plan_status_current() && this->latest_local_plan_status_.recovery_required) {
+  if (this->has_explicit_non_controller_recovery()) {
     return "recovery_required";
   }
   if (this->has_motion_status_ &&
@@ -524,6 +598,9 @@ std::string RuntimeObservation::resolve_runtime_state(
   }
   if (progress_stalled) {
     return "progress_stalled";
+  }
+  if (this->resolve_controller_phase() == "tracking") {
+    return "tracking";
   }
   return "navigating";
 }
@@ -537,6 +614,9 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   snapshot.controller_recovery = this->is_controller_recovery();
   snapshot.dist_goal_delta_m = this->last_dist_goal_delta_m_;
   snapshot.progress_stalled = this->is_progress_stalled(now);
+  snapshot.progress_clear_reason = this->resolve_progress_clear_reason(
+    snapshot.progress_stalled,
+    snapshot.route_active);
 
   if (this->has_motion_status_) {
     snapshot.motion_blocked = this->latest_motion_status_.blocked;
@@ -567,6 +647,7 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   {
     snapshot.route_active = false;
     snapshot.progress_stalled = false;
+    snapshot.progress_clear_reason = "route_succeeded";
     snapshot.motion_blocked = false;
     snapshot.motion_stalled = false;
     snapshot.local_recovery_required = false;
@@ -670,7 +751,7 @@ void RuntimeObservation::publish_event(
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=runtime_observation event=runtime_event phase=%s state=%s reason=%s route_active=%s recovery=%s recovery_count=%d blocked=%s blocked_count=%d dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_stalled=%s recovery_reason=%s",
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_event phase=%s state=%s reason=%s route_active=%s recovery=%s recovery_count=%d blocked=%s blocked_count=%d dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_clear_delta_m=%.3f progress_stalled=%s progress_clear_reason=%s recovery_reason=%s",
       event_type.c_str(),
       snapshot.runtime_state.c_str(),
       reason.c_str(),
@@ -688,7 +769,9 @@ void RuntimeObservation::publish_event(
       bool_label(snapshot.controller_recovery),
       bool_label(snapshot.motion_goal_reached),
       this->progress_stall_window_sec_,
+      this->progress_clear_delta_m_,
       bool_label(snapshot.progress_stalled),
+      snapshot.progress_clear_reason.c_str(),
       snapshot.recovery_reason.c_str());
   }
 }
@@ -707,7 +790,7 @@ void RuntimeObservation::publish_observation()
       this->get_logger(),
       *this->get_clock(),
       throttle_ms_from_sec(this->summary_log_throttle_sec_),
-      "AMR_LOG schema=v1 component=runtime_observation event=runtime_summary phase=%s route_active=%s dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f recovery_count=%d blocked_count=%d progress_stalled=%s recovery=%s reason=%s recovery_reason=%s",
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_summary phase=%s route_active=%s dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_clear_delta_m=%.3f recovery_count=%d blocked_count=%d progress_stalled=%s recovery=%s reason=%s progress_clear_reason=%s recovery_reason=%s",
       snapshot.runtime_state.c_str(),
       bool_label(snapshot.route_active),
       this->has_motion_status_ ? this->latest_motion_status_.remaining_distance : 0.0,
@@ -719,11 +802,13 @@ void RuntimeObservation::publish_observation()
       bool_label(snapshot.controller_recovery),
       bool_label(snapshot.motion_goal_reached),
       this->progress_stall_window_sec_,
+      this->progress_clear_delta_m_,
       snapshot.number_of_recoveries,
       (snapshot.motion_blocked || snapshot.progress_stalled || snapshot.local_recovery_required) ? 1 : 0,
       bool_label(snapshot.progress_stalled),
       bool_label(snapshot.recovery_triggered),
       snapshot.recovery_reason.c_str(),
+      snapshot.progress_clear_reason.c_str(),
       snapshot.recovery_reason.c_str());
   }
 }
@@ -741,6 +826,8 @@ std::string RuntimeObservation::build_summary_json(
   stream << "\"route_active\":" << snapshot.route_active << ",";
   stream << "\"progress_stalled\":" << snapshot.progress_stalled << ",";
   stream << "\"progress_stall_window_sec\":" << this->progress_stall_window_sec_ << ",";
+  stream << "\"progress_clear_delta_m\":" << this->progress_clear_delta_m_ << ",";
+  stream << "\"progress_clear_reason\":\"" << escape_json(snapshot.progress_clear_reason) << "\",";
   stream << "\"dist_goal_delta_m\":" << snapshot.dist_goal_delta_m << ",";
   stream << "\"controller_phase\":\"" << escape_json(snapshot.controller_phase) << "\",";
   stream << "\"action_status\":" << static_cast<int>(snapshot.action_status) << ",";
@@ -829,6 +916,8 @@ std::string RuntimeObservation::build_event_json(
   stream << "\"controller_phase\":\"" << escape_json(snapshot.controller_phase) << "\",";
   stream << "\"dist_goal_delta_m\":" << snapshot.dist_goal_delta_m << ",";
   stream << "\"progress_stall_window_sec\":" << this->progress_stall_window_sec_ << ",";
+  stream << "\"progress_clear_delta_m\":" << this->progress_clear_delta_m_ << ",";
+  stream << "\"progress_clear_reason\":\"" << escape_json(snapshot.progress_clear_reason) << "\",";
   stream << "\"progress_stalled\":" << snapshot.progress_stalled << ",";
   stream << "\"stamp_ns\":" << now.nanoseconds();
   stream << "}";
