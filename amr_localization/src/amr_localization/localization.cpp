@@ -24,6 +24,8 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   initial_pose_topic_(""),
   estimated_pose_topic_(""),
   estimated_odom_topic_(""),
+  cmd_vel_topic_("/cmd_vel"),
+  motion_status_topic_("/amr/motion/status"),
   map_frame_("map"),
   odom_frame_("odom"),
   base_frame_("base_link"),
@@ -46,16 +48,54 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   max_beams_(24),
   max_beam_range_(6.0),
   occupied_threshold_(50),
+  localization_guard_enabled_(true),
+  slip_detection_enabled_(true),
+  odom_translation_slip_threshold_m_(0.12),
+  odom_rotation_slip_threshold_rad_(0.35),
+  pose_translation_confirm_threshold_m_(0.03),
+  pose_rotation_confirm_threshold_rad_(0.10),
+  command_linear_threshold_(0.04),
+  command_angular_threshold_(0.15),
+  localization_guard_confirm_cycles_(3),
+  localization_guard_clear_cycles_(3),
+  initial_pose_grace_sec_(2.0),
+  goal_proximity_relax_distance_m_(0.20),
+  odom_translation_gain_when_slipping_(0.20),
+  odom_rotation_gain_when_slipping_(0.60),
+  max_odom_translation_delta_per_update_m_(0.08),
+  max_odom_rotation_delta_per_update_rad_(0.25),
+  measurement_likelihood_warn_threshold_(0.02),
+  map_odom_guard_enabled_(true),
+  max_correction_translation_per_update_m_(0.08),
+  max_correction_rotation_per_update_rad_(0.25),
+  hard_jump_warn_translation_m_(0.30),
+  hard_jump_warn_rotation_rad_(0.75),
+  map_odom_bypass_on_initial_pose_(true),
+  map_odom_bypass_on_global_reset_(true),
   map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   random_engine_(std::random_device{}()),
   has_latest_odom_(false),
   has_latest_scan_(false),
+  has_latest_cmd_vel_(false),
+  has_latest_motion_status_(false),
   has_map_(false),
   has_previous_odom_(false),
+  has_previous_estimated_pose_(false),
+  has_map_to_odom_transform_(false),
   has_initial_pose_(false),
   particles_initialized_(false),
   auto_initial_pose_published_(false),
-  structured_logging_enabled_(true)
+  structured_logging_enabled_(true),
+  odom_slip_suspected_(false),
+  physical_stall_suspected_(false),
+  localization_guard_confirmed_(false),
+  map_odom_bypass_next_update_(true),
+  localization_guard_suspect_streak_(0),
+  localization_guard_clear_streak_(0),
+  last_pose_delta_m_(0.0),
+  last_pose_delta_yaw_rad_(0.0),
+  last_measurement_likelihood_(1.0),
+  last_measurement_update_success_(false)
 {
   this->declare_parameter("topics.odom", this->odom_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
@@ -63,6 +103,8 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   this->declare_parameter("topics.initial_pose", this->initial_pose_topic_);
   this->declare_parameter("topics.estimated_pose", this->estimated_pose_topic_);
   this->declare_parameter("topics.estimated_odometry", this->estimated_odom_topic_);
+  this->declare_parameter("topics.velocity", this->cmd_vel_topic_);
+  this->declare_parameter("topics.motion_status", this->motion_status_topic_);
   this->declare_parameter("frames.map", this->map_frame_);
   this->declare_parameter("frames.odom", this->odom_frame_);
   this->declare_parameter("frames.base", this->base_frame_);
@@ -89,6 +131,64 @@ Localization::Localization(const rclcpp::NodeOptions &options)
   this->declare_parameter("amcl.max_beams", this->max_beams_);
   this->declare_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->declare_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->declare_parameter("localization_guard.enabled", this->localization_guard_enabled_);
+  this->declare_parameter(
+    "localization_guard.slip_detection_enabled", this->slip_detection_enabled_);
+  this->declare_parameter(
+    "localization_guard.odom_translation_slip_threshold_m",
+    this->odom_translation_slip_threshold_m_);
+  this->declare_parameter(
+    "localization_guard.odom_rotation_slip_threshold_rad",
+    this->odom_rotation_slip_threshold_rad_);
+  this->declare_parameter(
+    "localization_guard.pose_translation_confirm_threshold_m",
+    this->pose_translation_confirm_threshold_m_);
+  this->declare_parameter(
+    "localization_guard.pose_rotation_confirm_threshold_rad",
+    this->pose_rotation_confirm_threshold_rad_);
+  this->declare_parameter(
+    "localization_guard.command_linear_threshold", this->command_linear_threshold_);
+  this->declare_parameter(
+    "localization_guard.command_angular_threshold", this->command_angular_threshold_);
+  this->declare_parameter(
+    "localization_guard.confirm_cycles", this->localization_guard_confirm_cycles_);
+  this->declare_parameter(
+    "localization_guard.clear_cycles", this->localization_guard_clear_cycles_);
+  this->declare_parameter(
+    "localization_guard.initial_pose_grace_sec", this->initial_pose_grace_sec_);
+  this->declare_parameter(
+    "localization_guard.goal_proximity_relax_distance_m",
+    this->goal_proximity_relax_distance_m_);
+  this->declare_parameter(
+    "localization_guard.odom_translation_gain_when_slipping",
+    this->odom_translation_gain_when_slipping_);
+  this->declare_parameter(
+    "localization_guard.odom_rotation_gain_when_slipping",
+    this->odom_rotation_gain_when_slipping_);
+  this->declare_parameter(
+    "localization_guard.max_odom_translation_delta_per_update_m",
+    this->max_odom_translation_delta_per_update_m_);
+  this->declare_parameter(
+    "localization_guard.max_odom_rotation_delta_per_update_rad",
+    this->max_odom_rotation_delta_per_update_rad_);
+  this->declare_parameter(
+    "localization_guard.measurement_likelihood_warn_threshold",
+    this->measurement_likelihood_warn_threshold_);
+  this->declare_parameter("map_odom_guard.enabled", this->map_odom_guard_enabled_);
+  this->declare_parameter(
+    "map_odom_guard.max_correction_translation_per_update_m",
+    this->max_correction_translation_per_update_m_);
+  this->declare_parameter(
+    "map_odom_guard.max_correction_rotation_per_update_rad",
+    this->max_correction_rotation_per_update_rad_);
+  this->declare_parameter(
+    "map_odom_guard.hard_jump_warn_translation_m", this->hard_jump_warn_translation_m_);
+  this->declare_parameter(
+    "map_odom_guard.hard_jump_warn_rotation_rad", this->hard_jump_warn_rotation_rad_);
+  this->declare_parameter(
+    "map_odom_guard.bypass_on_initial_pose", this->map_odom_bypass_on_initial_pose_);
+  this->declare_parameter(
+    "map_odom_guard.bypass_on_global_reset", this->map_odom_bypass_on_global_reset_);
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 }
 
@@ -101,6 +201,8 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("topics.initial_pose", this->initial_pose_topic_);
   this->get_parameter("topics.estimated_pose", this->estimated_pose_topic_);
   this->get_parameter("topics.estimated_odometry", this->estimated_odom_topic_);
+  this->get_parameter("topics.velocity", this->cmd_vel_topic_);
+  this->get_parameter("topics.motion_status", this->motion_status_topic_);
   this->get_parameter("frames.map", this->map_frame_);
   this->get_parameter("frames.odom", this->odom_frame_);
   this->get_parameter("frames.base", this->base_frame_);
@@ -127,6 +229,64 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
   this->get_parameter("amcl.max_beams", this->max_beams_);
   this->get_parameter("amcl.max_beam_range", this->max_beam_range_);
   this->get_parameter("amcl.occupied_threshold", this->occupied_threshold_);
+  this->get_parameter("localization_guard.enabled", this->localization_guard_enabled_);
+  this->get_parameter(
+    "localization_guard.slip_detection_enabled", this->slip_detection_enabled_);
+  this->get_parameter(
+    "localization_guard.odom_translation_slip_threshold_m",
+    this->odom_translation_slip_threshold_m_);
+  this->get_parameter(
+    "localization_guard.odom_rotation_slip_threshold_rad",
+    this->odom_rotation_slip_threshold_rad_);
+  this->get_parameter(
+    "localization_guard.pose_translation_confirm_threshold_m",
+    this->pose_translation_confirm_threshold_m_);
+  this->get_parameter(
+    "localization_guard.pose_rotation_confirm_threshold_rad",
+    this->pose_rotation_confirm_threshold_rad_);
+  this->get_parameter(
+    "localization_guard.command_linear_threshold", this->command_linear_threshold_);
+  this->get_parameter(
+    "localization_guard.command_angular_threshold", this->command_angular_threshold_);
+  this->get_parameter(
+    "localization_guard.confirm_cycles", this->localization_guard_confirm_cycles_);
+  this->get_parameter(
+    "localization_guard.clear_cycles", this->localization_guard_clear_cycles_);
+  this->get_parameter(
+    "localization_guard.initial_pose_grace_sec", this->initial_pose_grace_sec_);
+  this->get_parameter(
+    "localization_guard.goal_proximity_relax_distance_m",
+    this->goal_proximity_relax_distance_m_);
+  this->get_parameter(
+    "localization_guard.odom_translation_gain_when_slipping",
+    this->odom_translation_gain_when_slipping_);
+  this->get_parameter(
+    "localization_guard.odom_rotation_gain_when_slipping",
+    this->odom_rotation_gain_when_slipping_);
+  this->get_parameter(
+    "localization_guard.max_odom_translation_delta_per_update_m",
+    this->max_odom_translation_delta_per_update_m_);
+  this->get_parameter(
+    "localization_guard.max_odom_rotation_delta_per_update_rad",
+    this->max_odom_rotation_delta_per_update_rad_);
+  this->get_parameter(
+    "localization_guard.measurement_likelihood_warn_threshold",
+    this->measurement_likelihood_warn_threshold_);
+  this->get_parameter("map_odom_guard.enabled", this->map_odom_guard_enabled_);
+  this->get_parameter(
+    "map_odom_guard.max_correction_translation_per_update_m",
+    this->max_correction_translation_per_update_m_);
+  this->get_parameter(
+    "map_odom_guard.max_correction_rotation_per_update_rad",
+    this->max_correction_rotation_per_update_rad_);
+  this->get_parameter(
+    "map_odom_guard.hard_jump_warn_translation_m", this->hard_jump_warn_translation_m_);
+  this->get_parameter(
+    "map_odom_guard.hard_jump_warn_rotation_rad", this->hard_jump_warn_rotation_rad_);
+  this->get_parameter(
+    "map_odom_guard.bypass_on_initial_pose", this->map_odom_bypass_on_initial_pose_);
+  this->get_parameter(
+    "map_odom_guard.bypass_on_global_reset", this->map_odom_bypass_on_global_reset_);
   this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 
   if (
@@ -178,6 +338,20 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
     [this](const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr message) {
       this->handle_initial_pose(message);
     });
+  if (!this->cmd_vel_topic_.empty()) {
+    this->cmd_vel_subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      this->cmd_vel_topic_, rclcpp::SystemDefaultsQoS(),
+      [this](const geometry_msgs::msg::Twist::SharedPtr message) {
+        this->handle_cmd_vel(message);
+      });
+  }
+  if (!this->motion_status_topic_.empty()) {
+    this->motion_status_subscription_ = this->create_subscription<amr_msgs::msg::MotionStatus>(
+      this->motion_status_topic_, rclcpp::SystemDefaultsQoS(),
+      [this](const amr_msgs::msg::MotionStatus::SharedPtr message) {
+        this->handle_motion_status(message);
+      });
+  }
   this->initial_pose_publisher_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
     this->initial_pose_topic_, rclcpp::SystemDefaultsQoS());
@@ -198,6 +372,13 @@ Localization::CallbackReturn Localization::on_configure(const rclcpp_lifecycle::
       this->map_frame_.c_str(),
       this->particle_count_,
       bool_label(this->auto_initial_pose_enabled_));
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=localization event=localization_guard state=configured enabled=%s slip_detection_enabled=%s cmd_vel_topic=%s motion_status_topic=%s",
+      bool_label(this->localization_guard_enabled_),
+      bool_label(this->slip_detection_enabled_),
+      this->cmd_vel_topic_.empty() ? "none" : this->cmd_vel_topic_.c_str(),
+      this->motion_status_topic_.empty() ? "none" : this->motion_status_topic_.c_str());
   }
   return CallbackReturn::SUCCESS;
 }
@@ -250,6 +431,8 @@ Localization::CallbackReturn Localization::on_cleanup(const rclcpp_lifecycle::St
   this->scan_subscription_.reset();
   this->map_subscription_.reset();
   this->initial_pose_subscription_.reset();
+  this->cmd_vel_subscription_.reset();
+  this->motion_status_subscription_.reset();
   this->initial_pose_publisher_.reset();
   this->estimated_pose_publisher_.reset();
   this->estimated_odometry_publisher_.reset();
@@ -266,6 +449,8 @@ Localization::CallbackReturn Localization::on_shutdown(const rclcpp_lifecycle::S
   this->scan_subscription_.reset();
   this->map_subscription_.reset();
   this->initial_pose_subscription_.reset();
+  this->cmd_vel_subscription_.reset();
+  this->motion_status_subscription_.reset();
   this->initial_pose_publisher_.reset();
   this->estimated_pose_publisher_.reset();
   this->estimated_odometry_publisher_.reset();
@@ -346,6 +531,13 @@ void Localization::handle_initial_pose(
   pose.header = this->initial_map_pose_.header;
   pose.pose = this->initial_map_pose_.pose;
   this->initialize_particles(pose);
+  this->last_initial_pose_time_ = this->now();
+  this->map_odom_bypass_next_update_ = this->map_odom_bypass_on_initial_pose_;
+  this->localization_guard_confirmed_ = false;
+  this->odom_slip_suspected_ = false;
+  this->physical_stall_suspected_ = false;
+  this->localization_guard_suspect_streak_ = 0;
+  this->localization_guard_clear_streak_ = 0;
 
   if (this->has_latest_odom_) {
     this->previous_odom_pose_ = this->odometry_pose_to_pose_stamped(this->latest_odom_);
@@ -367,6 +559,20 @@ void Localization::handle_initial_pose(
       this->initial_map_pose_.pose.position.y,
       this->quaternion_yaw(this->initial_map_pose_.pose.orientation));
   }
+}
+
+void Localization::handle_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr message)
+{
+  this->latest_cmd_vel_ = *message;
+  this->latest_cmd_vel_time_ = this->now();
+  this->has_latest_cmd_vel_ = true;
+}
+
+void Localization::handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message)
+{
+  this->latest_motion_status_ = *message;
+  this->latest_motion_status_time_ = this->now();
+  this->has_latest_motion_status_ = true;
 }
 
 void Localization::publish_auto_initial_pose()
@@ -427,6 +633,8 @@ void Localization::initialize_particles(const geometry_msgs::msg::PoseStamped &p
   }
 
   this->particles_initialized_ = true;
+  this->last_initial_pose_time_ = this->now();
+  this->map_odom_bypass_next_update_ = this->map_odom_bypass_on_initial_pose_;
 }
 
 void Localization::apply_motion_update(
@@ -437,20 +645,13 @@ void Localization::apply_motion_update(
     return;
   }
 
-  const double previous_odom_yaw = this->quaternion_yaw(previous_odom_pose.pose.orientation);
-  const double current_odom_yaw = this->quaternion_yaw(current_odom_pose.pose.orientation);
-  const double delta_odom_x = current_odom_pose.pose.position.x - previous_odom_pose.pose.position.x;
-  const double delta_odom_y = current_odom_pose.pose.position.y - previous_odom_pose.pose.position.y;
-  const double local_delta_x =
-    (std::cos(previous_odom_yaw) * delta_odom_x) + (std::sin(previous_odom_yaw) * delta_odom_y);
-  const double local_delta_y =
-    (-std::sin(previous_odom_yaw) * delta_odom_x) + (std::cos(previous_odom_yaw) * delta_odom_y);
-  const double delta_yaw = this->normalize_angle(current_odom_yaw - previous_odom_yaw);
+  const MotionDelta motion_delta =
+    this->compute_guarded_motion_delta(previous_odom_pose, current_odom_pose);
 
   for (auto &particle : this->particles_) {
-    const double noisy_local_x = local_delta_x + this->sample_normal(this->motion_noise_linear_);
-    const double noisy_local_y = local_delta_y + this->sample_normal(this->motion_noise_lateral_);
-    const double noisy_delta_yaw = delta_yaw + this->sample_normal(this->motion_noise_angular_);
+    const double noisy_local_x = motion_delta.local_x + this->sample_normal(this->motion_noise_linear_);
+    const double noisy_local_y = motion_delta.local_y + this->sample_normal(this->motion_noise_lateral_);
+    const double noisy_delta_yaw = motion_delta.yaw + this->sample_normal(this->motion_noise_angular_);
 
     particle.x +=
       (std::cos(particle.yaw) * noisy_local_x) - (std::sin(particle.yaw) * noisy_local_y);
@@ -460,9 +661,203 @@ void Localization::apply_motion_update(
   }
 }
 
+Localization::MotionDelta Localization::compute_guarded_motion_delta(
+  const geometry_msgs::msg::PoseStamped &previous_odom_pose,
+  const geometry_msgs::msg::PoseStamped &current_odom_pose)
+{
+  MotionDelta delta;
+  const double previous_odom_yaw = this->quaternion_yaw(previous_odom_pose.pose.orientation);
+  const double current_odom_yaw = this->quaternion_yaw(current_odom_pose.pose.orientation);
+  const double delta_odom_x = current_odom_pose.pose.position.x - previous_odom_pose.pose.position.x;
+  const double delta_odom_y = current_odom_pose.pose.position.y - previous_odom_pose.pose.position.y;
+  delta.local_x =
+    (std::cos(previous_odom_yaw) * delta_odom_x) + (std::sin(previous_odom_yaw) * delta_odom_y);
+  delta.local_y =
+    (-std::sin(previous_odom_yaw) * delta_odom_x) + (std::cos(previous_odom_yaw) * delta_odom_y);
+  delta.yaw = this->normalize_angle(current_odom_yaw - previous_odom_yaw);
+  delta.raw_translation_m = std::sqrt((delta.local_x * delta.local_x) + (delta.local_y * delta.local_y));
+  delta.raw_yaw_rad = std::abs(delta.yaw);
+
+  this->update_wheel_slip_state(delta, rclcpp::Time(current_odom_pose.header.stamp));
+
+  if (this->localization_guard_enabled_)
+  {
+    const bool guard_active = this->localization_guard_confirmed_ || this->odom_slip_suspected_;
+    if (guard_active)
+    {
+      delta.local_x *= std::clamp(this->odom_translation_gain_when_slipping_, 0.0, 1.0);
+      delta.local_y *= std::clamp(this->odom_translation_gain_when_slipping_, 0.0, 1.0);
+      delta.yaw *= std::clamp(this->odom_rotation_gain_when_slipping_, 0.0, 1.0);
+      delta.slipping = true;
+      delta.stall_suspected = this->physical_stall_suspected_;
+      delta.reason = this->physical_stall_suspected_ ?
+        "physical_stall_suspected" : "odom_slip_suspected";
+    }
+
+    const double applied_translation =
+      std::sqrt((delta.local_x * delta.local_x) + (delta.local_y * delta.local_y));
+    const double max_translation = std::max(0.0, this->max_odom_translation_delta_per_update_m_);
+    if (max_translation > 1e-6 && applied_translation > max_translation)
+    {
+      const double scale = max_translation / std::max(applied_translation, 1e-6);
+      delta.local_x *= scale;
+      delta.local_y *= scale;
+      delta.limited = true;
+      if (delta.reason == "nominal")
+      {
+        delta.reason = "odom_translation_clamped";
+      }
+    }
+
+    const double max_rotation = std::max(0.0, this->max_odom_rotation_delta_per_update_rad_);
+    if (max_rotation > 1e-6 && std::abs(delta.yaw) > max_rotation)
+    {
+      delta.yaw = delta.yaw > 0.0 ? max_rotation : -max_rotation;
+      delta.limited = true;
+      if (delta.reason == "nominal")
+      {
+        delta.reason = "odom_rotation_clamped";
+      }
+    }
+  }
+
+  delta.applied_translation_m =
+    std::sqrt((delta.local_x * delta.local_x) + (delta.local_y * delta.local_y));
+  delta.applied_yaw_rad = std::abs(delta.yaw);
+
+  if (this->structured_logging_enabled_ && (delta.limited || delta.slipping))
+  {
+    RCLCPP_INFO_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      1000,
+      "AMR_LOG schema=v1 component=localization event=odom_motion_guard odom_delta_m=%.3f odom_delta_yaw_rad=%.3f pose_delta_m=%.3f pose_delta_yaw_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f slip_suspected=%s stall_suspected=%s confirmed=%s applied_delta_m=%.3f applied_delta_yaw_rad=%.3f reason=%s",
+      delta.raw_translation_m,
+      delta.raw_yaw_rad,
+      this->last_pose_delta_m_,
+      this->last_pose_delta_yaw_rad_,
+      this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.linear.x : 0.0,
+      this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.angular.z : 0.0,
+      bool_label(this->odom_slip_suspected_),
+      bool_label(this->physical_stall_suspected_),
+      bool_label(this->localization_guard_confirmed_),
+      delta.applied_translation_m,
+      delta.applied_yaw_rad,
+      delta.reason.c_str());
+  }
+  return delta;
+}
+
+void Localization::update_wheel_slip_state(
+  const MotionDelta &raw_delta,
+  const rclcpp::Time &stamp)
+{
+  const rclcpp::Time now = stamp.nanoseconds() > 0 ? stamp : this->now();
+  const bool relaxed = this->is_localization_guard_relaxed(now);
+  const bool cmd_recent = this->has_latest_cmd_vel_ &&
+    this->is_recent(this->latest_cmd_vel_time_, now, 1.0);
+  const bool status_recent = this->has_latest_motion_status_ &&
+    this->is_recent(this->latest_motion_status_time_, now, 1.5);
+  const bool command_active =
+    cmd_recent &&
+    (
+    std::abs(this->latest_cmd_vel_.linear.x) >= std::max(0.0, this->command_linear_threshold_) ||
+    std::abs(this->latest_cmd_vel_.angular.z) >= std::max(0.0, this->command_angular_threshold_));
+  const bool controller_stalled =
+    status_recent &&
+    (this->latest_motion_status_.stalled || this->latest_motion_status_.blocked);
+  const bool odom_moved =
+    raw_delta.raw_translation_m >= std::max(0.0, this->odom_translation_slip_threshold_m_) ||
+    raw_delta.raw_yaw_rad >= std::max(0.0, this->odom_rotation_slip_threshold_rad_);
+  const bool pose_stayed =
+    this->has_previous_estimated_pose_ &&
+    this->last_pose_delta_m_ <= std::max(0.0, this->pose_translation_confirm_threshold_m_) &&
+    this->last_pose_delta_yaw_rad_ <= std::max(0.0, this->pose_rotation_confirm_threshold_rad_);
+  const bool scan_unreliable =
+    this->last_measurement_update_success_ &&
+    this->last_measurement_likelihood_ <
+    std::max(0.0, this->measurement_likelihood_warn_threshold_);
+  const bool suspect =
+    this->localization_guard_enabled_ &&
+    this->slip_detection_enabled_ &&
+    !relaxed &&
+    odom_moved &&
+    (pose_stayed || scan_unreliable || controller_stalled) &&
+    (command_active || controller_stalled ||
+    raw_delta.raw_translation_m >= (this->odom_translation_slip_threshold_m_ * 1.5));
+
+  if (suspect)
+  {
+    this->localization_guard_suspect_streak_ += 1;
+    this->localization_guard_clear_streak_ = 0;
+  }
+  else
+  {
+    this->localization_guard_clear_streak_ += 1;
+    if (this->localization_guard_clear_streak_ >= std::max(1, this->localization_guard_clear_cycles_))
+    {
+      this->localization_guard_suspect_streak_ = 0;
+    }
+  }
+
+  const bool previously_confirmed = this->localization_guard_confirmed_;
+  const bool previously_slip = this->odom_slip_suspected_;
+  this->odom_slip_suspected_ =
+    this->localization_guard_suspect_streak_ >= std::max(1, this->localization_guard_confirm_cycles_);
+  this->physical_stall_suspected_ =
+    this->odom_slip_suspected_ && (controller_stalled || (command_active && pose_stayed));
+  if (!suspect && this->localization_guard_clear_streak_ >= std::max(1, this->localization_guard_clear_cycles_))
+  {
+    this->odom_slip_suspected_ = false;
+    this->physical_stall_suspected_ = false;
+  }
+  this->localization_guard_confirmed_ =
+    this->odom_slip_suspected_ || this->physical_stall_suspected_;
+
+  if (
+    this->structured_logging_enabled_ &&
+    (this->localization_guard_confirmed_ != previously_confirmed ||
+    this->odom_slip_suspected_ != previously_slip))
+  {
+    const char *reason = this->physical_stall_suspected_ ?
+      "physical_stall_suspected" :
+      (this->odom_slip_suspected_ ? "odom_slip_suspected" : "guard_clear");
+    if (this->localization_guard_confirmed_)
+    {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=localization event=wheel_slip_state odom_delta_m=%.3f odom_delta_yaw_rad=%.3f pose_delta_m=%.3f pose_delta_yaw_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f slip_suspected=%s stall_suspected=%s confirmed=%s reason=%s",
+        raw_delta.raw_translation_m,
+        raw_delta.raw_yaw_rad,
+        this->last_pose_delta_m_,
+        this->last_pose_delta_yaw_rad_,
+        this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.linear.x : 0.0,
+        this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.angular.z : 0.0,
+        bool_label(this->odom_slip_suspected_),
+        bool_label(this->physical_stall_suspected_),
+        bool_label(this->localization_guard_confirmed_),
+        reason);
+    }
+    else
+    {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=localization event=wheel_slip_state odom_delta_m=%.3f odom_delta_yaw_rad=%.3f pose_delta_m=%.3f pose_delta_yaw_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f slip_suspected=false stall_suspected=false confirmed=false reason=%s",
+        raw_delta.raw_translation_m,
+        raw_delta.raw_yaw_rad,
+        this->last_pose_delta_m_,
+        this->last_pose_delta_yaw_rad_,
+        this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.linear.x : 0.0,
+        this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.angular.z : 0.0,
+        reason);
+    }
+  }
+}
+
 void Localization::apply_measurement_update(const sensor_msgs::msg::LaserScan &scan)
 {
   if (this->particles_.empty() || !this->has_map_) {
+    this->last_measurement_update_success_ = false;
     return;
   }
 
@@ -477,8 +872,14 @@ void Localization::apply_measurement_update(const sensor_msgs::msg::LaserScan &s
     for (auto &particle : this->particles_) {
       particle.weight = uniform_weight;
     }
+    this->last_measurement_likelihood_ = 0.0;
+    this->last_measurement_update_success_ = false;
     return;
   }
+
+  this->last_measurement_likelihood_ =
+    total_weight / static_cast<double>(std::max<std::size_t>(1U, this->particles_.size()));
+  this->last_measurement_update_success_ = true;
 
   for (auto &particle : this->particles_) {
     particle.weight /= total_weight;
@@ -542,6 +943,9 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time &stam
     total_weight = 1.0;
   }
 
+  const geometry_msgs::msg::PoseStamped previous_estimated_pose = this->estimated_pose_;
+  const bool had_previous_estimate = this->has_previous_estimated_pose_;
+
   this->estimated_pose_.header.stamp = stamp;
   this->estimated_pose_.header.frame_id = this->map_frame_;
   this->estimated_pose_.pose.position.x = weighted_x / total_weight;
@@ -550,6 +954,26 @@ void Localization::update_estimated_pose_from_particles(const rclcpp::Time &stam
   this->update_pose_orientation(
     this->estimated_pose_,
     std::atan2(weighted_sin_yaw / total_weight, weighted_cos_yaw / total_weight));
+
+  if (had_previous_estimate)
+  {
+    const double dx =
+      this->estimated_pose_.pose.position.x - previous_estimated_pose.pose.position.x;
+    const double dy =
+      this->estimated_pose_.pose.position.y - previous_estimated_pose.pose.position.y;
+    this->last_pose_delta_m_ = std::sqrt((dx * dx) + (dy * dy));
+    this->last_pose_delta_yaw_rad_ = std::abs(
+      this->normalize_angle(
+        this->quaternion_yaw(this->estimated_pose_.pose.orientation) -
+        this->quaternion_yaw(previous_estimated_pose.pose.orientation)));
+  }
+  else
+  {
+    this->last_pose_delta_m_ = 0.0;
+    this->last_pose_delta_yaw_rad_ = 0.0;
+  }
+  this->previous_estimated_pose_ = this->estimated_pose_;
+  this->has_previous_estimated_pose_ = true;
 }
 
 void Localization::publish_outputs(const rclcpp::Time &stamp)
@@ -576,7 +1000,7 @@ void Localization::publish_outputs(const rclcpp::Time &stamp)
 }
 
 geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
-  const rclcpp::Time &stamp) const
+  const rclcpp::Time &stamp)
 {
   geometry_msgs::msg::TransformStamped transform;
   transform.header.stamp = stamp;
@@ -601,6 +1025,80 @@ geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
   transform.transform.rotation.y = 0.0;
   transform.transform.rotation.z = std::sin(yaw_delta * 0.5);
   transform.transform.rotation.w = std::cos(yaw_delta * 0.5);
+
+  if (!this->map_odom_guard_enabled_ || !this->has_map_to_odom_transform_ || this->map_odom_bypass_next_update_)
+  {
+    this->last_map_to_odom_transform_ = transform;
+    this->has_map_to_odom_transform_ = true;
+    this->map_odom_bypass_next_update_ = false;
+    return transform;
+  }
+
+  const double previous_x = this->last_map_to_odom_transform_.transform.translation.x;
+  const double previous_y = this->last_map_to_odom_transform_.transform.translation.y;
+  const double target_x = transform.transform.translation.x;
+  const double target_y = transform.transform.translation.y;
+  const double delta_x = target_x - previous_x;
+  const double delta_y = target_y - previous_y;
+  const double correction_delta_m = std::sqrt((delta_x * delta_x) + (delta_y * delta_y));
+  const double previous_yaw = this->transform_yaw(this->last_map_to_odom_transform_);
+  const double correction_delta_yaw = this->normalize_angle(yaw_delta - previous_yaw);
+  const double abs_correction_delta_yaw = std::abs(correction_delta_yaw);
+
+  const double max_translation =
+    std::max(0.0, this->max_correction_translation_per_update_m_);
+  const double max_rotation =
+    std::max(0.0, this->max_correction_rotation_per_update_rad_);
+  double applied_delta_x = delta_x;
+  double applied_delta_y = delta_y;
+  double applied_delta_yaw = correction_delta_yaw;
+  bool correction_limited = false;
+
+  if (max_translation > 1e-6 && correction_delta_m > max_translation)
+  {
+    const double scale = max_translation / std::max(correction_delta_m, 1e-6);
+    applied_delta_x *= scale;
+    applied_delta_y *= scale;
+    correction_limited = true;
+  }
+  if (max_rotation > 1e-6 && std::abs(applied_delta_yaw) > max_rotation)
+  {
+    applied_delta_yaw = applied_delta_yaw > 0.0 ? max_rotation : -max_rotation;
+    correction_limited = true;
+  }
+
+  if (correction_limited)
+  {
+    transform.transform.translation.x = previous_x + applied_delta_x;
+    transform.transform.translation.y = previous_y + applied_delta_y;
+    const double applied_yaw = this->normalize_angle(previous_yaw + applied_delta_yaw);
+    transform.transform.rotation.z = std::sin(applied_yaw * 0.5);
+    transform.transform.rotation.w = std::cos(applied_yaw * 0.5);
+  }
+
+  const double applied_delta_m =
+    std::sqrt((applied_delta_x * applied_delta_x) + (applied_delta_y * applied_delta_y));
+  const double applied_delta_yaw_abs = std::abs(applied_delta_yaw);
+  const bool hard_jump =
+    correction_delta_m >= std::max(0.0, this->hard_jump_warn_translation_m_) ||
+    abs_correction_delta_yaw >= std::max(0.0, this->hard_jump_warn_rotation_rad_);
+  if (this->structured_logging_enabled_ && (correction_limited || hard_jump))
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      1000,
+      "AMR_LOG schema=v1 component=localization event=map_odom_correction correction_limited=%s correction_delta_m=%.3f correction_delta_yaw_rad=%.3f applied_delta_m=%.3f applied_delta_yaw_rad=%.3f reason=%s",
+      bool_label(correction_limited),
+      correction_delta_m,
+      abs_correction_delta_yaw,
+      applied_delta_m,
+      applied_delta_yaw_abs,
+      hard_jump ? "hard_jump_limited" : "correction_limited");
+  }
+
+  this->last_map_to_odom_transform_ = transform;
+  this->has_map_to_odom_transform_ = true;
   return transform;
 }
 
@@ -774,6 +1272,11 @@ double Localization::quaternion_yaw(const geometry_msgs::msg::Quaternion &orient
   return std::atan2(siny_cosp, cosy_cosp);
 }
 
+double Localization::transform_yaw(const geometry_msgs::msg::TransformStamped &transform) const
+{
+  return this->quaternion_yaw(transform.transform.rotation);
+}
+
 void Localization::update_pose_orientation(
   geometry_msgs::msg::PoseStamped &pose,
   const double yaw) const
@@ -784,22 +1287,90 @@ void Localization::update_pose_orientation(
   pose.pose.orientation.w = std::cos(yaw * 0.5);
 }
 
+bool Localization::is_recent(
+  const rclcpp::Time &stamp,
+  const rclcpp::Time &now,
+  const double timeout_sec) const
+{
+  return
+    stamp.nanoseconds() > 0 &&
+    timeout_sec >= 0.0 &&
+    (now - stamp).seconds() <= timeout_sec;
+}
+
+bool Localization::is_localization_guard_relaxed(const rclcpp::Time &stamp) const
+{
+  const rclcpp::Time now = stamp.nanoseconds() > 0 ? stamp : this->now();
+  if (
+    this->last_initial_pose_time_.nanoseconds() > 0 &&
+    (now - this->last_initial_pose_time_).seconds() <
+    std::max(0.0, this->initial_pose_grace_sec_))
+  {
+    return true;
+  }
+
+  if (
+    this->has_latest_motion_status_ &&
+    this->is_recent(this->latest_motion_status_time_, now, 1.5))
+  {
+    if (
+      this->latest_motion_status_.remaining_distance <=
+      std::max(0.0, this->goal_proximity_relax_distance_m_))
+    {
+      return true;
+    }
+    if (
+      std::abs(this->latest_motion_status_.heading_error) <=
+      std::max(0.0, this->pose_rotation_confirm_threshold_rad_) &&
+      this->has_latest_cmd_vel_ &&
+      this->is_recent(this->latest_cmd_vel_time_, now, 1.0) &&
+      std::abs(this->latest_cmd_vel_.linear.x) < std::max(0.0, this->command_linear_threshold_) &&
+      std::abs(this->latest_cmd_vel_.angular.z) >= std::max(0.0, this->command_angular_threshold_))
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void Localization::reset_state()
 {
   this->latest_odom_ = nav_msgs::msg::Odometry();
   this->latest_scan_ = sensor_msgs::msg::LaserScan();
+  this->latest_cmd_vel_ = geometry_msgs::msg::Twist();
+  this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->initial_map_pose_ = geometry_msgs::msg::PoseStamped();
   this->previous_odom_pose_ = geometry_msgs::msg::PoseStamped();
   this->estimated_pose_ = geometry_msgs::msg::PoseStamped();
+  this->previous_estimated_pose_ = geometry_msgs::msg::PoseStamped();
+  this->last_map_to_odom_transform_ = geometry_msgs::msg::TransformStamped();
   this->particles_.clear();
+  this->latest_cmd_vel_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->latest_motion_status_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->last_initial_pose_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
   this->has_latest_odom_ = false;
   this->has_latest_scan_ = false;
+  this->has_latest_cmd_vel_ = false;
+  this->has_latest_motion_status_ = false;
   this->has_map_ = false;
   this->has_previous_odom_ = false;
+  this->has_previous_estimated_pose_ = false;
+  this->has_map_to_odom_transform_ = false;
   this->has_initial_pose_ = false;
   this->particles_initialized_ = false;
   this->auto_initial_pose_published_ = false;
+  this->odom_slip_suspected_ = false;
+  this->physical_stall_suspected_ = false;
+  this->localization_guard_confirmed_ = false;
+  this->map_odom_bypass_next_update_ = true;
+  this->localization_guard_suspect_streak_ = 0;
+  this->localization_guard_clear_streak_ = 0;
+  this->last_pose_delta_m_ = 0.0;
+  this->last_pose_delta_yaw_rad_ = 0.0;
+  this->last_measurement_likelihood_ = 1.0;
+  this->last_measurement_update_success_ = false;
 }
 
 }  // namespace amr::localization::estimator

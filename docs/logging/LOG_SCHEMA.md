@@ -1,6 +1,6 @@
 # AMR Structured Logging Schema
 
-이 문서는 ros-amr-navigation v0.18.0 기준 현장 운용 및 디버깅 로그 규칙을 정의한다. 목적은 토픽을 늘리지 않고도 ROS2 console log, `ROS_LOG_DIR`, `nohup` 출력, grep/awk 기반 분석에서 같은 기준으로 navigation 상태를 볼 수 있게 하는 것이다. `0.17.5`의 TurtleBot3 H/W 내재화와 structured logging 기준선은 유지하고, `0.18.x`는 navigation quality stabilization 단계로 path tracking, goal approach, recovery rejoin 품질 판단 필드를 보강한다.
+이 문서는 ros-amr-navigation v0.18.x 기준 현장 운용 및 디버깅 로그 규칙을 정의한다. 목적은 토픽을 늘리지 않고도 ROS2 console log, `ROS_LOG_DIR`, `nohup` 출력, grep/awk 기반 분석에서 같은 기준으로 navigation 상태를 볼 수 있게 하는 것이다. `0.17.5`의 TurtleBot3 H/W 내재화와 structured logging 기준선은 유지하고, `0.18.x`는 navigation quality stabilization 단계로 path tracking, goal approach, recovery rejoin, wheel-slip localization guard 품질 판단 필드를 보강한다.
 
 ## 공통 로그 형식
 
@@ -10,6 +10,7 @@
 AMR_LOG schema=v1 component=controller event=tracking_state phase=tracking target_idx=18 target_x=1.240 target_y=0.820 dist_goal_m=1.420 heading_err_rad=0.210 blocked=false recovery=false
 AMR_LOG schema=v1 component=bt_navigator event=recovery_decision goal_id=3 reason=blocked recovery_type=backup recovery_skipped=false planner_ok=false controller_ok=false
 AMR_LOG schema=v1 component=controller event=goal_state phase=final_heading_align xy_reached=true yaw_reached=false align_heading_at_goal=true respect_goal_yaw=false ignore_yaw=false final_heading_required=true dist_goal_m=0.041 goal_yaw_rad=1.570 current_yaw_rad=1.390 heading_err_rad=0.180 cmd_lin=0.000 cmd_ang=0.120
+AMR_LOG schema=v1 component=localization event=wheel_slip_state odom_delta_m=0.142 odom_delta_yaw_rad=0.020 pose_delta_m=0.006 pose_delta_yaw_rad=0.010 cmd_lin=0.080 cmd_ang=0.000 slip_suspected=true stall_suspected=true confirmed=true reason=physical_stall_suspected
 ```
 
 규칙:
@@ -117,6 +118,18 @@ TF/Localization 필드:
 | `pose_yaw` | pose yaw |
 | `cov_xy` | XY covariance summary |
 | `cov_yaw` | yaw covariance summary |
+| `odom_delta_m` | localization guard가 본 odometry translation delta |
+| `odom_delta_yaw_rad` | localization guard가 본 odometry yaw delta |
+| `pose_delta_m` | localized pose estimate delta |
+| `pose_delta_yaw_rad` | localized pose yaw delta |
+| `applied_delta_m` | guard 이후 particle motion update에 적용한 translation delta |
+| `applied_delta_yaw_rad` | guard 이후 particle motion update 또는 TF correction에 적용한 yaw delta |
+| `slip_suspected` | wheel slip 의심 여부 |
+| `stall_suspected` | physical stall 의심 여부 |
+| `confirmed` | guard confirm cycle을 통과한 상태 여부 |
+| `correction_limited` | `map -> odom` correction limiter 적용 여부 |
+| `correction_delta_m` | target `map -> odom` correction translation delta |
+| `correction_delta_yaw_rad` | target `map -> odom` correction yaw delta |
 
 MQTT/External Bridge 필드:
 
@@ -170,7 +183,7 @@ ERROR:
 | `amr_global_planner` | `global_planner` | global plan generation, plan request/result/failure reason | `plan_requested`, `plan_succeeded`, `plan_failed`, `plan_quality` |
 | `amr_recovery_server` | `recovery_server` | wait/backup/spin recovery command generation | `recovery_plan_requested`, `recovery_plan_selected`, `recovery_plan_failed`, `recovery_command` |
 | `amr_costmap_server` | `costmap_server` | global/local costmap, obstacle/local blocked context, clear request/result | `costmap_state`, `obstacle_state`, `costmap_clear_requested`, `costmap_clear_done`, `costmap_error` |
-| `amr_localization` | `localization` | pose estimate, map to odom TF, initial pose | `localization_state`, `initial_pose_received`, `tf_state`, `tf_error` |
+| `amr_localization` | `localization` | pose estimate, map to odom TF, initial pose, wheel-slip localization guard | `localization_state`, `initial_pose_received`, `localization_guard`, `wheel_slip_state`, `odom_motion_guard`, `map_odom_correction`, `tf_state`, `tf_error` |
 | `amr_runtime_observation` | `runtime_observation` | cross-package 상태 요약과 event 집계. 기존 `/amr/observation/runtime/summary`, `/amr/observation/runtime/events` 우선 활용 | `runtime_summary`, `runtime_event`, `nav_quality`, `goal_quality`, `recovery_summary` |
 | `amr_lifecycle_manager` | `lifecycle_manager` | lifecycle state transition | `lifecycle_configure`, `lifecycle_activate`, `lifecycle_deactivate`, `lifecycle_error` |
 | `amr_mqtt_server` | `mqtt_server` | external command/telemetry bridge | `mqtt_command_received`, `mqtt_command_accepted`, `mqtt_command_rejected`, `mqtt_publish_result`, `mqtt_connection_state` |
@@ -196,6 +209,7 @@ ERROR:
 - target jump 의심 시 `target_jump_detected`에서 `previous_idx`, `nearest_idx`, `candidate_idx`, `selected_idx`, `target_jump_m`, `rejoin_activated`, `selection_reason`을 함께 확인한다.
 - goal approach 판단은 `goal_state`에서 `xy_reached`, `yaw_reached`, `align_heading_at_goal`, `respect_goal_yaw`, `ignore_yaw`, `final_heading_required`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`을 함께 확인한다.
 - recovery 실행 또는 skip 판단은 `reason`, `recovery_type`, `recovery_skipped`, `planner_ok`, `controller_ok`를 포함한다. Recovery 이후 정상 경로 복귀는 `recovery_finished result=reacquired` 또는 `result=reacquire_timeout`과 controller `rejoin_state`를 연결해서 본다.
+- wheel slip 또는 physical stall 의심 시 `wheel_slip_state`, `odom_motion_guard`, `map_odom_correction`을 함께 본다. `/odom` delta가 크지만 localized pose delta, scan likelihood, `/cmd_vel`, `/amr/motion/status`가 실제 진행을 확인하지 못하면 localization guard가 odometry motion update와 `map -> odom` correction을 보수적으로 제한한다.
 - costmap grid, scan ranges, map data 등 대량 데이터는 log에 직접 출력하지 않는다.
 - rosbag2 profile에서 필요한 heavy topic을 선택적으로 기록한다.
 
@@ -235,3 +249,11 @@ Final heading alignment는 path tracking 진동과 별도 단계다. AMR navigat
 Recovery 또는 local escape 이후 navigator는 새 navigation command가 stable reacquire 되었는지 확인한다. 성공 시 `recovery_finished result=reacquired reason=navigation_reacquired`가 남고, settle window 안에 motion status와 local plan status가 함께 정상화되지 않으면 `recovery_finished result=reacquire_timeout reason=navigation_reacquire_timeout`이 남는다.
 
 Controller의 `rejoin_state`는 recovery/escape 또는 large target jump 이후 bounded context만 의미한다. `rejoin_context_timeout_sec`와 `rejoin_context_distance_m`는 rejoin context의 최대 유지 범위이고, `rejoin_target_distance_threshold`, `rejoin_heading_gate_threshold`, `rejoin_min_linear_scale`은 rejoin 중 급회전과 과한 선속 추종을 완화한다. 정상 복귀는 `rejoin_state`가 사라지고 `tracking_state rejoin=false rejoin_context_active=false`로 돌아오는 것이다.
+
+## Localization Slip Guard Diagnostics
+
+`0.18.1`의 localization guard는 낮은 장애물, 바퀴 헛돎, 물리적 끼임처럼 costmap만으로 원인을 확정하기 어려운 상황을 보수적으로 다룬다. 핵심 판단은 `/odom` motion delta, localized pose progress, scan likelihood health, `/cmd_vel`, `/amr/motion/status`의 blocked/stalled 상태를 함께 보는 것이다.
+
+정상 주행에서는 `wheel_slip_state`가 반복 출력되지 않고 `odom_motion_guard`도 조용해야 한다. 의심 상태가 confirm cycle을 통과하면 `wheel_slip_state confirmed=true`가 상태 전이로 남고, 실제 particle motion update에 적용된 delta는 `odom_motion_guard applied_delta_m`과 `applied_delta_yaw_rad`로 확인한다. 이후 evidence가 안정되면 `wheel_slip_state confirmed=false reason=guard_clear`가 남는다.
+
+`map_odom_correction`은 localization estimate와 odometry 사이 correction이 한 번에 크게 움직일 때만 throttle WARN으로 남긴다. Initial pose reset 직후에는 limiter를 우회할 수 있으며, 그 외에는 `correction_delta_m`, `correction_delta_yaw_rad`, `applied_delta_m`, `applied_delta_yaw_rad`, `correction_limited`, `reason`을 보고 TF jump가 제한되었는지 판단한다.

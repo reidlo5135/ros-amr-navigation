@@ -218,6 +218,8 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 - refine blocked-state semantics between local planner, motion controller, and BT navigator
 - improve recovery exit quality so the robot rejoins the global path without sharp oscillation
 - reduce low-speed final heading jitter and stop/start thrash near the goal
+- guard localization against wheel-slip and physical-stall cases where odometry reports motion that scan/pose progress and controller status do not confirm
+- keep ``map -> odom`` correction bounded during suspected slip so a low obstacle or stalled wheel does not cause a sudden localization jump
 - add a near-field safety lane comparable to Nav2's collision monitor / detector direction
   - emergency-stop / slowdown style logic should be explicitly separated from planner recovery semantics
   - operator-facing obstacle/safety state should become more deterministic than a generic blocked flag

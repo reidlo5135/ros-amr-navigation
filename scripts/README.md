@@ -125,6 +125,9 @@ The extractor includes these event families by default:
 - `recovery_skipped`
 - `rejoin_state`
 - `local_blocked_state`
+- `wheel_slip_state`
+- `odom_motion_guard`
+- `map_odom_correction`
 
 For straight-line oscillation checks, the extractor also carries through `rejoin_context_active`,
 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`,
@@ -153,3 +156,15 @@ For recovery rejoin checks, read navigator `recovery_decision`, `recovery_starte
 exit has `recovery_finished result=reacquired` followed by controller tracking with
 `rejoin_context_active=false`. `result=reacquire_timeout` means the post-recovery settle window
 expired before motion status and local plan status both became healthy.
+
+For `0.18.1` wheel-slip checks, filter localization logs:
+
+```bash
+scripts/watch_amr_logs.sh --component localization --event wheel_slip_state
+scripts/watch_amr_logs.sh --component localization --event odom_motion_guard
+scripts/watch_amr_logs.sh --component localization --event map_odom_correction
+```
+
+Compare `odom_delta_m`, `odom_delta_yaw_rad`, `pose_delta_m`, `pose_delta_yaw_rad`,
+`applied_delta_m`, `applied_delta_yaw_rad`, `slip_suspected`, `stall_suspected`, `confirmed`, and
+`reason`. These are summary fields only; raw scan ranges, costmap grids, and map data are not logged.

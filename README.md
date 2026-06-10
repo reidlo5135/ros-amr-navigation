@@ -7,6 +7,7 @@ ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 Current `0.18.x` direction:
 - Navigation quality stabilization is the top-priority track after the `0.17.5` TurtleBot3 hardware internalization baseline.
 - Path tracking, target selection, goal approach, and post-recovery path rejoin are tuned conservatively for TurtleBot3 Burger-class low-speed operation.
+- `0.18.1` adds a conservative localization guard for wheel slip and physical stall cases where odometry reports motion but scan/pose progress and controller status do not agree.
 - `AMR_LOG schema=v1` remains the field-debug contract for path quality, goal state, recovery decision, and rejoin diagnosis.
 
 Maintained `0.17.x` baseline:
@@ -33,6 +34,7 @@ Maintained `0.17.x` baseline:
   - reduced small-angle straight-line oscillation
   - separated XY goal arrival and final yaw alignment
   - conservative recovery/escape rejoin and reacquire diagnostics
+  - guarded odometry motion updates and bounded `map -> odom` correction during suspected wheel slip or physical stall
 
 ## Architecture
 
@@ -182,6 +184,7 @@ Common fields:
 Useful event families:
 
 - controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`, `rejoin_state`
+- localization: `localization_state`, `initial_pose_received`, `localization_guard`, `wheel_slip_state`, `odom_motion_guard`, `map_odom_correction`
 - navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`, `recovery_skipped`
 - planner/recovery: `plan_requested`, `plan_succeeded`, `plan_failed`, `recovery_plan_selected`
 - observation: `runtime_summary`, `runtime_event`
@@ -287,6 +290,13 @@ During normal tracking, current controller clear status is authoritative: if `co
 `controller_stalled=false`, `controller_recovery=false`, and `dist_goal_delta_m` is at least
 `progress_clear_delta_m`, runtime observation should stay at `phase=tracking` with
 `progress_clear_reason=controller_normal_progress`.
+
+For `0.18.1` localization checks, low obstacle contact or wheel slip should not be diagnosed from
+costmap state alone. Compare `/odom` deltas with localized pose progress, `/cmd_vel`, and
+`/amr/motion/status`. If odometry moves while localized pose/scan evidence and controller status do
+not confirm real motion, `amr_localization` can damp the particle motion update and limit each
+`map -> odom` correction step. Relevant logs are `wheel_slip_state`, `odom_motion_guard`, and
+`map_odom_correction`; they expose only summary deltas and reason codes, not raw scan or map data.
 
 Use the `nav_quality_summary` row from `scripts/extract_nav_quality.sh` to compare `cmd_ang_abs_avg`, `output_ang_abs_avg`, and sign flip counts before and after tuning.
 
