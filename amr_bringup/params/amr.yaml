@@ -201,6 +201,12 @@
       goal_row_align_distance_cells: 6
       goal_row_align_penalty: 1.75
       nearest_free_search_radius_cells: 4
+      same_row_straightening_enabled: true
+      same_row_tolerance_cells: 1
+      same_y_tolerance_m: 0.05
+      same_row_max_lateral_deviation_cells: 1
+      same_row_interpolation_distance: 0.10
+      same_row_require_line_of_sight: true
     logging:
       structured_enabled: true
 
@@ -237,7 +243,7 @@
       prune_distance: 0.03
       interpolate_distance: 0.15
       heading_assignment_enabled: true
-      preserve_goal_orientation: true
+      preserve_goal_orientation: false
       line_of_sight_simplification_enabled: true
       line_of_sight_sample_distance: 0.05
       line_of_sight_max_skip: 8

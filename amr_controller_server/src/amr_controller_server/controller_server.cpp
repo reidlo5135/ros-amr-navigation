@@ -423,7 +423,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   path_refiner_prune_distance_(0.03),
   path_refiner_interpolate_distance_(0.15),
   path_refiner_heading_assignment_enabled_(true),
-  path_refiner_preserve_goal_orientation_(true),
+  path_refiner_preserve_goal_orientation_(false),
   path_refiner_line_of_sight_simplification_enabled_(true),
   path_refiner_line_of_sight_sample_distance_(0.05),
   path_refiner_line_of_sight_max_skip_(8),
@@ -3128,6 +3128,10 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
   this->latest_command_time_ = this->now();
   if (this->structured_logging_enabled_)
   {
+    const double current_yaw = this->has_current_pose_ ?
+      this->quaternion_yaw(this->current_pose_.pose.orientation) : 0.0;
+    const double target_yaw = this->quaternion_yaw(message->goal_pose.pose.orientation);
+    const double heading_error = this->normalize_angle(target_yaw - current_yaw);
     RCLCPP_INFO(
       this->get_logger(),
       "AMR_LOG schema=v1 component=controller event=motion_command node=motion_controller goal_id=%u mode=%s route_id=%s target_x=%.3f target_y=%.3f recovery=%s recovery_type=%s",
@@ -3138,6 +3142,14 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
       message->goal_pose.pose.position.y,
       bool_label(message->mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE),
       motion_mode_label(message->mode));
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=controller event=goal_transition_state node=motion_controller goal_id=%u phase=new_command current_yaw_rad=%.3f target_yaw_rad=%.3f heading_err_rad=%.3f cmd_lin=0.000 cmd_ang=0.000 tracking_reset=true final_align_reset=true rejoin_context_active=%s reason=command_received",
+      message->command_id,
+      current_yaw,
+      target_yaw,
+      heading_error,
+      bool_label(this->rejoin_context_active_));
   }
 }
 

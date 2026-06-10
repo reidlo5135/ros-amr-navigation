@@ -9,6 +9,7 @@ Changelog
   - added conservative wheel-slip and physical-stall detection in ``amr_localization`` by comparing odometry deltas with localized pose progress, scan likelihood health, ``/cmd_vel``, and ``/amr/motion/status``
   - damped particle motion updates during suspected slip/stall so a spinning or stalled wheel does not immediately drag localization away from scan/map evidence
   - bounded per-update ``map -> odom`` correction to reduce sudden TF jumps after slip, while bypassing the limiter for initial-pose reset
+  - added same-row global path straightening so safe same-Y goals use a direct line-of-sight path before A* row penalties can bend the route
   - kept ``AMR_LOG schema=v1`` and existing topic, service, and action names stable while adding localization guard diagnostics
 
 - Started the ``0.18.0`` navigation quality stabilization line:

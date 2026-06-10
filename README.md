@@ -8,6 +8,7 @@ Current `0.18.x` direction:
 - Navigation quality stabilization is the top-priority track after the `0.17.5` TurtleBot3 hardware internalization baseline.
 - Path tracking, target selection, goal approach, and post-recovery path rejoin are tuned conservatively for TurtleBot3 Burger-class low-speed operation.
 - `0.18.1` adds a conservative localization guard for wheel slip and physical stall cases where odometry reports motion but scan/pose progress and controller status do not agree.
+- Same-row or same-Y goals prefer a safe line-of-sight global path before A* row penalties can bend the path.
 - `AMR_LOG schema=v1` remains the field-debug contract for path quality, goal state, recovery decision, and rejoin diagnosis.
 
 Maintained `0.17.x` baseline:
@@ -35,6 +36,7 @@ Maintained `0.17.x` baseline:
   - separated XY goal arrival and final yaw alignment
   - conservative recovery/escape rejoin and reacquire diagnostics
   - guarded odometry motion updates and bounded `map -> odom` correction during suspected wheel slip or physical stall
+  - same-row global path straightening when footprint collision and line-of-sight checks are safe
 
 ## Architecture
 

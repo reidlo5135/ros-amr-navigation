@@ -66,8 +66,13 @@ Navigation 필드:
 | `lookahead_m` | lookahead distance |
 | `path_points` | path pose count |
 | `path_length_m` | path length |
+| `raw_path_points` | refinement 또는 straightening 전 path pose/cell count |
+| `final_path_points` | 최종 publish/response path pose count |
 | `dist_goal_m` | 현재 pose에서 goal까지 거리 |
 | `heading_err_rad` | heading error |
+| `current_yaw_rad` | current pose yaw |
+| `target_yaw_rad` | current command or final alignment target yaw |
+| `path_heading_rad` | path tangent heading used for tracking or diagnosis |
 | `steering_err_rad` | deadband/final-align suppression 이후 실제 steering에 쓰는 heading error |
 | `selection_reason` | tracking target 선택 이유. 예: `candidate_min_distance`, `retained_target_too_close` |
 | `rejoin_context_active` | recovery/escape/large target jump 이후 bounded rejoin context 활성 여부 |
@@ -84,12 +89,27 @@ Navigation 필드:
 | `safety_blocked` | safety gate blocked 상태 |
 | `rejoin` | path rejoin phase 여부 |
 | `recovery` | recovery 상태 여부 |
+| `rotate_in_place` | commanded rotate-in-place 또는 final heading alignment context 여부 |
 | `recovery_type` | `wait`, `backup`, `spin`, `local_escape`, `global_replan` 등 |
 | `recovery_skipped` | recovery 생략 여부 |
 | `planner_ok` | navigator 관점에서 local/global planning 상태가 정상인지 여부 |
 | `controller_ok` | navigator 관점에서 controller blocked/stalled 상태가 없는지 여부 |
 | `local_plan_valid` | local planner 또는 motion status가 보고한 local plan 유효 여부 |
 | `planner_decision` | local planner decision label. 예: `ok`, `hard_blocked`, `global_replan_required` |
+| `start_row` | global planner start grid row after nearest-free adjustment |
+| `goal_row` | global planner goal grid row after nearest-free adjustment |
+| `row_delta` | adjusted start/goal row 차이 |
+| `requested_start_row` | nearest-free adjustment 전 start grid row |
+| `requested_goal_row` | nearest-free adjustment 전 goal grid row |
+| `start_y` | global planner request start world Y |
+| `goal_y` | global planner request goal world Y |
+| `y_delta_m` | request start/goal world Y 차이 |
+| `same_row_candidate` | same-row/same-Y straightening 후보 여부 |
+| `straight_line_safe` | direct line-of-sight와 footprint collision check 통과 여부 |
+| `straight_path_used` | 최종 global path가 same-row straight path로 대체/생성됐는지 여부 |
+| `fallback_reason` | same-row straight path 미사용 또는 A* replacement reason |
+| `max_row_deviation` | A* result가 start-goal row band 밖으로 벗어난 최대 cell 수 |
+| `max_lateral_deviation_m` | start-goal 직선 대비 path 최대 lateral deviation |
 
 Command 품질 필드:
 
@@ -178,7 +198,7 @@ ERROR:
 
 | Package | Component | 책임 | 주요 event |
 | --- | --- | --- | --- |
-| `amr_controller_server` | `controller` | local planner, tracking target selection, motion command generation, goal approach, final heading alignment, local blocked/rejoin 판단 | `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `tracking_target_selected`, `target_jump_detected`, `goal_state`, `cmd_quality`, `local_blocked_state`, `rejoin_state`, `motion_command` |
+| `amr_controller_server` | `controller` | local planner, tracking target selection, motion command generation, goal approach, final heading alignment, local blocked/rejoin 판단 | `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `tracking_target_selected`, `target_jump_detected`, `goal_state`, `goal_transition_state`, `cmd_quality`, `local_blocked_state`, `rejoin_state`, `motion_command` |
 | `amr_bt_navigator` | `bt_navigator` | goal orchestration, planner/controller/recovery decision, recovery 진입/스킵 판단, action result 관리 | `goal_received`, `goal_started`, `goal_succeeded`, `goal_failed`, `goal_canceled`, `recovery_decision`, `recovery_skipped`, `recovery_started`, `recovery_finished`, `bt_phase_transition` |
 | `amr_global_planner` | `global_planner` | global plan generation, plan request/result/failure reason | `plan_requested`, `plan_succeeded`, `plan_failed`, `plan_quality` |
 | `amr_recovery_server` | `recovery_server` | wait/backup/spin recovery command generation | `recovery_plan_requested`, `recovery_plan_selected`, `recovery_plan_failed`, `recovery_command` |
@@ -205,9 +225,11 @@ ERROR:
 - `target_idx`, `target_x`, `target_y`, `target_dist_m`, `target_jump_m`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`는 같은 이름을 유지한다.
 - plan은 존재하지만 로봇이 직진만 하는 경우 `tracking_heading_debug`의 `nearest_idx`, `candidate_idx`, `selected_idx`, `target_dist_m`, `pose_frame`, `plan_frame`, `target_frame`, `heading_err_rad`, `steering_err_rad`, `selection_reason`을 우선 확인한다.
 - 직선 plan에서 좌우 흔들림이 있으면 `tracking_state`의 `rejoin`, `rejoin_context_active`와 `tracking_heading_debug`의 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`, `heading_error_filtered_rad`, `steering_deadband_active`, `steering_hysteresis_state`, `cmd_ang_sign`, `cmd_ang_flip_count`, `output_ang_sign`, `output_ang_flip_count`를 함께 확인한다.
+- global plan이 같은 Y goal인데 휘면 `plan_quality`의 `start_row`, `goal_row`, `row_delta`, `same_row_candidate`, `straight_line_safe`, `straight_path_used`, `fallback_reason`, `max_row_deviation`, `max_lateral_deviation_m`을 먼저 확인한다.
 - local plan이 계단형이면 `local_path_quality`의 `raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`, `collinear_pruned_count`, `collision_check_passed`를 확인한다.
 - target jump 의심 시 `target_jump_detected`에서 `previous_idx`, `nearest_idx`, `candidate_idx`, `selected_idx`, `target_jump_m`, `rejoin_activated`, `selection_reason`을 함께 확인한다.
 - goal approach 판단은 `goal_state`에서 `xy_reached`, `yaw_reached`, `align_heading_at_goal`, `respect_goal_yaw`, `ignore_yaw`, `final_heading_required`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`을 함께 확인한다.
+- goal 완료 직후 다음 goal command 전환은 `goal_transition_state`에서 `current_yaw_rad`, `target_yaw_rad`, `heading_err_rad`, `tracking_reset`, `final_align_reset`, `rejoin_context_active`를 함께 확인한다.
 - recovery 실행 또는 skip 판단은 `reason`, `recovery_type`, `recovery_skipped`, `planner_ok`, `controller_ok`를 포함한다. Recovery 이후 정상 경로 복귀는 `recovery_finished result=reacquired` 또는 `result=reacquire_timeout`과 controller `rejoin_state`를 연결해서 본다.
 - wheel slip 또는 physical stall 의심 시 `wheel_slip_state`, `odom_motion_guard`, `map_odom_correction`을 함께 본다. `/odom` delta가 크지만 localized pose delta, scan likelihood, `/cmd_vel`, `/amr/motion/status`가 실제 진행을 확인하지 못하면 localization guard가 odometry motion update와 `map -> odom` correction을 보수적으로 제한한다.
 - costmap grid, scan ranges, map data 등 대량 데이터는 log에 직접 출력하지 않는다.
@@ -256,4 +278,4 @@ Controller의 `rejoin_state`는 recovery/escape 또는 large target jump 이후 
 
 정상 주행에서는 `wheel_slip_state`가 반복 출력되지 않고 `odom_motion_guard`도 조용해야 한다. 의심 상태가 confirm cycle을 통과하면 `wheel_slip_state confirmed=true`가 상태 전이로 남고, 실제 particle motion update에 적용된 delta는 `odom_motion_guard applied_delta_m`과 `applied_delta_yaw_rad`로 확인한다. 이후 evidence가 안정되면 `wheel_slip_state confirmed=false reason=guard_clear`가 남는다.
 
-`map_odom_correction`은 localization estimate와 odometry 사이 correction이 한 번에 크게 움직일 때만 throttle WARN으로 남긴다. Initial pose reset 직후에는 limiter를 우회할 수 있으며, 그 외에는 `correction_delta_m`, `correction_delta_yaw_rad`, `applied_delta_m`, `applied_delta_yaw_rad`, `correction_limited`, `reason`을 보고 TF jump가 제한되었는지 판단한다.
+`map_odom_correction`은 localization estimate와 odometry 사이 correction이 한 번에 크게 움직일 때만 throttle WARN으로 남긴다. Initial pose reset 직후에는 limiter를 우회할 수 있으며, 그 외에는 `correction_delta_m`, `correction_delta_yaw_rad`, `applied_delta_m`, `applied_delta_yaw_rad`, `cmd_lin`, `cmd_ang`, `pose_delta_yaw_rad`, `rotate_in_place`, `correction_limited`, `reason`을 보고 TF jump가 제한되었는지 판단한다. `rotate_in_place=true`에서는 정상 제자리회전 수렴을 막지 않도록 yaw correction limit을 완화할 수 있다.

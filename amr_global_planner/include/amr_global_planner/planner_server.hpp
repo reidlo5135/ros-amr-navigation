@@ -69,6 +69,28 @@ private:
     GridCell &cell,
     int max_radius,
     double yaw) const;
+  bool is_same_row_straight_candidate(
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal,
+    const GridCell &start_cell,
+    const GridCell &goal_cell) const;
+  bool is_straight_line_collision_free(
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal) const;
+  bool is_world_pose_collision_free(
+    const geometry_msgs::msg::PoseStamped &pose,
+    double yaw) const;
+  nav_msgs::msg::Path create_straight_path_message(
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal) const;
+  int estimate_max_row_deviation(
+    const std::vector<GridCell> &grid_path,
+    const GridCell &start_cell,
+    const GridCell &goal_cell) const;
+  double estimate_path_lateral_deviation(
+    const nav_msgs::msg::Path &path,
+    const geometry_msgs::msg::PoseStamped &start,
+    const geometry_msgs::msg::PoseStamped &goal) const;
   std::vector<GridCell> simplify_grid_path(const std::vector<GridCell> &grid_path) const;
   nav_msgs::msg::Path create_path_message(
     const std::vector<GridCell> &grid_path) const;
@@ -96,6 +118,12 @@ private:
   int goal_row_align_distance_cells_;
   double goal_row_align_penalty_;
   int nearest_free_search_radius_cells_;
+  bool same_row_straightening_enabled_;
+  int same_row_tolerance_cells_;
+  double same_y_tolerance_m_;
+  int same_row_max_lateral_deviation_cells_;
+  double same_row_interpolation_distance_;
+  bool same_row_require_line_of_sight_;
   bool structured_logging_enabled_;
   std::vector<double> footprint_polygon_param_;
   amr::geometry::FootprintPolygon footprint_polygon_;

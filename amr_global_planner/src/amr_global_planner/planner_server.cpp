@@ -62,6 +62,12 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
   goal_row_align_distance_cells_(6),
   goal_row_align_penalty_(1.75),
   nearest_free_search_radius_cells_(4),
+  same_row_straightening_enabled_(true),
+  same_row_tolerance_cells_(1),
+  same_y_tolerance_m_(0.05),
+  same_row_max_lateral_deviation_cells_(1),
+  same_row_interpolation_distance_(0.10),
+  same_row_require_line_of_sight_(true),
   structured_logging_enabled_(true)
 {
   this->declare_parameter("topics.costmap", this->costmap_topic_);
@@ -80,6 +86,16 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
     "planner.goal_row_align_distance_cells", this->goal_row_align_distance_cells_);
   this->declare_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->declare_parameter(
+    "planner.same_row_straightening_enabled", this->same_row_straightening_enabled_);
+  this->declare_parameter("planner.same_row_tolerance_cells", this->same_row_tolerance_cells_);
+  this->declare_parameter("planner.same_y_tolerance_m", this->same_y_tolerance_m_);
+  this->declare_parameter(
+    "planner.same_row_max_lateral_deviation_cells", this->same_row_max_lateral_deviation_cells_);
+  this->declare_parameter(
+    "planner.same_row_interpolation_distance", this->same_row_interpolation_distance_);
+  this->declare_parameter(
+    "planner.same_row_require_line_of_sight", this->same_row_require_line_of_sight_);
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
@@ -104,6 +120,16 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   this->get_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->get_parameter(
     "planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
+  this->get_parameter(
+    "planner.same_row_straightening_enabled", this->same_row_straightening_enabled_);
+  this->get_parameter("planner.same_row_tolerance_cells", this->same_row_tolerance_cells_);
+  this->get_parameter("planner.same_y_tolerance_m", this->same_y_tolerance_m_);
+  this->get_parameter(
+    "planner.same_row_max_lateral_deviation_cells", this->same_row_max_lateral_deviation_cells_);
+  this->get_parameter(
+    "planner.same_row_interpolation_distance", this->same_row_interpolation_distance_);
+  this->get_parameter(
+    "planner.same_row_require_line_of_sight", this->same_row_require_line_of_sight_);
   this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
 
@@ -364,6 +390,8 @@ bool PlannerServer::compute_plan_between_poses(
     message = "Goal pose is outside map bounds";
     return false;
   }
+  const GridCell requested_start_cell = start_cell;
+  const GridCell requested_goal_cell = goal_cell;
 
   const int width = static_cast<int>(this->global_costmap_->info.width);
   const int height = static_cast<int>(this->global_costmap_->info.height);
@@ -379,6 +407,44 @@ bool PlannerServer::compute_plan_between_poses(
   {
     message = "Start or goal cell is occupied in inflated global costmap";
     return false;
+  }
+
+  const bool same_row_candidate = this->is_same_row_straight_candidate(
+    start, goal, start_cell, goal_cell);
+  const bool straight_line_safe =
+    same_row_candidate && this->is_straight_line_collision_free(start, goal);
+  const double y_delta_m = std::abs(goal.pose.position.y - start.pose.position.y);
+  const int row_delta = std::abs(goal_cell.y - start_cell.y);
+  std::string fallback_reason = "not_same_row_candidate";
+  if (!this->same_row_straightening_enabled_) {
+    fallback_reason = "straightening_disabled";
+  } else if (same_row_candidate && !straight_line_safe) {
+    fallback_reason = "line_of_sight_blocked";
+  } else if (same_row_candidate) {
+    fallback_reason = "none";
+  }
+
+  if (this->same_row_straightening_enabled_ && same_row_candidate && straight_line_safe)
+  {
+    path = this->create_straight_path_message(start, goal);
+    message = "Generated same-row straight path";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=global_planner event=plan_quality start_row=%d goal_row=%d row_delta=%d requested_start_row=%d requested_goal_row=%d start_y=%.3f goal_y=%.3f y_delta_m=%.3f same_row_candidate=true straight_line_safe=true straight_path_used=true fallback_reason=none raw_path_points=%zu final_path_points=%zu max_row_deviation=0 max_lateral_deviation_m=%.3f",
+        start_cell.y,
+        goal_cell.y,
+        row_delta,
+        requested_start_cell.y,
+        requested_goal_cell.y,
+        start.pose.position.y,
+        goal.pose.position.y,
+        y_delta_m,
+        path.poses.size(),
+        path.poses.size(),
+        this->estimate_path_lateral_deviation(path, start, goal));
+    }
+    return true;
   }
 
   this->a_star_planner_->set_collision_model(
@@ -402,6 +468,43 @@ bool PlannerServer::compute_plan_between_poses(
   }
 
   path = this->create_path_message(result.path);
+  const int max_row_deviation = this->estimate_max_row_deviation(result.path, start_cell, goal_cell);
+  const double max_lateral_deviation_m = this->estimate_path_lateral_deviation(path, start, goal);
+  const double max_lateral_deviation_threshold =
+    static_cast<double>(std::max(0, this->same_row_max_lateral_deviation_cells_)) *
+    static_cast<double>(this->global_costmap_->info.resolution);
+  if (
+    this->same_row_straightening_enabled_ &&
+    same_row_candidate &&
+    straight_line_safe &&
+    (
+      max_row_deviation > std::max(0, this->same_row_max_lateral_deviation_cells_) ||
+      max_lateral_deviation_m > max_lateral_deviation_threshold))
+  {
+    path = this->create_straight_path_message(start, goal);
+    fallback_reason = "a_star_row_deviation_replaced";
+  }
+  if (this->structured_logging_enabled_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=global_planner event=plan_quality start_row=%d goal_row=%d row_delta=%d requested_start_row=%d requested_goal_row=%d start_y=%.3f goal_y=%.3f y_delta_m=%.3f same_row_candidate=%s straight_line_safe=%s straight_path_used=%s fallback_reason=%s raw_path_points=%zu final_path_points=%zu max_row_deviation=%d max_lateral_deviation_m=%.3f",
+      start_cell.y,
+      goal_cell.y,
+      row_delta,
+      requested_start_cell.y,
+      requested_goal_cell.y,
+      start.pose.position.y,
+      goal.pose.position.y,
+      y_delta_m,
+      same_row_candidate ? "true" : "false",
+      straight_line_safe ? "true" : "false",
+      fallback_reason == "a_star_row_deviation_replaced" ? "true" : "false",
+      fallback_reason.c_str(),
+      result.path.size(),
+      path.poses.size(),
+      max_row_deviation,
+      max_lateral_deviation_m);
+  }
   return true;
 }
 
@@ -516,6 +619,174 @@ bool PlannerServer::is_cell_collision(
     yaw,
     this->obstacle_threshold_,
     this->allow_unknown_);
+}
+
+bool PlannerServer::is_same_row_straight_candidate(
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal,
+  const GridCell &start_cell,
+  const GridCell &goal_cell) const
+{
+  if (!this->same_row_straightening_enabled_) {
+    return false;
+  }
+
+  const int row_delta = std::abs(goal_cell.y - start_cell.y);
+  const double y_delta_m = std::abs(goal.pose.position.y - start.pose.position.y);
+  return
+    row_delta <= std::max(0, this->same_row_tolerance_cells_) &&
+    y_delta_m <= std::max(0.0, this->same_y_tolerance_m_);
+}
+
+bool PlannerServer::is_world_pose_collision_free(
+  const geometry_msgs::msg::PoseStamped &pose,
+  const double yaw) const
+{
+  if (!this->global_costmap_ || this->global_costmap_->data.empty()) {
+    return false;
+  }
+
+  const int width = static_cast<int>(this->global_costmap_->info.width);
+  const int height = static_cast<int>(this->global_costmap_->info.height);
+  GridCell cell{};
+  if (!this->world_to_grid(pose, cell)) {
+    return false;
+  }
+
+  if (this->footprint_polygon_.empty()) {
+    return !this->is_occupied_cell(this->global_costmap_->data, width, height, cell);
+  }
+
+  return !amr::geometry::footprint_pose_collides(
+    this->global_costmap_->data,
+    width,
+    height,
+    this->global_costmap_->info.resolution,
+    this->global_costmap_->info.origin.position.x,
+    this->global_costmap_->info.origin.position.y,
+    this->footprint_polygon_,
+    pose.pose.position.x,
+    pose.pose.position.y,
+    yaw,
+    this->obstacle_threshold_,
+    this->allow_unknown_);
+}
+
+bool PlannerServer::is_straight_line_collision_free(
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal) const
+{
+  if (!this->same_row_require_line_of_sight_) {
+    return false;
+  }
+  if (!this->global_costmap_ || this->global_costmap_->data.empty()) {
+    return false;
+  }
+
+  const double dx = goal.pose.position.x - start.pose.position.x;
+  const double dy = goal.pose.position.y - start.pose.position.y;
+  const double distance = std::sqrt((dx * dx) + (dy * dy));
+  const double yaw = distance > 1e-6 ? std::atan2(dy, dx) : yaw_from_quaternion(goal.pose.orientation);
+  const double step = std::max(
+    std::max(1e-3, this->same_row_interpolation_distance_),
+    static_cast<double>(this->global_costmap_->info.resolution));
+  const int sample_count = std::max(1, static_cast<int>(std::ceil(distance / step)));
+
+  for (int sample_index = 0; sample_index <= sample_count; ++sample_index) {
+    const double ratio = sample_count > 0 ?
+      static_cast<double>(sample_index) / static_cast<double>(sample_count) : 1.0;
+    geometry_msgs::msg::PoseStamped sample_pose = start;
+    sample_pose.pose.position.x = start.pose.position.x + (dx * ratio);
+    sample_pose.pose.position.y = start.pose.position.y + (dy * ratio);
+    sample_pose.pose.position.z = 0.0;
+    sample_pose.pose.orientation.z = std::sin(yaw * 0.5);
+    sample_pose.pose.orientation.w = std::cos(yaw * 0.5);
+    if (!this->is_world_pose_collision_free(sample_pose, yaw)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+nav_msgs::msg::Path PlannerServer::create_straight_path_message(
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal) const
+{
+  nav_msgs::msg::Path path;
+  if (!this->global_costmap_) {
+    return path;
+  }
+
+  const double dx = goal.pose.position.x - start.pose.position.x;
+  const double dy = goal.pose.position.y - start.pose.position.y;
+  const double distance = std::sqrt((dx * dx) + (dy * dy));
+  const double yaw = distance > 1e-6 ? std::atan2(dy, dx) : yaw_from_quaternion(goal.pose.orientation);
+  const double step = std::max(1e-3, this->same_row_interpolation_distance_);
+  const int sample_count = std::max(1, static_cast<int>(std::ceil(distance / step)));
+
+  path.header = this->global_costmap_->header;
+  path.header.stamp = this->now();
+  path.poses.reserve(static_cast<std::size_t>(sample_count + 1));
+  for (int sample_index = 0; sample_index <= sample_count; ++sample_index) {
+    const double ratio = static_cast<double>(sample_index) / static_cast<double>(sample_count);
+    geometry_msgs::msg::PoseStamped pose = start;
+    pose.header = path.header;
+    pose.pose.position.x = start.pose.position.x + (dx * ratio);
+    pose.pose.position.y = start.pose.position.y + (dy * ratio);
+    pose.pose.position.z = 0.0;
+    pose.pose.orientation.x = 0.0;
+    pose.pose.orientation.y = 0.0;
+    pose.pose.orientation.z = std::sin(yaw * 0.5);
+    pose.pose.orientation.w = std::cos(yaw * 0.5);
+    path.poses.push_back(pose);
+  }
+
+  return path;
+}
+
+int PlannerServer::estimate_max_row_deviation(
+  const std::vector<GridCell> &grid_path,
+  const GridCell &start_cell,
+  const GridCell &goal_cell) const
+{
+  if (grid_path.empty()) {
+    return 0;
+  }
+
+  const int row_min = std::min(start_cell.y, goal_cell.y);
+  const int row_max = std::max(start_cell.y, goal_cell.y);
+  int max_deviation = 0;
+  for (const auto &cell : grid_path) {
+    if (cell.y < row_min) {
+      max_deviation = std::max(max_deviation, row_min - cell.y);
+    } else if (cell.y > row_max) {
+      max_deviation = std::max(max_deviation, cell.y - row_max);
+    }
+  }
+  return max_deviation;
+}
+
+double PlannerServer::estimate_path_lateral_deviation(
+  const nav_msgs::msg::Path &path,
+  const geometry_msgs::msg::PoseStamped &start,
+  const geometry_msgs::msg::PoseStamped &goal) const
+{
+  const double line_dx = goal.pose.position.x - start.pose.position.x;
+  const double line_dy = goal.pose.position.y - start.pose.position.y;
+  const double line_length = std::sqrt((line_dx * line_dx) + (line_dy * line_dy));
+  if (line_length <= 1e-6 || path.poses.empty()) {
+    return 0.0;
+  }
+
+  double max_lateral_deviation = 0.0;
+  for (const auto &pose : path.poses) {
+    const double point_dx = pose.pose.position.x - start.pose.position.x;
+    const double point_dy = pose.pose.position.y - start.pose.position.y;
+    const double deviation = std::abs((point_dx * line_dy) - (point_dy * line_dx)) / line_length;
+    max_lateral_deviation = std::max(max_lateral_deviation, deviation);
+  }
+  return max_lateral_deviation;
 }
 
 std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCell> &grid_path) const

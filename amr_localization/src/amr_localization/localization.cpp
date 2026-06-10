@@ -763,11 +763,16 @@ void Localization::update_wheel_slip_state(
     (
     std::abs(this->latest_cmd_vel_.linear.x) >= std::max(0.0, this->command_linear_threshold_) ||
     std::abs(this->latest_cmd_vel_.angular.z) >= std::max(0.0, this->command_angular_threshold_));
+  const bool commanded_rotation_only =
+    cmd_recent &&
+    std::abs(this->latest_cmd_vel_.linear.x) < std::max(0.0, this->command_linear_threshold_) &&
+    std::abs(this->latest_cmd_vel_.angular.z) >= std::max(0.0, this->command_angular_threshold_);
   const bool controller_stalled =
     status_recent &&
     (this->latest_motion_status_.stalled || this->latest_motion_status_.blocked);
-  const bool odom_moved =
-    raw_delta.raw_translation_m >= std::max(0.0, this->odom_translation_slip_threshold_m_) ||
+  const bool odom_translation_moved =
+    raw_delta.raw_translation_m >= std::max(0.0, this->odom_translation_slip_threshold_m_);
+  const bool odom_rotation_moved =
     raw_delta.raw_yaw_rad >= std::max(0.0, this->odom_rotation_slip_threshold_rad_);
   const bool pose_stayed =
     this->has_previous_estimated_pose_ &&
@@ -777,14 +782,23 @@ void Localization::update_wheel_slip_state(
     this->last_measurement_update_success_ &&
     this->last_measurement_likelihood_ <
     std::max(0.0, this->measurement_likelihood_warn_threshold_);
-  const bool suspect =
+  const bool translation_suspect =
     this->localization_guard_enabled_ &&
     this->slip_detection_enabled_ &&
     !relaxed &&
-    odom_moved &&
+    odom_translation_moved &&
     (pose_stayed || scan_unreliable || controller_stalled) &&
     (command_active || controller_stalled ||
     raw_delta.raw_translation_m >= (this->odom_translation_slip_threshold_m_ * 1.5));
+  const bool rotation_suspect =
+    this->localization_guard_enabled_ &&
+    this->slip_detection_enabled_ &&
+    !relaxed &&
+    odom_rotation_moved &&
+    !commanded_rotation_only &&
+    (pose_stayed || scan_unreliable || controller_stalled) &&
+    (command_active || controller_stalled);
+  const bool suspect = translation_suspect || rotation_suspect;
 
   if (suspect)
   {
@@ -1047,8 +1061,22 @@ geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
 
   const double max_translation =
     std::max(0.0, this->max_correction_translation_per_update_m_);
+  const bool commanded_rotation_only =
+    this->has_latest_cmd_vel_ &&
+    this->is_recent(this->latest_cmd_vel_time_, stamp, 1.0) &&
+    std::abs(this->latest_cmd_vel_.linear.x) < std::max(0.0, this->command_linear_threshold_) &&
+    std::abs(this->latest_cmd_vel_.angular.z) >= std::max(0.0, this->command_angular_threshold_);
+  const double base_max_rotation = std::max(0.0, this->max_correction_rotation_per_update_rad_);
   const double max_rotation =
-    std::max(0.0, this->max_correction_rotation_per_update_rad_);
+    commanded_rotation_only ?
+    std::max(
+      base_max_rotation,
+      std::max(0.0, this->hard_jump_warn_rotation_rad_)) :
+    base_max_rotation;
+  const bool yaw_limit_relaxed =
+    commanded_rotation_only &&
+    max_rotation > base_max_rotation + 1e-6 &&
+    abs_correction_delta_yaw > base_max_rotation;
   double applied_delta_x = delta_x;
   double applied_delta_y = delta_y;
   double applied_delta_yaw = correction_delta_yaw;
@@ -1082,19 +1110,24 @@ geometry_msgs::msg::TransformStamped Localization::build_map_to_odom_transform(
   const bool hard_jump =
     correction_delta_m >= std::max(0.0, this->hard_jump_warn_translation_m_) ||
     abs_correction_delta_yaw >= std::max(0.0, this->hard_jump_warn_rotation_rad_);
-  if (this->structured_logging_enabled_ && (correction_limited || hard_jump))
+  if (this->structured_logging_enabled_ && (correction_limited || hard_jump || yaw_limit_relaxed))
   {
     RCLCPP_WARN_THROTTLE(
       this->get_logger(),
       *this->get_clock(),
       1000,
-      "AMR_LOG schema=v1 component=localization event=map_odom_correction correction_limited=%s correction_delta_m=%.3f correction_delta_yaw_rad=%.3f applied_delta_m=%.3f applied_delta_yaw_rad=%.3f reason=%s",
+      "AMR_LOG schema=v1 component=localization event=map_odom_correction correction_limited=%s correction_delta_m=%.3f correction_delta_yaw_rad=%.3f applied_delta_m=%.3f applied_delta_yaw_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f pose_delta_yaw_rad=%.3f rotate_in_place=%s reason=%s",
       bool_label(correction_limited),
       correction_delta_m,
       abs_correction_delta_yaw,
       applied_delta_m,
       applied_delta_yaw_abs,
-      hard_jump ? "hard_jump_limited" : "correction_limited");
+      this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.linear.x : 0.0,
+      this->has_latest_cmd_vel_ ? this->latest_cmd_vel_.angular.z : 0.0,
+      this->last_pose_delta_yaw_rad_,
+      bool_label(commanded_rotation_only),
+      yaw_limit_relaxed ? "rotate_in_place_yaw_relaxed" :
+      (hard_jump ? "hard_jump_limited" : "correction_limited"));
   }
 
   this->last_map_to_odom_transform_ = transform;
