@@ -113,6 +113,7 @@ scripts/extract_nav_quality.sh --format csv --output /tmp/nav_quality.csv
 The extractor includes these event families by default:
 
 - `goal_state`
+- `goal_transition_state`
 - `cmd_quality`
 - `tracking_state`
 - `tracking_heading_debug`
@@ -125,9 +126,11 @@ The extractor includes these event families by default:
 - `recovery_skipped`
 - `rejoin_state`
 - `local_blocked_state`
+- `localization_guard`
 - `wheel_slip_state`
 - `odom_motion_guard`
 - `map_odom_correction`
+- `plan_quality`
 
 For straight-line oscillation checks, the extractor also carries through `rejoin_context_active`,
 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`,
@@ -141,6 +144,11 @@ For stair-step path diagnosis, inspect `local_path_quality` columns:
 `raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_length_m`,
 `path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`,
 `collinear_pruned_count`, and `collision_check_passed`.
+
+For same-row global planning checks, inspect `plan_quality` columns:
+`start_row`, `goal_row`, `row_delta`, `same_row_candidate`, `straight_line_safe`,
+`straight_path_used`, `fallback_reason`, `final_path_points`, `max_row_deviation`, and
+`max_lateral_deviation_m`.
 
 For `0.18.0` path tracking checks, start with `target_jump_detected` and
 `tracking_heading_debug`. A suspicious jump should include `previous_idx`, `nearest_idx`,
@@ -168,3 +176,51 @@ scripts/watch_amr_logs.sh --component localization --event map_odom_correction
 Compare `odom_delta_m`, `odom_delta_yaw_rad`, `pose_delta_m`, `pose_delta_yaw_rad`,
 `applied_delta_m`, `applied_delta_yaw_rad`, `slip_suspected`, `stall_suspected`, `confirmed`, and
 `reason`. These are summary fields only; raw scan ranges, costmap grids, and map data are not logged.
+
+## 0.18.1 Field Validation Checklist
+
+Do not run these scenarios from automation. Use them only as an operator checklist during an
+attended field run, then inspect logs afterward.
+
+Common log query:
+
+```bash
+grep -R "plan_quality\|local_path_quality\|goal_transition_state\|wheel_slip_state\|odom_motion_guard\|map_odom_correction" ~/.ros/log | tail -200
+```
+
+Scenario A: same-Y goals
+
+- Send goal 1 and goal 2 on the same Y line or the same map row.
+- Expected: `plan_quality same_row_candidate=true`.
+- Expected: if line-of-sight and footprint checks are safe, `straight_path_used=true`.
+- Expected: if obstacle, unknown, or map boundary checks fail, `fallback_reason` is recorded and A* is used.
+
+Scenario B: GP/LP lateral deviation
+
+- Use a straight global plan and compare the local plan in RViz.
+- Expected: `local_path_quality lateral_error_m` stays low relative to previous runs.
+- Expected: `path_curvature_score` is not excessive for the straight section.
+- Expected: controller logs do not show repeated small left/right oscillation in `cmd_quality`.
+
+Scenario C: goal transition and rotate-in-place
+
+- Complete goal 1, then start moving toward goal 2 with an in-place turn.
+- Expected: `goal_transition_state phase=new_command` is logged.
+- Expected: during commanded rotate-in-place, `wheel_slip_state confirmed=true` does not appear.
+- Expected: `map_odom_correction correction_limited=true` does not repeat excessively.
+- Expected: RViz does not show a large `map -> odom` split during the turn.
+
+Scenario D: wheel slip or physical stall
+
+- With an operator present, reproduce a low obstacle or physical stall condition that LiDAR cannot
+	reliably see.
+- Expected: after confirm cycles, `wheel_slip_state confirmed=true` appears.
+- Expected: `odom_motion_guard applied_delta_m` is smaller than `odom_delta_m`.
+- Expected: `map_odom_correction` limits hard jumps instead of allowing a large TF correction.
+- Expected: controller or navigator status moves toward blocked/recovery flow instead of continuing
+	to push indefinitely.
+
+Current `0.18.1` path-refiner defaults set `path_refiner.preserve_goal_orientation=false` to favor
+path tangent continuity while `/amr/motion_controller.goal_checker.respect_goal_yaw=false` is used.
+For docking, precise final alignment, or other yaw-critical workflows, re-enable or explicitly
+optionize goal-orientation preservation before validating that workflow.

@@ -77,6 +77,8 @@ Navigation 필드:
 | `selection_reason` | tracking target 선택 이유. 예: `candidate_min_distance`, `retained_target_too_close` |
 | `rejoin_context_active` | recovery/escape/large target jump 이후 bounded rejoin context 활성 여부 |
 | `rejoin_activated` | 해당 event가 rejoin context를 새로 활성화했는지 여부 |
+| `tracking_reset` | 새 command 수신 시 tracking target/progress 상태 reset 여부 |
+| `final_align_reset` | 새 command 수신 시 final heading alignment hold 상태 reset 여부 |
 | `xy_reached` | goal XY tolerance 도달 여부 |
 | `yaw_reached` | goal yaw tolerance 도달 여부 |
 | `align_heading_at_goal` | MotionCommand가 final heading alignment를 요구하는지 여부 |
