@@ -36,8 +36,8 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
   this->declare_parameter("observation.progress_stall_window_sec", 3.0);
   this->declare_parameter("observation.progress_epsilon", 0.05);
   this->declare_parameter("observation.progress_clear_delta_m", 0.005);
-  this->declare_parameter("observation.goal_approach_distance", 0.18);
-  this->declare_parameter("observation.final_heading_alignment_distance", 0.10);
+  this->declare_parameter("observation.goal_approach_distance", 0.14);
+  this->declare_parameter("observation.final_heading_alignment_distance", 0.08);
   this->declare_parameter("logging.structured_enabled", true);
   this->declare_parameter("logging.summary_throttle_sec", 1.0);
   this->declare_parameter("logging.heavy_topic_observation_enabled", false);

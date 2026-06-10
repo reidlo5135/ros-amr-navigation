@@ -264,6 +264,10 @@ Normal straight tracking should read as `phase=tracking`, `rejoin=false`,
 If `straight_segment=false` while the RViz path looks straight, compare visual straightness with the
 actual local plan geometry in `local_path_quality`; high `path_curvature_score` means the controller
 is following stair-stepped local points.
+For straight GP/LP comparison, the expected `0.18.x` behavior is minimal LP lateral deviation:
+`local_path_quality.lateral_error_m` should stay low, line-of-sight and collinear pruning should not
+push the LP away from the GP centerline, and corner smoothing is intentionally conservative on
+near-straight segments.
 Goal heading alignment is enabled by default. AMR navigation goals are treated as full pose targets
 (`x`, `y`, and `yaw`), so `phase=final_heading_align`, `cmd_lin=0.000`, and nonzero `cmd_ang` near
 the goal are expected when final yaw is not reached yet. XY-only tests must disable this explicitly
@@ -275,6 +279,8 @@ For `0.18.0` field checks, goal approach is considered stable when `goal_state` 
 `phase=reached` log with `cmd_lin=0.000 cmd_ang=0.000`. Recovery rejoin is considered stable when
 `recovery_decision`, `recovery_started`, `recovery_finished`, controller `rejoin_state`, and
 `local_blocked_state` tell one continuous story without repeated reacquire timeouts.
+Slow reaching now starts closer to the goal so straight path tracking keeps nominal speed longer
+while still leaving a TB3 Burger-class safety margin before final alignment.
 Runtime observation should report `controller_phase=final_heading_align` with
 `progress_stalled=false`, `recovery=false`, and `recovery_reason=none` in that intentional rotate-in-place phase.
 During normal tracking, current controller clear status is authoritative: if `controller_blocked=false`,

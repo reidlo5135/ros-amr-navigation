@@ -208,10 +208,11 @@ ERROR:
 3. `local_path_quality`에서 `path_curvature_score`와 `lateral_error_m`을 본다. RViz에서 직선처럼 보여도 local plan 점들이 grid 계단형이면 controller는 실제 zigzag를 추종한다.
 4. `tracking_heading_debug`에서 `target_dist_m`과 `lookahead_m`을 확인한다. 직선 구간인데 target이 너무 가까우면 local plan point noise에 민감하다.
 5. `straight_segment=true`인데 `heading_error_raw_rad`가 작고 `heading_error_filtered_rad`가 deadband 근처라면 `straight_heading_deadband`와 `straight_heading_release_threshold`를 먼저 조정한다.
-6. `path_curvature_score` 또는 `lateral_error_m`이 threshold보다 크면 local plan 자체가 grid/refinement 영향으로 미세 zigzag일 수 있다.
-7. `straight_segment=true`에서 `cmd_ang_abs_avg`, `output_ang_abs_avg`, sign flip count가 줄었는지 `scripts/extract_nav_quality.sh`의 `nav_quality_summary` row로 수정 전후를 비교한다.
-8. deadband 조정 후에도 흔들리면 `straight_angular_gain`, `straight_max_angular_speed`, `straight_tracking_lookahead_distance`를 보수적으로 조정한다.
-9. 마지막으로 `velocity_controller.angular.kd`를 0.00과 비교해 derivative가 작은 부호 전환을 키우는지 확인한다.
+6. GP/LP Y offset이 커 보이면 `local_path_quality.lateral_error_m`을 우선 확인한다. 직선 구간에서는 line-of-sight simplification, collinear pruning, corner smoothing이 GP 중심선에서 LP를 과하게 밀지 않는 것이 기대값이다.
+7. `path_curvature_score` 또는 `lateral_error_m`이 threshold보다 크면 local plan 자체가 grid/refinement 영향으로 미세 zigzag일 수 있다.
+8. `straight_segment=true`에서 `cmd_ang_abs_avg`, `output_ang_abs_avg`, sign flip count가 줄었는지 `scripts/extract_nav_quality.sh`의 `nav_quality_summary` row로 수정 전후를 비교한다.
+9. deadband 조정 후에도 흔들리면 `straight_angular_gain`, `straight_max_angular_speed`, `straight_tracking_lookahead_distance`를 보수적으로 조정한다.
+10. 마지막으로 `velocity_controller.angular.kd`를 0.00과 비교해 derivative가 작은 부호 전환을 키우는지 확인한다.
 
 정상 직선 주행 기대값은 `phase=tracking`, `rejoin=false`, `rejoin_context_active=false`, `straight_segment=true`, `steering_deadband_active=true` 또는 `steering_hysteresis_state=suppressed`, `cmd_ang`과 `output_ang`이 0에 가까운 상태다.
 
@@ -227,7 +228,7 @@ Final heading alignment는 path tracking 진동과 별도 단계다. AMR navigat
 
 `0.18.x`에서는 XY 도달과 final heading alignment를 분리해서 판단한다. `goal_checker.xy_tolerance`는 XY latch 진입 기준이고, `goal_checker.xy_hysteresis`는 localization noise로 인해 latch가 바로 풀리지 않게 하는 release margin이다. `goal_checker.yaw_tolerance`는 final yaw를 요구하지 않는 설정에서만 의미가 크며, final yaw가 필요한 기본 운용에서는 `control.goal_reach_heading_tolerance`, `control.final_align_heading_deadband`, `control.final_align_settle_time_sec`가 완료 판정과 settle 품질을 결정한다.
 
-정상 goal approach 기대값은 `phase=goal_approach`에서 `cmd_lin`이 goal distance에 따라 작아지고, `phase=final_heading_align`에서는 `cmd_lin=0.000`으로 회전만 수행하며, 최종 `phase=reached`는 `cmd_lin=0.000 cmd_ang=0.000 result=success`를 남기는 것이다.
+정상 goal approach 기대값은 goal 근처에서만 `cmd_lin`이 goal distance에 따라 작아지고, `phase=final_heading_align`에서는 `cmd_lin=0.000`으로 회전만 수행하며, 최종 `phase=reached`는 `cmd_lin=0.000 cmd_ang=0.000 result=success`를 남기는 것이다. Slow reaching 시작 거리를 줄인 뒤에는 `phase=tracking`에서 nominal linear command가 더 오래 유지되고, `goal_state`는 실제 goal proximity에서만 자주 보이는 것이 기대값이다.
 
 ## Recovery Rejoin Diagnostics
 

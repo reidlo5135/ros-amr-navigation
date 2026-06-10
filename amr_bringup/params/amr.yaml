@@ -212,16 +212,16 @@
       preserve_goal_orientation: true
       line_of_sight_simplification_enabled: true
       line_of_sight_sample_distance: 0.05
-      line_of_sight_max_skip: 12
+      line_of_sight_max_skip: 8
       collinear_pruning_enabled: true
-      collinear_angle_threshold: 0.12
-      collinear_lateral_deviation_threshold: 0.025
+      collinear_angle_threshold: 0.08
+      collinear_lateral_deviation_threshold: 0.015
       corner_smoothing_enabled: true
-      corner_smoothing_max_offset: 0.12
-      corner_smoothing_angle_threshold: 0.35
-      corner_smoothing_samples: 3
-      smoothing_max_length_ratio: 1.15
-      smoothing_max_pose_deviation: 0.08
+      corner_smoothing_max_offset: 0.06
+      corner_smoothing_angle_threshold: 0.50
+      corner_smoothing_samples: 2
+      smoothing_max_length_ratio: 1.08
+      smoothing_max_pose_deviation: 0.04
       collision_check_enabled: true
       collision_sample_distance: 0.05
     dynamic_obstacle:
@@ -253,7 +253,7 @@
       linear_speed: 0.10
       min_linear_speed: 0.06
       tracking_lookahead_distance: 0.22
-      straight_tracking_lookahead_distance: 0.40
+      straight_tracking_lookahead_distance: 0.45
       tracking_min_target_distance: 0.08
       tracking_progress_rollback_window: 2
       tracking_target_hysteresis_distance: 0.08
@@ -271,11 +271,11 @@
       straight_tracking_enabled: true
       straight_curvature_threshold: 0.12
       straight_lateral_error_threshold: 0.035
-      straight_heading_deadband: 0.10
-      straight_heading_release_threshold: 0.16
-      straight_angular_gain: 0.9
-      straight_max_angular_speed: 0.16
-      straight_heading_filter_alpha: 0.25
+      straight_heading_deadband: 0.12
+      straight_heading_release_threshold: 0.18
+      straight_angular_gain: 0.75
+      straight_max_angular_speed: 0.14
+      straight_heading_filter_alpha: 0.20
       rejoin_target_distance_threshold: 0.12
       rejoin_context_timeout_sec: 2.5
       rejoin_context_distance_m: 0.45
@@ -283,7 +283,7 @@
       rejoin_heading_gate_threshold: 0.28
       rejoin_min_linear_scale: 0.25
       rotate_in_place_threshold: 0.55
-      rotate_in_place_goal_distance: 0.22
+      rotate_in_place_goal_distance: 0.16
       heading_slowdown_threshold: 0.16
       min_heading_motion_scale: 0.18
     progress_checker:
@@ -390,8 +390,8 @@
       progress_stall_window_sec: 3.0
       progress_epsilon: 0.05
       progress_clear_delta_m: 0.005
-      goal_approach_distance: 0.18
-      final_heading_alignment_distance: 0.10
+      goal_approach_distance: 0.14
+      final_heading_alignment_distance: 0.08
     logging:
       structured_enabled: true
       summary_throttle_sec: 1.0

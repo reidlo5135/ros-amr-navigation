@@ -426,16 +426,16 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   path_refiner_preserve_goal_orientation_(true),
   path_refiner_line_of_sight_simplification_enabled_(true),
   path_refiner_line_of_sight_sample_distance_(0.05),
-  path_refiner_line_of_sight_max_skip_(12),
+  path_refiner_line_of_sight_max_skip_(8),
   path_refiner_collinear_pruning_enabled_(true),
-  path_refiner_collinear_angle_threshold_(0.12),
-  path_refiner_collinear_lateral_deviation_threshold_(0.025),
+  path_refiner_collinear_angle_threshold_(0.08),
+  path_refiner_collinear_lateral_deviation_threshold_(0.015),
   path_refiner_corner_smoothing_enabled_(true),
-  path_refiner_corner_smoothing_max_offset_(0.12),
-  path_refiner_corner_smoothing_angle_threshold_(0.35),
-  path_refiner_corner_smoothing_samples_(3),
-  path_refiner_smoothing_max_length_ratio_(1.15),
-  path_refiner_smoothing_max_pose_deviation_(0.08),
+  path_refiner_corner_smoothing_max_offset_(0.06),
+  path_refiner_corner_smoothing_angle_threshold_(0.50),
+  path_refiner_corner_smoothing_samples_(2),
+  path_refiner_smoothing_max_length_ratio_(1.08),
+  path_refiner_smoothing_max_pose_deviation_(0.04),
   path_refiner_collision_check_enabled_(true),
   path_refiner_collision_sample_distance_(0.05),
   dynamic_obstacle_enabled_(true),
@@ -1490,10 +1490,21 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
     local_plan.header.frame_id = current_pose.header.frame_id;
   }
   local_plan.header.stamp = this->now();
-  local_plan.poses.push_back(current_pose);
+  const geometry_msgs::msg::PoseStamped &source_head = source_plan.poses[closest_index];
+  const bool source_head_close =
+    this->pose_distance(current_pose, source_head) <=
+    std::max(0.03, this->path_refiner_smoothing_max_pose_deviation_);
+  if (source_head_close)
+  {
+    local_plan.poses.push_back(source_head);
+  }
+  else
+  {
+    local_plan.poses.push_back(current_pose);
+  }
 
   double accumulated_distance = 0.0;
-  geometry_msgs::msg::PoseStamped segment_start = current_pose;
+  geometry_msgs::msg::PoseStamped segment_start = local_plan.poses.back();
   for (std::size_t index = closest_index; index < source_plan.poses.size(); ++index)
   {
     const geometry_msgs::msg::PoseStamped &target_pose = source_plan.poses[index];
@@ -1899,6 +1910,21 @@ bool LocalPlanner::is_smoothed_path_acceptable(
     smoothed_length > (base_length * std::max(1.0, this->path_refiner_smoothing_max_length_ratio_)))
   {
     return false;
+  }
+
+  const double base_curvature = this->estimate_path_curvature_score(base_plan);
+  const double base_lateral_error = this->estimate_path_lateral_error(base_plan);
+  if (
+    base_curvature <= this->path_refiner_collinear_angle_threshold_ &&
+    base_lateral_error <= this->path_refiner_collinear_lateral_deviation_threshold_)
+  {
+    const double smoothed_lateral_error = this->estimate_path_lateral_error(smoothed_plan);
+    if (
+      smoothed_lateral_error >
+      base_lateral_error + std::max(0.01, this->path_refiner_collinear_lateral_deviation_threshold_))
+    {
+      return false;
+    }
   }
 
   if (this->path_refiner_smoothing_max_pose_deviation_ <= 1e-6)
@@ -2529,7 +2555,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   linear_speed_(0.10),
   min_linear_speed_(0.06),
   tracking_lookahead_distance_(0.22),
-  straight_tracking_lookahead_distance_(0.40),
+  straight_tracking_lookahead_distance_(0.45),
   tracking_min_target_distance_(0.08),
   tracking_progress_rollback_window_(2U),
   tracking_target_hysteresis_distance_(0.08),
@@ -2549,17 +2575,17 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   goal_checker_respect_goal_yaw_(false),
   goal_checker_ignore_yaw_(false),
   rotate_in_place_threshold_(0.55),
-  rotate_in_place_goal_distance_(0.22),
+  rotate_in_place_goal_distance_(0.16),
   tracking_heading_deadband_(0.06),
   tracking_heading_release_threshold_(0.11),
   straight_tracking_enabled_(true),
   straight_curvature_threshold_(0.12),
   straight_lateral_error_threshold_(0.035),
-  straight_heading_deadband_(0.10),
-  straight_heading_release_threshold_(0.16),
-  straight_angular_gain_(0.9),
-  straight_max_angular_speed_(0.16),
-  straight_heading_filter_alpha_(0.25),
+  straight_heading_deadband_(0.12),
+  straight_heading_release_threshold_(0.18),
+  straight_angular_gain_(0.75),
+  straight_max_angular_speed_(0.14),
+  straight_heading_filter_alpha_(0.20),
   rejoin_target_distance_threshold_(0.12),
   rejoin_context_timeout_sec_(2.5),
   rejoin_context_distance_m_(0.45),

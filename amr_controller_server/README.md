@@ -31,6 +31,9 @@ including collision-checked corner smoothing with fallback to the unsmoothed loc
 The refiner now stages prune/interpolate, smoothing, and final handoff separately, and
 `path_refiner.smoothing_max_length_ratio` plus `path_refiner.smoothing_max_pose_deviation`
 bound how far a smoothed candidate may drift from the base local path before it is rejected.
+On near-straight local paths, smoothing is rejected if it increases lateral error beyond the
+collinear tolerance margin, so RViz GP/LP comparison should stay close to the same centerline when
+there is no obstacle-driven detour.
 It also exposes `dynamic_obstacle.*` parameters for local escape generation and blocked-state
 confirmation, including the current corridor/doorway relaxation controls used by the `0.16.x`
 recovery-tuning line.
@@ -70,6 +73,9 @@ travel directly between non-adjacent path points, and `path_refiner.collinear_pr
 removes near-collinear residual points after that line-of-sight pass.
 The `local_path_quality` log reports raw, simplified, and refined point counts plus curvature,
 lateral error, pruning count, and collision-check status.
+For straight-path quality tuning, prefer smaller `path_refiner.corner_smoothing_max_offset`,
+tighter `path_refiner.smoothing_max_pose_deviation`, and conservative
+`path_refiner.collinear_lateral_deviation_threshold` before changing planner topics or contracts.
 `control.tracking_progress_rollback_window` limits how far the controller may search backward
 on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
 between old and newly republished nearby poses.
