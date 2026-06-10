@@ -73,6 +73,11 @@ travel directly between non-adjacent path points, and `path_refiner.collinear_pr
 removes near-collinear residual points after that line-of-sight pass.
 The `local_path_quality` log reports raw, simplified, and refined point counts plus curvature,
 lateral error, pruning count, and collision-check status.
+`local_path_guard.*` prevents a one-pose or near-zero-length local plan from being treated as a
+normal trackable path when the source global path still has usable points. If the guard can recover,
+it publishes a short fallback local path from the nearest source point or current pose to a selected
+target; otherwise it marks local plan status invalid and emits `local_path_degenerate` with frame,
+index, lookahead, goal-distance, and fallback fields.
 For straight-path quality tuning, prefer smaller `path_refiner.corner_smoothing_max_offset`,
 tighter `path_refiner.smoothing_max_pose_deviation`, and conservative
 `path_refiner.collinear_lateral_deviation_threshold` before changing planner topics or contracts.

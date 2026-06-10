@@ -64,10 +64,13 @@ Navigation 필드:
 | `target_dist_m` | current pose에서 선택 target까지 거리 |
 | `target_jump_m` | 이전 target과 새 target 사이의 거리 |
 | `lookahead_m` | lookahead distance |
+| `global_path_points` | local planner 입력 global/source path pose count |
 | `path_points` | path pose count |
 | `path_length_m` | path length |
 | `raw_path_points` | refinement 또는 straightening 전 path pose/cell count |
 | `final_path_points` | 최종 publish/response path pose count |
+| `start_idx` | local path slice 시작 source path index |
+| `end_idx` | local path slice 또는 fallback target source path index |
 | `dist_goal_m` | 현재 pose에서 goal까지 거리 |
 | `heading_err_rad` | heading error |
 | `current_yaw_rad` | current pose yaw |
@@ -79,6 +82,7 @@ Navigation 필드:
 | `rejoin_activated` | 해당 event가 rejoin context를 새로 활성화했는지 여부 |
 | `tracking_reset` | 새 command 수신 시 tracking target/progress 상태 reset 여부 |
 | `final_align_reset` | 새 command 수신 시 final heading alignment hold 상태 reset 여부 |
+| `fallback_used` | degenerate local path guard가 fallback local path를 사용했는지 여부 |
 | `xy_reached` | goal XY tolerance 도달 여부 |
 | `yaw_reached` | goal yaw tolerance 도달 여부 |
 | `align_heading_at_goal` | MotionCommand가 final heading alignment를 요구하는지 여부 |
@@ -200,7 +204,7 @@ ERROR:
 
 | Package | Component | 책임 | 주요 event |
 | --- | --- | --- | --- |
-| `amr_controller_server` | `controller` | local planner, tracking target selection, motion command generation, goal approach, final heading alignment, local blocked/rejoin 판단 | `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `tracking_target_selected`, `target_jump_detected`, `goal_state`, `goal_transition_state`, `cmd_quality`, `local_blocked_state`, `rejoin_state`, `motion_command` |
+| `amr_controller_server` | `controller` | local planner, tracking target selection, motion command generation, goal approach, final heading alignment, local blocked/rejoin 판단 | `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `local_path_degenerate`, `tracking_target_selected`, `target_jump_detected`, `goal_state`, `goal_transition_state`, `cmd_quality`, `local_blocked_state`, `rejoin_state`, `motion_command` |
 | `amr_bt_navigator` | `bt_navigator` | goal orchestration, planner/controller/recovery decision, recovery 진입/스킵 판단, action result 관리 | `goal_received`, `goal_started`, `goal_succeeded`, `goal_failed`, `goal_canceled`, `recovery_decision`, `recovery_skipped`, `recovery_started`, `recovery_finished`, `bt_phase_transition` |
 | `amr_global_planner` | `global_planner` | global plan generation, plan request/result/failure reason | `plan_requested`, `plan_succeeded`, `plan_failed`, `plan_quality` |
 | `amr_recovery_server` | `recovery_server` | wait/backup/spin recovery command generation | `recovery_plan_requested`, `recovery_plan_selected`, `recovery_plan_failed`, `recovery_command` |
@@ -229,6 +233,7 @@ ERROR:
 - 직선 plan에서 좌우 흔들림이 있으면 `tracking_state`의 `rejoin`, `rejoin_context_active`와 `tracking_heading_debug`의 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`, `heading_error_filtered_rad`, `steering_deadband_active`, `steering_hysteresis_state`, `cmd_ang_sign`, `cmd_ang_flip_count`, `output_ang_sign`, `output_ang_flip_count`를 함께 확인한다.
 - global plan이 같은 Y goal인데 휘면 `plan_quality`의 `start_row`, `goal_row`, `row_delta`, `same_row_candidate`, `straight_line_safe`, `straight_path_used`, `fallback_reason`, `max_row_deviation`, `max_lateral_deviation_m`을 먼저 확인한다.
 - local plan이 계단형이면 `local_path_quality`의 `raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`, `collinear_pruned_count`, `collision_check_passed`를 확인한다.
+- local plan이 1점 또는 0길이로 반복되면 `local_path_degenerate`의 `global_path_points`, `nearest_idx`, `start_idx`, `end_idx`, `lookahead_m`, `dist_goal_m`, `xy_reached`, `fallback_used`, `pose_frame`, `plan_frame`, `reason`을 확인한다. `xy_reached=true`인 goal 도달 상황과 `reason=frame_mismatch` 또는 `reason=raw_path_degenerate`인 실패 상황을 구분한다.
 - target jump 의심 시 `target_jump_detected`에서 `previous_idx`, `nearest_idx`, `candidate_idx`, `selected_idx`, `target_jump_m`, `rejoin_activated`, `selection_reason`을 함께 확인한다.
 - goal approach 판단은 `goal_state`에서 `xy_reached`, `yaw_reached`, `align_heading_at_goal`, `respect_goal_yaw`, `ignore_yaw`, `final_heading_required`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`을 함께 확인한다.
 - goal 완료 직후 다음 goal command 전환은 `goal_transition_state`에서 `current_yaw_rad`, `target_yaw_rad`, `heading_err_rad`, `tracking_reset`, `final_align_reset`, `rejoin_context_active`를 함께 확인한다.

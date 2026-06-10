@@ -9,7 +9,7 @@ Extract navigation quality AMR_LOG events from text logs.
 
 Default events:
   goal_state, goal_transition_state, cmd_quality, tracking_state, tracking_heading_debug,
-  tracking_frame_mismatch, local_path_quality, target_jump_detected,
+  tracking_frame_mismatch, local_path_quality, local_path_degenerate, target_jump_detected,
   recovery_decision, recovery_started, recovery_finished, recovery_skipped,
   rejoin_state, local_blocked_state, localization_guard, wheel_slip_state,
   odom_motion_guard, map_odom_correction, plan_quality
@@ -116,18 +116,18 @@ function emit(fields, raw, i) {
   }
 }
 BEGIN {
-  field_count = 88
+  field_count = 94
   if (format == "csv") {
-    print "source,component,event,phase,goal_id,target_idx,selected_idx,nearest_idx,candidate_idx,target_dist_m,target_jump_m,dist_goal_m,heading_err_rad,steering_err_rad,cmd_lin,cmd_ang,output_lin,output_ang,recovery_count,blocked,reason,selection_reason,pose_frame,plan_frame,target_frame,rejoin_context_active,straight_segment,path_curvature_score,lateral_error_m,heading_error_raw_rad,heading_error_filtered_rad,steering_deadband_active,steering_hysteresis_state,cmd_ang_sign,cmd_ang_flip_count,output_ang_sign,output_ang_flip_count,cmd_ang_abs_avg,cmd_ang_abs_max,output_ang_abs_avg,output_ang_abs_max,cmd_ang_sign_flip_count,output_ang_sign_flip_count,straight_segment_ratio,straight_cmd_ang_interference_count,raw_path_points,simplified_path_points,refined_path_points,path_length_m,line_of_sight_simplified,collinear_pruned_count,collision_check_passed,previous_idx,rejoin_activated,result,recovery_type,planner_ok,controller_ok,local_plan_valid,planner_decision,odom_delta_m,odom_delta_yaw_rad,pose_delta_m,pose_delta_yaw_rad,applied_delta_m,applied_delta_yaw_rad,slip_suspected,stall_suspected,confirmed,correction_limited,correction_delta_m,correction_delta_yaw_rad,start_row,goal_row,row_delta,same_row_candidate,straight_line_safe,straight_path_used,fallback_reason,final_path_points,max_row_deviation,max_lateral_deviation_m,current_yaw_rad,target_yaw_rad,tracking_reset,final_align_reset,rotate_in_place,state,raw"
+    print "source,component,event,phase,goal_id,target_idx,selected_idx,nearest_idx,candidate_idx,target_dist_m,target_jump_m,dist_goal_m,heading_err_rad,steering_err_rad,cmd_lin,cmd_ang,output_lin,output_ang,recovery_count,blocked,reason,selection_reason,pose_frame,plan_frame,target_frame,rejoin_context_active,straight_segment,path_curvature_score,lateral_error_m,heading_error_raw_rad,heading_error_filtered_rad,steering_deadband_active,steering_hysteresis_state,cmd_ang_sign,cmd_ang_flip_count,output_ang_sign,output_ang_flip_count,cmd_ang_abs_avg,cmd_ang_abs_max,output_ang_abs_avg,output_ang_abs_max,cmd_ang_sign_flip_count,output_ang_sign_flip_count,straight_segment_ratio,straight_cmd_ang_interference_count,raw_path_points,simplified_path_points,refined_path_points,path_length_m,line_of_sight_simplified,collinear_pruned_count,collision_check_passed,previous_idx,rejoin_activated,result,recovery_type,planner_ok,controller_ok,local_plan_valid,planner_decision,odom_delta_m,odom_delta_yaw_rad,pose_delta_m,pose_delta_yaw_rad,applied_delta_m,applied_delta_yaw_rad,slip_suspected,stall_suspected,confirmed,correction_limited,correction_delta_m,correction_delta_yaw_rad,start_row,goal_row,row_delta,same_row_candidate,straight_line_safe,straight_path_used,fallback_reason,final_path_points,max_row_deviation,max_lateral_deviation_m,current_yaw_rad,target_yaw_rad,tracking_reset,final_align_reset,rotate_in_place,state,global_path_points,start_idx,end_idx,lookahead_m,xy_reached,fallback_used,raw"
   } else {
-    print "source\tcomponent\tevent\tphase\tgoal_id\ttarget_idx\tselected_idx\tnearest_idx\tcandidate_idx\ttarget_dist_m\ttarget_jump_m\tdist_goal_m\theading_err_rad\tsteering_err_rad\tcmd_lin\tcmd_ang\toutput_lin\toutput_ang\trecovery_count\tblocked\treason\tselection_reason\tpose_frame\tplan_frame\ttarget_frame\trejoin_context_active\tstraight_segment\tpath_curvature_score\tlateral_error_m\theading_error_raw_rad\theading_error_filtered_rad\tsteering_deadband_active\tsteering_hysteresis_state\tcmd_ang_sign\tcmd_ang_flip_count\toutput_ang_sign\toutput_ang_flip_count\tcmd_ang_abs_avg\tcmd_ang_abs_max\toutput_ang_abs_avg\toutput_ang_abs_max\tcmd_ang_sign_flip_count\toutput_ang_sign_flip_count\tstraight_segment_ratio\tstraight_cmd_ang_interference_count\traw_path_points\tsimplified_path_points\trefined_path_points\tpath_length_m\tline_of_sight_simplified\tcollinear_pruned_count\tcollision_check_passed\tprevious_idx\trejoin_activated\tresult\trecovery_type\tplanner_ok\tcontroller_ok\tlocal_plan_valid\tplanner_decision\todom_delta_m\todom_delta_yaw_rad\tpose_delta_m\tpose_delta_yaw_rad\tapplied_delta_m\tapplied_delta_yaw_rad\tslip_suspected\tstall_suspected\tconfirmed\tcorrection_limited\tcorrection_delta_m\tcorrection_delta_yaw_rad\tstart_row\tgoal_row\trow_delta\tsame_row_candidate\tstraight_line_safe\tstraight_path_used\tfallback_reason\tfinal_path_points\tmax_row_deviation\tmax_lateral_deviation_m\tcurrent_yaw_rad\ttarget_yaw_rad\ttracking_reset\tfinal_align_reset\trotate_in_place\tstate\traw"
+    print "source\tcomponent\tevent\tphase\tgoal_id\ttarget_idx\tselected_idx\tnearest_idx\tcandidate_idx\ttarget_dist_m\ttarget_jump_m\tdist_goal_m\theading_err_rad\tsteering_err_rad\tcmd_lin\tcmd_ang\toutput_lin\toutput_ang\trecovery_count\tblocked\treason\tselection_reason\tpose_frame\tplan_frame\ttarget_frame\trejoin_context_active\tstraight_segment\tpath_curvature_score\tlateral_error_m\theading_error_raw_rad\theading_error_filtered_rad\tsteering_deadband_active\tsteering_hysteresis_state\tcmd_ang_sign\tcmd_ang_flip_count\toutput_ang_sign\toutput_ang_flip_count\tcmd_ang_abs_avg\tcmd_ang_abs_max\toutput_ang_abs_avg\toutput_ang_abs_max\tcmd_ang_sign_flip_count\toutput_ang_sign_flip_count\tstraight_segment_ratio\tstraight_cmd_ang_interference_count\traw_path_points\tsimplified_path_points\trefined_path_points\tpath_length_m\tline_of_sight_simplified\tcollinear_pruned_count\tcollision_check_passed\tprevious_idx\trejoin_activated\tresult\trecovery_type\tplanner_ok\tcontroller_ok\tlocal_plan_valid\tplanner_decision\todom_delta_m\todom_delta_yaw_rad\tpose_delta_m\tpose_delta_yaw_rad\tapplied_delta_m\tapplied_delta_yaw_rad\tslip_suspected\tstall_suspected\tconfirmed\tcorrection_limited\tcorrection_delta_m\tcorrection_delta_yaw_rad\tstart_row\tgoal_row\trow_delta\tsame_row_candidate\tstraight_line_safe\tstraight_path_used\tfallback_reason\tfinal_path_points\tmax_row_deviation\tmax_lateral_deviation_m\tcurrent_yaw_rad\ttarget_yaw_rad\ttracking_reset\tfinal_align_reset\trotate_in_place\tstate\tglobal_path_points\tstart_idx\tend_idx\tlookahead_m\txy_reached\tfallback_used\traw"
   }
 }
 /AMR_LOG/ {
   pos = index($0, "AMR_LOG")
   entry = substr($0, pos)
   event = value_of(entry, "event")
-  if (event != "goal_state" && event != "goal_transition_state" && event != "cmd_quality" && event != "tracking_state" && event != "tracking_heading_debug" && event != "tracking_frame_mismatch" && event != "local_path_quality" && event != "target_jump_detected" && event != "recovery_decision" && event != "recovery_started" && event != "recovery_finished" && event != "recovery_skipped" && event != "rejoin_state" && event != "local_blocked_state" && event != "localization_guard" && event != "wheel_slip_state" && event != "odom_motion_guard" && event != "map_odom_correction" && event != "plan_quality") {
+  if (event != "goal_state" && event != "goal_transition_state" && event != "cmd_quality" && event != "tracking_state" && event != "tracking_heading_debug" && event != "tracking_frame_mismatch" && event != "local_path_quality" && event != "local_path_degenerate" && event != "target_jump_detected" && event != "recovery_decision" && event != "recovery_started" && event != "recovery_finished" && event != "recovery_skipped" && event != "rejoin_state" && event != "local_blocked_state" && event != "localization_guard" && event != "wheel_slip_state" && event != "odom_motion_guard" && event != "map_odom_correction" && event != "plan_quality") {
     next
   }
   target_idx = value_of(entry, "target_idx")
@@ -216,6 +216,12 @@ BEGIN {
   fields[86] = value_of(entry, "final_align_reset")
   fields[87] = value_of(entry, "rotate_in_place")
   fields[88] = value_of(entry, "state")
+  fields[89] = value_of(entry, "global_path_points")
+  fields[90] = value_of(entry, "start_idx")
+  fields[91] = value_of(entry, "end_idx")
+  fields[92] = value_of(entry, "lookahead_m")
+  fields[93] = value_of(entry, "xy_reached")
+  fields[94] = value_of(entry, "fallback_used")
   if (event == "cmd_quality") {
     cmd_ang = fields[16]
     output_ang = fields[18]

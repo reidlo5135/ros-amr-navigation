@@ -31,6 +31,11 @@ const char *bool_label(const bool value)
   return value ? "true" : "false";
 }
 
+const char *frame_label(const std::string &frame)
+{
+  return frame.empty() ? "none" : frame.c_str();
+}
+
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
@@ -439,6 +444,13 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   path_refiner_collision_check_enabled_(true),
   path_refiner_collision_sample_distance_(0.05),
   dynamic_obstacle_enabled_(true),
+  local_path_guard_enabled_(true),
+  local_path_guard_min_points_(2),
+  local_path_guard_min_length_m_(0.05),
+  local_path_guard_fallback_min_points_(2),
+  local_path_guard_fallback_lookahead_m_(0.20),
+  local_path_guard_allow_single_point_when_goal_reached_(true),
+  local_path_guard_degenerate_log_throttle_sec_(1.0),
   structured_logging_enabled_(true),
   state_log_throttle_sec_(1.0),
   dynamic_obstacle_replan_lookahead_distance_(1.4),
@@ -518,6 +530,19 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     "path_refiner.collision_sample_distance", this->path_refiner_collision_sample_distance_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->declare_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
+  this->declare_parameter("local_path_guard.enabled", this->local_path_guard_enabled_);
+  this->declare_parameter("local_path_guard.min_points", this->local_path_guard_min_points_);
+  this->declare_parameter("local_path_guard.min_length_m", this->local_path_guard_min_length_m_);
+  this->declare_parameter(
+    "local_path_guard.fallback_min_points", this->local_path_guard_fallback_min_points_);
+  this->declare_parameter(
+    "local_path_guard.fallback_lookahead_m", this->local_path_guard_fallback_lookahead_m_);
+  this->declare_parameter(
+    "local_path_guard.allow_single_point_when_goal_reached",
+    this->local_path_guard_allow_single_point_when_goal_reached_);
+  this->declare_parameter(
+    "local_path_guard.degenerate_log_throttle_sec",
+    this->local_path_guard_degenerate_log_throttle_sec_);
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->declare_parameter("logging.state_log_throttle_sec", this->state_log_throttle_sec_);
   this->declare_parameter(
@@ -607,6 +632,19 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     "path_refiner.collision_sample_distance", this->path_refiner_collision_sample_distance_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
   this->get_parameter("dynamic_obstacle.enabled", this->dynamic_obstacle_enabled_);
+  this->get_parameter("local_path_guard.enabled", this->local_path_guard_enabled_);
+  this->get_parameter("local_path_guard.min_points", this->local_path_guard_min_points_);
+  this->get_parameter("local_path_guard.min_length_m", this->local_path_guard_min_length_m_);
+  this->get_parameter(
+    "local_path_guard.fallback_min_points", this->local_path_guard_fallback_min_points_);
+  this->get_parameter(
+    "local_path_guard.fallback_lookahead_m", this->local_path_guard_fallback_lookahead_m_);
+  this->get_parameter(
+    "local_path_guard.allow_single_point_when_goal_reached",
+    this->local_path_guard_allow_single_point_when_goal_reached_);
+  this->get_parameter(
+    "local_path_guard.degenerate_log_throttle_sec",
+    this->local_path_guard_degenerate_log_throttle_sec_);
   this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->get_parameter("logging.state_log_throttle_sec", this->state_log_throttle_sec_);
   this->get_parameter(
@@ -874,6 +912,38 @@ void LocalPlanner::publish_local_plan()
   if (build_result.local_plan_valid)
   {
     build_result.plan = this->refine_local_plan(build_result.plan, &path_quality);
+    if (
+      this->is_degenerate_local_path(
+        build_result.plan,
+        build_result.global_path_points,
+        build_result.xy_reached))
+    {
+      build_result.degenerate = true;
+      build_result.reason = "refined_path_degenerate";
+      build_result.plan.poses.clear();
+      build_result.local_plan_valid = false;
+      build_result.recovery_required = false;
+      build_result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
+      build_result.has_blocked_pose = false;
+      build_result.blocked_pose = geometry_msgs::msg::PoseStamped();
+      build_result.blocked_distance = 0.0;
+    }
+  }
+  else
+  {
+    path_quality.raw_path_points = build_result.plan.poses.size();
+    path_quality.simplified_path_points = build_result.plan.poses.size();
+    path_quality.refined_path_points = build_result.plan.poses.size();
+    path_quality.path_length_m = this->estimate_path_length(build_result.plan);
+    path_quality.path_curvature_score = this->estimate_path_curvature_score(build_result.plan);
+    path_quality.lateral_error_m = this->estimate_path_lateral_error(build_result.plan);
+    path_quality.line_of_sight_simplified = false;
+    path_quality.collinear_pruned_count = 0;
+    path_quality.collision_check_passed = false;
+  }
+  if (!build_result.local_plan_valid)
+  {
+    build_result.plan.poses.clear();
   }
   this->local_plan_publisher_->publish(build_result.plan);
 
@@ -900,17 +970,58 @@ void LocalPlanner::publish_local_plan()
         this->get_logger(),
         *this->get_clock(),
         throttle_ms_from_sec(this->state_log_throttle_sec_),
-        "AMR_LOG schema=v1 component=controller event=local_path_quality node=local_planner goal_id=%u raw_path_points=%zu simplified_path_points=%zu refined_path_points=%zu path_length_m=%.3f path_curvature_score=%.3f lateral_error_m=%.3f line_of_sight_simplified=%s collinear_pruned_count=%d collision_check_passed=%s",
+        "AMR_LOG schema=v1 component=controller event=local_path_quality node=local_planner goal_id=%u global_path_points=%zu raw_path_points=%zu simplified_path_points=%zu refined_path_points=%zu path_length_m=%.3f path_curvature_score=%.3f lateral_error_m=%.3f pose_frame=%s plan_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu start_idx=%zu end_idx=%zu lookahead_m=%.3f dist_goal_m=%.3f xy_reached=%s rejoin=false rejoin_context_active=false fallback_used=%s reason=%s line_of_sight_simplified=%s collinear_pruned_count=%d collision_check_passed=%s",
         this->latest_command_.command_id,
+        build_result.global_path_points,
         path_quality.raw_path_points,
         path_quality.simplified_path_points,
         path_quality.refined_path_points,
         path_quality.path_length_m,
         path_quality.path_curvature_score,
         path_quality.lateral_error_m,
+        frame_label(build_result.pose_frame),
+        frame_label(build_result.plan_frame),
+        build_result.nearest_idx,
+        build_result.candidate_idx,
+        build_result.selected_idx,
+        build_result.start_idx,
+        build_result.end_idx,
+        build_result.lookahead_m,
+        build_result.dist_goal_m,
+        bool_label(build_result.xy_reached),
+        bool_label(build_result.fallback_used),
+        build_result.reason.c_str(),
         bool_label(path_quality.line_of_sight_simplified),
         path_quality.collinear_pruned_count,
         bool_label(path_quality.collision_check_passed));
+    }
+    if (build_result.degenerate)
+    {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        throttle_ms_from_sec(this->local_path_guard_degenerate_log_throttle_sec_),
+        "AMR_LOG schema=v1 component=controller event=local_path_degenerate node=local_planner goal_id=%u global_path_points=%zu raw_path_points=%zu simplified_path_points=%zu refined_path_points=%zu path_length_m=%.3f pose_frame=%s plan_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu start_idx=%zu end_idx=%zu lookahead_m=%.3f dist_goal_m=%.3f xy_reached=%s rejoin=false rejoin_context_active=false fallback_used=%s reason=%s local_plan_valid=%s planner_decision=%s",
+        this->latest_command_.command_id,
+        build_result.global_path_points,
+        path_quality.raw_path_points,
+        path_quality.simplified_path_points,
+        path_quality.refined_path_points,
+        path_quality.path_length_m,
+        frame_label(build_result.pose_frame),
+        frame_label(build_result.plan_frame),
+        build_result.nearest_idx,
+        build_result.candidate_idx,
+        build_result.selected_idx,
+        build_result.start_idx,
+        build_result.end_idx,
+        build_result.lookahead_m,
+        build_result.dist_goal_m,
+        bool_label(build_result.xy_reached),
+        bool_label(build_result.fallback_used),
+        build_result.reason.c_str(),
+        bool_label(build_result.local_plan_valid),
+        local_plan_decision_label(build_result.decision));
     }
 
     RCLCPP_INFO_THROTTLE(
@@ -936,10 +1047,14 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
 {
   LocalPlanBuildResult result;
   const nav_msgs::msg::Path source_plan = this->build_source_plan(command);
+  result.global_path_points = source_plan.poses.size();
+  result.pose_frame = current_pose.header.frame_id;
+  result.plan_frame = source_plan.header.frame_id;
   result.plan.header = source_plan.header;
   if (result.plan.header.frame_id.empty())
   {
     result.plan.header.frame_id = current_pose.header.frame_id;
+    result.plan_frame = result.plan.header.frame_id;
   }
   result.plan.header.stamp = this->now();
 
@@ -947,15 +1062,104 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   {
     this->reset_dynamic_blocked_state();
     result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
+    result.degenerate = true;
+    result.reason = "empty_source_plan";
+    return result;
+  }
+
+  const bool frame_mismatch =
+    !current_pose.header.frame_id.empty() &&
+    !result.plan.header.frame_id.empty() &&
+    current_pose.header.frame_id != result.plan.header.frame_id;
+  if (frame_mismatch)
+  {
+    this->reset_dynamic_blocked_state();
+    result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
+    result.degenerate = true;
+    result.reason = "frame_mismatch";
     return result;
   }
 
   const geometry_msgs::msg::PoseStamped &goal_pose = source_plan.poses.back();
   const double goal_distance = this->pose_distance(current_pose, goal_pose);
+  result.dist_goal_m = goal_distance;
+  result.lookahead_m = this->lookahead_distance_;
+  auto apply_local_path_guard = [this, &source_plan, &current_pose](
+    LocalPlanBuildResult &guarded_result,
+    const char *degenerate_reason)
+    {
+      if (!this->is_degenerate_local_path(
+          guarded_result.plan,
+          guarded_result.global_path_points,
+          guarded_result.xy_reached))
+      {
+        if (guarded_result.reason == "none")
+        {
+          guarded_result.reason = "nominal";
+        }
+        return;
+      }
+
+      guarded_result.degenerate = true;
+      guarded_result.reason = degenerate_reason;
+      if (!guarded_result.xy_reached)
+      {
+        std::size_t fallback_selected_index = guarded_result.selected_idx;
+        nav_msgs::msg::Path fallback_plan = this->build_fallback_local_plan(
+          source_plan,
+          current_pose,
+          guarded_result.nearest_idx,
+          std::max(
+            std::max(0.0, this->local_path_guard_fallback_lookahead_m_),
+            guarded_result.lookahead_m),
+          fallback_selected_index);
+        geometry_msgs::msg::PoseStamped fallback_blocked_pose;
+        const bool fallback_blocked =
+          this->has_map_ &&
+          !this->inflated_map_.data.empty() &&
+          this->find_first_blocked_pose_on_plan(fallback_plan, fallback_blocked_pose);
+        if (
+          !fallback_blocked &&
+          !this->is_degenerate_local_path(
+            fallback_plan,
+            guarded_result.global_path_points,
+            false))
+        {
+          guarded_result.plan = fallback_plan;
+          guarded_result.local_plan_valid = true;
+          guarded_result.recovery_required = false;
+          guarded_result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
+          guarded_result.has_blocked_pose = false;
+          guarded_result.blocked_pose = geometry_msgs::msg::PoseStamped();
+          guarded_result.blocked_distance = 0.0;
+          guarded_result.fallback_used = true;
+          guarded_result.degenerate = false;
+          guarded_result.reason = "fallback_local_path";
+          guarded_result.candidate_idx = fallback_selected_index;
+          guarded_result.selected_idx = fallback_selected_index;
+          guarded_result.end_idx = fallback_selected_index;
+          return;
+        }
+      }
+
+      guarded_result.local_plan_valid = false;
+      guarded_result.recovery_required = false;
+      guarded_result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
+      guarded_result.has_blocked_pose = false;
+      guarded_result.blocked_pose = geometry_msgs::msg::PoseStamped();
+      guarded_result.blocked_distance = 0.0;
+    };
   if (this->pose_distance(current_pose, goal_pose) <= this->goal_tolerance_)
   {
     this->reset_dynamic_blocked_state();
     this->last_progress_index_ = source_plan.poses.size() - 1U;
+    result.nearest_idx = source_plan.poses.size() - 1U;
+    result.candidate_idx = result.nearest_idx;
+    result.selected_idx = result.nearest_idx;
+    result.start_idx = result.nearest_idx;
+    result.end_idx = result.nearest_idx;
+    result.xy_reached = true;
+    result.reason = "goal_reached_single_point";
     result.plan.poses.push_back(goal_pose);
     result.local_plan_valid = true;
     result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
@@ -965,20 +1169,30 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   const std::size_t closest_index =
     this->find_closest_pose_index(source_plan, current_pose, this->last_progress_index_);
   this->last_progress_index_ = closest_index;
+  result.nearest_idx = closest_index;
+  result.start_idx = closest_index;
+  result.candidate_idx = closest_index;
+  result.selected_idx = closest_index;
   geometry_msgs::msg::PoseStamped blocked_pose;
+  std::size_t sliced_end_index = closest_index;
   const nav_msgs::msg::Path sliced_plan = this->build_sliced_local_plan_with_lookahead(
     source_plan,
     current_pose,
     closest_index,
-    std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_));
+    std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_),
+    &sliced_end_index);
+  result.end_idx = sliced_end_index;
+  result.candidate_idx = sliced_end_index;
+  result.selected_idx = sliced_end_index;
   const bool obstacle_active =
     this->dynamic_obstacle_enabled_ &&
     this->find_first_blocked_pose_on_plan(sliced_plan, blocked_pose);
   const double replan_lookahead_distance = obstacle_active ?
     std::max(this->lookahead_distance_, this->dynamic_obstacle_replan_lookahead_distance_) :
     this->lookahead_distance_;
+  result.lookahead_m = replan_lookahead_distance;
 
-  if (this->has_map_ &&!this->inflated_map_.data.empty())
+  if (this->has_map_ && !this->inflated_map_.data.empty())
   {
     result.plan = this->build_inflated_local_plan(
       source_plan,
@@ -1019,6 +1233,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
         this->confirm_dynamic_clear();
         result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
       }
+      apply_local_path_guard(result, "raw_path_degenerate");
       return result;
     }
 
@@ -1032,15 +1247,21 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   if (!obstacle_active)
   {
     this->confirm_dynamic_clear();
+    std::size_t fallback_end_index = closest_index;
     result.plan = this->build_sliced_local_plan_with_lookahead(
       source_plan,
       current_pose,
       closest_index,
-      replan_lookahead_distance);
+      replan_lookahead_distance,
+      &fallback_end_index);
+    result.end_idx = fallback_end_index;
+    result.candidate_idx = fallback_end_index;
+    result.selected_idx = fallback_end_index;
     result.local_plan_valid = !result.plan.poses.empty();
     result.decision = result.local_plan_valid ?
       amr_msgs::msg::LocalPlanStatus::DECISION_OK :
       amr_msgs::msg::LocalPlanStatus::DECISION_HARD_BLOCKED;
+    apply_local_path_guard(result, "raw_path_degenerate");
     return result;
   }
 
@@ -1060,6 +1281,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   {
     result.decision = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
   }
+  apply_local_path_guard(result, "raw_path_degenerate");
   return result;
 }
 
@@ -1481,7 +1703,8 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
   const nav_msgs::msg::Path &source_plan,
   const geometry_msgs::msg::PoseStamped &current_pose,
   const std::size_t closest_index,
-  const double lookahead_distance) const
+  const double lookahead_distance,
+  std::size_t *end_index) const
 {
   nav_msgs::msg::Path local_plan;
   local_plan.header = source_plan.header;
@@ -1490,6 +1713,10 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
     local_plan.header.frame_id = current_pose.header.frame_id;
   }
   local_plan.header.stamp = this->now();
+  if (end_index != nullptr)
+  {
+    *end_index = std::min(closest_index, source_plan.poses.size() - 1U);
+  }
   const geometry_msgs::msg::PoseStamped &source_head = source_plan.poses[closest_index];
   const bool source_head_close =
     this->pose_distance(current_pose, source_head) <=
@@ -1523,15 +1750,138 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
         std::clamp(remaining_distance / segment_distance, 0.0, 1.0);
       local_plan.poses.push_back(
         this->interpolate_pose(segment_start, target_pose, interpolation_ratio));
+      if (end_index != nullptr)
+      {
+        *end_index = index;
+      }
       return local_plan;
     }
 
     local_plan.poses.push_back(target_pose);
+    if (end_index != nullptr)
+    {
+      *end_index = index;
+    }
     accumulated_distance += segment_distance;
     segment_start = target_pose;
   }
 
   return local_plan;
+}
+
+nav_msgs::msg::Path LocalPlanner::build_fallback_local_plan(
+  const nav_msgs::msg::Path &source_plan,
+  const geometry_msgs::msg::PoseStamped &current_pose,
+  const std::size_t nearest_index,
+  const double lookahead_distance,
+  std::size_t &selected_index) const
+{
+  nav_msgs::msg::Path fallback_plan;
+  fallback_plan.header = source_plan.header;
+  if (fallback_plan.header.frame_id.empty())
+  {
+    fallback_plan.header.frame_id = current_pose.header.frame_id;
+  }
+  fallback_plan.header.stamp = this->now();
+  selected_index = 0U;
+
+  if (source_plan.poses.empty())
+  {
+    return fallback_plan;
+  }
+
+  const std::size_t start_index = std::min(nearest_index, source_plan.poses.size() - 1U);
+  selected_index = start_index;
+  const std::size_t minimum_points = static_cast<std::size_t>(
+    std::max(2, this->local_path_guard_fallback_min_points_));
+  const double effective_lookahead = std::max(0.0, lookahead_distance);
+
+  auto append_pose = [&fallback_plan, this](geometry_msgs::msg::PoseStamped pose)
+    {
+      pose.header = fallback_plan.header;
+      if (
+        fallback_plan.poses.empty() ||
+        this->pose_distance(fallback_plan.poses.back(), pose) > 1e-6)
+      {
+        fallback_plan.poses.push_back(pose);
+      }
+    };
+
+  for (std::size_t index = start_index; index < source_plan.poses.size(); ++index)
+  {
+    append_pose(source_plan.poses[index]);
+    selected_index = index;
+    if (
+      fallback_plan.poses.size() >= minimum_points &&
+      this->estimate_path_length(fallback_plan) >= effective_lookahead)
+    {
+      break;
+    }
+  }
+
+  if (!this->is_degenerate_local_path(fallback_plan, source_plan.poses.size(), false))
+  {
+    return fallback_plan;
+  }
+
+  fallback_plan.poses.clear();
+  append_pose(current_pose);
+  double accumulated_distance = 0.0;
+  geometry_msgs::msg::PoseStamped previous_pose = current_pose;
+  for (std::size_t index = start_index; index < source_plan.poses.size(); ++index)
+  {
+    const geometry_msgs::msg::PoseStamped &candidate_pose = source_plan.poses[index];
+    accumulated_distance += this->pose_distance(previous_pose, candidate_pose);
+    selected_index = index;
+    previous_pose = candidate_pose;
+    if (
+      accumulated_distance >= effective_lookahead ||
+      index + 1U == source_plan.poses.size())
+    {
+      append_pose(candidate_pose);
+      break;
+    }
+  }
+
+  if (
+    this->is_degenerate_local_path(fallback_plan, source_plan.poses.size(), false) &&
+    selected_index + 1U < source_plan.poses.size())
+  {
+    selected_index = source_plan.poses.size() - 1U;
+    append_pose(source_plan.poses.back());
+  }
+
+  return fallback_plan;
+}
+
+bool LocalPlanner::is_degenerate_local_path(
+  const nav_msgs::msg::Path &plan,
+  const std::size_t global_path_points,
+  const bool xy_reached) const
+{
+  if (!this->local_path_guard_enabled_)
+  {
+    return false;
+  }
+  if (
+    xy_reached &&
+    this->local_path_guard_allow_single_point_when_goal_reached_)
+  {
+    return false;
+  }
+
+  const std::size_t minimum_points = static_cast<std::size_t>(
+    std::max(1, this->local_path_guard_min_points_));
+  if (plan.poses.size() < minimum_points)
+  {
+    return true;
+  }
+  if (global_path_points >= 2U && plan.poses.size() <= 1U)
+  {
+    return true;
+  }
+
+  return this->estimate_path_length(plan) < std::max(0.0, this->local_path_guard_min_length_m_);
 }
 
 nav_msgs::msg::Path LocalPlanner::refine_local_plan(

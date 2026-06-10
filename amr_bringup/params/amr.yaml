@@ -258,6 +258,14 @@
       smoothing_max_pose_deviation: 0.04
       collision_check_enabled: true
       collision_sample_distance: 0.05
+    local_path_guard:
+      enabled: true
+      min_points: 2
+      min_length_m: 0.05
+      fallback_min_points: 2
+      fallback_lookahead_m: 0.20
+      allow_single_point_when_goal_reached: true
+      degenerate_log_throttle_sec: 1.0
     dynamic_obstacle:
       enabled: true
       replan_lookahead_distance: 1.2

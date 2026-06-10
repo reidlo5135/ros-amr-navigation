@@ -119,6 +119,7 @@ The extractor includes these event families by default:
 - `tracking_heading_debug`
 - `tracking_frame_mismatch`
 - `local_path_quality`
+- `local_path_degenerate`
 - `target_jump_detected`
 - `recovery_decision`
 - `recovery_started`
@@ -144,6 +145,11 @@ For stair-step path diagnosis, inspect `local_path_quality` columns:
 `raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_length_m`,
 `path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`,
 `collinear_pruned_count`, and `collision_check_passed`.
+
+For degenerate local path diagnosis, inspect `local_path_degenerate` columns:
+`global_path_points`, `raw_path_points`, `refined_path_points`, `path_length_m`, `pose_frame`,
+`plan_frame`, `nearest_idx`, `start_idx`, `end_idx`, `lookahead_m`, `dist_goal_m`,
+`xy_reached`, `fallback_used`, and `reason`.
 
 For same-row global planning checks, inspect `plan_quality` columns:
 `start_row`, `goal_row`, `row_delta`, `same_row_candidate`, `straight_line_safe`,
@@ -185,7 +191,7 @@ attended field run, then inspect logs afterward.
 Common log query:
 
 ```bash
-grep -R "plan_quality\|local_path_quality\|goal_transition_state\|wheel_slip_state\|odom_motion_guard\|map_odom_correction" ~/.ros/log | tail -200
+grep -R "plan_quality\|local_path_quality\|local_path_degenerate\|goal_transition_state\|wheel_slip_state\|odom_motion_guard\|map_odom_correction" ~/.ros/log | tail -200
 ```
 
 Scenario A: same-Y goals

@@ -45,6 +45,20 @@ private:
     bool has_blocked_pose{false};
     geometry_msgs::msg::PoseStamped blocked_pose;
     double blocked_distance{0.0};
+    std::size_t global_path_points{0U};
+    std::size_t nearest_idx{0U};
+    std::size_t candidate_idx{0U};
+    std::size_t selected_idx{0U};
+    std::size_t start_idx{0U};
+    std::size_t end_idx{0U};
+    double lookahead_m{0.0};
+    double dist_goal_m{0.0};
+    bool xy_reached{false};
+    bool fallback_used{false};
+    bool degenerate{false};
+    std::string reason{"none"};
+    std::string pose_frame;
+    std::string plan_frame;
   };
 
   struct LocalPathQualityMetrics
@@ -92,7 +106,18 @@ private:
     const nav_msgs::msg::Path &source_plan,
     const geometry_msgs::msg::PoseStamped &current_pose,
     std::size_t closest_index,
-    double lookahead_distance) const;
+    double lookahead_distance,
+    std::size_t *end_index = nullptr) const;
+  nav_msgs::msg::Path build_fallback_local_plan(
+    const nav_msgs::msg::Path &source_plan,
+    const geometry_msgs::msg::PoseStamped &current_pose,
+    std::size_t nearest_index,
+    double lookahead_distance,
+    std::size_t &selected_index) const;
+  bool is_degenerate_local_path(
+    const nav_msgs::msg::Path &plan,
+    std::size_t global_path_points,
+    bool xy_reached) const;
   nav_msgs::msg::Path build_source_plan(const amr_msgs::msg::MotionCommand &command) const;
   std::size_t find_closest_pose_index(
     const nav_msgs::msg::Path &plan,
@@ -215,6 +240,13 @@ private:
   bool path_refiner_collision_check_enabled_;
   double path_refiner_collision_sample_distance_;
   bool dynamic_obstacle_enabled_;
+  bool local_path_guard_enabled_;
+  int local_path_guard_min_points_;
+  double local_path_guard_min_length_m_;
+  int local_path_guard_fallback_min_points_;
+  double local_path_guard_fallback_lookahead_m_;
+  bool local_path_guard_allow_single_point_when_goal_reached_;
+  double local_path_guard_degenerate_log_throttle_sec_;
   bool structured_logging_enabled_;
   double state_log_throttle_sec_;
   double dynamic_obstacle_replan_lookahead_distance_;
