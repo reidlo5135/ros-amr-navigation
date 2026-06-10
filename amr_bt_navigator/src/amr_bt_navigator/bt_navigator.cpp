@@ -108,7 +108,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   feedback_period_ms_(100),
   recovery_max_retries_(3),
   recovery_retry_delay_ms_(700),
-  recovery_reacquire_settle_ms_(700),
+  recovery_reacquire_settle_ms_(900),
   align_heading_at_goal_(true),
   structured_logging_enabled_(true),
   recovery_decision_logging_enabled_(true),
@@ -854,6 +854,16 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           return BT::NodeStatus::FAILURE;
         }
 
+        if (navigator->structured_logging_enabled_) {
+          RCLCPP_WARN(
+            navigator->get_logger(),
+            "AMR_LOG schema=v1 component=bt_navigator event=recovery_finished goal_id=%u result=reacquire_timeout recovery_skipped=false reason=navigation_reacquire_timeout planner_ok=%s controller_ok=%s local_plan_valid=%s planner_decision=%s",
+            recovery_reacquire_command_id,
+            bool_label(!local_plan_status.recovery_required),
+            bool_label(!status.blocked && !status.stalled),
+            bool_label(status.local_plan_valid),
+            local_plan_decision_label(local_plan_status.decision));
+        }
         blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
         blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
         blackboard->set("recovery_condition_since_ns", now_ns);
@@ -1617,12 +1627,24 @@ bool Btnavigator::request_global_plan(
     future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
   {
     error_message = "Timed out while waiting for a global plan.";
+    if (this->structured_logging_enabled_) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan result=failed reason=%s",
+        log_value(error_message).c_str());
+    }
     return false;
   }
 
   const auto response = future.get();
   if (!response->success) {
     error_message = response->message;
+    if (this->structured_logging_enabled_) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=request_global_plan result=failed reason=%s",
+        log_value(error_message).c_str());
+    }
     return false;
   }
 
@@ -1775,12 +1797,9 @@ bool Btnavigator::has_reacquired_navigation(
     return false;
   }
 
-  if (local_plan_status.command_id != active_command.command_id || !local_plan_status.active)
-  {
-    return true;
-  }
-
   return
+    local_plan_status.command_id == active_command.command_id &&
+    local_plan_status.active &&
     local_plan_status.local_plan_valid && 
     !local_plan_status.recovery_required;
 }

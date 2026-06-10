@@ -1,6 +1,6 @@
 # AMR Structured Logging Schema
 
-이 문서는 ros-amr-navigation v0.17.5 기준 현장 운용 및 디버깅 로그 규칙을 정의한다. 목적은 토픽을 늘리지 않고도 ROS2 console log, `ROS_LOG_DIR`, `nohup` 출력, grep/awk 기반 분석에서 같은 기준으로 navigation 상태를 볼 수 있게 하는 것이다.
+이 문서는 ros-amr-navigation v0.18.0 기준 현장 운용 및 디버깅 로그 규칙을 정의한다. 목적은 토픽을 늘리지 않고도 ROS2 console log, `ROS_LOG_DIR`, `nohup` 출력, grep/awk 기반 분석에서 같은 기준으로 navigation 상태를 볼 수 있게 하는 것이다. `0.17.5`의 TurtleBot3 H/W 내재화와 structured logging 기준선은 유지하고, `0.18.x`는 navigation quality stabilization 단계로 path tracking, goal approach, recovery rejoin 품질 판단 필드를 보강한다.
 
 ## 공통 로그 형식
 
@@ -54,6 +54,7 @@ Navigation 필드:
 | Field | Meaning |
 | --- | --- |
 | `target_idx` | 선택된 tracking target index |
+| `previous_idx` | target jump 판단 직전 selected target index |
 | `nearest_idx` | current pose와 가장 가까운 local plan index |
 | `candidate_idx` | lookahead/min-distance 기준 candidate index |
 | `selected_idx` | 실제 선택된 tracking target index |
@@ -68,6 +69,8 @@ Navigation 필드:
 | `heading_err_rad` | heading error |
 | `steering_err_rad` | deadband/final-align suppression 이후 실제 steering에 쓰는 heading error |
 | `selection_reason` | tracking target 선택 이유. 예: `candidate_min_distance`, `retained_target_too_close` |
+| `rejoin_context_active` | recovery/escape/large target jump 이후 bounded rejoin context 활성 여부 |
+| `rejoin_activated` | 해당 event가 rejoin context를 새로 활성화했는지 여부 |
 | `xy_reached` | goal XY tolerance 도달 여부 |
 | `yaw_reached` | goal yaw tolerance 도달 여부 |
 | `align_heading_at_goal` | MotionCommand가 final heading alignment를 요구하는지 여부 |
@@ -82,6 +85,10 @@ Navigation 필드:
 | `recovery` | recovery 상태 여부 |
 | `recovery_type` | `wait`, `backup`, `spin`, `local_escape`, `global_replan` 등 |
 | `recovery_skipped` | recovery 생략 여부 |
+| `planner_ok` | navigator 관점에서 local/global planning 상태가 정상인지 여부 |
+| `controller_ok` | navigator 관점에서 controller blocked/stalled 상태가 없는지 여부 |
+| `local_plan_valid` | local planner 또는 motion status가 보고한 local plan 유효 여부 |
+| `planner_decision` | local planner decision label. 예: `ok`, `hard_blocked`, `global_replan_required` |
 
 Command 품질 필드:
 
@@ -186,7 +193,9 @@ ERROR:
 - plan은 존재하지만 로봇이 직진만 하는 경우 `tracking_heading_debug`의 `nearest_idx`, `candidate_idx`, `selected_idx`, `target_dist_m`, `pose_frame`, `plan_frame`, `target_frame`, `heading_err_rad`, `steering_err_rad`, `selection_reason`을 우선 확인한다.
 - 직선 plan에서 좌우 흔들림이 있으면 `tracking_state`의 `rejoin`, `rejoin_context_active`와 `tracking_heading_debug`의 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`, `heading_error_filtered_rad`, `steering_deadband_active`, `steering_hysteresis_state`, `cmd_ang_sign`, `cmd_ang_flip_count`, `output_ang_sign`, `output_ang_flip_count`를 함께 확인한다.
 - local plan이 계단형이면 `local_path_quality`의 `raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`, `collinear_pruned_count`, `collision_check_passed`를 확인한다.
-- recovery 실행 또는 skip 판단은 `reason`, `recovery_type`, `recovery_skipped`, `planner_ok`, `controller_ok`를 포함한다.
+- target jump 의심 시 `target_jump_detected`에서 `previous_idx`, `nearest_idx`, `candidate_idx`, `selected_idx`, `target_jump_m`, `rejoin_activated`, `selection_reason`을 함께 확인한다.
+- goal approach 판단은 `goal_state`에서 `xy_reached`, `yaw_reached`, `align_heading_at_goal`, `respect_goal_yaw`, `ignore_yaw`, `final_heading_required`, `dist_goal_m`, `heading_err_rad`, `cmd_lin`, `cmd_ang`을 함께 확인한다.
+- recovery 실행 또는 skip 판단은 `reason`, `recovery_type`, `recovery_skipped`, `planner_ok`, `controller_ok`를 포함한다. Recovery 이후 정상 경로 복귀는 `recovery_finished result=reacquired` 또는 `result=reacquire_timeout`과 controller `rejoin_state`를 연결해서 본다.
 - costmap grid, scan ranges, map data 등 대량 데이터는 log에 직접 출력하지 않는다.
 - rosbag2 profile에서 필요한 heavy topic을 선택적으로 기록한다.
 
@@ -213,3 +222,15 @@ Final heading alignment는 path tracking 진동과 별도 단계다. AMR navigat
 `amr_runtime_observation`은 `controller_phase=goal_approach` 또는 `controller_phase=final_heading_align`를 recovery로 분류하지 않는다. 이 구간의 `runtime_summary`는 `controller_blocked`, `controller_stalled`, `controller_recovery`, `controller_goal_reached`, `dist_goal_delta_m`, `progress_stall_window_sec`, `progress_clear_delta_m`, `progress_stalled`, `progress_clear_reason`, `recovery_reason`을 함께 보고해야 하며, 정상 final heading alignment에서는 `progress_stalled=false`, `recovery=false`, `recovery_reason=none`이 기대값이다.
 
 관련 parameter는 `/amr/local_planner`의 `path_refiner.line_of_sight_simplification_enabled`, `path_refiner.line_of_sight_sample_distance`, `path_refiner.line_of_sight_max_skip`, `path_refiner.collinear_pruning_enabled`, `path_refiner.collinear_angle_threshold`, `path_refiner.collinear_lateral_deviation_threshold`와 `/amr/motion_controller`의 `control.straight_tracking_enabled`, `control.straight_tracking_lookahead_distance`, `control.straight_curvature_threshold`, `control.straight_lateral_error_threshold`, `control.straight_heading_deadband`, `control.straight_heading_release_threshold`, `control.straight_angular_gain`, `control.straight_max_angular_speed`, `control.straight_heading_filter_alpha`, `control.tracking_heading_release_threshold`, `control.rejoin_context_timeout_sec`, `control.rejoin_context_distance_m`, `control.rejoin_target_jump_threshold_m`이다. Straight mode는 tracking 구간에서만 적용되며 goal approach, final heading alignment, recovery command에는 적용하지 않는다.
+
+## Goal Approach Diagnostics
+
+`0.18.x`에서는 XY 도달과 final heading alignment를 분리해서 판단한다. `goal_checker.xy_tolerance`는 XY latch 진입 기준이고, `goal_checker.xy_hysteresis`는 localization noise로 인해 latch가 바로 풀리지 않게 하는 release margin이다. `goal_checker.yaw_tolerance`는 final yaw를 요구하지 않는 설정에서만 의미가 크며, final yaw가 필요한 기본 운용에서는 `control.goal_reach_heading_tolerance`, `control.final_align_heading_deadband`, `control.final_align_settle_time_sec`가 완료 판정과 settle 품질을 결정한다.
+
+정상 goal approach 기대값은 `phase=goal_approach`에서 `cmd_lin`이 goal distance에 따라 작아지고, `phase=final_heading_align`에서는 `cmd_lin=0.000`으로 회전만 수행하며, 최종 `phase=reached`는 `cmd_lin=0.000 cmd_ang=0.000 result=success`를 남기는 것이다.
+
+## Recovery Rejoin Diagnostics
+
+Recovery 또는 local escape 이후 navigator는 새 navigation command가 stable reacquire 되었는지 확인한다. 성공 시 `recovery_finished result=reacquired reason=navigation_reacquired`가 남고, settle window 안에 motion status와 local plan status가 함께 정상화되지 않으면 `recovery_finished result=reacquire_timeout reason=navigation_reacquire_timeout`이 남는다.
+
+Controller의 `rejoin_state`는 recovery/escape 또는 large target jump 이후 bounded context만 의미한다. `rejoin_context_timeout_sec`와 `rejoin_context_distance_m`는 rejoin context의 최대 유지 범위이고, `rejoin_target_distance_threshold`, `rejoin_heading_gate_threshold`, `rejoin_min_linear_scale`은 rejoin 중 급회전과 과한 선속 추종을 완화한다. 정상 복귀는 `rejoin_state`가 사라지고 `tracking_state rejoin=false rejoin_context_active=false`로 돌아오는 것이다.

@@ -27,10 +27,10 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("recovery_server", options),
   plan_recovery_service_name_("/amr/recovery_server/plan_recovery"),
   default_node_id_("recovery"),
-  wait_duration_sec_(1.0),
-  backup_distance_(0.20),
-  backup_speed_(0.06),
-  spin_angle_rad_(1.5707963267948966),
+  wait_duration_sec_(1.2),
+  backup_distance_(0.18),
+  backup_speed_(0.05),
+  spin_angle_rad_(1.2217304763960306),
   structured_logging_enabled_(true)
 {
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_name_);

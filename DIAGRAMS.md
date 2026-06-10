@@ -44,12 +44,11 @@ timeline
     0.16.x : Local escape-first recovery refinement
            : corridor / doorway blocked-state tuning
            : final-approach stability cleanup
-    0.17.x : Planner/controller quality uplift
-           : smoother/path-handler style path quality
-           : blocked semantics and path-rejoin quality
-    0.18.x : Safety + task-layer navigation operations
-           : near-field safety lane
-           : route/waypoint command-state contract maturity
+    0.17.x : TurtleBot3 hardware internalization
+           : AMR-owned bringup, base, LiDAR, and description baseline
+    0.18.x : Navigation quality stabilization
+           : path tracking, goal approach, and recovery rejoin quality
+           : safety + task-layer operations after controller stability
     0.19.x : Docking and deployment readiness
            : dock/undock lifecycle
            : startup/shutdown/reconnect diagnostics
@@ -462,4 +461,3 @@ flowchart TB
     MC["/amr/motion_controller"] -->|Topic| MStatus["/amr/motion/status"]
     Obs["/amr/runtime_observation"] -->|Topic| Summary["summary/events"]
 ```
-

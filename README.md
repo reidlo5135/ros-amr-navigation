@@ -4,8 +4,13 @@ ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
 
 
 
-Current `0.17.x` direction:
-- TurtleBot3 hardware internalization is the top-priority track.
+Current `0.18.x` direction:
+- Navigation quality stabilization is the top-priority track after the `0.17.5` TurtleBot3 hardware internalization baseline.
+- Path tracking, target selection, goal approach, and post-recovery path rejoin are tuned conservatively for TurtleBot3 Burger-class low-speed operation.
+- `AMR_LOG schema=v1` remains the field-debug contract for path quality, goal state, recovery decision, and rejoin diagnosis.
+
+Maintained `0.17.x` baseline:
+- TurtleBot3 hardware internalization remains the preserved baseline track.
 - `amr_bringup/launch/turtlebot3.launch.py` is the AMR-owned robot-side hardware entrypoint.
 - `amr_bringup/launch/navigation.launch.py` remains the remote-PC navigation/runtime entrypoint.
 - `amr_visualization` starts the in-repo ROS-native Qt6 operator app lane.
@@ -23,6 +28,11 @@ Current `0.17.x` direction:
   - `amr_bringup`-owned LiDAR driver boundary
   - `amr_bringup`-owned description ownership
   - explicit split between robot-side hardware and remote-PC AMR runtime
+- `0.18.x` stabilizes navigation quality on top of that hardware baseline:
+  - forward-progressive local target selection with bounded rollback
+  - reduced small-angle straight-line oscillation
+  - separated XY goal arrival and final yaw alignment
+  - conservative recovery/escape rejoin and reacquire diagnostics
 
 ## Architecture
 
@@ -171,8 +181,8 @@ Common fields:
 
 Useful event families:
 
-- controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`
-- navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`
+- controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`, `rejoin_state`
+- navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`, `recovery_skipped`
 - planner/recovery: `plan_requested`, `plan_succeeded`, `plan_failed`, `recovery_plan_selected`
 - observation: `runtime_summary`, `runtime_event`
 
@@ -215,6 +225,7 @@ Rosbag profiles are documented in [docs/logging/ROSBAG_PROFILES.md](docs/logging
 4. Check recovery entry with `scripts/watch_amr_logs.sh --event recovery_decision`.
 5. Extract `goal_state`, `cmd_quality`, `tracking_state`, `tracking_heading_debug`, and `local_path_quality` with `scripts/extract_nav_quality.sh`.
 6. Compare `recovery_count`, `cmd_ang_sign_flip_count`, `output_ang_sign_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
+7. After recovery or local escape, check `recovery_finished result=reacquired` versus `result=reacquire_timeout`, then confirm controller `rejoin_state` returns to normal `tracking_state`.
 
 If RViz shows global/local plans but the robot drives straight, inspect these `AMR_LOG` fields first:
 
@@ -258,6 +269,12 @@ Goal heading alignment is enabled by default. AMR navigation goals are treated a
 the goal are expected when final yaw is not reached yet. XY-only tests must disable this explicitly
 with `/amr/navigator.execution.align_heading_at_goal: false` or
 `/amr/motion_controller.goal_checker.ignore_yaw: true`.
+
+For `0.18.0` field checks, goal approach is considered stable when `goal_state` shows
+`xy_reached=true` before final yaw completion, `cmd_lin=0.000` during final alignment, and a final
+`phase=reached` log with `cmd_lin=0.000 cmd_ang=0.000`. Recovery rejoin is considered stable when
+`recovery_decision`, `recovery_started`, `recovery_finished`, controller `rejoin_state`, and
+`local_blocked_state` tell one continuous story without repeated reacquire timeouts.
 Runtime observation should report `controller_phase=final_heading_align` with
 `progress_stalled=false`, `recovery=false`, and `recovery_reason=none` in that intentional rotate-in-place phase.
 During normal tracking, current controller clear status is authoritative: if `controller_blocked=false`,

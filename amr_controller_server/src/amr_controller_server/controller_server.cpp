@@ -2526,60 +2526,60 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   status_topic_(""),
   cmd_vel_topic_(""),
   control_frequency_(10.0),
-  linear_speed_(0.07),
-  min_linear_speed_(0.05),
-  tracking_lookahead_distance_(0.25),
-  straight_tracking_lookahead_distance_(0.35),
+  linear_speed_(0.10),
+  min_linear_speed_(0.06),
+  tracking_lookahead_distance_(0.22),
+  straight_tracking_lookahead_distance_(0.40),
   tracking_min_target_distance_(0.08),
   tracking_progress_rollback_window_(2U),
-  tracking_target_hysteresis_distance_(0.06),
-  tracking_target_reset_distance_(0.30),
-  angular_gain_(1.5),
-  max_angular_speed_(0.8),
-  distance_tolerance_(0.15),
-  goal_heading_tolerance_(0.20),
-  goal_reach_heading_tolerance_(0.35),
+  tracking_target_hysteresis_distance_(0.08),
+  tracking_target_reset_distance_(0.35),
+  angular_gain_(2.0),
+  max_angular_speed_(0.65),
+  distance_tolerance_(0.10),
+  goal_heading_tolerance_(0.12),
+  goal_reach_heading_tolerance_(0.08),
   final_align_max_angular_speed_(0.35),
-  final_align_heading_deadband_(0.05),
-  final_align_settle_time_sec_(0.20),
-  goal_checker_xy_tolerance_(0.15),
-  goal_checker_xy_hysteresis_(0.03),
+  final_align_heading_deadband_(0.06),
+  final_align_settle_time_sec_(0.30),
+  goal_checker_xy_tolerance_(0.10),
+  goal_checker_xy_hysteresis_(0.04),
   goal_checker_yaw_tolerance_(0.7853981633974483),
   goal_checker_hold_time_sec_(0.0),
-  goal_checker_respect_goal_yaw_(true),
+  goal_checker_respect_goal_yaw_(false),
   goal_checker_ignore_yaw_(false),
-  rotate_in_place_threshold_(0.6),
-  rotate_in_place_goal_distance_(0.35),
-  tracking_heading_deadband_(0.05),
-  tracking_heading_release_threshold_(0.09),
-  straight_tracking_enabled_(false),
-  straight_curvature_threshold_(0.15),
-  straight_lateral_error_threshold_(0.04),
-  straight_heading_deadband_(0.08),
-  straight_heading_release_threshold_(0.12),
-  straight_angular_gain_(1.2),
-  straight_max_angular_speed_(0.20),
-  straight_heading_filter_alpha_(0.35),
-  rejoin_target_distance_threshold_(0.08),
-  rejoin_context_timeout_sec_(2.0),
-  rejoin_context_distance_m_(0.35),
-  rejoin_target_jump_threshold_m_(0.25),
-  rejoin_heading_gate_threshold_(0.35),
-  rejoin_min_linear_scale_(0.35),
-  heading_slowdown_threshold_(0.2),
-  min_heading_motion_scale_(0.15),
+  rotate_in_place_threshold_(0.55),
+  rotate_in_place_goal_distance_(0.22),
+  tracking_heading_deadband_(0.06),
+  tracking_heading_release_threshold_(0.11),
+  straight_tracking_enabled_(true),
+  straight_curvature_threshold_(0.12),
+  straight_lateral_error_threshold_(0.035),
+  straight_heading_deadband_(0.10),
+  straight_heading_release_threshold_(0.16),
+  straight_angular_gain_(0.9),
+  straight_max_angular_speed_(0.16),
+  straight_heading_filter_alpha_(0.25),
+  rejoin_target_distance_threshold_(0.12),
+  rejoin_context_timeout_sec_(2.5),
+  rejoin_context_distance_m_(0.45),
+  rejoin_target_jump_threshold_m_(0.28),
+  rejoin_heading_gate_threshold_(0.28),
+  rejoin_min_linear_scale_(0.25),
+  heading_slowdown_threshold_(0.16),
+  min_heading_motion_scale_(0.18),
   max_linear_accel_(0.08),
   max_angular_accel_(0.8),
   progress_required_movement_radius_(0.05),
   progress_time_allowance_sec_(2.0),
-  status_command_settle_time_sec_(0.5),
-  status_blocked_confirm_cycles_(2),
-  status_blocked_clear_cycles_(2),
+  status_command_settle_time_sec_(0.7),
+  status_blocked_confirm_cycles_(3),
+  status_blocked_clear_cycles_(3),
   status_stalled_confirm_cycles_(2),
   structured_logging_enabled_(true),
   tracking_state_log_throttle_sec_(1.0),
   cmd_quality_log_throttle_sec_(1.0),
-  target_jump_warn_threshold_m_(0.35),
+  target_jump_warn_threshold_m_(0.28),
   safety_gate_enabled_(true),
   safety_gate_allow_rotate_in_place_(true),
   safety_gate_stop_distance_(3.0),
@@ -3134,13 +3134,12 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
   }
   else
   {
-    this->has_tracking_progress_index_ = false;
-    this->has_tracking_target_index_ = false;
-    this->tracking_progress_index_ = 0U;
-    this->tracking_target_index_ = 0U;
-    this->tracking_nearest_index_ = 0U;
-    this->tracking_candidate_index_ = 0U;
-    this->tracking_selected_target_distance_ = 0.0;
+    this->tracking_progress_index_ = std::min(
+      this->tracking_progress_index_,
+      message->poses.size() - 1U);
+    this->tracking_target_index_ = std::min(
+      this->tracking_target_index_,
+      message->poses.size() - 1U);
     this->tracking_selection_reason_ = "plan_updated";
   }
   if (this->structured_logging_enabled_)
@@ -3251,9 +3250,11 @@ void MotionController::publish_control()
       }
       this->update_rejoin_context_state();
       const bool had_tracking_target = this->has_tracking_target_pose_;
+      const std::size_t previous_tracking_target_index = this->tracking_target_index_;
       const geometry_msgs::msg::PoseStamped previous_tracking_target = this->tracking_target_pose_;
       geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target(
         this->tracking_lookahead_distance_, true);
+      bool target_jump_activated_rejoin = false;
       debug_has_tracking_target = this->has_tracking_target_pose_;
       debug_tracking_target_index = this->tracking_target_index_;
       debug_tracking_target_x = tracking_target.pose.position.x;
@@ -3265,6 +3266,7 @@ void MotionController::publish_control()
         debug_target_jump_m >= std::max(0.0, this->rejoin_target_jump_threshold_m_))
       {
         this->activate_rejoin_context();
+        target_jump_activated_rejoin = true;
       }
       this->update_rejoin_context_state();
       const double local_plan_remaining_distance =
@@ -3302,6 +3304,10 @@ void MotionController::publish_control()
       const bool final_align_phase =
         align_heading_at_goal &&
         (distance_reached || goal_distance <= this->rotate_in_place_goal_distance_);
+      const bool command_settling =
+        this->latest_command_time_.nanoseconds() > 0 &&
+        (this->now() - this->latest_command_time_).seconds() <
+        this->status_command_settle_time_sec_;
       const bool rejoin_context_active = this->rejoin_context_active_;
       debug_rejoin_context_active = rejoin_context_active;
       StraightSegmentAssessment straight_assessment = this->assess_straight_segment(
@@ -3355,24 +3361,36 @@ void MotionController::publish_control()
       if (
         this->structured_logging_enabled_ &&
         had_tracking_target &&
-        debug_target_jump_m >= this->target_jump_warn_threshold_m_)
+        debug_target_jump_m >= std::min(
+        std::max(0.0, this->target_jump_warn_threshold_m_),
+        std::max(0.0, this->rejoin_target_jump_threshold_m_)))
       {
         RCLCPP_WARN_THROTTLE(
           this->get_logger(),
           *this->get_clock(),
           throttle_ms_from_sec(this->tracking_state_log_throttle_sec_),
-          "AMR_LOG schema=v1 component=controller event=target_jump_detected node=motion_controller goal_id=%u target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f threshold_m=%.3f",
+          "AMR_LOG schema=v1 component=controller event=target_jump_detected node=motion_controller goal_id=%u previous_idx=%zu nearest_idx=%zu candidate_idx=%zu selected_idx=%zu target_idx=%zu target_x=%.3f target_y=%.3f target_jump_m=%.3f threshold_m=%.3f rejoin_context_active=%s rejoin_activated=%s selection_reason=%s",
           this->latest_command_.command_id,
+          previous_tracking_target_index,
+          this->tracking_nearest_index_,
+          this->tracking_candidate_index_,
+          this->tracking_target_index_,
           this->tracking_target_index_,
           debug_tracking_target_x,
           debug_tracking_target_y,
           debug_target_jump_m,
-          this->target_jump_warn_threshold_m_);
+          std::min(
+            std::max(0.0, this->target_jump_warn_threshold_m_),
+            std::max(0.0, this->rejoin_target_jump_threshold_m_)),
+          bool_label(this->rejoin_context_active_),
+          bool_label(target_jump_activated_rejoin),
+          this->tracking_selection_reason_.c_str());
       }
       const bool rejoin_phase =
         rejoin_context_active &&
         !final_align_phase &&
         goal_distance > this->rotate_in_place_goal_distance_;
+      const bool rejoin_settling = rejoin_phase &&command_settling;
       const bool rejoin_linear_gate =
         rejoin_phase &&
         tracking_target_distance >= std::max(0.0, this->rejoin_target_distance_threshold_);
@@ -3496,17 +3514,20 @@ void MotionController::publish_control()
           this->tracking_target_index_,
           this->tracking_selection_reason_.c_str());
       }
-      const double angular_speed_limit = final_align_phase ?
+      double angular_speed_limit = final_align_phase ?
         std::min(this->max_angular_speed_, this->final_align_max_angular_speed_) :
         (straight_control_limited ?
         std::min(this->max_angular_speed_, std::max(0.0, this->straight_max_angular_speed_)) :
         this->max_angular_speed_);
+      if (rejoin_settling)
+      {
+        angular_speed_limit = std::min(
+          angular_speed_limit,
+          std::max(0.05, std::min(this->straight_max_angular_speed_, this->max_angular_speed_ * 0.5)));
+      }
       const double angular_gain_used = straight_control_limited ?
         std::max(0.0, this->straight_angular_gain_) :
         this->angular_gain_;
-      const bool command_settling =
-        this->latest_command_time_.nanoseconds() > 0 &&
-        (this->now() - this->latest_command_time_).seconds() < this->status_command_settle_time_sec_;
       const bool non_error_hold_phase = final_align_phase;
 
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
@@ -3599,7 +3620,7 @@ void MotionController::publish_control()
         {
           RCLCPP_INFO(
             this->get_logger(),
-            "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=reached xy_reached=true yaw_reached=%s align_heading_at_goal=%s respect_goal_yaw=%s ignore_yaw=%s final_heading_required=%s dist_goal_m=%.3f goal_yaw_rad=%.3f current_yaw_rad=%.3f heading_err_rad=%.3f result=success",
+            "AMR_LOG schema=v1 component=controller event=goal_state node=motion_controller goal_id=%u phase=reached xy_reached=true yaw_reached=%s align_heading_at_goal=%s respect_goal_yaw=%s ignore_yaw=%s final_heading_required=%s dist_goal_m=%.3f goal_yaw_rad=%.3f current_yaw_rad=%.3f heading_err_rad=%.3f cmd_lin=%.3f cmd_ang=%.3f result=success",
             status.command_id,
             bool_label(goal_check.heading_reached),
             bool_label(this->latest_command_.align_heading_at_goal),
@@ -3609,7 +3630,9 @@ void MotionController::publish_control()
             goal_distance,
             goal_yaw,
             current_yaw,
-            heading_error);
+            heading_error,
+            0.0,
+            0.0);
         }
       }
       else if (distance_reached &&(!align_heading_at_goal || final_align_stable))
@@ -3686,10 +3709,22 @@ void MotionController::publish_control()
               gate_window);
             scale *= this->clamp(rejoin_scale, this->rejoin_min_linear_scale_, 1.0);
           }
+          if (rejoin_settling)
+          {
+            scale *= this->clamp(this->rejoin_min_linear_scale_, 0.0, 1.0);
+          }
+          const double goal_approach_distance = std::max(
+            std::max(0.0, this->rotate_in_place_goal_distance_) * 2.0,
+            std::max(0.0, this->goal_checker_xy_tolerance_) +
+            std::max(0.0, this->goal_checker_xy_hysteresis_));
+          if (goal_approach_distance > 1e-6 &&goal_distance <= goal_approach_distance)
+          {
+            scale *= this->clamp(goal_distance / goal_approach_distance, 0.20, 1.0);
+          }
 
           scale = this->clamp(scale, this->min_heading_motion_scale_, 1.0);
           desired_twist.linear.x = base_linear_speed * scale;
-          if (goal_distance > this->rotate_in_place_goal_distance_)
+          if (goal_distance > goal_approach_distance)
           {
             desired_twist.linear.x = std::max(
               std::min(this->min_linear_speed_, base_linear_speed),
@@ -4354,7 +4389,12 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target(
   }
 
   const std::size_t plan_size = this->latest_local_plan_.poses.size();
-  const std::size_t search_start = 0U;
+  const std::size_t previous_progress_index = this->has_tracking_progress_index_ ?
+    std::min(this->tracking_progress_index_, plan_size - 1U) : 0U;
+  const std::size_t rollback_window = std::min(
+    this->tracking_progress_rollback_window_,
+    previous_progress_index);
+  const std::size_t search_start = previous_progress_index - rollback_window;
 
   std::size_t nearest_index = search_start;
   double nearest_distance = std::numeric_limits<double>::max();
@@ -4432,6 +4472,20 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target(
     {
       candidate_selection_reason = candidate_target_distance < min_target_distance ?
         "candidate_next_pose_too_close" : "candidate_next_pose";
+    }
+  }
+
+  if (this->has_tracking_target_index_ && candidate_target_from_plan)
+  {
+    const std::size_t previous_target_index = std::min(this->tracking_target_index_, plan_size - 1U);
+    const std::size_t rollback_limit =
+      previous_target_index > this->tracking_progress_rollback_window_ ?
+      previous_target_index - this->tracking_progress_rollback_window_ : 0U;
+    if (candidate_target_index < rollback_limit)
+    {
+      candidate_target_index = rollback_limit;
+      candidate_target_pose = this->latest_local_plan_.poses[candidate_target_index];
+      candidate_selection_reason = "candidate_rollback_limited";
     }
   }
   this->tracking_candidate_index_ = candidate_target_index;

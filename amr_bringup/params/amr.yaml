@@ -252,51 +252,51 @@
       frequency: 10.0
       linear_speed: 0.10
       min_linear_speed: 0.06
-      tracking_lookahead_distance: 0.18
-      straight_tracking_lookahead_distance: 0.35
+      tracking_lookahead_distance: 0.22
+      straight_tracking_lookahead_distance: 0.40
       tracking_min_target_distance: 0.08
       tracking_progress_rollback_window: 2
-      tracking_target_hysteresis_distance: 0.06
-      tracking_target_reset_distance: 0.30
-      angular_gain: 2.6
-      max_angular_speed: 0.85
+      tracking_target_hysteresis_distance: 0.08
+      tracking_target_reset_distance: 0.35
+      angular_gain: 2.0
+      max_angular_speed: 0.65
       distance_tolerance: 0.1
       goal_heading_tolerance: 0.12
-      goal_reach_heading_tolerance: 0.05
-      final_align_max_angular_speed: 0.75
-      final_align_heading_deadband: 0.05
-      final_align_settle_time_sec: 0.20
-      tracking_heading_deadband: 0.05
-      tracking_heading_release_threshold: 0.09
+      goal_reach_heading_tolerance: 0.08
+      final_align_max_angular_speed: 0.35
+      final_align_heading_deadband: 0.06
+      final_align_settle_time_sec: 0.30
+      tracking_heading_deadband: 0.06
+      tracking_heading_release_threshold: 0.11
       straight_tracking_enabled: true
-      straight_curvature_threshold: 0.15
-      straight_lateral_error_threshold: 0.04
-      straight_heading_deadband: 0.08
-      straight_heading_release_threshold: 0.12
-      straight_angular_gain: 1.2
-      straight_max_angular_speed: 0.20
-      straight_heading_filter_alpha: 0.35
-      rejoin_target_distance_threshold: 0.08
-      rejoin_context_timeout_sec: 2.0
-      rejoin_context_distance_m: 0.35
-      rejoin_target_jump_threshold_m: 0.25
-      rejoin_heading_gate_threshold: 0.35
-      rejoin_min_linear_scale: 0.35
-      rotate_in_place_threshold: 0.45
-      rotate_in_place_goal_distance: 0.18
-      heading_slowdown_threshold: 0.12
-      min_heading_motion_scale: 0.20
+      straight_curvature_threshold: 0.12
+      straight_lateral_error_threshold: 0.035
+      straight_heading_deadband: 0.10
+      straight_heading_release_threshold: 0.16
+      straight_angular_gain: 0.9
+      straight_max_angular_speed: 0.16
+      straight_heading_filter_alpha: 0.25
+      rejoin_target_distance_threshold: 0.12
+      rejoin_context_timeout_sec: 2.5
+      rejoin_context_distance_m: 0.45
+      rejoin_target_jump_threshold_m: 0.28
+      rejoin_heading_gate_threshold: 0.28
+      rejoin_min_linear_scale: 0.25
+      rotate_in_place_threshold: 0.55
+      rotate_in_place_goal_distance: 0.22
+      heading_slowdown_threshold: 0.16
+      min_heading_motion_scale: 0.18
     progress_checker:
       required_movement_radius: 0.03
       time_allowance_sec: 4.0
     status:
-      command_settle_time_sec: 0.5
-      blocked_confirm_cycles: 2
-      blocked_clear_cycles: 2
+      command_settle_time_sec: 0.7
+      blocked_confirm_cycles: 3
+      blocked_clear_cycles: 3
       stalled_confirm_cycles: 2
     goal_checker:
       xy_tolerance: 0.1
-      xy_hysteresis: 0.03
+      xy_hysteresis: 0.04
       yaw_tolerance: 0.7853981633974483
       hold_time_sec: 0.0
       respect_goal_yaw: false
@@ -326,7 +326,7 @@
       structured_enabled: true
       tracking_state_throttle_sec: 1.0
       cmd_quality_throttle_sec: 1.0
-      target_jump_warn_threshold_m: 0.35
+      target_jump_warn_threshold_m: 0.28
 
 /amr/navigator:
   ros__parameters:
@@ -355,7 +355,7 @@
     recovery:
       max_retries: 4
       retry_delay_ms: 1000
-      reacquire_settle_ms: 700
+      reacquire_settle_ms: 900
     logging:
       structured_enabled: true
       recovery_decision_logging: true
@@ -367,10 +367,10 @@
     defaults:
       node_id: "recovery"
     recovery:
-      wait_duration_sec: 1.0
-      backup_distance: 0.20
-      backup_speed: 0.06
-      spin_angle_rad: 1.5707963267948966
+      wait_duration_sec: 1.2
+      backup_distance: 0.18
+      backup_speed: 0.05
+      spin_angle_rad: 1.2217304763960306
     logging:
       structured_enabled: true
 

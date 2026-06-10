@@ -120,6 +120,11 @@ The extractor includes these event families by default:
 - `local_path_quality`
 - `target_jump_detected`
 - `recovery_decision`
+- `recovery_started`
+- `recovery_finished`
+- `recovery_skipped`
+- `rejoin_state`
+- `local_blocked_state`
 
 For straight-line oscillation checks, the extractor also carries through `rejoin_context_active`,
 `straight_segment`, `path_curvature_score`, `lateral_error_m`, `heading_error_raw_rad`,
@@ -133,3 +138,18 @@ For stair-step path diagnosis, inspect `local_path_quality` columns:
 `raw_path_points`, `simplified_path_points`, `refined_path_points`, `path_length_m`,
 `path_curvature_score`, `lateral_error_m`, `line_of_sight_simplified`,
 `collinear_pruned_count`, and `collision_check_passed`.
+
+For `0.18.0` path tracking checks, start with `target_jump_detected` and
+`tracking_heading_debug`. A suspicious jump should include `previous_idx`, `nearest_idx`,
+`candidate_idx`, `selected_idx`, `target_jump_m`, `rejoin_activated`, and
+`selection_reason` so the local target choice can be reconstructed without logging full path data.
+
+For goal approach checks, inspect `goal_state`. XY arrival should latch before final yaw alignment:
+`xy_reached=true`, `final_heading_required=true`, and `phase=final_heading_align` should pair with
+`cmd_lin=0.000`. Completion should end with `phase=reached`, `cmd_lin=0.000`, and `cmd_ang=0.000`.
+
+For recovery rejoin checks, read navigator `recovery_decision`, `recovery_started`,
+`recovery_finished`, controller `rejoin_state`, and `local_blocked_state` together. A clean recovery
+exit has `recovery_finished result=reacquired` followed by controller tracking with
+`rejoin_context_active=false`. `result=reacquire_timeout` means the post-recovery settle window
+expired before motion status and local plan status both became healthy.

@@ -75,17 +75,26 @@ on a refreshed local plan, which helps path rejoin stay forward-progressive inst
 between old and newly republished nearby poses.
 `control.tracking_target_hysteresis_distance` and `control.tracking_target_reset_distance` slow
 down target switching during normal tracking.
+For `0.18.x`, plan refresh no longer clears the retained target context on every local plan
+publish. The controller keeps the previous target pose long enough for
+`tracking_target_hysteresis_distance`, `tracking_target_reset_distance`, and the rollback window to
+decide whether a new candidate is genuinely better.
 The `control.rejoin_*` parameters apply only while bounded rejoin context is active after recovery,
 escape, or a large target reacquisition; normal lookahead tracking no longer becomes rejoin just
 because `target_dist_m` is greater than the configured target-distance threshold.
 `control.rejoin_context_timeout_sec`, `control.rejoin_context_distance_m`, and
 `control.rejoin_target_jump_threshold_m` bound that context so straight-line damping can remain
 active during ordinary straight tracking.
+During the command-settle window after recovery re-dispatch, rejoin context also caps angular speed
+and scales linear speed down to avoid an immediate hard turn into a freshly reacquired target.
 `status.*` parameters debounce blocked/stalled publication so fresh command dispatch, safety-gate
 flicker, and final-align settling do not immediately look like hard recovery conditions.
 Throttled controller logs include the current tracking index, selected target point, goal phase,
 rejoin phase, and blocked/safety state so path-following quality issues can be inspected without
 changing the motion status topic contract.
+`target_jump_detected` includes `previous_idx`, `nearest_idx`, `candidate_idx`, `selected_idx`,
+`rejoin_activated`, and `selection_reason`; `goal_state` keeps XY/yaw policy fields plus
+`cmd_lin` and `cmd_ang` so final approach can be verified from logs.
 
 ## Important Interfaces
 

@@ -1,6 +1,6 @@
 # Rosbag2 Recording Profiles
 
-The v0.17.5 field workflow uses three rosbag2 profiles. The default profile should be
+The v0.18.0 field workflow uses three rosbag2 profiles. The default profile should be
 `light` for repeated start-to-goal quality tests. Escalate to `debug` or `full` only when
 the light profile and structured logs do not explain the behavior.
 

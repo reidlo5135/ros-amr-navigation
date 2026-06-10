@@ -1,6 +1,16 @@
 Changelog
 =========
 
+2026-06-10
+----------
+
+- Started the ``0.18.0`` navigation quality stabilization line:
+
+  - made motion-controller tracking target selection more forward-progressive by preserving target context across refreshed local plans and applying ``tracking_progress_rollback_window`` to candidate rollback limiting
+  - reduced straight-segment and goal-approach oscillation with more conservative TurtleBot3 Burger-class default gains, final-align speed limits, target hysteresis, and near-goal linear-speed rampdown
+  - tightened post-recovery rejoin semantics so reacquire success requires matching motion status and local plan status, with explicit timeout diagnostics for failed navigation reacquisition
+  - kept ``AMR_LOG schema=v1`` and existing topic, service, and action names stable while adding diagnostic fields for target jumps and recovery reacquire outcomes
+
 2026-05-11
 ----------
 

@@ -104,7 +104,7 @@ This project is building toward a self-owned indoor AMR stack for TurtleBot3-cla
 | `0.15.x` | Runtime hardening | scenario-based regression baselines, clearer recovery diagnostics, safer operational baseline after the mapping reboot |
 | `0.16.x` | Recovery refinement + Qt6 operator app start | local escape-first recovery flow, narrower-corridor tuning, cleaner blocked semantics, reduced false recovery entry near doors and goal approach, early `amr_visualization` package work |
 | `0.17.x` | TB3 hardware internalization priority | make TurtleBot3 bringup, base-driver, LiDAR-driver, and robot-description ownership first-class inside the AMR repository while preserving the current compatibility path |
-| `0.18.x` | Planner/controller quality + safety and task-layer ops | Nav2-style smoother/path-quality work, blocked semantics refinement, cleaner recovery exit, lower oscillation during path rejoin and final heading alignment, plus collision-monitor/detector-style near-field safety lane, route/waypoint task execution maturity, stronger operator command/state contract, and app-level BT / Qt6 operator workflow closure |
+| `0.18.x` | Navigation quality stabilization | AMR path tracking quality, goal approach stability, conservative recovery rejoin after local escape/recovery, lower straight-line and final-align oscillation, plus follow-on safety/task-layer operations once controller quality is stable |
 | `0.19.x` | Docking and deployment readiness | dock/undock lifecycle, startup/shutdown and reconnect discipline, richer diagnostics and long-run unattended confidence, single-robot deployment closure before `1.0.0` |
 
 ## 0.11.x Focus
