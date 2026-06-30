@@ -12,7 +12,8 @@ Robot bringup must provide:
 - `/cmd_vel` ingress for the base
 - optional `/imu`, `/joint_states`, `/robot_description`, `/battery_state`
 
-External `slam_toolbox` consumes the robot bringup outputs and publishes:
+External `slam_toolbox` `online_async_launch.py` consumes the robot bringup
+outputs with `amr_bringup/params/slam_toolbox.yaml` and publishes:
 
 - `/map`
 - `map -> odom`
@@ -43,4 +44,4 @@ still preserve the same navigation-facing contract:
 - avoid publishing `map -> odom`
 
 This keeps online SLAM/localization ownership cleanly assigned to
-`slam_toolbox`.
+`slam_toolbox` while AMR navigation keeps the root topic contract.

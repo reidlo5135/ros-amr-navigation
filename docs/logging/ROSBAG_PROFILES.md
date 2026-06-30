@@ -1,8 +1,8 @@
 # Rosbag Profiles
 
-The navigation stack now consumes external `slam_toolbox` output and standard ROS
-2 topic names. Prefer recording TF, `/map`, plans, costmaps, and controller
-status rather than legacy localization pose topics.
+The navigation stack now consumes external `slam_toolbox` online-async output and
+standard ROS 2 topic names. Prefer recording TF, `/map`, plans, costmaps, and
+controller status rather than legacy localization pose topics.
 
 ## Light Profile
 
@@ -26,7 +26,9 @@ Used by `scripts/record_nav_bag_debug.sh`:
 - `/local_plan_status`
 - `/global_plan`
 - `/local_plan`
+- `/global_costmap`
 - `/local_costmap`
+- `/map`
 - `/scan`
 - `/tf`
 - `/tf_static`

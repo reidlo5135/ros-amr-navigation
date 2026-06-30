@@ -7,8 +7,14 @@ Helper scripts for running and observing the navigation stack.
 - `run_turtlebot3_nohup.sh`: starts robot bringup under `nohup`
 - `run_navigation_nohup.sh`: starts `amr_bringup navigation.launch.py` under `nohup`
 
-Run external `slam_toolbox` online SLAM separately between robot bringup and AMR
-navigation.
+Run external `slam_toolbox` online-async SLAM separately between robot bringup
+and AMR navigation:
+
+```bash
+ros2 launch slam_toolbox online_async_launch.py \
+	slam_params_file:=$(ros2 pkg prefix amr_bringup)/share/amr_bringup/params/slam_toolbox.yaml \
+	use_sim_time:=false
+```
 
 ## Rosbag Helpers
 
@@ -23,7 +29,9 @@ The light/debug profiles use the standard navigation contract:
 - `/local_plan_status`
 - `/global_plan`
 - `/local_plan`
+- `/global_costmap`
 - `/local_costmap`
+- `/map`
 - `/scan`
 - `/tf`
 - `/tf_static`

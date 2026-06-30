@@ -1,7 +1,9 @@
 # ros-amr-navigation
 
-`ros-amr-navigation` is now a navigation-only AMR stack designed to run with an
-externally launched `slam_toolbox` online SLAM/localization pipeline.
+`ros-amr-navigation` is now a navigation-only AMR stack designed for
+`slam_toolbox + AMR` online-async navigation: robot bringup starts the sensors
+and base, external `slam_toolbox` owns online SLAM/localization, and this stack
+owns navigation.
 
 The core runtime no longer launches or depends on the repository's legacy static
 map server or AMCL-lite localization node. `slam_toolbox` owns online mapping,
@@ -12,10 +14,10 @@ observation, and optional visualization or MQTT bridging.
 
 ## Runtime Architecture
 
-Required external inputs:
+Required external inputs for `slam_toolbox + AMR` online-async navigation:
 
 - robot bringup publishes `/scan`, `/tf`, `/tf_static`, and `/odom` or an `odom -> base_*` TF chain
-- external `slam_toolbox` online mode publishes `/map`
+- external `slam_toolbox` `online_async_launch.py` publishes `/map`
 - external `slam_toolbox` publishes `map -> odom`
 
 AMR navigation consumes:
@@ -44,7 +46,9 @@ ros2 launch <robot_bringup_package> bringup.launch.py
 Terminal 2:
 
 ```bash
-ros2 launch slam_toolbox online_async_launch.py slam_params_file:=<slam_toolbox_online_params.yaml> use_sim_time:=false
+ros2 launch slam_toolbox online_async_launch.py \
+	slam_params_file:=$(ros2 pkg prefix amr_bringup)/share/amr_bringup/params/slam_toolbox.yaml \
+	use_sim_time:=false
 ```
 
 Terminal 3:
@@ -59,6 +63,11 @@ Optional MQTT bridge:
 ros2 launch amr_bringup navigation.launch.py use_mqtt_server:=true
 ```
 
+`amr_bringup/launch/navigation.launch.py` keeps navigation nodes in the root ROS
+namespace by passing `namespace=""` to each `LifecycleNode`. Do not introduce a
+robot-specific namespace unless the topic contract below is intentionally
+remapped.
+
 ## Core Packages
 
 - `amr_costmap_server`: consumes live `/map`, `/scan`, and TF; publishes global and local costmaps
@@ -69,6 +78,12 @@ ros2 launch amr_bringup navigation.launch.py use_mqtt_server:=true
 - `amr_runtime_observation`: observes navigation status and emits runtime summaries
 - `amr_lifecycle_manager`: lifecycle bringup for navigation core nodes only
 - `amr_bringup`: navigation-only launch and parameters
+
+`amr_bringup/params/slam_toolbox.yaml` is the packaged online-async
+`slam_toolbox` parameter file for this navigation contract. It runs
+`slam_toolbox` in `mode: mapping`, keeps `use_sim_time: false` by default, and
+uses standard `/scan`, `/tf`, `/tf_static`, `/map`, and `map -> odom`
+interfaces.
 
 Legacy packages removed from the core navigation path:
 
@@ -103,6 +118,8 @@ Outputs:
 | motion status | `/motion_status` |
 | local plan status | `/local_plan_status` |
 | velocity command | `/cmd_vel` |
+| runtime observation summary | `/observation/runtime/summary` |
+| runtime observation events | `/observation/runtime/events` |
 
 Actions and services:
 

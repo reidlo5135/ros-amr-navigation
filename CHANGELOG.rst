@@ -15,6 +15,11 @@ Changelog
     ``map -> odom -> base_*`` chain
   - documented the robot bringup + external ``slam_toolbox`` + AMR navigation
     launch sequence
+  - added packaged ``amr_bringup/params/slam_toolbox.yaml`` defaults for the
+    external ``slam_toolbox`` ``online_async_launch.py`` process
+  - documented that navigation lifecycle nodes run in the root ROS namespace
+    with standard topic addresses such as ``/map``, ``/global_costmap``,
+    ``/motion_command``, and ``/cmd_vel``
 
 2026-06-10
 ----------

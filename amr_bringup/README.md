@@ -1,6 +1,7 @@
 # amr_bringup
 
-Navigation launch and parameters for `slam_toolbox + ros-amr-navigation`.
+Navigation launch and parameters for `slam_toolbox + AMR` online-async
+navigation.
 
 `amr_bringup/launch/navigation.launch.py` starts only the AMR navigation core:
 
@@ -19,12 +20,24 @@ It does not launch `slam_toolbox`, `amr_map_server`, or `amr_localization`.
 
 ```bash
 ros2 launch <robot_bringup_package> bringup.launch.py
-ros2 launch slam_toolbox online_async_launch.py slam_params_file:=<slam_toolbox_online_params.yaml> use_sim_time:=false
+ros2 launch slam_toolbox online_async_launch.py \
+	slam_params_file:=$(ros2 pkg prefix amr_bringup)/share/amr_bringup/params/slam_toolbox.yaml \
+	use_sim_time:=false
 ros2 launch amr_bringup navigation.launch.py
 ```
 
 `slam_toolbox` must publish `/map` and `map -> odom`. The AMR stack consumes
 that TF chain and does not publish it.
+
+`navigation.launch.py` keeps lifecycle nodes in the root ROS namespace with
+`namespace=""`, so node names and lifecycle manager targets remain
+`/costmap_server`, `/global_planner`, `/local_planner`, `/motion_controller`,
+`/recovery_server`, and `/navigator`.
+
+`params/slam_toolbox.yaml` contains the packaged AMR online-async defaults for
+external `slam_toolbox`: `mode: mapping`, `use_sim_time: false`, longer TF buffer
+duration, and scan queue settings suitable for online map updates while AMR
+navigation is running.
 
 ## Parameters
 

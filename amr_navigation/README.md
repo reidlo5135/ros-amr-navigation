@@ -22,4 +22,5 @@ Optional UI/bridge packages:
 
 Legacy `amr_map_server` and `amr_localization` are not dependencies of this
 metapackage. Online SLAM and localization are expected to be provided by an
-external `slam_toolbox` launch.
+external `slam_toolbox` `online_async_launch.py` launch using the packaged
+`amr_bringup/params/slam_toolbox.yaml` defaults.

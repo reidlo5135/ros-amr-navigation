@@ -2,6 +2,10 @@
 
 Runtime logs use `AMR_LOG schema=v1` records for navigation core events.
 
+The current runtime assumes `slam_toolbox + AMR` online-async navigation: robot
+bringup publishes sensors and base TF, external `slam_toolbox` publishes `/map`
+and `map -> odom`, and AMR lifecycle nodes run in the root ROS namespace.
+
 Current core components:
 
 | Component | Node | Responsibility |
@@ -28,6 +32,8 @@ Primary runtime topics:
 - `/motion_status`
 - `/local_plan_status`
 - `/cmd_vel`
+- `/observation/runtime/summary`
+- `/observation/runtime/events`
 
 `map -> odom` is published by external `slam_toolbox`, not by this stack. TF
 lookup failures are expected during startup and should appear as throttled

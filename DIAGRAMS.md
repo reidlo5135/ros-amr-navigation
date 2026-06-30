@@ -8,7 +8,7 @@ flowchart LR
     Robot --> OdomTf["odom -> base_* TF"]
     Robot --> Tf["/tf, /tf_static"]
 
-    Scan --> Slam["external slam_toolbox online"]
+    Scan --> Slam["external slam_toolbox online_async_launch.py"]
     OdomTf --> Slam
     Tf --> Slam
 
@@ -74,11 +74,11 @@ The AMR navigation launch must not start any node that publishes `map -> odom`.
 ```mermaid
 sequenceDiagram
     participant Robot as robot bringup
-    participant Slam as external slam_toolbox
+    participant Slam as external slam_toolbox online_async
     participant Nav as amr_bringup navigation.launch.py
 
     Robot->>Robot: publish /scan and odom -> base_*
-    Slam->>Slam: consume /scan, /tf, /odom or odom TF
+    Slam->>Slam: consume sensors and TF with packaged AMR params
     Slam->>Nav: publish /map
     Slam->>Nav: publish map -> odom TF
     Nav->>Nav: lifecycle configure/activate costmap, planners, controller, navigator, recovery
@@ -100,3 +100,7 @@ flowchart LR
 `/navigation_manager` manages only navigation core lifecycle nodes. It does not
 publish an initial pose by default; `/initialpose` remains a `slam_toolbox`/RViz
 interface.
+
+The lifecycle nodes are launched in the root namespace. Their managed names are
+`/costmap_server`, `/global_planner`, `/local_planner`, `/motion_controller`,
+`/recovery_server`, and `/navigator`.
