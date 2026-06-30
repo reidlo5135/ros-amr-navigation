@@ -1,0 +1,11 @@
+/slam_toolbox:
+  ros__parameters:
+    use_sim_time: false
+
+    transform_timeout: 1.0
+    tf_buffer_duration: 60.0
+    scan_queue_size: 100
+
+    minimum_time_interval: 0.5
+    minimum_laser_range: 0.1
+    mode: mapping
