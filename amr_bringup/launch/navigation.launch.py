@@ -22,6 +22,7 @@ def generate_launch_description() -> LaunchDescription:
         package="amr_costmap_server",
         executable="amr_costmap_server",
         name="costmap_server",
+        namespace="",
         output="screen",
         parameters=[params_file],
     )
@@ -29,6 +30,7 @@ def generate_launch_description() -> LaunchDescription:
         package="amr_global_planner",
         executable="amr_global_planner",
         name="global_planner",
+        namespace="",
         output="screen",
         parameters=[params_file],
     )
@@ -46,6 +48,7 @@ def generate_launch_description() -> LaunchDescription:
         package="amr_recovery_server",
         executable="amr_recovery_server",
         name="recovery_server",
+        namespace="",
         output="screen",
         parameters=[params_file],
     )
@@ -53,6 +56,7 @@ def generate_launch_description() -> LaunchDescription:
         package="amr_bt_navigator",
         executable="amr_bt_navigator",
         name="navigator",
+        namespace="",
         output="screen",
         parameters=[params_file],
     )
