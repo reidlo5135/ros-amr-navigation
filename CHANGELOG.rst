@@ -1,12 +1,27 @@
 Changelog
 =========
 
+2026-06-30
+----------
+
+- Refactored the core navigation architecture for external online
+  ``slam_toolbox``:
+
+  - removed the in-repository map-server and localization packages from the
+    navigation path
+  - changed the default ROS interface contract to standard ``/map``, ``/scan``,
+    ``/tf``, navigation actions, plans, costmaps, and command/status topics
+  - moved navigation-core robot pose handling to TF lookup on the
+    ``map -> odom -> base_*`` chain
+  - documented the robot bringup + external ``slam_toolbox`` + AMR navigation
+    launch sequence
+
 2026-06-10
 ----------
 
 - Started the ``0.18.1`` localization slip-guard follow-up:
 
-  - added conservative wheel-slip and physical-stall detection in ``amr_localization`` by comparing odometry deltas with localized pose progress, scan likelihood health, ``/cmd_vel``, and ``/amr/motion/status``
+  - added conservative wheel-slip and physical-stall detection in legacy localization by comparing odometry deltas with localized pose progress, scan likelihood health, velocity commands, and legacy motion status
   - damped particle motion updates during suspected slip/stall so a spinning or stalled wheel does not immediately drag localization away from scan/map evidence
   - bounded per-update ``map -> odom`` correction to reduce sudden TF jumps after slip, while bypassing the limiter for initial-pose reset
   - added same-row global path straightening so safe same-Y goals use a direct line-of-sight path before A* row penalties can bend the route
@@ -25,7 +40,7 @@ Changelog
 - Completed the remaining ``0.16.x`` planner-local escape wiring cleanup:
 
   - restricted local escape re-dispatch to planner-owned recovery for the currently active motion command so stale planner state does not hijack controller-only blocked or stalled cases
-  - normalized ``/amr/local_planner/plan_local_escape`` responses onto stable reason labels for map-unavailable, empty-source-plan, and no-valid-path failures
+  - normalized legacy local-escape responses onto stable reason labels for map-unavailable, empty-source-plan, and no-valid-path failures
   - surfaced local escape rejection context into the BT status message before fallback recovery behaviors continue
 
 - Fixed the ``0.16.x`` local-escape-first recovery policy:
@@ -105,7 +120,7 @@ Changelog
 - Started the ``0.15.5`` patch branch:
 
   - introduced ``amr_controller_server`` as the controller-layer aggregation boundary
-  - moved the local planner and motion controller runtime source into a Nav2-style ``controller_server.hpp`` / ``controller_server.cpp`` / ``main.cpp`` layout while preserving the existing ``/amr/local_planner`` and ``/amr/motion_controller`` lifecycle nodes
+  - moved the local planner and motion controller runtime source into a Nav2-style ``controller_server.hpp`` / ``controller_server.cpp`` / ``main.cpp`` layout while preserving the then-current legacy lifecycle nodes
   - aligned the package dependency surface toward a Nav2-style controller boundary without changing motion-control behavior
 
 2026-04-13
@@ -141,7 +156,7 @@ Changelog
 - Started the ``0.15.0`` development branch:
 
   - removed the in-repo ``amr_slam_mapper`` runtime in favor of consuming external ``ros-slam-mapper`` topics
-  - switched AMR-side mapping consumers from ``/amr/*`` SLAM sources to external ``/slam/*`` sources
+  - switched AMR-side mapping consumers from legacy SLAM sources to external SLAM sources
   - kept MQTT and ``amr_viz`` contracts stable by retargeting the bridge's ROS source topics only
 
 - Started the ``0.14.4`` patch branch:
@@ -156,7 +171,7 @@ Changelog
 - Started the ``0.14.2`` patch branch:
 
   - split the temporary SLAM map into raw and refined publish layers
-  - kept the legacy ``/amr/map/temp`` topic as a refined compatibility alias
+  - kept the legacy temporary-map topic as a refined compatibility alias
   - exposed raw and refined SLAM map layers through MQTT and ``amr_viz`` mapping mode
 
 - Started the ``0.14.1`` patch branch:
@@ -344,15 +359,15 @@ Changelog
 - Updated shared parameters in ``amr_bringup/params/amr.yaml`` for mapping mode configuration, including grid size, origin, sensor topics, and update range.
 - Split map publishing roles inside ``amr_map_server``:
 
-  - ``/amr/map/data`` remains the official navigation map
-  - ``/amr/map/temporary`` publishes the in-progress mapping result
+  - the legacy navigation-map topic remains the official navigation map
+  - the legacy temporary-map topic publishes the in-progress mapping result
 
-- Added ``/amr/map_server/freeze_temporary_map`` to promote the current temporary map into the official navigation map topic.
+- Added a legacy freeze-temporary-map service to promote the current temporary map into the official navigation map topic.
 - Improved mapping-mode RViz usability by publishing an identity ``map -> odom`` TF and changing temporary occupancy updates from permanent painting to score-based accumulation with decay.
 - Reworked mapping mode toward a SLAM-lite feedback loop:
 
-  - ``amr_localization`` can run against ``/amr/map/temporary``
-  - ``amr_map_server`` consumes corrected ``/amr/localization/odometry`` instead of raw ``/odom``
+  - legacy localization can run against the temporary map
+  - the legacy map server consumes corrected localization odometry instead of raw odometry
   - mapping mode is now structured around localization-assisted temporary map refinement
 
 - After validating the temporary-map feedback loop, the mapping bootstrap direction was corrected back toward raw ``/odom``-based accumulation for stability.
@@ -370,7 +385,7 @@ Changelog
 
   - coverage and obstacle/free ratios are checked before saving
   - an inflation-aware free-space ratio is used as a lightweight planning-readiness metric
-  - passing maps can be promoted to ``/amr/map/data`` and saved as ``pgm + yaml``
+  - passing maps can be promoted to the legacy navigation-map topic and saved as ``pgm + yaml``
 - Added optional automatic map saving in mapping mode:
 
   - quality checks now run periodically during mapping

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-ros2 action send_goal /amr/navigator/navigate_to_poses amr_msgs/action/NavigateToPoses "{
+ros2 action send_goal /navigate_to_poses amr_msgs/action/NavigateToPoses "{
   goal_poses: [
     {
       header: {frame_id: 'map'},

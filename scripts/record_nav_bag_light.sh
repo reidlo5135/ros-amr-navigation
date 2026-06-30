@@ -25,12 +25,11 @@ source "${SCRIPT_DIR}/amr_logging_env.sh"
 
 output="${AMR_BAG_ROOT}/nav_light_${AMR_RUN_ID}"
 topics=(
-  /amr/observation/runtime/summary
-  /amr/observation/runtime/events
-  /amr/motion/command
-  /amr/motion/status
-  /amr/planner/local_status
-  /amr/localization/pose
+  /observation/runtime/summary
+  /observation/runtime/events
+  /motion_command
+  /motion_status
+  /local_plan_status
   /cmd_vel
 )
 

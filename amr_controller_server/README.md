@@ -1,123 +1,45 @@
 # amr_controller_server
 
-Controller-layer server package for the AMR navigation stack.
+Hosts two lifecycle nodes:
 
-## Role
+- `local_planner`
+- `motion_controller`
 
-`amr_controller_server` owns the runtime boundary and source code for local control while
-preserving the existing lifecycle node contracts:
+Both nodes obtain the robot pose through TF lookup from `map` to
+`base_footprint` by default. They no longer subscribe to a localization pose
+topic.
 
-- `/amr/local_planner`: builds the short-horizon local plan from the global route.
-- `/amr/motion_controller`: tracks the local plan, applies safety gating, and publishes `cmd_vel`.
-- local path refiner: prunes near-duplicate poses, densifies long segments, smooths safe corners, and assigns path headings.
-- goal checker: separates XY / yaw / hold-time arrival policy from velocity tracking logic.
+## local_planner
 
-This mirrors the Nav2-style server file layout with one `controller_server.hpp`,
-one `controller_server.cpp`, and one `main.cpp`. The process hosts both existing lifecycle nodes
-so lifecycle management, parameters, and topics remain compatible.
+Inputs:
 
-## Launch
+- `/motion_command`
+- `/local_costmap`
+- `/global_plan`
+- TF `map -> odom -> base_*`
 
-`amr_bringup` includes this launch file and passes the consolidated parameter file:
+Outputs:
 
-```bash
-ros2 launch amr_controller_server controller.launch.py params_file:=/path/to/amr.yaml
-```
+- `/local_plan`
+- `/local_plan_status`
 
-## Parameters
+Service:
 
-`/amr/local_planner` exposes `path_refiner.*` parameters for safe path post-processing,
-including collision-checked corner smoothing with fallback to the unsmoothed local plan.
-The refiner now stages prune/interpolate, smoothing, and final handoff separately, and
-`path_refiner.smoothing_max_length_ratio` plus `path_refiner.smoothing_max_pose_deviation`
-bound how far a smoothed candidate may drift from the base local path before it is rejected.
-On near-straight local paths, smoothing is rejected if it increases lateral error beyond the
-collinear tolerance margin, so RViz GP/LP comparison should stay close to the same centerline when
-there is no obstacle-driven detour.
-It also exposes `dynamic_obstacle.*` parameters for local escape generation and blocked-state
-confirmation, including the current corridor/doorway relaxation controls used by the `0.16.x`
-recovery-tuning line.
-`dynamic_obstacle.clear_confirm_cycles` lets the local planner require a short clear streak
-before it fully drops a previously confirmed blocked decision.
-`/amr/motion_controller` exposes `goal_checker.*` parameters for arrival policy tuning.
-By default, AMR navigation goals are full pose targets and command-driven final heading alignment
-remains enabled. `/amr/navigator.execution.align_heading_at_goal` defaults to `true`; set it to
-`false` only for explicit XY-only tests or workflows.
-`goal_checker.xy_hysteresis` keeps the XY-arrived phase latched through small localization
-noise, so final heading alignment does not repeatedly fall back into path tracking.
-When heading alignment is active near the goal, `control.goal_reach_heading_tolerance` and
-`control.final_align_max_angular_speed` tune the final in-place yaw settle behavior separately
-from the looser general waypoint-style yaw tolerance.
-`control.final_align_heading_deadband` and `control.final_align_settle_time_sec` let the
-controller hold a quiet final-yaw settle window before it declares the aligned goal complete.
-For straight-line tracking tests where final yaw should be ignored at the controller layer, set
-`goal_checker.ignore_yaw` to `true`; this leaves recovery and normal tracking intact but skips
-goal yaw alignment only for that configuration.
-For nominal path tracking, `control.tracking_heading_deadband` suppresses tiny heading
-corrections on straight segments so the robot does not visibly wag with small localization
-or path-sampling noise.
-`control.tracking_heading_release_threshold` adds hysteresis so angular correction resumes
-only after the heading error leaves the deadband by a clear margin.
-Straight-line oscillation reduction is controlled by `control.straight_tracking_enabled`.
-When enabled, the controller detects low-curvature local plan windows with
-`control.straight_curvature_threshold` and `control.straight_lateral_error_threshold`, uses
-`control.straight_tracking_lookahead_distance` for a less noisy target, and applies the
-conservative `control.straight_heading_deadband`, `control.straight_heading_release_threshold`,
-`control.straight_angular_gain`, `control.straight_max_angular_speed`, and
-`control.straight_heading_filter_alpha` only during normal path tracking.
-Goal approach, final heading alignment, backup, spin, and wait recovery commands continue to use
-their existing control paths.
-The local planner also reduces grid stair-steps before the motion controller sees them.
-`path_refiner.line_of_sight_simplification_enabled` skips intermediate poses when the footprint can
-travel directly between non-adjacent path points, and `path_refiner.collinear_pruning_enabled`
-removes near-collinear residual points after that line-of-sight pass.
-The `local_path_quality` log reports raw, simplified, and refined point counts plus curvature,
-lateral error, pruning count, and collision-check status.
-`local_path_guard.*` prevents a one-pose or near-zero-length local plan from being treated as a
-normal trackable path when the source global path still has usable points. If the guard can recover,
-it publishes a short fallback local path from the nearest source point or current pose to a selected
-target; otherwise it marks local plan status invalid and emits `local_path_degenerate` with frame,
-index, lookahead, goal-distance, and fallback fields.
-For straight-path quality tuning, prefer smaller `path_refiner.corner_smoothing_max_offset`,
-tighter `path_refiner.smoothing_max_pose_deviation`, and conservative
-`path_refiner.collinear_lateral_deviation_threshold` before changing planner topics or contracts.
-`control.tracking_progress_rollback_window` limits how far the controller may search backward
-on a refreshed local plan, which helps path rejoin stay forward-progressive instead of snapping
-between old and newly republished nearby poses.
-`control.tracking_target_hysteresis_distance` and `control.tracking_target_reset_distance` slow
-down target switching during normal tracking.
-For `0.18.x`, plan refresh no longer clears the retained target context on every local plan
-publish. The controller keeps the previous target pose long enough for
-`tracking_target_hysteresis_distance`, `tracking_target_reset_distance`, and the rollback window to
-decide whether a new candidate is genuinely better.
-The `control.rejoin_*` parameters apply only while bounded rejoin context is active after recovery,
-escape, or a large target reacquisition; normal lookahead tracking no longer becomes rejoin just
-because `target_dist_m` is greater than the configured target-distance threshold.
-`control.rejoin_context_timeout_sec`, `control.rejoin_context_distance_m`, and
-`control.rejoin_target_jump_threshold_m` bound that context so straight-line damping can remain
-active during ordinary straight tracking.
-During the command-settle window after recovery re-dispatch, rejoin context also caps angular speed
-and scales linear speed down to avoid an immediate hard turn into a freshly reacquired target.
-`status.*` parameters debounce blocked/stalled publication so fresh command dispatch, safety-gate
-flicker, and final-align settling do not immediately look like hard recovery conditions.
-Throttled controller logs include the current tracking index, selected target point, goal phase,
-rejoin phase, and blocked/safety state so path-following quality issues can be inspected without
-changing the motion status topic contract.
-`target_jump_detected` includes `previous_idx`, `nearest_idx`, `candidate_idx`, `selected_idx`,
-`rejoin_activated`, and `selection_reason`; `goal_state` keeps XY/yaw policy fields plus
-`cmd_lin` and `cmd_ang` so final approach can be verified from logs.
+- `/plan_local_escape`
 
-## Important Interfaces
+## motion_controller
 
-- topic in: `/amr/motion/command`
-- topic in: `/amr/localization/pose`
-- topic in: `/amr/costmap/local`
-- topic out: `/amr/planner/local`
-- topic out: `/amr/planner/local_status`
-- topic out: `/amr/motion/status`
-- service: `/amr/local_planner/plan_local_escape`
+Inputs:
 
-## Next Direction
+- `/motion_command`
+- `/local_plan`
+- `/scan`
+- TF `map -> odom -> base_*`
 
-Progress checking, safety gate, velocity control, and local planning should keep moving toward
-package-local classes or plugins under this controller boundary.
+Outputs:
+
+- `/motion_status`
+- `/cmd_vel`
+
+If TF is temporarily unavailable, both nodes wait without crashing. The motion
+controller publishes no active navigation command until pose lookup succeeds.

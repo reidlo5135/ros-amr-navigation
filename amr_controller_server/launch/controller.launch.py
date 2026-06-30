@@ -10,7 +10,6 @@ def generate_launch_description() -> LaunchDescription:
     controller_server = Node(
         package="amr_controller_server",
         executable="amr_controller_server",
-        namespace="amr",
         output="screen",
         parameters=[params_file],
     )

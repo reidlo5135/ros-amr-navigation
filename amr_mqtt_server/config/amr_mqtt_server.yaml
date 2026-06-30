@@ -1,4 +1,4 @@
-/amr/mqtt_server:
+/mqtt_server:
   ros__parameters:
     footprint:
       polygon:
@@ -24,19 +24,19 @@
         command: 0
         service: 0
       topics:
-        header: "/amr"
+        header: "/navigation"
     ros:
       topics:
-        map: "/amr/map/data"
+        map: "/map"
         temp_map: "/slam/map/temp/refined"
         temp_map_raw: "/slam/map/temp/raw"
-        robot_pose: "/amr/localization/pose"
+        robot_pose: "/pose"
         mapping_pose: "/slam/mapper/pose"
-        global_path: "/amr/planner/global"
-        local_path: "/amr/planner/local"
-        global_costmap: "/amr/costmap/global"
-        local_costmap: "/amr/costmap/local"
-        motion_status: "/amr/motion/status"
+        global_path: "/global_plan"
+        local_path: "/local_plan"
+        global_costmap: "/global_costmap"
+        local_costmap: "/local_costmap"
+        motion_status: "/motion_status"
         scan: "/scan"
         odom: "/odom"
         imu: "/imu"
@@ -46,17 +46,17 @@
         robot_description: "/robot_description"
         battery_state: "/battery_state"
         slam_graph: "/slam/mapper/graph_debug"
-        observation_runtime_summary: "/amr/observation/runtime/summary"
-        observation_runtime_events: "/amr/observation/runtime/events"
+        observation_runtime_summary: "/observation/runtime/summary"
+        observation_runtime_events: "/observation/runtime/events"
         cmd_vel: "/cmd_vel"
-        initial_pose: "/amr/localization/initial_pose"
-        navigate_feedback_poses: "/amr/navigator/navigate_to_poses/feedback"
-        navigate_status_poses: "/amr/navigator/navigate_to_poses/status"
+        initial_pose: "/initialpose"
+        navigate_feedback_poses: "/navigate_to_poses/feedback"
+        navigate_status_poses: "/navigate_to_poses/status"
       services:
-        plan_segment: "/amr/global_planner/plan_segment"
-        plan_route: "/amr/global_planner/plan_route"
+        plan_segment: "/plan_segment"
+        plan_route: "/plan_route"
       actions:
-        navigate_to_poses: "/amr/navigator/navigate_to_poses"
+        navigate_to_poses: "/navigate_to_poses"
       save:
         directory: "/home/rnc/ws/data/maps"
   

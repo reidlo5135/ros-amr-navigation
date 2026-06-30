@@ -48,10 +48,10 @@ double estimate_path_length(const nav_msgs::msg::Path &path)
 
 PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("global_planner", options),
-  costmap_topic_(""),
-  computed_plan_topic_(""),
-  plan_segment_service_name_("/amr/global_planner/plan_segment"),
-  plan_route_service_name_("/amr/global_planner/plan_route"),
+  costmap_topic_("/global_costmap"),
+  computed_plan_topic_("/global_plan"),
+  plan_segment_service_name_("/plan_segment"),
+  plan_route_service_name_("/plan_route"),
   obstacle_threshold_(50),
   connectivity_(8),
   allow_unknown_(false),
@@ -369,11 +369,16 @@ bool PlannerServer::compute_plan_between_poses(
     return false;
   }
 
+  const auto expected_costmap_size = this->global_costmap_ ?
+    static_cast<std::size_t>(this->global_costmap_->info.width) *
+    static_cast<std::size_t>(this->global_costmap_->info.height) :
+    0U;
   if (
     !this->global_costmap_ ||
     this->global_costmap_->info.width == 0 ||
     this->global_costmap_->info.height == 0 ||
-    this->global_costmap_->data.empty())
+    this->global_costmap_->info.resolution <= 0.0F ||
+    this->global_costmap_->data.size() != expected_costmap_size)
   {
     message = "Global costmap is not available";
     return false;
@@ -861,6 +866,27 @@ nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::
 
 void PlannerServer::costmap_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map)
 {
+  const auto width = static_cast<std::size_t>(map->info.width);
+  const auto height = static_cast<std::size_t>(map->info.height);
+  const auto expected_size = width * height;
+  if (
+    width == 0U || height == 0U || map->info.resolution <= 0.0F ||
+    map->data.size() != expected_size)
+  {
+    this->global_costmap_.reset();
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      5000,
+      "Ignoring invalid global costmap: size=%zu x %zu resolution=%.6f data=%zu expected=%zu",
+      width,
+      height,
+      static_cast<double>(map->info.resolution),
+      map->data.size(),
+      expected_size);
+    return;
+  }
+
   this->global_costmap_ = map;
 }
 

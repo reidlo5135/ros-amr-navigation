@@ -25,7 +25,7 @@ std::string log_value(std::string value)
 
 RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("recovery_server", options),
-  plan_recovery_service_name_("/amr/recovery_server/plan_recovery"),
+  plan_recovery_service_name_("/plan_recovery"),
   default_node_id_("recovery"),
   wait_duration_sec_(1.2),
   backup_distance_(0.18),

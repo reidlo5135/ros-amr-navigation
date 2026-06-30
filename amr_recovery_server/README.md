@@ -1,15 +1,11 @@
 # amr_recovery_server
 
-Recovery behavior command generator.
+Lifecycle recovery command planner.
 
-## Role
+Service:
 
-- receives recovery behavior requests from `amr_bt_navigator`
-- returns executable motion commands for:
-  - `wait`
-  - `backup`
-  - `spin`
+- `/plan_recovery`
 
-## Service
-
-- `/amr/recovery_server/plan_recovery`
+The server returns `MotionCommand` recovery behaviors such as wait, backup, and
+spin. It does not own localization or TF publication; the navigator passes the
+current pose obtained from TF.

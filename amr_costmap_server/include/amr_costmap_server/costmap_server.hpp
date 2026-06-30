@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
+#include <tf2/exceptions.h>
+#include <tf2/time.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 namespace amr::costmap::server
 {
@@ -34,11 +39,11 @@ private:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
-  void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
   void handle_clear_costmap(
     const std::shared_ptr<amr_msgs::srv::ClearCostmap::Request> request,
     std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response);
+  bool update_current_pose_from_tf();
   void rebuild_global_costmap();
   void rebuild_local_costmap();
   void publish_global_costmap();
@@ -56,18 +61,22 @@ private:
   bool has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const;
 
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp::Service<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_service_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr global_costmap_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::OccupancyGrid>::SharedPtr local_costmap_publisher_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
   std::string map_topic_;
-  std::string pose_topic_;
   std::string scan_topic_;
   std::string global_costmap_topic_;
   std::string local_costmap_topic_;
   std::string clear_costmap_service_name_;
+  std::string map_frame_;
+  std::string odom_frame_;
+  std::string base_frame_;
+  double tf_lookup_timeout_sec_;
   int obstacle_threshold_;
   double global_inflation_radius_;
   int global_inflation_cost_;

@@ -1,22 +1,16 @@
 # amr_lifecycle_manager
 
-Lifecycle orchestration utility for AMR nodes.
+Simple lifecycle bringup manager used by `amr_bringup`.
 
-## Role
+The current navigation launch manages only navigation core lifecycle nodes:
 
-- configures and activates managed lifecycle nodes
-- can publish the initial pose during bringup
-- is used by both localization and navigation launch flows
+- `/costmap_server`
+- `/global_planner`
+- `/local_planner`
+- `/motion_controller`
+- `/recovery_server`
+- `/navigator`
 
-## Typical Usage
-
-- localization manager activates:
-  - map server
-  - localization
-  - costmap server
-  - global planner
-- navigation manager activates:
-  - local planner
-  - motion controller
-  - recovery server
-  - BT navigator
+It does not manage a map server or localization node. Initial pose publication is
+disabled by default; `/initialpose` belongs to RViz or external `slam_toolbox`
+configuration.

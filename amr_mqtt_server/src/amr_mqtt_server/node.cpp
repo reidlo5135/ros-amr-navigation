@@ -87,7 +87,7 @@ bool is_valid_robot_id(const std::string &robot_id)
 std::string normalize_root(const std::string &root)
 {
   if (root.empty()) {
-    return "/amr";
+    return "/navigation";
   }
   std::string normalized = root.front() == '/' ? root : "/" + root;
   while (normalized.size() > 1U && normalized.back() == '/') {
@@ -1075,7 +1075,7 @@ private:
 
   struct MqttTopics
   {
-    std::string root{"/amr"};
+    std::string root{"/navigation"};
     std::string robot_id{"burger1"};
     bool raw_telemetry_enabled{false};
     int telemetry_qos{0};
@@ -1124,13 +1124,13 @@ private:
 
   struct RosInterfaces
   {
-    std::string topic_map{"/amr/map/data"};
-    std::string topic_robot_pose{"/amr/localization/pose"};
-    std::string topic_global_path{"/amr/planner/global"};
-    std::string topic_local_path{"/amr/planner/local"};
-    std::string topic_global_costmap{"/amr/costmap/global"};
-    std::string topic_local_costmap{"/amr/costmap/local"};
-    std::string topic_motion_status{"/amr/motion/status"};
+    std::string topic_map{"/map"};
+    std::string topic_robot_pose{"/pose"};
+    std::string topic_global_path{"/global_plan"};
+    std::string topic_local_path{"/local_plan"};
+    std::string topic_global_costmap{"/global_costmap"};
+    std::string topic_local_costmap{"/local_costmap"};
+    std::string topic_motion_status{"/motion_status"};
     std::string topic_scan{"/scan"};
     std::string topic_odom{"/odom"};
     std::string topic_imu{"/imu"};
@@ -1143,13 +1143,13 @@ private:
     std::string topic_temp_map_raw{"/slam/map/temp/raw"};
     std::string topic_mapping_pose{"/slam/mapper/pose"};
     std::string topic_slam_graph{"/slam/mapper/graph_debug"};
-    std::string topic_observation_runtime_summary{"/amr/observation/runtime/summary"};
-    std::string topic_observation_runtime_events{"/amr/observation/runtime/events"};
+    std::string topic_observation_runtime_summary{"/observation/runtime/summary"};
+    std::string topic_observation_runtime_events{"/observation/runtime/events"};
     std::string topic_cmd_vel{"/cmd_vel"};
-    std::string topic_initial_pose{"/amr/localization/initial_pose"};
-    std::string service_plan_segment{"/amr/global_planner/plan_segment"};
-    std::string service_plan_route{"/amr/global_planner/plan_route"};
-    std::string action_navigate_to_poses{"/amr/navigator/navigate_to_poses"};
+    std::string topic_initial_pose{"/initialpose"};
+    std::string service_plan_segment{"/plan_segment"};
+    std::string service_plan_route{"/plan_route"};
+    std::string action_navigate_to_poses{"/navigate_to_poses"};
     std::string save_directory{"/home/burger1/ws/data/maps"};
   };
 
@@ -2222,7 +2222,6 @@ public:
 MqttServerNode::MqttServerNode()
 : rclcpp::Node(
     "mqtt_server",
-    "/amr",
     rclcpp::NodeOptions().automatically_declare_parameters_from_overrides(true))
 {
   load_parameters();

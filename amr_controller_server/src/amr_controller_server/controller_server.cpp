@@ -410,12 +410,16 @@ bool plan_on_grid(
 
 LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("local_planner", options),
-  command_topic_(""),
-  current_pose_topic_(""),
-  map_topic_(""),
-  local_plan_topic_(""),
-  local_plan_status_topic_(""),
-  local_escape_service_name_("/amr/local_planner/plan_local_escape"),
+  command_topic_("/motion_command"),
+  map_topic_("/local_costmap"),
+  global_plan_topic_("/global_plan"),
+  local_plan_topic_("/local_plan"),
+  local_plan_status_topic_("/local_plan_status"),
+  local_escape_service_name_("/plan_local_escape"),
+  map_frame_("map"),
+  odom_frame_("odom"),
+  base_frame_("base_footprint"),
+  tf_lookup_timeout_sec_(0.05),
   publish_period_ms_(100),
   lookahead_distance_(0.8),
   goal_tolerance_(0.15),
@@ -468,17 +472,23 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
   dynamic_blocked_streak_(0),
   dynamic_clear_streak_(0),
   last_progress_index_(0U),
+  latest_global_plan_(),
   map_occupancy_grid_(std::make_shared<nav_msgs::msg::OccupancyGrid>()),
   has_command_(false),
   has_current_pose_(false),
+  has_global_plan_(false),
   has_map_(false)
 {
   this->declare_parameter("topics.command", this->command_topic_);
-  this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.costmap", this->map_topic_);
+  this->declare_parameter("topics.global_plan", this->global_plan_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
   this->declare_parameter("topics.status", this->local_plan_status_topic_);
   this->declare_parameter("services.local_escape", this->local_escape_service_name_);
+  this->declare_parameter("frames.map", this->map_frame_);
+  this->declare_parameter("frames.odom", this->odom_frame_);
+  this->declare_parameter("frames.base", this->base_frame_);
+  this->declare_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
   this->declare_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->declare_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->declare_parameter("planner.goal_tolerance", this->goal_tolerance_);
@@ -575,11 +585,15 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 {
   (void)state;
   this->get_parameter("topics.command", this->command_topic_);
-  this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.costmap", this->map_topic_);
+  this->get_parameter("topics.global_plan", this->global_plan_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
   this->get_parameter("topics.status", this->local_plan_status_topic_);
   this->get_parameter("services.local_escape", this->local_escape_service_name_);
+  this->get_parameter("frames.map", this->map_frame_);
+  this->get_parameter("frames.odom", this->odom_frame_);
+  this->get_parameter("frames.base", this->base_frame_);
+  this->get_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
   this->get_parameter("planner.publish_period_ms", this->publish_period_ms_);
   this->get_parameter("planner.lookahead_distance", this->lookahead_distance_);
   this->get_parameter("planner.goal_tolerance", this->goal_tolerance_);
@@ -673,38 +687,44 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
     this->dynamic_obstacle_clear_confirm_cycles_);
 
   if (
-    this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->map_topic_.empty() || this->local_plan_topic_.empty() ||
-    this->local_plan_status_topic_.empty())
+    this->command_topic_.empty() || this->map_topic_.empty() ||
+    this->global_plan_topic_.empty() || this->local_plan_topic_.empty() ||
+    this->local_plan_status_topic_.empty() || this->map_frame_.empty() ||
+    this->base_frame_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Local planner topics must not be empty: command='%s' pose='%s' costmap='%s' local_plan='%s' local_plan_status='%s'",
+      "Local planner topics/frames must not be empty: command='%s' costmap='%s' global_plan='%s' local_plan='%s' local_plan_status='%s' map_frame='%s' base_frame='%s'",
       this->command_topic_.c_str(),
-      this->current_pose_topic_.c_str(),
       this->map_topic_.c_str(),
+      this->global_plan_topic_.c_str(),
       this->local_plan_topic_.c_str(),
-      this->local_plan_status_topic_.c_str());
+      this->local_plan_status_topic_.c_str(),
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str());
     return CallbackReturn::FAILURE;
   }
 
   this->footprint_polygon_ = amr::geometry::make_footprint_polygon(this->footprint_polygon_param_);
+  this->tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  this->tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer_);
 
   this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const amr_msgs::msg::MotionCommand::SharedPtr message) {
       this->handle_motion_command(message);
     });
-  this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
-      this->handle_current_pose(message);
-    });
   this->map_subscription_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
     this->map_topic_,
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       this->handle_map(message);
+    });
+  this->global_plan_subscription_ = this->create_subscription<nav_msgs::msg::Path>(
+    this->global_plan_topic_,
+    rclcpp::SystemDefaultsQoS(),
+    [this](const nav_msgs::msg::Path::SharedPtr message) {
+      this->handle_global_plan(message);
     });
   this->local_escape_service_ = this->create_service<amr_msgs::srv::PlanLocalEscape>(
     this->local_escape_service_name_,
@@ -725,12 +745,15 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured local planner with command='%s', pose='%s', costmap='%s', plan='%s', status='%s', lookahead=%.2f",
+    "Configured local planner with command='%s', costmap='%s', global_plan='%s', plan='%s', status='%s', map_frame='%s', odom_frame='%s', base_frame='%s', lookahead=%.2f",
     this->command_topic_.c_str(),
-    this->current_pose_topic_.c_str(),
     this->map_topic_.c_str(),
+    this->global_plan_topic_.c_str(),
     this->local_plan_topic_.c_str(),
     this->local_plan_status_topic_.c_str(),
+    this->map_frame_.c_str(),
+    this->odom_frame_.c_str(),
+    this->base_frame_.c_str(),
     this->lookahead_distance_);
 
   return CallbackReturn::SUCCESS;
@@ -769,14 +792,17 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
 {
   (void)state;
   this->motion_command_subscription_.reset();
-  this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
+  this->global_plan_subscription_.reset();
   this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
   this->local_plan_status_publisher_.reset();
   this->timer_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_global_plan_ = nav_msgs::msg::Path();
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
@@ -786,6 +812,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
+  this->has_global_plan_ = false;
   this->has_map_ = false;
   return CallbackReturn::SUCCESS;
 }
@@ -794,14 +821,17 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
 {
   (void)state;
   this->motion_command_subscription_.reset();
-  this->current_pose_subscription_.reset();
   this->map_subscription_.reset();
+  this->global_plan_subscription_.reset();
   this->local_escape_service_.reset();
   this->local_plan_publisher_.reset();
   this->local_plan_status_publisher_.reset();
   this->timer_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
+  this->latest_global_plan_ = nav_msgs::msg::Path();
   this->map_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
   this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
@@ -811,6 +841,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   this->last_progress_index_ = 0U;
   this->has_command_ = false;
   this->has_current_pose_ = false;
+  this->has_global_plan_ = false;
   this->has_map_ = false;
   return CallbackReturn::SUCCESS;
 }
@@ -831,14 +862,32 @@ void LocalPlanner::handle_motion_command(const amr_msgs::msg::MotionCommand::Sha
   this->publish_local_plan();
 }
 
-void LocalPlanner::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
-{
-  this->current_pose_ = *message;
-  this->has_current_pose_ = true;
-}
-
 void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
 {
+  const auto width = static_cast<std::size_t>(message->info.width);
+  const auto height = static_cast<std::size_t>(message->info.height);
+  const auto expected_size = width * height;
+  if (
+    width == 0U || height == 0U || message->info.resolution <= 0.0F ||
+    message->data.size() != expected_size)
+  {
+    this->map_occupancy_grid_ = message;
+    this->has_map_ = false;
+    this->inflated_map_ = nav_msgs::msg::OccupancyGrid();
+    this->working_costmap_ = nav_msgs::msg::OccupancyGrid();
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      5000,
+      "Ignoring invalid local costmap: size=%zu x %zu resolution=%.6f data=%zu expected=%zu",
+      width,
+      height,
+      static_cast<double>(message->info.resolution),
+      message->data.size(),
+      expected_size);
+    return;
+  }
+
   this->map_occupancy_grid_ = message;
   this->has_map_ = true;
   this->inflated_map_ = *message;
@@ -852,6 +901,50 @@ void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     message->info.width,
     message->info.height,
     message->info.resolution);
+}
+
+void LocalPlanner::handle_global_plan(const nav_msgs::msg::Path::SharedPtr message)
+{
+  this->latest_global_plan_ = *message;
+  this->has_global_plan_ = true;
+}
+
+bool LocalPlanner::update_current_pose_from_tf()
+{
+  if (!this->tf_buffer_)
+  {
+    this->has_current_pose_ = false;
+    return false;
+  }
+
+  try
+  {
+    const auto transform = this->tf_buffer_->lookupTransform(
+      this->map_frame_,
+      this->base_frame_,
+      tf2::TimePointZero,
+      tf2::durationFromSec(std::max(0.0, this->tf_lookup_timeout_sec_)));
+    this->current_pose_.header = transform.header;
+    this->current_pose_.pose.position.x = transform.transform.translation.x;
+    this->current_pose_.pose.position.y = transform.transform.translation.y;
+    this->current_pose_.pose.position.z = transform.transform.translation.z;
+    this->current_pose_.pose.orientation = transform.transform.rotation;
+    this->has_current_pose_ = true;
+    return true;
+  }
+  catch (const tf2::TransformException &error)
+  {
+    this->has_current_pose_ = false;
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Waiting for TF %s -> %s before building local plan: %s",
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str(),
+      error.what());
+    return false;
+  }
 }
 
 void LocalPlanner::handle_plan_local_escape(
@@ -899,6 +992,7 @@ void LocalPlanner::handle_plan_local_escape(
 
 void LocalPlanner::publish_local_plan()
 {
+  this->update_current_pose_from_tf();
   if (
     !this->local_plan_publisher_ || !this->local_plan_publisher_->is_activated() ||
     !this->local_plan_status_publisher_ || !this->local_plan_status_publisher_->is_activated() ||
@@ -2596,6 +2690,10 @@ geometry_msgs::msg::Quaternion LocalPlanner::yaw_to_quaternion(const double yaw)
 nav_msgs::msg::Path LocalPlanner::build_source_plan(const amr_msgs::msg::MotionCommand &command) const
 {
   nav_msgs::msg::Path source_plan = command.plan;
+  if (source_plan.poses.empty() && this->has_global_plan_)
+  {
+    source_plan = this->latest_global_plan_;
+  }
   if (source_plan.header.frame_id.empty())
   {
     source_plan.header = command.header;
@@ -2649,6 +2747,10 @@ bool LocalPlanner::world_to_grid(
   }
 
   const nav_msgs::msg::MapMetaData &info = this->map_occupancy_grid_->info;
+  if (info.resolution <= 0.0F || info.width == 0U || info.height == 0U)
+  {
+    return false;
+  }
   grid_x = static_cast<int>(std::floor((point.x - info.origin.position.x) / info.resolution));
   grid_y = static_cast<int>(std::floor((point.y - info.origin.position.y) / info.resolution));
 
@@ -2895,12 +2997,15 @@ int throttle_ms_from_sec(const double seconds)
 
 MotionController::MotionController(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("motion_controller", options),
-  command_topic_(""),
-  local_plan_topic_(""),
-  current_pose_topic_(""),
-  scan_topic_(""),
-  status_topic_(""),
-  cmd_vel_topic_(""),
+  command_topic_("/motion_command"),
+  local_plan_topic_("/local_plan"),
+  scan_topic_("/scan"),
+  status_topic_("/motion_status"),
+  cmd_vel_topic_("/cmd_vel"),
+  map_frame_("map"),
+  odom_frame_("odom"),
+  base_frame_("base_footprint"),
+  tf_lookup_timeout_sec_(0.05),
   control_frequency_(10.0),
   linear_speed_(0.10),
   min_linear_speed_(0.06),
@@ -3001,10 +3106,13 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
 {
   this->declare_parameter("topics.command", this->command_topic_);
   this->declare_parameter("topics.plan", this->local_plan_topic_);
-  this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.status", this->status_topic_);
   this->declare_parameter("topics.velocity", this->cmd_vel_topic_);
+  this->declare_parameter("frames.map", this->map_frame_);
+  this->declare_parameter("frames.odom", this->odom_frame_);
+  this->declare_parameter("frames.base", this->base_frame_);
+  this->declare_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
 
   this->declare_parameter("control.frequency", this->control_frequency_);
   this->declare_parameter("control.linear_speed", this->linear_speed_);
@@ -3125,10 +3233,13 @@ MotionController::CallbackReturn MotionController::on_configure(
   (void)state;
   this->get_parameter("topics.command", this->command_topic_);
   this->get_parameter("topics.plan", this->local_plan_topic_);
-  this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.status", this->status_topic_);
   this->get_parameter("topics.velocity", this->cmd_vel_topic_);
+  this->get_parameter("frames.map", this->map_frame_);
+  this->get_parameter("frames.odom", this->odom_frame_);
+  this->get_parameter("frames.base", this->base_frame_);
+  this->get_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
 
   this->get_parameter("control.frequency", this->control_frequency_);
   this->get_parameter("control.linear_speed", this->linear_speed_);
@@ -3254,24 +3365,26 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   if (
     this->command_topic_.empty() || this->local_plan_topic_.empty() ||
-    this->current_pose_topic_.empty() || this->scan_topic_.empty() ||
-    this->status_topic_.empty() ||
-    this->cmd_vel_topic_.empty())
+    this->scan_topic_.empty() || this->status_topic_.empty() ||
+    this->cmd_vel_topic_.empty() || this->map_frame_.empty() || this->base_frame_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Motion controller topics must not be empty: command='%s' local_plan='%s' pose='%s' scan='%s' status='%s' cmd_vel='%s'",
+      "Motion controller topics/frames must not be empty: command='%s' local_plan='%s' scan='%s' status='%s' cmd_vel='%s' map_frame='%s' base_frame='%s'",
       this->command_topic_.c_str(),
       this->local_plan_topic_.c_str(),
-      this->current_pose_topic_.c_str(),
       this->scan_topic_.c_str(),
       this->status_topic_.c_str(),
-      this->cmd_vel_topic_.c_str());
+      this->cmd_vel_topic_.c_str(),
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str());
     return CallbackReturn::FAILURE;
   }
 
   this->reset_velocity_controller_state();
   this->reset_goal_checker_state();
+  this->tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  this->tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer_);
 
   this->motion_command_subscription_ = this->create_subscription<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS(),
@@ -3282,11 +3395,6 @@ MotionController::CallbackReturn MotionController::on_configure(
     this->local_plan_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const nav_msgs::msg::Path::SharedPtr message) {
       this->handle_local_plan(message);
-    });
-  this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
-      this->handle_current_pose(message);
     });
   this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     this->scan_topic_, rclcpp::SensorDataQoS(),
@@ -3308,11 +3416,15 @@ MotionController::CallbackReturn MotionController::on_configure(
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured motion controller with command='%s', plan='%s', pose='%s', cmd_vel='%s', mode='%s'",
+    "Configured motion controller with command='%s', plan='%s', scan='%s', status='%s', cmd_vel='%s', map_frame='%s', odom_frame='%s', base_frame='%s', mode='%s'",
     this->command_topic_.c_str(),
     this->local_plan_topic_.c_str(),
-    this->current_pose_topic_.c_str(),
+    this->scan_topic_.c_str(),
+    this->status_topic_.c_str(),
     this->cmd_vel_topic_.c_str(),
+    this->map_frame_.c_str(),
+    this->odom_frame_.c_str(),
+    this->base_frame_.c_str(),
     velocity_control_mode.c_str());
 
   return CallbackReturn::SUCCESS;
@@ -3357,11 +3469,12 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   this->publish_zero_twist();
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
-  this->current_pose_subscription_.reset();
   this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
@@ -3397,11 +3510,12 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   this->publish_zero_twist();
   this->motion_command_subscription_.reset();
   this->local_plan_subscription_.reset();
-  this->current_pose_subscription_.reset();
   this->scan_subscription_.reset();
   this->cmd_vel_publisher_.reset();
   this->motion_status_publisher_.reset();
   this->timer_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   this->latest_command_ = amr_msgs::msg::MotionCommand();
   this->latest_local_plan_ = nav_msgs::msg::Path();
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
@@ -3432,6 +3546,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
 
 void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message)
 {
+  this->update_current_pose_from_tf();
   const bool recovery_rejoin_pending =
     message->mode == amr_msgs::msg::MotionCommand::MODE_NAVIGATE &&
     this->rejoin_context_pending_;
@@ -3544,16 +3659,48 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
   }
 }
 
-void MotionController::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
-{
-  this->current_pose_ = *message;
-  this->has_current_pose_ = true;
-}
-
 void MotionController::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message)
 {
   this->latest_scan_ = *message;
   this->has_latest_scan_ = true;
+}
+
+bool MotionController::update_current_pose_from_tf()
+{
+  if (!this->tf_buffer_)
+  {
+    this->has_current_pose_ = false;
+    return false;
+  }
+
+  try
+  {
+    const auto transform = this->tf_buffer_->lookupTransform(
+      this->map_frame_,
+      this->base_frame_,
+      tf2::TimePointZero,
+      tf2::durationFromSec(std::max(0.0, this->tf_lookup_timeout_sec_)));
+    this->current_pose_.header = transform.header;
+    this->current_pose_.pose.position.x = transform.transform.translation.x;
+    this->current_pose_.pose.position.y = transform.transform.translation.y;
+    this->current_pose_.pose.position.z = transform.transform.translation.z;
+    this->current_pose_.pose.orientation = transform.transform.rotation;
+    this->has_current_pose_ = true;
+    return true;
+  }
+  catch (const tf2::TransformException &error)
+  {
+    this->has_current_pose_ = false;
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Waiting for TF %s -> %s before motion control: %s",
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str(),
+      error.what());
+    return false;
+  }
 }
 
 void MotionController::publish_control()
@@ -3564,6 +3711,8 @@ void MotionController::publish_control()
   {
     return;
   }
+
+  this->update_current_pose_from_tf();
 
   geometry_msgs::msg::Twist desired_twist;
   geometry_msgs::msg::Twist output_twist;
@@ -4199,7 +4348,8 @@ void MotionController::publish_control()
   else
   {
     this->reset_status_semantics_state();
-    status.goal_reached = true;
+    status.active = this->has_command_;
+    status.goal_reached = !this->has_command_;
   }
 
   this->cmd_ang_sign_ = velocity_sign(desired_twist.angular.z);

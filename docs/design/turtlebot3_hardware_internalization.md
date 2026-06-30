@@ -1,181 +1,46 @@
-# TurtleBot3 Hardware Internalization Boundary
+# TurtleBot3 Hardware Boundary
 
-## Current External Dependency
+The current AMR navigation stack expects robot hardware bringup to run outside
+`ros-amr-navigation`.
 
-The current AMR runtime depends on `turtlebot3_bringup/robot.launch.py` to provide the
-robot-side hardware contract before the AMR runtime starts.
-
-Current launch split:
-
-- `amr_bringup/launch/turtlebot3.launch.py`
-  - robot-side entrypoint
-  - currently includes `turtlebot3_bringup/robot.launch.py`
-  - then starts delayed AMR runtime layers
-- `amr_bringup/launch/navigation.launch.py`
-  - remote-PC AMR runtime entrypoint
-  - expects hardware topics and TF to already exist on the ROS graph
-
-Current external TB3 dependency provides:
+Robot bringup must provide:
 
 - `/scan`
-- `/odom`
-- `/imu`
-- `/joint_states`
+- `/odom` or `odom -> base_*` TF
 - `/tf`
 - `/tf_static`
 - `/cmd_vel` ingress for the base
-- `robot_description`
+- optional `/imu`, `/joint_states`, `/robot_description`, `/battery_state`
 
-## Current AMR Hardware Boundary
+External `slam_toolbox` consumes the robot bringup outputs and publishes:
 
-Current AMR consumers of the external hardware contract:
+- `/map`
+- `map -> odom`
 
-- `amr_localization`
-  - consumes `/odom` and `/scan`
-  - publishes `map -> odom`
-- `amr_costmap_server`
-  - consumes `/scan`
-- `amr_controller_server`
-  - publishes `/cmd_vel`
-  - also consumes `/scan` for local control behavior
-- `amr_visualization`
-  - expects `base_footprint` in TF
-  - subscribes to `/tf_static` and `/robot_description`
-- `amr_mqtt_server`
-  - exposes `/scan`, `/odom`, `/imu`, `/joint_states`, `/tf`, `/tf_static`, and `robot_description`
-  - MQTT integration is out of scope for this pass
-
-`/imu` is currently treated as an exposed hardware/telemetry lane, not a core AMR navigation
-input. The primary AMR hardware-facing requirements today are `/scan`, `/odom`, `/cmd_vel`, TF,
-joint states, and robot description.
-
-## Desired AMR-Owned Replacement
-
-Replace the direct runtime dependency on `turtlebot3_bringup` with an AMR-owned hardware layer
-that lives inside `amr_bringup`:
-
-- `amr_bringup/launch/turtlebot3.launch.py`
-  - TurtleBot3 Burger hardware launch composition for the robot-side RPi4
-- `amr_bringup/src/main.cpp`
-  - single hardware entrypoint that dispatches by `bringup.component`, `robot.type`, and `robot.model`
-- `amr_bringup/src/amr_bringup/base/*`
-  - OpenCR transport, command path, feedback decoding, odometry, IMU, joint states, TF
-- `amr_bringup/src/amr_bringup/lidar/*`
-  - LDS-class LiDAR transport and `/scan`
-- `amr_bringup/urdf/*`
-  - AMR-owned TurtleBot3 Burger description assets
-
-The AMR-facing contract must remain root-topic compatible:
-
-- `/cmd_vel`
-- `/odom`
-- `/imu`
-- `/scan`
-- `/joint_states`
-- `/tf`
-- `/tf_static`
-- `/robot_description`
+`ros-amr-navigation` then consumes `/map`, `/scan`, and TF for costmaps,
+planning, navigation, and control. It does not publish `map -> odom`.
 
 ## Frame Contract
 
-The AMR runtime should continue to rely on:
+Expected chain:
 
-- `map`
-- `odom`
-- `base_footprint`
-- `base_link`
-- `base_scan`
-- `imu_link`
+- `map -> odom`: external `slam_toolbox`
+- `odom -> base_footprint` or `odom -> base_link`: robot bringup
+- robot fixed frames: URDF/static TF from robot bringup
 
-Expected dynamic/static chain:
+Default AMR parameters use `base_footprint`. For robots that expose only
+`base_link`, set `frames.base: "base_link"` in `amr_bringup/params/amr.yaml` for
+costmap, local planner, motion controller, and navigator.
 
-- `map -> odom`
-  - owned by `amr_localization`
-- `odom -> base_footprint`
-  - owned by the AMR base driver when TF publishing is enabled
-- `base_footprint -> base_link`
-  - fixed transform from URDF
-- `base_link -> base_scan`
-  - fixed transform from URDF
-- `base_link -> imu_link`
-  - fixed transform from URDF
+## Future Hardware Internalization
 
-## Migration Shape
+If TurtleBot3 hardware is internalized later, the AMR-owned bringup layer should
+still preserve the same navigation-facing contract:
 
-The migration should stay incremental and reviewable.
+- publish `/scan`
+- publish `odom -> base_*`
+- subscribe `/cmd_vel`
+- avoid publishing `map -> odom`
 
-### Phase 1
-
-- define the hardware boundary in docs
-- restore `amr_bringup` as a shared schema/config and hardware package
-- add AMR-owned TurtleBot3 Burger description under `amr_bringup/urdf`
-- split launch roles clearly:
-  - `turtlebot3.launch.py` becomes robot-side, pure-ROS, hardware-only
-  - `navigation.launch.py` remains remote-PC navigation/runtime only
-  - `turtlebot3_external.launch.py` preserves the current `turtlebot3_bringup` compatibility path
-
-### Phase 2
-
-- add serial transport and protocol abstractions in `amr_bringup`
-- add base-driver node shell with `/cmd_vel` watchdog and connection-state reporting
-- add lidar-driver node shell and parser interfaces
-- move configurable hardware defaults into `amr_bringup/params/amr.yaml`
-
-### Phase 3
-
-- extend base feedback into `/odom`, `/imu`, `/joint_states`, and TF publishing
-- implement differential-drive odometry independent of ROS node logic
-- implement incremental OpenCR command/feedback support with explicit hardware-verification TODOs
-- implement incremental LDS parser backends with clear sensor-model boundaries
-
-## Risks
-
-- OpenCR packet format details may require hardware verification before full parity with
-  `turtlebot3_node`
-- TurtleBot3 units may use different LDS variants, so the LiDAR parser must remain model-aware
-- `robot_description` and `joint_states` must remain stable enough for `amr_visualization`
-  and RViz consumers
-- robot-side and remote-PC launch responsibilities must stay explicit to avoid regressions in the
-  split deployment topology
-- no build/test/colcon execution is performed in this implementation pass; manual validation is
-  required after each stage
-
-## Validation and Rollback
-
-Recommended manual validation commands after implementation:
-
-- `ros2 topic list`
-- `ros2 topic hz /scan`
-- `ros2 topic hz /odom`
-- `ros2 topic echo /imu`
-- `ros2 run tf2_tools view_frames`
-- teleop or another bounded `/cmd_vel` smoke test
-
-Expected robot-side AMR-owned launch:
-
-- `ros2 launch amr_bringup turtlebot3.launch.py`
-
-Expected remote-PC runtime launch:
-
-- `ros2 launch amr_bringup navigation.launch.py`
-
-Rollback path:
-
-- `ros2 launch amr_bringup turtlebot3_external.launch.py`
-
-Required host permissions:
-
-- serial devices such as `/dev/ttyACM0` and `/dev/ttyUSB0` must be accessible to the runtime user
-- typical Ubuntu deployment expects the user to be in a group such as `dialout`
-
-Known limitations in this pass:
-
-- OpenCR velocity and feedback packet details are still provisional and require hardware capture
-- TurtleBot3 Burger should currently prefer the `external_tb3_node` base backend for real hardware
-  wakeup until the AMR-owned OpenCR protocol reaches parity
-- LiDAR parser backends are structural skeletons and still require sensor-specific packet validation
-- TurtleBot3 Burger should currently prefer the `external_hlds` LiDAR backend for real hardware
-  until the AMR-owned LDS parser reaches protocol parity
-- Those external backends are compatibility fallbacks and must not become the architectural end state
-- the new AMR-owned hardware lane should be treated as an internalization pass, not yet a
-  production-ready drop-in replacement for all TurtleBot3 variants
+This keeps online SLAM/localization ownership cleanly assigned to
+`slam_toolbox`.

@@ -25,16 +25,14 @@ source "${SCRIPT_DIR}/amr_logging_env.sh"
 
 output="${AMR_BAG_ROOT}/nav_debug_${AMR_RUN_ID}"
 topics=(
-  /amr/observation/runtime/summary
-  /amr/observation/runtime/events
-  /amr/motion/command
-  /amr/motion/status
-  /amr/planner/local_status
-  /amr/planner/global
-  /amr/planner/local
-  /amr/localization/pose
-  /amr/localization/odometry
-  /amr/costmap/local
+  /observation/runtime/summary
+  /observation/runtime/events
+  /motion_command
+  /motion_status
+  /local_plan_status
+  /global_plan
+  /local_plan
+  /local_costmap
   /scan
   /tf
   /tf_static

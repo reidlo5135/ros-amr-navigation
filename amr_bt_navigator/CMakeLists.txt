@@ -23,6 +23,8 @@ find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 add_executable(${PROJECT_NAME}
   src/${PROJECT_NAME}/bt_navigator.cpp
@@ -39,6 +41,8 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   rclcpp_action
   rclcpp_lifecycle
+  tf2
+  tf2_ros
 )
 
 install(TARGETS

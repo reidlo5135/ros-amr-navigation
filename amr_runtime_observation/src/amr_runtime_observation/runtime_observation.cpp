@@ -25,12 +25,12 @@ int throttle_ms_from_sec(const double seconds)
 RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
 : rclcpp::Node("runtime_observation", options)
 {
-  this->declare_parameter("topics.motion_status", "/amr/motion/status");
-  this->declare_parameter("topics.motion_command", "/amr/motion/command");
-  this->declare_parameter("topics.local_plan_status", "/amr/planner/local_status");
-  this->declare_parameter("actions.navigate_to_poses", "/amr/navigator/navigate_to_poses");
-  this->declare_parameter("topics.observation_summary", "/amr/observation/runtime/summary");
-  this->declare_parameter("topics.observation_events", "/amr/observation/runtime/events");
+  this->declare_parameter("topics.motion_status", "/motion_status");
+  this->declare_parameter("topics.motion_command", "/motion_command");
+  this->declare_parameter("topics.local_plan_status", "/local_plan_status");
+  this->declare_parameter("actions.navigate_to_poses", "/navigate_to_poses");
+  this->declare_parameter("topics.observation_summary", "/observation/runtime/summary");
+  this->declare_parameter("topics.observation_events", "/observation/runtime/events");
   this->declare_parameter("observation.publish_period_ms", 200);
   this->declare_parameter("observation.route_stale_timeout_ms", 1500);
   this->declare_parameter("observation.progress_stall_window_sec", 3.0);

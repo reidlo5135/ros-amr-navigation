@@ -92,16 +92,19 @@ geometry_msgs::msg::PoseStamped make_route_goal_pose(
 
 Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("navigator", options),
-  navigate_action_name_("/amr/navigator/navigate_to_pose"),
-  navigate_poses_action_name_("/amr/navigator/navigate_to_poses"),
-  command_topic_(""),
-  current_pose_topic_(""),
-  motion_status_topic_(""),
-  local_plan_status_topic_(""),
-  plan_recovery_service_("/amr/recovery_server/plan_recovery"),
-  plan_local_escape_service_("/amr/local_planner/plan_local_escape"),
-  clear_costmap_service_("/amr/costmap_server/clear_costmap"),
-  plan_segment_service_("/amr/global_planner/plan_segment"),
+  navigate_action_name_("/navigate_to_pose"),
+  navigate_poses_action_name_("/navigate_to_poses"),
+  command_topic_("/motion_command"),
+  motion_status_topic_("/motion_status"),
+  local_plan_status_topic_("/local_plan_status"),
+  plan_recovery_service_("/plan_recovery"),
+  plan_local_escape_service_("/plan_local_escape"),
+  clear_costmap_service_("/clear_costmap"),
+  plan_segment_service_("/plan_segment"),
+  map_frame_("map"),
+  odom_frame_("odom"),
+  base_frame_("base_footprint"),
+  tf_lookup_timeout_sec_(0.05),
   behavior_tree_xml_path_(""),
   default_node_id_("start"),
   planner_wait_timeout_ms_(2000),
@@ -122,13 +125,16 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->declare_parameter("actions.navigate_to_poses", this->navigate_poses_action_name_);
   this->declare_parameter("topics.command", this->command_topic_);
-  this->declare_parameter("topics.pose", this->current_pose_topic_);
   this->declare_parameter("topics.status", this->motion_status_topic_);
   this->declare_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->declare_parameter("services.plan_recovery", this->plan_recovery_service_);
   this->declare_parameter("services.local_escape", this->plan_local_escape_service_);
   this->declare_parameter("services.clear_costmap", this->clear_costmap_service_);
   this->declare_parameter("services.segment", this->plan_segment_service_);
+  this->declare_parameter("frames.map", this->map_frame_);
+  this->declare_parameter("frames.odom", this->odom_frame_);
+  this->declare_parameter("frames.base", this->base_frame_);
+  this->declare_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
   this->declare_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("behavior_tree_xml_path", this->behavior_tree_xml_path_);
   this->declare_parameter("defaults.node_id", this->default_node_id_);
@@ -152,13 +158,16 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   this->get_parameter("actions.navigate_to_pose", this->navigate_action_name_);
   this->get_parameter("actions.navigate_to_poses", this->navigate_poses_action_name_);
   this->get_parameter("topics.command", this->command_topic_);
-  this->get_parameter("topics.pose", this->current_pose_topic_);
   this->get_parameter("topics.status", this->motion_status_topic_);
   this->get_parameter("topics.local_plan_status", this->local_plan_status_topic_);
   this->get_parameter("services.plan_recovery", this->plan_recovery_service_);
   this->get_parameter("services.local_escape", this->plan_local_escape_service_);
   this->get_parameter("services.clear_costmap", this->clear_costmap_service_);
   this->get_parameter("services.segment", this->plan_segment_service_);
+  this->get_parameter("frames.map", this->map_frame_);
+  this->get_parameter("frames.odom", this->odom_frame_);
+  this->get_parameter("frames.base", this->base_frame_);
+  this->get_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
   this->get_parameter("behavior_tree.xml_path", this->behavior_tree_xml_path_);
   {
     std::string legacy_behavior_tree_xml_path;
@@ -187,19 +196,23 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   }
 
   if (
-    this->command_topic_.empty() || this->current_pose_topic_.empty() ||
-    this->motion_status_topic_.empty() || this->local_plan_status_topic_.empty())
+    this->command_topic_.empty() || this->motion_status_topic_.empty() ||
+    this->local_plan_status_topic_.empty() || this->map_frame_.empty() ||
+    this->base_frame_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Navigator topics must not be empty: command='%s' pose='%s' status='%s' local_plan_status='%s'",
+      "Navigator topics/frames must not be empty: command='%s' status='%s' local_plan_status='%s' map_frame='%s' base_frame='%s'",
       this->command_topic_.c_str(),
-      this->current_pose_topic_.c_str(),
       this->motion_status_topic_.c_str(),
-      this->local_plan_status_topic_.c_str());
+      this->local_plan_status_topic_.c_str(),
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str());
     return CallbackReturn::FAILURE;
   }
 
+  this->tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  this->tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer_);
   this->motion_command_publisher_ = this->create_publisher<amr_msgs::msg::MotionCommand>(
     this->command_topic_, rclcpp::SystemDefaultsQoS());
   this->plan_recovery_client_ = this->create_client<amr_msgs::srv::PlanRecovery>(
@@ -210,11 +223,6 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
     this->clear_costmap_service_);
   this->plan_segment_client_ = this->create_client<amr_msgs::srv::PlanSegment>(
     this->plan_segment_service_);
-  this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    this->current_pose_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
-      this->handle_current_pose(message);
-    });
   this->motion_status_subscription_ = this->create_subscription<amr_msgs::msg::MotionStatus>(
     this->motion_status_topic_, rclcpp::SystemDefaultsQoS(),
     [this](const amr_msgs::msg::MotionStatus::SharedPtr message) {
@@ -262,13 +270,15 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
 
   RCLCPP_INFO(
     this->get_logger(),
-    "Configured navigator with actions='%s'/'%s', command='%s', pose='%s', status='%s', local_plan_status='%s', recovery='%s', local_escape='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
+    "Configured navigator with actions='%s'/'%s', command='%s', status='%s', local_plan_status='%s', map_frame='%s', odom_frame='%s', base_frame='%s', recovery='%s', local_escape='%s', clear_costmap='%s', planner='%s', bt_xml='%s'",
     this->navigate_action_name_.c_str(),
     this->navigate_poses_action_name_.c_str(),
     this->command_topic_.c_str(),
-    this->current_pose_topic_.c_str(),
     this->motion_status_topic_.c_str(),
     this->local_plan_status_topic_.c_str(),
+    this->map_frame_.c_str(),
+    this->odom_frame_.c_str(),
+    this->base_frame_.c_str(),
     this->plan_recovery_service_.c_str(),
     this->plan_local_escape_service_.c_str(),
     this->clear_costmap_service_.c_str(),
@@ -307,10 +317,11 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   this->plan_local_escape_client_.reset();
   this->clear_costmap_client_.reset();
   this->plan_segment_client_.reset();
-  this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
   this->local_plan_status_subscription_.reset();
   this->motion_command_publisher_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
@@ -332,10 +343,11 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   this->plan_local_escape_client_.reset();
   this->clear_costmap_client_.reset();
   this->plan_segment_client_.reset();
-  this->current_pose_subscription_.reset();
   this->motion_status_subscription_.reset();
   this->local_plan_status_subscription_.reset();
   this->motion_command_publisher_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   std::scoped_lock lock(this->navigator_mutex_);
   this->current_pose_ = geometry_msgs::msg::PoseStamped();
   this->latest_motion_status_ = amr_msgs::msg::MotionStatus();
@@ -1436,13 +1448,6 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     9000U};
 }
 
-void Btnavigator::handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message)
-{
-  std::scoped_lock lock(this->navigator_mutex_);
-  this->current_pose_ = *message;
-  this->has_current_pose_ = true;
-}
-
 void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message)
 {
   std::scoped_lock lock(this->navigator_mutex_);
@@ -1458,8 +1463,49 @@ void Btnavigator::handle_local_plan_status(
   this->has_local_plan_status_ = true;
 }
 
-geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy() const
+bool Btnavigator::update_current_pose_from_tf()
 {
+  if (!this->tf_buffer_) {
+    std::scoped_lock lock(this->navigator_mutex_);
+    this->has_current_pose_ = false;
+    return false;
+  }
+
+  try {
+    const auto transform = this->tf_buffer_->lookupTransform(
+      this->map_frame_,
+      this->base_frame_,
+      tf2::TimePointZero,
+      tf2::durationFromSec(std::max(0.0, this->tf_lookup_timeout_sec_)));
+    geometry_msgs::msg::PoseStamped pose;
+    pose.header = transform.header;
+    pose.pose.position.x = transform.transform.translation.x;
+    pose.pose.position.y = transform.transform.translation.y;
+    pose.pose.position.z = transform.transform.translation.z;
+    pose.pose.orientation = transform.transform.rotation;
+    std::scoped_lock lock(this->navigator_mutex_);
+    this->current_pose_ = pose;
+    this->has_current_pose_ = true;
+    return true;
+  } catch (const tf2::TransformException &error) {
+    std::scoped_lock lock(this->navigator_mutex_);
+    this->has_current_pose_ = false;
+    this->current_pose_ = geometry_msgs::msg::PoseStamped();
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Waiting for TF %s -> %s before navigation planning: %s",
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str(),
+      error.what());
+    return false;
+  }
+}
+
+geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy()
+{
+  this->update_current_pose_from_tf();
   std::scoped_lock lock(this->navigator_mutex_);
   return this->current_pose_;
 }

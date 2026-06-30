@@ -1,64 +1,52 @@
 # amr_bringup
 
-Central launch and parameter package for the AMR runtime stack.
+Navigation launch and parameters for `slam_toolbox + ros-amr-navigation`.
 
-## Main Files
+`amr_bringup/launch/navigation.launch.py` starts only the AMR navigation core:
 
-- `params/amr.yaml`: shared runtime parameters
-- `launch/localization.launch.py`: map server, localization, costmap server, global planner
-- `launch/navigation.launch.py`: AMR runtime entrypoint
+- `costmap_server`
+- `global_planner`
+- `local_planner`
+- `motion_controller`
+- `recovery_server`
+- `navigator`
+- `runtime_observation`
+- `navigation_manager`
 
-`navigation.launch.py` starts the AMR runtime by default:
-- delayed `localization.launch.py`
-- delayed controller / recovery / BT navigation nodes
-- delayed runtime observation and lifecycle manager nodes
+It does not launch `slam_toolbox`, `amr_map_server`, or `amr_localization`.
 
-`navigation.launch.py` does not start TurtleBot3 hardware nodes, `turtlebot3_bringup`,
-`robot_state_publisher`, or AMR robot driver nodes. Hardware bringup must run separately through
-external TurtleBot3 bringup or a robot-side AMR hardware launch.
-
-## Important Parameter Groups
-
-- `/amr/map_server`
-- `/amr/localization`
-- `/amr/costmap_server`
-- `/amr/global_planner`
-- `/amr/local_planner` via `amr_controller_server`
-- `/amr/motion_controller` via `amr_controller_server`
-- `/amr/recovery_server`
-- `/amr/runtime_observation`
-- `/amr/navigator`
-- `/amr/mqtt_server`
-
-## Launch
-
-AMR runtime bringup:
+## Expected Startup
 
 ```bash
+ros2 launch <robot_bringup_package> bringup.launch.py
+ros2 launch slam_toolbox online_async_launch.py slam_params_file:=<slam_toolbox_online_params.yaml> use_sim_time:=false
 ros2 launch amr_bringup navigation.launch.py
 ```
 
-Start the optional MQTT bridge only when an MQTT client workflow is needed:
+`slam_toolbox` must publish `/map` and `map -> odom`. The AMR stack consumes
+that TF chain and does not publish it.
 
-```bash
-ros2 launch amr_bringup navigation.launch.py use_mqtt_server:=true
-```
+## Parameters
 
-Navigation-only mode when localization/runtime prerequisites are already running elsewhere:
+`params/amr.yaml` uses standard ROS 2 style defaults:
 
-```bash
-ros2 launch amr_bringup navigation.launch.py navigation_only:=true
-```
+- `/map`
+- `/scan`
+- `/tf`, `/tf_static`
+- `/global_costmap`
+- `/local_costmap`
+- `/global_plan`
+- `/local_plan`
+- `/motion_command`
+- `/motion_status`
+- `/local_plan_status`
+- `/cmd_vel`
+- `/navigate_to_pose`
+- `/navigate_to_poses`
+- `/plan_segment`
+- `/plan_route`
+- `/plan_recovery`
+- `/plan_local_escape`
+- `/clear_costmap`
 
-Mapping mode:
-
-```bash
-ros2 launch amr_bringup navigation.launch.py mapping_mode:=true
-```
-
-In mapping mode, `navigation.launch.py` consumes external SLAM topics such as:
-- `/slam/map/temp/refined`
-- `/slam/map/temp/raw`
-- `/slam/mapper/odometry`
-- `/slam/mapper/pose`
-- `/slam/mapper/graph_debug`
+Default frames are `map`, `odom`, and `base_footprint`.

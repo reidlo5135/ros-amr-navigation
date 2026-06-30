@@ -28,7 +28,6 @@ def generate_launch_description() -> LaunchDescription:
         package="amr_rviz",
         executable="amr_rviz_bridge",
         name="rviz_bridge",
-        namespace="amr",
         output="screen",
         parameters=[
             {
@@ -65,22 +64,22 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "goal_topic",
-                default_value="/amr/rviz/goal",
+                default_value="/rviz/goal",
                 description="PoseStamped topic consumed from RViz 2D Goal Pose.",
             ),
             DeclareLaunchArgument(
                 "goals_topic",
-                default_value="/amr/rviz/goals",
+                default_value="/rviz/goals",
                 description="PoseArray topic used for multi-goal route dispatch.",
             ),
             DeclareLaunchArgument(
                 "navigate_to_pose_action",
-                default_value="/amr/navigator/navigate_to_pose",
+                default_value="/navigate_to_pose",
                 description="Single-goal navigation action name.",
             ),
             DeclareLaunchArgument(
                 "navigate_to_poses_action",
-                default_value="/amr/navigator/navigate_to_poses",
+                default_value="/navigate_to_poses",
                 description="Waypoint-route navigation action name.",
             ),
             DeclareLaunchArgument(

@@ -1,32 +1,39 @@
 # amr_costmap_server
 
-Costmap producer for the AMR stack.
+Lifecycle costmap server for the navigation-only AMR stack.
 
-## Role
+Inputs:
 
-- publishes static inflated global costmap from SLAM map
-- publishes scan-based dynamic inflated local costmap
-- applies footprint-aware inflation scaling
-- exposes `clear_costmap` service for recovery
+- `/map` from external `slam_toolbox`
+- `/scan`
+- `/tf`, `/tf_static`
+- TF lookup from `map` to `base_footprint` by default
 
-## Costmap Model
+Outputs:
 
-- `global_costmap`: static map obstacles with inflation
-- `local_costmap`: current local scan hits that differ from static map, inflated for near-term avoidance
+- `/global_costmap`
+- `/local_costmap`
 
-## Publish Behavior
+Service:
 
-- global costmap is rebuilt and published when the static map is received or a full clear/rebuild is requested
-- scan updates rebuild and publish only the local costmap by default
-- `publish.global_on_scan` can restore legacy scan-driven global publishing when needed
-- `publish.local_min_period_ms` throttles local costmap publishing to reduce DDS load for remote visualization subscribers
-- `local_window.enabled` publishes `/amr/costmap/local` as a robot-centered window instead of the full global-sized grid
+- `/clear_costmap`
 
-## Important Interfaces
+The server no longer depends on a pose topic or the legacy map server. If `/map`
+has not arrived yet, it waits without publishing costmaps. If TF lookup fails
+temporarily, it keeps the node alive and skips robot-centered local updates until
+the `map -> odom -> base_*` chain is available.
 
-- input: `/amr/map/data`
-- input: `/amr/localization/pose`
-- input: `/scan`
-- output: `/amr/costmap/global`
-- output: `/amr/costmap/local`
-- service: `/amr/costmap_server/clear_costmap`
+Relevant parameters:
+
+- `topics.map`
+- `topics.scan`
+- `topics.global`
+- `topics.local`
+- `services.clear_costmap`
+- `frames.map`
+- `frames.odom`
+- `frames.base`
+- `tf.lookup_timeout_sec`
+- `local_window.*`
+- `inflation.*`
+- `dynamic.*`

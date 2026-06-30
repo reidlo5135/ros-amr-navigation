@@ -18,12 +18,15 @@ const char *bool_label(const bool value)
 
 CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("costmap_server", options),
-  map_topic_(""),
-  pose_topic_(""),
-  scan_topic_(""),
-  global_costmap_topic_(""),
-  local_costmap_topic_(""),
-  clear_costmap_service_name_("/amr/costmap_server/clear_costmap"),
+  map_topic_("/map"),
+  scan_topic_("/scan"),
+  global_costmap_topic_("/global_costmap"),
+  local_costmap_topic_("/local_costmap"),
+  clear_costmap_service_name_("/clear_costmap"),
+  map_frame_("map"),
+  odom_frame_("odom"),
+  base_frame_("base_footprint"),
+  tf_lookup_timeout_sec_(0.05),
   obstacle_threshold_(50),
   global_inflation_radius_(0.20),
   global_inflation_cost_(80),
@@ -47,11 +50,14 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
   has_scan_(false)
 {
   this->declare_parameter("topics.map", this->map_topic_);
-  this->declare_parameter("topics.pose", this->pose_topic_);
   this->declare_parameter("topics.scan", this->scan_topic_);
   this->declare_parameter("topics.global", this->global_costmap_topic_);
   this->declare_parameter("topics.local", this->local_costmap_topic_);
   this->declare_parameter("services.clear_costmap", this->clear_costmap_service_name_);
+  this->declare_parameter("frames.map", this->map_frame_);
+  this->declare_parameter("frames.odom", this->odom_frame_);
+  this->declare_parameter("frames.base", this->base_frame_);
+  this->declare_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
   this->declare_parameter("inflation.obstacle_threshold", this->obstacle_threshold_);
   this->declare_parameter("inflation.global.radius", this->global_inflation_radius_);
   this->declare_parameter("inflation.global.cost", this->global_inflation_cost_);
@@ -74,11 +80,14 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
 {
   (void)state;
   this->get_parameter("topics.map", this->map_topic_);
-  this->get_parameter("topics.pose", this->pose_topic_);
   this->get_parameter("topics.scan", this->scan_topic_);
   this->get_parameter("topics.global", this->global_costmap_topic_);
   this->get_parameter("topics.local", this->local_costmap_topic_);
   this->get_parameter("services.clear_costmap", this->clear_costmap_service_name_);
+  this->get_parameter("frames.map", this->map_frame_);
+  this->get_parameter("frames.odom", this->odom_frame_);
+  this->get_parameter("frames.base", this->base_frame_);
+  this->get_parameter("tf.lookup_timeout_sec", this->tf_lookup_timeout_sec_);
   this->get_parameter("inflation.obstacle_threshold", this->obstacle_threshold_);
   this->get_parameter("inflation.global.radius", this->global_inflation_radius_);
   this->get_parameter("inflation.global.cost", this->global_inflation_cost_);
@@ -97,30 +106,30 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   this->update_footprint_metrics();
 
   if (
-    this->map_topic_.empty() || this->pose_topic_.empty() || this->scan_topic_.empty() ||
-    this->global_costmap_topic_.empty() || this->local_costmap_topic_.empty())
+    this->map_topic_.empty() || this->scan_topic_.empty() ||
+    this->global_costmap_topic_.empty() || this->local_costmap_topic_.empty() ||
+    this->map_frame_.empty() || this->base_frame_.empty())
   {
     RCLCPP_ERROR(
       this->get_logger(),
-      "Costmap topics must not be empty: map='%s' pose='%s' scan='%s' global='%s' local='%s'",
+      "Costmap topics/frames must not be empty: map='%s' scan='%s' global='%s' local='%s' map_frame='%s' base_frame='%s'",
       this->map_topic_.c_str(),
-      this->pose_topic_.c_str(),
       this->scan_topic_.c_str(),
       this->global_costmap_topic_.c_str(),
-      this->local_costmap_topic_.c_str());
+      this->local_costmap_topic_.c_str(),
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str());
     return CallbackReturn::FAILURE;
   }
+
+  this->tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  this->tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*this->tf_buffer_);
 
   this->map_subscription_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
     this->map_topic_,
     rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       this->handle_map(message);
-    });
-  this->current_pose_subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    this->pose_topic_, rclcpp::SystemDefaultsQoS(),
-    [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
-      this->handle_current_pose(message);
     });
   this->scan_subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     this->scan_topic_, rclcpp::SensorDataQoS(),
@@ -145,11 +154,14 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=costmap_server event=costmap_state state=configured map_topic=%s scan_topic=%s global_topic=%s local_topic=%s footprint_radius_m=%.3f padding_m=%.3f global_on_scan=%s local_min_period_ms=%d local_window=%s local_window_radius_m=%.3f",
+      "AMR_LOG schema=v1 component=costmap_server event=costmap_state state=configured map_topic=%s scan_topic=%s global_topic=%s local_topic=%s map_frame=%s odom_frame=%s base_frame=%s footprint_radius_m=%.3f padding_m=%.3f global_on_scan=%s local_min_period_ms=%d local_window=%s local_window_radius_m=%.3f",
       this->map_topic_.c_str(),
       this->scan_topic_.c_str(),
       this->global_costmap_topic_.c_str(),
       this->local_costmap_topic_.c_str(),
+      this->map_frame_.c_str(),
+      this->odom_frame_.c_str(),
+      this->base_frame_.c_str(),
       this->footprint_circumscribed_radius_,
       this->footprint_padding_,
       bool_label(this->publish_global_on_scan_),
@@ -193,11 +205,12 @@ CostmapServer::CallbackReturn CostmapServer::on_cleanup(
 {
   (void)state;
   this->map_subscription_.reset();
-  this->current_pose_subscription_.reset();
   this->scan_subscription_.reset();
   this->clear_costmap_service_.reset();
   this->global_costmap_publisher_.reset();
   this->local_costmap_publisher_.reset();
+  this->tf_listener_.reset();
+  this->tf_buffer_.reset();
   this->map_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   this->global_costmap_ = nav_msgs::msg::OccupancyGrid();
   this->local_costmap_ = nav_msgs::msg::OccupancyGrid();
@@ -217,6 +230,31 @@ CostmapServer::CallbackReturn CostmapServer::on_shutdown(
 
 void CostmapServer::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
 {
+  const auto width = static_cast<std::size_t>(message->info.width);
+  const auto height = static_cast<std::size_t>(message->info.height);
+  const auto expected_size = width * height;
+  if (
+    width == 0U || height == 0U || message->info.resolution <= 0.0F ||
+    message->data.size() != expected_size)
+  {
+    this->map_ = message;
+    this->has_map_ = false;
+    this->global_costmap_ = nav_msgs::msg::OccupancyGrid();
+    this->local_costmap_ = nav_msgs::msg::OccupancyGrid();
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      5000,
+      "Ignoring invalid map from '%s': size=%zu x %zu resolution=%.6f data=%zu expected=%zu",
+      this->map_topic_.c_str(),
+      width,
+      height,
+      static_cast<double>(message->info.resolution),
+      message->data.size(),
+      expected_size);
+    return;
+  }
+
   this->map_ = message;
   this->has_map_ = true;
   this->rebuild_global_costmap();
@@ -224,18 +262,20 @@ void CostmapServer::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mes
   this->publish_costmaps();
 }
 
-void CostmapServer::handle_current_pose(
-  const geometry_msgs::msg::PoseStamped::SharedPtr message)
-{
-  this->latest_pose_ = *message;
-  this->has_pose_ = true;
-}
-
 void CostmapServer::handle_scan(
   const sensor_msgs::msg::LaserScan::SharedPtr message)
 {
   this->latest_scan_ = *message;
   this->has_scan_ = true;
+  if (!this->has_map_) {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      5000,
+      "Waiting for map topic '%s' before publishing costmaps",
+      this->map_topic_.c_str());
+    return;
+  }
   if (this->publish_global_on_scan_) {
     this->rebuild_global_costmap();
   }
@@ -254,7 +294,7 @@ void CostmapServer::handle_clear_costmap(
 {
   if (!this->has_map_ || !this->map_) {
     response->success = false;
-    response->message = "Static map is not available yet.";
+    response->message = "SLAM map is not available yet.";
     if (this->structured_logging_enabled_) {
       RCLCPP_WARN(
         this->get_logger(),
@@ -293,11 +333,45 @@ void CostmapServer::handle_clear_costmap(
   this->rebuild_local_costmap();
   this->publish_costmaps();
   response->success = true;
-  response->message = "Rebuilt global and local costmaps from the static map.";
+  response->message = "Rebuilt global and local costmaps from the latest SLAM map.";
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
       "AMR_LOG schema=v1 component=costmap_server event=costmap_clear_done local_only=false result=success");
+  }
+}
+
+bool CostmapServer::update_current_pose_from_tf()
+{
+  if (!this->tf_buffer_) {
+    this->has_pose_ = false;
+    return false;
+  }
+
+  try {
+    const auto transform = this->tf_buffer_->lookupTransform(
+      this->map_frame_,
+      this->base_frame_,
+      tf2::TimePointZero,
+      tf2::durationFromSec(std::max(0.0, this->tf_lookup_timeout_sec_)));
+    this->latest_pose_.header = transform.header;
+    this->latest_pose_.pose.position.x = transform.transform.translation.x;
+    this->latest_pose_.pose.position.y = transform.transform.translation.y;
+    this->latest_pose_.pose.position.z = transform.transform.translation.z;
+    this->latest_pose_.pose.orientation = transform.transform.rotation;
+    this->has_pose_ = true;
+    return true;
+  } catch (const tf2::TransformException &error) {
+    this->has_pose_ = false;
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      2000,
+      "Waiting for TF %s -> %s before applying robot-centered local costmap updates: %s",
+      this->map_frame_.c_str(),
+      this->base_frame_.c_str(),
+      error.what());
+    return false;
   }
 }
 
@@ -310,7 +384,23 @@ void CostmapServer::rebuild_global_costmap()
   this->global_costmap_ = *this->map_;
   const int width = static_cast<int>(this->global_costmap_.info.width);
   const int height = static_cast<int>(this->global_costmap_.info.height);
-  if (width <= 0 || height <= 0 || this->global_costmap_.data.empty()) {
+  const double resolution = static_cast<double>(this->global_costmap_.info.resolution);
+  const auto expected_size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  if (
+    width <= 0 || height <= 0 || resolution <= 0.0 ||
+    this->global_costmap_.data.size() != expected_size)
+  {
+    RCLCPP_WARN_THROTTLE(
+      this->get_logger(),
+      *this->get_clock(),
+      5000,
+      "Waiting for a valid map before rebuilding global costmap: size=%d x %d resolution=%.6f data=%zu expected=%zu",
+      width,
+      height,
+      resolution,
+      this->global_costmap_.data.size(),
+      expected_size);
+    this->global_costmap_ = nav_msgs::msg::OccupancyGrid();
     return;
   }
 
@@ -322,7 +412,7 @@ void CostmapServer::rebuild_global_costmap()
   const int global_radius_cells = std::max(
     0,
     static_cast<int>(std::ceil(
-      global_effective_radius / this->global_costmap_.info.resolution)));
+      global_effective_radius / resolution)));
 
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
@@ -369,6 +459,8 @@ void CostmapServer::rebuild_local_costmap()
   if (this->global_costmap_.data.empty()) {
     return;
   }
+
+  this->update_current_pose_from_tf();
 
   const int global_width = static_cast<int>(this->global_costmap_.info.width);
   const int global_height = static_cast<int>(this->global_costmap_.info.height);
@@ -433,6 +525,11 @@ void CostmapServer::rebuild_local_costmap()
 
   const int width = static_cast<int>(this->local_costmap_.info.width);
   const int height = static_cast<int>(this->local_costmap_.info.height);
+
+  if (width <= 0 || height <= 0 || resolution <= 0.0 || this->local_costmap_.data.empty())
+  {
+    return;
+  }
 
   if (!this->has_pose_ || !this->has_scan_)
   {

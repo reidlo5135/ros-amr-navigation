@@ -1,88 +1,38 @@
-# Rosbag2 Recording Profiles
+# Rosbag Profiles
 
-The v0.18.0 field workflow uses three rosbag2 profiles. The default profile should be
-`light` for repeated start-to-goal quality tests. Escalate to `debug` or `full` only when
-the light profile and structured logs do not explain the behavior.
+The navigation stack now consumes external `slam_toolbox` output and standard ROS
+2 topic names. Prefer recording TF, `/map`, plans, costmaps, and controller
+status rather than legacy localization pose topics.
 
-## Light
+## Light Profile
 
-Script:
+Used by `scripts/record_nav_bag_light.sh`:
 
-```bash
-scripts/record_nav_bag_light.sh
-```
-
-Purpose:
-
-- Compare repeated navigation runs without recording heavy sensor or grid streams.
-- Preserve runtime observation, planner status, motion status, command, pose, and `/cmd_vel`.
-
-Topics:
-
-- `/amr/observation/runtime/summary`
-- `/amr/observation/runtime/events`
-- `/amr/motion/command`
-- `/amr/motion/status`
-- `/amr/planner/local_status`
-- `/amr/localization/pose`
+- `/observation/runtime/summary`
+- `/observation/runtime/events`
+- `/motion_command`
+- `/motion_status`
+- `/local_plan_status`
 - `/cmd_vel`
 
-## Debug
+## Debug Profile
 
-Script:
+Used by `scripts/record_nav_bag_debug.sh`:
 
-```bash
-scripts/record_nav_bag_debug.sh
-```
-
-Purpose:
-
-- Diagnose planner/controller/costmap interactions with enough context for replay analysis.
-- Add paths, local costmap, scan, odometry, and TF while avoiding every-topic capture.
-
-Topics:
-
-- all `light` topics
-- `/amr/planner/global`
-- `/amr/planner/local`
-- `/amr/localization/odometry`
-- `/amr/costmap/local`
+- `/observation/runtime/summary`
+- `/observation/runtime/events`
+- `/motion_command`
+- `/motion_status`
+- `/local_plan_status`
+- `/global_plan`
+- `/local_plan`
+- `/local_costmap`
 - `/scan`
 - `/tf`
 - `/tf_static`
+- `/cmd_vel`
 
-## Full
+## Full Profile
 
-Script:
-
-```bash
-scripts/record_nav_bag_full.sh
-```
-
-Purpose:
-
-- Capture short, targeted windows when topic-level omissions are suspected.
-- This may become large quickly on TurtleBot3-class hardware.
-
-Command behavior:
-
-```bash
-ros2 bag record --all
-```
-
-## Replay
-
-Script:
-
-```bash
-scripts/replay_nav_bag.sh /path/to/bag
-```
-
-The replay script passes `--clock` to `ros2 bag play` so analysis nodes can use simulated
-time when they opt in to `use_sim_time`.
-
-## Escalation Rule
-
-Start with `light` for repeatability. Use `debug` when structured logs indicate planner,
-costmap, scan, or TF involvement. Use `full` only for short windows where the missing topic is
-not yet known.
+`scripts/record_nav_bag_full.sh` records all visible topics for short debugging
+windows.

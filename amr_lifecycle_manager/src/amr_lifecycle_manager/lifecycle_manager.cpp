@@ -30,7 +30,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
   service_timeout_ms_(5000),
   state_poll_interval_ms_(200),
   initial_pose_enabled_(false),
-  initial_pose_topic_("/amr/localization/initial_pose"),
+  initial_pose_topic_("/initialpose"),
   initial_pose_frame_id_("map"),
   initial_pose_delay_sec_(0.5),
   initial_pose_x_(0.0),

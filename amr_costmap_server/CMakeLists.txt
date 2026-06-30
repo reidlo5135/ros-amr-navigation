@@ -20,6 +20,8 @@ find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 add_executable(${PROJECT_NAME}
   src/${PROJECT_NAME}/costmap_server.cpp
@@ -33,6 +35,8 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   rclcpp_lifecycle
   sensor_msgs
+  tf2
+  tf2_ros
 )
 
 install(TARGETS

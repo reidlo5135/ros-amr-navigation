@@ -22,7 +22,6 @@ def generate_launch_description() -> LaunchDescription:
                 package="amr_mqtt_server",
                 executable="amr_mqtt_server",
                 name="mqtt_server",
-                namespace="amr",
                 output="screen",
                 parameters=[parameter],
             )

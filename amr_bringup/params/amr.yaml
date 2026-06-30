@@ -1,129 +1,18 @@
-/amr/map_server:
+/costmap_server:
   ros__parameters:
-    files:
-      yaml: "/home/rnc/ws/data/maps/map_office_260310.yaml"
-    mode:
-      mapping: false
-    frames:
-      map: "map"
-    topics:
-      map: "/amr/map/data"
-      temporary_map: "/slam/map/temp/refined"
-      corrected_odometry: "/slam/mapper/odometry"
-    services:
-      get: "/amr/map_server/get_map"
-      freeze: "/amr/map_server/freeze_temporary_map"
-      evaluate: "/amr/map_server/evaluate_temporary_map"
-      save: "/amr/map_server/save_temporary_map"
-    save:
-      directory: "/home/rnc/ws/data/maps"
-      basename: "amr_temporary_map"
-    quality:
-      min_known_ratio: 0.35
-      min_free_ratio: 0.10
-      min_occupied_ratio: 0.01
-      inflation_radius_cells: 4
-      min_inflated_free_ratio: 0.05
-      require_corrected_pose: true
-    auto_save:
-      enabled: false
-      required_consecutive_passes: 3
-
-/amr/localization:
-  ros__parameters:
-    topics:
-      odom: "/odom"
-      scan: "/scan"
-      map: "/amr/map/data"
-      initial_pose: "/amr/localization/initial_pose"
-      estimated_pose: "/amr/localization/pose"
-      estimated_odometry: "/amr/localization/odometry"
-      velocity: "/cmd_vel"
-      motion_status: "/amr/motion/status"
     frames:
       map: "map"
       odom: "odom"
-      base: "base_link"
-    start_pose:
-      x: 0.0
-      y: 0.0
-      yaw: 0.0
-    auto_initial_pose:
-      enabled: false
-      delay_sec: 3.0
-      covariance:
-        x: 0.25
-        y: 0.25
-        yaw: 0.06853891945200942
-    amcl:
-      particle_count: 200
-      initial_particle_std_xy: 0.15
-      initial_particle_std_yaw: 0.15
-      motion_noise_linear: 0.02
-      motion_noise_lateral: 0.01
-      motion_noise_angular: 0.05
-      measurement_sigma: 0.15
-      measurement_search_radius_cells: 4
-      max_beams: 24
-      max_beam_range: 6.0
-      occupied_threshold: 50
-    localization_guard:
-      enabled: true
-      slip_detection_enabled: true
-      odom_translation_slip_threshold_m: 0.12
-      odom_rotation_slip_threshold_rad: 0.35
-      pose_translation_confirm_threshold_m: 0.03
-      pose_rotation_confirm_threshold_rad: 0.10
-      command_linear_threshold: 0.04
-      command_angular_threshold: 0.15
-      confirm_cycles: 3
-      clear_cycles: 3
-      initial_pose_grace_sec: 2.0
-      goal_proximity_relax_distance_m: 0.20
-      odom_translation_gain_when_slipping: 0.20
-      odom_rotation_gain_when_slipping: 0.60
-      max_odom_translation_delta_per_update_m: 0.08
-      max_odom_rotation_delta_per_update_rad: 0.25
-      measurement_likelihood_warn_threshold: 0.02
-    map_odom_guard:
-      enabled: true
-      max_correction_translation_per_update_m: 0.08
-      max_correction_rotation_per_update_rad: 0.25
-      hard_jump_warn_translation_m: 0.30
-      hard_jump_warn_rotation_rad: 0.75
-      bypass_on_initial_pose: true
-      bypass_on_global_reset: true
-    logging:
-      structured_enabled: true
-
-/amr/localization_manager:
-  ros__parameters:
-    autostart: true
-    service_timeout_ms: 5000
-    state_poll_interval_ms: 200
-    initial_pose:
-      enabled: true
-      topic: "/amr/localization/initial_pose"
-      frame_id: "map"
-      delay_sec: 0.5
-      x: 0.0
-      y: 0.0
-      yaw: 0.0
-      covariance:
-        x: 0.25
-        y: 0.25
-        yaw: 0.06853891945200942
-    logging:
-      structured_enabled: true
-
-/amr/costmap_server:
-  ros__parameters:
+      base: "base_footprint"
+    tf:
+      lookup_timeout_sec: 0.05
     topics:
-      map: "/amr/map/data"
-      pose: "/amr/localization/pose"
+      map: "/map"
       scan: "/scan"
-      global: "/amr/costmap/global"
-      local: "/amr/costmap/local"
+      global: "/global_costmap"
+      local: "/local_costmap"
+    services:
+      clear_costmap: "/clear_costmap"
     footprint:
       polygon:
         [
@@ -154,27 +43,17 @@
     logging:
       structured_enabled: true
 
-/amr/navigation_manager:
+/navigation_manager:
   ros__parameters:
     autostart: true
     service_timeout_ms: 5000
     state_poll_interval_ms: 200
     initial_pose:
       enabled: false
-      topic: "/amr/localization/initial_pose"
-      frame_id: "map"
-      delay_sec: 0.5
-      x: 0.0
-      y: 0.0
-      yaw: 0.0
-      covariance:
-        x: 0.25
-        y: 0.25
-        yaw: 0.06853891945200942
     logging:
       structured_enabled: true
 
-/amr/global_planner:
+/global_planner:
   ros__parameters:
     footprint:
       polygon:
@@ -185,11 +64,11 @@
           -0.10,  0.09
         ]
     topics:
-      costmap: "/amr/costmap/global"
-      plan: "/amr/planner/global"
+      costmap: "/global_costmap"
+      plan: "/global_plan"
     services:
-      segment: "/amr/global_planner/plan_segment"
-      route: "/amr/global_planner/plan_route"
+      segment: "/plan_segment"
+      route: "/plan_route"
     planner:
       obstacle_threshold: 50
       connectivity: 8
@@ -210,8 +89,14 @@
     logging:
       structured_enabled: true
 
-/amr/local_planner:
+/local_planner:
   ros__parameters:
+    frames:
+      map: "map"
+      odom: "odom"
+      base: "base_footprint"
+    tf:
+      lookup_timeout_sec: 0.05
     footprint:
       polygon:
         [
@@ -221,13 +106,13 @@
           -0.10,  0.09
         ]
     topics:
-      command: "/amr/motion/command"
-      pose: "/amr/localization/pose"
-      costmap: "/amr/costmap/local"
-      plan: "/amr/planner/local"
-      status: "/amr/planner/local_status"
+      command: "/motion_command"
+      costmap: "/local_costmap"
+      global_plan: "/global_plan"
+      plan: "/local_plan"
+      status: "/local_plan_status"
     services:
-      local_escape: "/amr/local_planner/plan_local_escape"
+      local_escape: "/plan_local_escape"
     planner:
       publish_period_ms: 100
       lookahead_distance: 0.55
@@ -281,14 +166,19 @@
       structured_enabled: true
       state_log_throttle_sec: 1.0
 
-/amr/motion_controller:
+/motion_controller:
   ros__parameters:
+    frames:
+      map: "map"
+      odom: "odom"
+      base: "base_footprint"
+    tf:
+      lookup_timeout_sec: 0.05
     topics:
-      command: "/amr/motion/command"
-      plan: "/amr/planner/local"
-      pose: "/amr/localization/pose"
+      command: "/motion_command"
+      plan: "/local_plan"
       scan: "/scan"
-      status: "/amr/motion/status"
+      status: "/motion_status"
       velocity: "/cmd_vel"
     control:
       frequency: 10.0
@@ -370,23 +260,28 @@
       cmd_quality_throttle_sec: 1.0
       target_jump_warn_threshold_m: 0.28
 
-/amr/navigator:
+/navigator:
   ros__parameters:
+    frames:
+      map: "map"
+      odom: "odom"
+      base: "base_footprint"
+    tf:
+      lookup_timeout_sec: 0.05
     behavior_tree:
       xml_path: ""
     topics:
-      pose: "/amr/localization/pose"
-      command: "/amr/motion/command"
-      status: "/amr/motion/status"
-      local_plan_status: "/amr/planner/local_status"
+      command: "/motion_command"
+      status: "/motion_status"
+      local_plan_status: "/local_plan_status"
     services:
-      segment: "/amr/global_planner/plan_segment"
-      plan_recovery: "/amr/recovery_server/plan_recovery"
-      local_escape: "/amr/local_planner/plan_local_escape"
-      clear_costmap: "/amr/costmap_server/clear_costmap"
+      segment: "/plan_segment"
+      plan_recovery: "/plan_recovery"
+      local_escape: "/plan_local_escape"
+      clear_costmap: "/clear_costmap"
     actions:
-      navigate_to_pose: "/amr/navigator/navigate_to_pose"
-      navigate_to_poses: "/amr/navigator/navigate_to_poses"
+      navigate_to_pose: "/navigate_to_pose"
+      navigate_to_poses: "/navigate_to_poses"
     defaults:
       node_id: "start"
     execution:
@@ -402,10 +297,10 @@
       structured_enabled: true
       recovery_decision_logging: true
 
-/amr/recovery_server:
+/recovery_server:
   ros__parameters:
     services:
-      plan_recovery: "/amr/recovery_server/plan_recovery"
+      plan_recovery: "/plan_recovery"
     defaults:
       node_id: "recovery"
     recovery:
@@ -416,16 +311,16 @@
     logging:
       structured_enabled: true
 
-/amr/runtime_observation:
+/runtime_observation:
   ros__parameters:
     topics:
-      motion_command: "/amr/motion/command"
-      motion_status: "/amr/motion/status"
-      local_plan_status: "/amr/planner/local_status"
-      observation_summary: "/amr/observation/runtime/summary"
-      observation_events: "/amr/observation/runtime/events"
+      motion_command: "/motion_command"
+      motion_status: "/motion_status"
+      local_plan_status: "/local_plan_status"
+      observation_summary: "/observation/runtime/summary"
+      observation_events: "/observation/runtime/events"
     actions:
-      navigate_to_poses: "/amr/navigator/navigate_to_poses"
+      navigate_to_poses: "/navigate_to_poses"
     observation:
       publish_period_ms: 200
       route_stale_timeout_ms: 1500

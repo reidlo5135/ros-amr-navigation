@@ -22,6 +22,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <tf2/exceptions.h>
+#include <tf2/time.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "amr_msgs/action/navigate_to_pose.hpp"
 #include "amr_msgs/action/navigate_to_poses.hpp"
@@ -88,10 +92,10 @@ private:
       const amr_msgs::msg::MotionStatus &,
       int32_t,
       const rclcpp::Duration &)> &publish_feedback);
-  void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message);
   void handle_local_plan_status(const amr_msgs::msg::LocalPlanStatus::SharedPtr message);
-  geometry_msgs::msg::PoseStamped get_current_pose_copy() const;
+  bool update_current_pose_from_tf();
+  geometry_msgs::msg::PoseStamped get_current_pose_copy();
   amr_msgs::msg::MotionStatus get_motion_status_copy() const;
   amr_msgs::msg::LocalPlanStatus get_local_plan_status_copy() const;
   bool is_navigator_ready(std::string &error_message) const;
@@ -170,20 +174,24 @@ private:
   rclcpp::Client<amr_msgs::srv::PlanLocalEscape>::SharedPtr plan_local_escape_client_;
   rclcpp::Client<amr_msgs::srv::ClearCostmap>::SharedPtr clear_costmap_client_;
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
   rclcpp::Subscription<amr_msgs::msg::LocalPlanStatus>::SharedPtr local_plan_status_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_publisher_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
   std::string navigate_action_name_;
   std::string navigate_poses_action_name_;
   std::string command_topic_;
-  std::string current_pose_topic_;
   std::string motion_status_topic_;
   std::string local_plan_status_topic_;
   std::string plan_recovery_service_;
   std::string plan_local_escape_service_;
   std::string clear_costmap_service_;
   std::string plan_segment_service_;
+  std::string map_frame_;
+  std::string odom_frame_;
+  std::string base_frame_;
+  double tf_lookup_timeout_sec_;
   std::string behavior_tree_xml_path_;
   std::string default_node_id_;
   int planner_wait_timeout_ms_;

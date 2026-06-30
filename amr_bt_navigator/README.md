@@ -1,62 +1,30 @@
 # amr_bt_navigator
 
-BehaviorTree.CPP v3 based navigation decision server.
+Lifecycle behavior-tree navigator for the AMR navigation core.
 
-## Role
+Actions:
 
-- serves `NavigateToPose`
-- serves `NavigateToPoses`
-- requests global plans
-- dispatches motion commands
-- monitors progress and blocked states
-- chooses recovery behaviors through BT flow
+- `/navigate_to_pose`
+- `/navigate_to_poses`
 
-## Current Recovery Direction
+Inputs:
 
-Nav2-style responsibility split:
-- `amr_bt_navigator`: decide
-- `amr_global_planner`: global replan
-- `amr_controller_server`: local replan / local escape / execute
-- `amr_recovery_server`: wait / backup / spin commands
+- `/motion_status`
+- `/local_plan_status`
+- TF `map -> odom -> base_*`
 
-Current `0.16.x` recovery policy starts with one planner-local escape attempt before
-falling back to heavier recovery behaviors or global replanning when the local planner
-still reports a blocked path.
-For `NavigateToPoses`, intermediate waypoint goals keep heading-free execution while only the
-final goal requests explicit heading alignment at arrival.
-The BT now limits local escape attempts to planner-owned recovery requests for the currently
-active motion command, so controller-only blocked/stalled reports do not spuriously re-dispatch
-an escape plan from stale planner state.
-After any recovery-driven navigate re-dispatch, the navigator also waits through a short
-post-recovery reacquire window before it considers recovery exited, so stale blocked flags do
-not immediately bounce the BT back into another recovery cycle.
-Before running a heavier recovery behavior, the navigator now re-checks whether normal tracking
-has already been reacquired and skips the recovery command when the latest controller/planner
-state is clean.
-The fixed recovery policy is now:
-- `DECISION_HARD_BLOCKED`: one planner-local escape attempt, then `backup`, then `spin`, then fresh global replan
-- `DECISION_GOAL_PROXIMITY_BLOCKED`: skip local escape, `wait`, and re-dispatch the current plan before escalating further
-- `DECISION_GLOBAL_REPLAN_REQUIRED`: skip intermediate recovery commands and go straight to fresh global replanning
-- controller-owned `blocked/stalled`: `wait -> backup -> spin -> fresh global replan`
-`/amr/local_planner/plan_local_escape` also returns stable reason labels such as
-`local_escape_map_unavailable`, `local_escape_empty_source_plan`, and
-`local_escape_no_valid_path` so operator-side logs can distinguish planner refusal from later
-fallback recovery behavior.
+Outputs:
 
-## Important Files
+- `/motion_command`
 
-- `config/navigate_to_pose.xml`
-- `src/amr_bt_navigator/bt_navigator.cpp`
+Service clients:
 
-## Inputs
+- `/plan_segment`
+- `/plan_recovery`
+- `/plan_local_escape`
+- `/clear_costmap`
 
-- `/amr/localization/pose`
-- `/amr/motion/status`
-- `/amr/global_planner/plan_segment`
-- `/amr/local_planner/plan_local_escape`
-- `/amr/recovery_server/plan_recovery`
-- `/amr/costmap_server/clear_costmap`
-
-## Output
-
-- `/amr/motion/command`
+The navigator gets the current robot pose from TF and no longer depends on a
+localization pose topic. If TF or the global planner service is not ready, the
+current navigation request fails cleanly or waits according to the behavior-tree
+state instead of crashing the node.

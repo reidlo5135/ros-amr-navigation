@@ -1,406 +1,141 @@
-# ROS AMR Navigation
+# ros-amr-navigation
 
-ROS 2 Humble based AMR navigation stack for TurtleBot3 Burger.
+`ros-amr-navigation` is now a navigation-only AMR stack designed to run with an
+externally launched `slam_toolbox` online SLAM/localization pipeline.
 
+The core runtime no longer launches or depends on the repository's legacy static
+map server or AMCL-lite localization node. `slam_toolbox` owns online mapping,
+localization, `/map`, and the `map -> odom` transform. This repository consumes
+the standard ROS 2 interfaces and performs costmap generation, global planning,
+local planning, behavior-tree navigation, recovery, motion control, runtime
+observation, and optional visualization or MQTT bridging.
 
+## Runtime Architecture
 
-Current `0.18.x` direction:
-- Navigation quality stabilization is the top-priority track after the `0.17.5` TurtleBot3 hardware internalization baseline.
-- Path tracking, target selection, goal approach, and post-recovery path rejoin are tuned conservatively for TurtleBot3 Burger-class low-speed operation.
-- `0.18.1` adds a conservative localization guard for wheel slip and physical stall cases where odometry reports motion but scan/pose progress and controller status do not agree.
-- Same-row or same-Y goals prefer a safe line-of-sight global path before A* row penalties can bend the path.
-- `AMR_LOG schema=v1` remains the field-debug contract for path quality, goal state, recovery decision, and rejoin diagnosis.
+Required external inputs:
 
-Maintained `0.17.x` baseline:
-- TurtleBot3 hardware internalization remains the preserved baseline track.
-- `amr_bringup/launch/turtlebot3.launch.py` is the AMR-owned robot-side hardware entrypoint.
-- `amr_bringup/launch/navigation.launch.py` remains the remote-PC navigation/runtime entrypoint.
-- `amr_visualization` starts the in-repo ROS-native Qt6 operator app lane.
-- `amr_mqtt_server` remains available for remote-client telemetry and command bridging.
-- the external `ros-rcs` app remains a separate remote-client reference:
-  - `https://github.com/reidlo5135/ros-rcs`
-- Recovery and decision flow follow a Nav2-like split:
-  - `amr_bt_navigator` decides
-  - planner / controller / recovery packages execute
-- `0.15.x` remains the frozen runtime-hardening interpretation baseline.
-- `0.16.x` closes the local-escape-first recovery policy, corridor/doorway blocked-state
-  tuning pass, and the first in-repo `amr_visualization` operator lane.
-- `0.17.x` establishes the first AMR-owned TurtleBot3 hardware layer:
-  - `amr_bringup`-owned base driver boundary
-  - `amr_bringup`-owned LiDAR driver boundary
-  - `amr_bringup`-owned description ownership
-  - explicit split between robot-side hardware and remote-PC AMR runtime
-- `0.18.x` stabilizes navigation quality on top of that hardware baseline:
-  - forward-progressive local target selection with bounded rollback
-  - reduced small-angle straight-line oscillation
-  - separated XY goal arrival and final yaw alignment
-  - conservative recovery/escape rejoin and reacquire diagnostics
-  - guarded odometry motion updates and bounded `map -> odom` correction during suspected wheel slip or physical stall
-  - same-row global path straightening when footprint collision and line-of-sight checks are safe
+- robot bringup publishes `/scan`, `/tf`, `/tf_static`, and `/odom` or an `odom -> base_*` TF chain
+- external `slam_toolbox` online mode publishes `/map`
+- external `slam_toolbox` publishes `map -> odom`
 
-## Architecture
+AMR navigation consumes:
 
-```mermaid
-flowchart LR
-    LocalUI["Local Operator App<br/>amr_visualization"] -->|ROS topics / services / actions| Nav
-    Desktop["Remote Client<br/>ros-rcs"] -->|WS MQTT| Broker["Mosquitto Broker"]
-    Broker -->|MQTT command| RobotBridge["amr_mqtt_server<br/>robot-side MQTT API server"]
-    RobotBridge -->|ROS topics / services / actions| Nav["Localization + Navigation Runtime"]
+- `/map`
+- `/scan`
+- `/tf`, `/tf_static`
+- `map -> odom -> base_footprint` or `map -> odom -> base_link`
 
-    subgraph TB3["TurtleBot3"]
-        TB3Bringup["turtlebot3_bringup robot.launch.py"]
-        RobotBridge
-        MapServer["amr_map_server"]
-        Localization["amr_localization"]
-        Costmap["amr_costmap_server"]
-        GlobalPlanner["amr_global_planner"]
-        Controller["amr_controller_server<br/>local planner + motion controller"]
-        Recovery["amr_recovery_server"]
-        Navigator["amr_bt_navigator"]
-        Lifecycle["amr_lifecycle_manager"]
-        TB3Bringup --> RobotBridge
-        MapServer --> Localization
-        Localization --> Costmap
-        Costmap --> GlobalPlanner
-        Costmap --> Controller
-        GlobalPlanner --> Navigator
-        Controller --> Navigator
-        Recovery --> Navigator
-        Navigator --> Controller
-    end
-```
+AMR navigation does not publish `map -> odom`. Do not run the legacy
+`amr_localization` node with this navigation launch, because that would duplicate
+the transform owned by `slam_toolbox`.
 
-## Active Packages
+Manual static map preparation is not a prerequisite. A new environment can be
+mapped online by `slam_toolbox` while this stack uses the live `/map` for
+navigation.
 
-- `amr_bringup`: central launch files, `amr.yaml`, robot-side hardware drivers, and AMR-owned TB3 URDF
-- `amr_bt_navigator`: BT-based goal orchestration and recovery decisions
-- `amr_controller_server`: local planner and motion controller lifecycle nodes
-- `amr_costmap_server`: static global costmap + scan-based dynamic local costmap
-- `amr_global_planner`: A* planner on the global costmap
-- `amr_localization`: localization and `map -> odom`
-- `amr_map_server`: official-map lifecycle, evaluation, and save/freeze services
-- `amr_mqtt_server`: robot-side MQTT API server
-- `amr_msgs`: custom messages, services, and actions
-- `amr_rviz`: dedicated RViz profiles plus RViz-to-action bridge tooling
-- `amr_visualization`: ROS-native Qt6 operator visualization app
-- `amr_runtime_observation`: runtime summary and event aggregation for navigation state
-- `amr_navigation`: metapackage
-- `amr_recovery_server`: wait / backup / spin recovery command generation
-## Removed Packages
+## Launch Order
 
-These packages are no longer part of the active stack:
-- `amr_obstacle_detection`
-- `amr_rviz_plugins`
-- the old server-side `amr_mqtt_bridge`
-- `amr_mqtt_robot_plugin` as a separate package name
-- `amr_viz` in this repository
-
-## MQTT Model
-
-Robot-side `amr_mqtt_server` publishes:
-- legacy ROS-oriented data streams on `/<root>/<robot_id>/telemetry/*`
-- control and result topics on `/<root>/<robot_id>/<domain>/<channel>`
-
-The external `ros-rcs` desktop client consumes:
-- `/amr/burger1/navigation/feedback`
-- `/amr/burger1/navigation/status`
-- `/amr/burger1/navigation/result`
-- `/amr/burger1/pose/result`
-- `/amr/burger1/map/result`
-- selected legacy data streams while the heavy data plane is being refactored
-
-Commands are sent on:
-- `/amr/burger1/navigation/command`
-- `/amr/burger1/navigation/cancel`
-- `/amr/burger1/pose/set`
-
-Single-goal navigation also uses `/amr/burger1/navigation/command` with a one-element `goal_poses` array.
-
-## Launch
-
-RPi4 robot-side AMR-owned TurtleBot3 hardware bringup:
+Terminal 1:
 
 ```bash
-ros2 launch amr_bringup turtlebot3.launch.py
+ros2 launch <robot_bringup_package> bringup.launch.py
 ```
 
-Legacy external TurtleBot3 compatibility path:
+Terminal 2:
 
 ```bash
-ros2 launch amr_bringup turtlebot3_external.launch.py
+ros2 launch slam_toolbox online_async_launch.py slam_params_file:=<slam_toolbox_online_params.yaml> use_sim_time:=false
 ```
 
-Remote-PC AMR navigation/runtime bringup:
+Terminal 3:
 
 ```bash
 ros2 launch amr_bringup navigation.launch.py
 ```
 
-This launch is the remote-PC navigation/runtime entrypoint. It does not start TurtleBot3
-hardware, `turtlebot3_bringup`, `robot_state_publisher`, or AMR robot driver nodes; run hardware
-bringup separately through external TB3 bringup or a robot-side AMR launch.
-
-When using the existing TurtleBot3 bringup separately, keep the structure split across the robot
-hardware bringup and the AMR navigation runtime:
-
-```bash
-ros2 launch turtlebot3_bringup robot.launch.py
-ros2 launch amr_bringup navigation.launch.py
-```
-
-The MQTT bridge is disabled by default. Enable it only for MQTT/remote-client workflows:
+Optional MQTT bridge:
 
 ```bash
 ros2 launch amr_bringup navigation.launch.py use_mqtt_server:=true
 ```
 
-RViz-based local operator test console:
+## Core Packages
 
-```bash
-ros2 launch amr_rviz rviz.launch.py
-```
+- `amr_costmap_server`: consumes live `/map`, `/scan`, and TF; publishes global and local costmaps
+- `amr_global_planner`: plans on `/global_costmap` and publishes `/global_plan`
+- `amr_controller_server`: hosts `local_planner` and `motion_controller`
+- `amr_bt_navigator`: exposes navigation actions and dispatches motion commands
+- `amr_recovery_server`: creates recovery motion commands
+- `amr_runtime_observation`: observes navigation status and emits runtime summaries
+- `amr_lifecycle_manager`: lifecycle bringup for navigation core nodes only
+- `amr_bringup`: navigation-only launch and parameters
 
-ROS-native Qt6 operator visualization app:
+Legacy packages removed from the core navigation path:
 
-```bash
-ros2 launch amr_visualization amr_visualization.launch.py
-```
+- `amr_map_server`
+- `amr_localization`
 
-`amr_visualization` subscribes to the static map, pose, paths, and runtime status by default.
-Global/local costmap layers are opt-in from the UI because full costmap streams can be heavy on
-TurtleBot3-class hardware.
+They have been replaced by the external `slam_toolbox` contract.
+`amr_bringup/launch/navigation.launch.py` does not launch them, lifecycle
+management no longer lists them, and `amr_bringup`/`amr_navigation` no longer
+depend on them.
 
-## Structured Logging
+## Topic Contract
 
-Runtime decision logs use the `AMR_LOG` prefix and `key=value` fields. The schema is documented in
-[docs/logging/LOG_SCHEMA.md](docs/logging/LOG_SCHEMA.md). Cross-package state summaries and events
-remain owned by `amr_runtime_observation`; other packages log only decisions and outcomes in their
-own responsibility area.
+Inputs:
 
-Common fields:
+| Interface | Default |
+| --- | --- |
+| map | `/map` |
+| scan | `/scan` |
+| TF | `/tf`, `/tf_static` |
+| initial pose | `/initialpose`, owned by `slam_toolbox`/RViz, not the AMR navigation core |
 
-- `schema=v1`
-- `component=<package_role>`
-- `event=<event_name>`
+Outputs:
 
-Useful event families:
+| Interface | Default |
+| --- | --- |
+| global costmap | `/global_costmap` |
+| local costmap | `/local_costmap` |
+| global plan | `/global_plan` |
+| local plan | `/local_plan` |
+| motion command | `/motion_command` |
+| motion status | `/motion_status` |
+| local plan status | `/local_plan_status` |
+| velocity command | `/cmd_vel` |
 
-- controller: `tracking_state`, `tracking_heading_debug`, `tracking_frame_mismatch`, `local_path_quality`, `cmd_quality`, `goal_state`, `target_jump_detected`, `local_blocked_state`, `rejoin_state`
-- localization: `localization_state`, `initial_pose_received`, `localization_guard`, `wheel_slip_state`, `odom_motion_guard`, `map_odom_correction`
-- navigator: `goal_received`, `bt_phase_transition`, `recovery_decision`, `recovery_started`, `recovery_finished`, `recovery_skipped`
-- planner/recovery: `plan_requested`, `plan_succeeded`, `plan_failed`, `recovery_plan_selected`
-- observation: `runtime_summary`, `runtime_event`
+Actions and services:
 
-Structured logging defaults are configured in [amr_bringup/params/amr.yaml](amr_bringup/params/amr.yaml)
-under each package's `logging` section.
+| Interface | Default |
+| --- | --- |
+| navigate to pose | `/navigate_to_pose` |
+| navigate through poses | `/navigate_to_poses` |
+| global plan segment | `/plan_segment` |
+| global plan route | `/plan_route` |
+| recovery plan | `/plan_recovery` |
+| local escape plan | `/plan_local_escape` |
+| clear costmap | `/clear_costmap` |
 
-## Field Debug Scripts
+## Frames
 
-Field scripts live in [scripts](scripts). They share `scripts/amr_logging_env.sh`, which prepares ROS 2
-Humble, the local workspace overlay, log directories, bag directories, and a run id.
+Default parameters use:
 
-Common commands:
+- `frames.map: "map"`
+- `frames.odom: "odom"`
+- `frames.base: "base_footprint"`
 
-```bash
-scripts/run_navigation_nohup.sh
-scripts/run_turtlebot3_nohup.sh
-scripts/record_nav_bag_light.sh
-scripts/watch_amr_logs.sh --event recovery_decision
-scripts/extract_nav_quality.sh --output /tmp/nav_quality.tsv
-scripts/stop_nohup_process.sh --label all
-```
+If a robot bringup uses `base_link` instead of `base_footprint`, change
+`frames.base` in `amr_bringup/params/amr.yaml` for the costmap server, local
+planner, motion controller, and navigator.
 
-See [scripts/README.md](scripts/README.md) for options and environment overrides.
+## Startup Behavior
 
-## Rosbag2 Recording Profiles
+The navigation core tolerates online SLAM startup order:
 
-Rosbag profiles are documented in [docs/logging/ROSBAG_PROFILES.md](docs/logging/ROSBAG_PROFILES.md).
+- if `/map` has not arrived, costmap publication waits
+- if `/map` changes size, origin, or resolution, costmaps rebuild from the latest message
+- if TF lookup fails temporarily, costmap/local planner/controller/navigator wait or fail the current request without crashing
+- if a global plan is requested before `/global_costmap` is ready, the planner service returns failure while the node remains alive
 
-| Profile | Script | Use |
-| --- | --- | --- |
-| `light` | `scripts/record_nav_bag_light.sh` | Repeated navigation quality tests without heavy scan/TF/grid capture |
-| `debug` | `scripts/record_nav_bag_debug.sh` | Planner/controller/costmap diagnosis with paths, local costmap, scan, odometry, and TF |
-| `full` | `scripts/record_nav_bag_full.sh` | Short targeted all-topic captures |
-
-## Navigation Quality Debugging Workflow
-
-1. Run navigation with `scripts/run_navigation_nohup.sh`.
-2. Record a light bag with `scripts/record_nav_bag_light.sh`.
-3. Test the same start pose and goal three times.
-4. Check recovery entry with `scripts/watch_amr_logs.sh --event recovery_decision`.
-5. Extract `goal_state`, `cmd_quality`, `tracking_state`, `tracking_heading_debug`, and `local_path_quality` with `scripts/extract_nav_quality.sh`.
-6. Compare `recovery_count`, `cmd_ang_sign_flip_count`, `output_ang_sign_flip_count`, `target_jump_m`, and goal approach phase changes before and after modifications.
-7. After recovery or local escape, check `recovery_finished result=reacquired` versus `result=reacquire_timeout`, then confirm controller `rejoin_state` returns to normal `tracking_state`.
-
-If RViz shows global/local plans but the robot drives straight, inspect these `AMR_LOG` fields first:
-
-- `target_idx`
-- `selected_idx`
-- `target_dist_m`
-- `heading_err_rad`
-- `cmd_ang`
-- `pose_frame`
-- `plan_frame`
-- `selection_reason`
-
-If the robot follows the plan but wags left/right on a visually straight segment, inspect these fields next:
-
-- `rejoin`
-- `rejoin_context_active`
-- `straight_segment`
-- `path_curvature_score`
-- `lateral_error_m`
-- `heading_error_raw_rad`
-- `heading_error_filtered_rad`
-- `steering_deadband_active`
-- `steering_hysteresis_state`
-- `cmd_ang_sign_flip_count`
-- `output_ang_sign_flip_count`
-- `local_path_quality.raw_path_points`
-- `local_path_quality.simplified_path_points`
-- `local_path_quality.refined_path_points`
-- `local_path_quality.line_of_sight_simplified`
-- `local_path_quality.collinear_pruned_count`
-- `local_path_quality.collision_check_passed`
-
-Normal straight tracking should read as `phase=tracking`, `rejoin=false`,
-`rejoin_context_active=false`, `straight_segment=true`, and near-zero `cmd_ang` / `output_ang`.
-`rejoin=true` is reserved for bounded path return after recovery, escape, or a large tracking target reacquisition.
-If `straight_segment=false` while the RViz path looks straight, compare visual straightness with the
-actual local plan geometry in `local_path_quality`; high `path_curvature_score` means the controller
-is following stair-stepped local points.
-For straight GP/LP comparison, the expected `0.18.x` behavior is minimal LP lateral deviation:
-`local_path_quality.lateral_error_m` should stay low, line-of-sight and collinear pruning should not
-push the LP away from the GP centerline, and corner smoothing is intentionally conservative on
-near-straight segments.
-Goal heading alignment is enabled by default. AMR navigation goals are treated as full pose targets
-(`x`, `y`, and `yaw`), so `phase=final_heading_align`, `cmd_lin=0.000`, and nonzero `cmd_ang` near
-the goal are expected when final yaw is not reached yet. XY-only tests must disable this explicitly
-with `/amr/navigator.execution.align_heading_at_goal: false` or
-`/amr/motion_controller.goal_checker.ignore_yaw: true`.
-
-For `0.18.0` field checks, goal approach is considered stable when `goal_state` shows
-`xy_reached=true` before final yaw completion, `cmd_lin=0.000` during final alignment, and a final
-`phase=reached` log with `cmd_lin=0.000 cmd_ang=0.000`. Recovery rejoin is considered stable when
-`recovery_decision`, `recovery_started`, `recovery_finished`, controller `rejoin_state`, and
-`local_blocked_state` tell one continuous story without repeated reacquire timeouts.
-Slow reaching now starts closer to the goal so straight path tracking keeps nominal speed longer
-while still leaving a TB3 Burger-class safety margin before final alignment.
-Runtime observation should report `controller_phase=final_heading_align` with
-`progress_stalled=false`, `recovery=false`, and `recovery_reason=none` in that intentional rotate-in-place phase.
-During normal tracking, current controller clear status is authoritative: if `controller_blocked=false`,
-`controller_stalled=false`, `controller_recovery=false`, and `dist_goal_delta_m` is at least
-`progress_clear_delta_m`, runtime observation should stay at `phase=tracking` with
-`progress_clear_reason=controller_normal_progress`.
-
-For `0.18.1` localization checks, low obstacle contact or wheel slip should not be diagnosed from
-costmap state alone. Compare `/odom` deltas with localized pose progress, `/cmd_vel`, and
-`/amr/motion/status`. If odometry moves while localized pose/scan evidence and controller status do
-not confirm real motion, `amr_localization` can damp the particle motion update and limit each
-`map -> odom` correction step. Relevant logs are `wheel_slip_state`, `odom_motion_guard`, and
-`map_odom_correction`; they expose only summary deltas and reason codes, not raw scan or map data.
-
-Use the `nav_quality_summary` row from `scripts/extract_nav_quality.sh` to compare `cmd_ang_abs_avg`, `output_ang_abs_avg`, and sign flip counts before and after tuning.
-
-## Hardware Boundary
-
-The AMR-facing hardware contract remains:
-
-- `/cmd_vel`
-- `/odom`
-- `/imu`
-- `/scan`
-- `/joint_states`
-- `/tf`
-- `/tf_static`
-- `/robot_description`
-
-Frame convention:
-
-- `map`
-- `odom`
-- `base_footprint`
-- `base_link`
-- `base_scan`
-- `imu_link`
-
-The new AMR-owned hardware path is intentionally still incremental. The current pass adds the
-launch/package/transport/protocol boundaries and node shells inside `amr_bringup`, but it does not
-claim production-safe OpenCR or LDS packet parity yet.
-
-The ROS-native local operator UI lives in `amr_visualization`. The external `ros-rcs`
-line remains useful as a separate remote-client reference.
-
-## Build
-
-```bash
-colcon build --packages-select \
-  amr_msgs \
-  amr_map_server \
-  amr_localization \
-  amr_costmap_server \
-  amr_global_planner \
-  amr_controller_server \
-  amr_recovery_server \
-  amr_bt_navigator \
-  amr_runtime_observation \
-  amr_lifecycle_manager \
-  amr_mqtt_server \
-  amr_rviz \
-  amr_visualization \
-  amr_bringup \
-  amr_navigation
-```
-
-## QoS Reference
-
-### `turtlebot3_bringup`
-
-| Interface | Kind | QoS | Notes |
-| --- | --- | --- | --- |
-| `/scan` | topic | `SensorDataQoS` (`keep_last`, `best_effort`, `volatile`) | LDS lidar stream; AMR consumers use `SensorDataQoS` |
-| `/odom` | topic | `SystemDefaultsQoS` / reliable-default | diff-drive odometry from `turtlebot3_node` |
-| `/imu` | topic | `SensorDataQoS` expectation | IMU is enabled in TB3 diff-drive config (`use_imu: true`); AMR telemetry treats it as sensor-data profile |
-| `/cmd_vel` | topic | reliable-default | velocity command ingress to robot base |
-| `/tf` | topic | reliable-default, `volatile` | dynamic transform stream |
-| `/tf_static` | topic | reliable-default, `transient_local` | static transforms must remain latched/persistent |
-
-### `amr_navigation`
-
-| Interface | Kind | QoS | Owner / Notes |
-| --- | --- | --- | --- |
-| `/amr/map/data` | topic | `keep_last(1)`, `reliable`, `transient_local` | official map from `amr_map_server`; late joiners must receive last map |
-| `/amr/localization/initial_pose` | topic | `SystemDefaultsQoS` | initial pose ingress/echo between RViz, lifecycle manager, localization |
-| `/amr/localization/pose` | topic | `SystemDefaultsQoS` | estimated robot pose from `amr_localization` |
-| `/amr/localization/odometry` | topic | `SystemDefaultsQoS` | localization-derived odometry output |
-| `/amr/costmap/global` | topic | `keep_last(1)`, `reliable`, `transient_local` | global costmap from `amr_costmap_server` |
-| `/amr/costmap/local` | topic | `keep_last(1)`, `reliable`, `transient_local` | local costmap from `amr_costmap_server` |
-| `/amr/planner/global` | topic | `SystemDefaultsQoS` | global path from `amr_global_planner` |
-| `/amr/planner/local` | topic | `SystemDefaultsQoS` | local path from `amr/local_planner` |
-| `/amr/planner/local_status` | topic | `SystemDefaultsQoS` | local planner status/blocked context |
-| `/amr/motion/command` | topic | `SystemDefaultsQoS` | navigator/recovery -> local planner / motion controller command lane |
-| `/amr/motion/status` | topic | `SystemDefaultsQoS` | motion controller runtime status |
-| `/amr/observation/runtime/summary` | topic | `SystemDefaultsQoS` | operator-facing condensed runtime summary |
-| `/amr/observation/runtime/events` | topic | `SystemDefaultsQoS` | operator-facing runtime event stream |
-| `/amr/rviz/goal` | topic | reliable-default, `volatile` | RViz 2D Goal Pose ingress; bridged into `NavigateToPose` |
-| `/amr/rviz/goals` | topic | reliable-default, `volatile` | reserved RViz/operator multi-goal ingress; bridged into `NavigateToPoses` |
-| `/amr/global_planner/plan_segment` | service | n/a | segment planning service |
-| `/amr/global_planner/plan_route` | service | n/a | route planning service |
-| `/amr/local_planner/plan_local_escape` | service | n/a | local escape planning service |
-| `/amr/costmap_server/clear_costmap` | service | n/a | explicit costmap clear request |
-| `/amr/recovery_server/plan_recovery` | service | n/a | recovery command generation |
-| `/amr/map_server/get_map` | service | n/a | retrieve current official map |
-| `/amr/map_server/freeze_temporary_map` | service | n/a | freeze temporary SLAM map |
-| `/amr/map_server/evaluate_temporary_map` | service | n/a | temporary map quality evaluation |
-| `/amr/map_server/save_temporary_map` | service | n/a | save promoted temporary map |
-| `/amr/navigator/navigate_to_pose` | action | action transport defaults | single-goal navigation |
-| `/amr/navigator/navigate_to_poses` | action | action transport defaults | waypoint route navigation |
-| `/amr/navigator/navigate_to_poses/_action/feedback` | topic | `SystemDefaultsQoS` | consumed by `amr_runtime_observation` |
-| `/amr/navigator/navigate_to_poses/_action/status` | topic | `SystemDefaultsQoS` | consumed by `amr_runtime_observation` and `amr_mqtt_server` |
-
-Notes:
-
-- In this repository, `SensorDataQoS` is intentionally used for raw sensor feeds such as `/scan`, and should remain the default expectation for high-rate hardware topics.
-- `transient_local + reliable` is reserved for map-like latched data that late subscribers must immediately receive.
-- Most internal `/amr/**` status/plan/command lanes currently use `SystemDefaultsQoS`; keep publisher/subscriber defaults aligned unless there is a concrete reason to specialize them.
-- `amr_runtime_observation` currently consumes `NavigateToPoses` action feedback/status for route-level observation; single-goal navigation is still visible indirectly through motion and planner status lanes.
+This behavior is intentional for online `slam_toolbox` operation where map and
+TF can become available after navigation nodes are already active.

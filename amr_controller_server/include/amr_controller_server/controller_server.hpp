@@ -23,6 +23,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
+#include <tf2/exceptions.h>
+#include <tf2/time.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include "amr_geometry/footprint.hpp"
 #include "amr_msgs/msg/local_plan_status.hpp"
@@ -84,11 +88,12 @@ private:
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) override;
 
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
-  void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message);
+  void handle_global_plan(const nav_msgs::msg::Path::SharedPtr message);
   void handle_plan_local_escape(
     const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
     std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response);
+  bool update_current_pose_from_tf();
   void publish_local_plan();
   LocalPlanBuildResult build_local_plan(
     const amr_msgs::msg::MotionCommand &command,
@@ -199,19 +204,25 @@ private:
   geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw) const;
 
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_subscription_;
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr global_plan_subscription_;
   rclcpp::Service<amr_msgs::srv::PlanLocalEscape>::SharedPtr local_escape_service_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_plan_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::LocalPlanStatus>::SharedPtr local_plan_status_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
   std::string command_topic_;
-  std::string current_pose_topic_;
   std::string map_topic_;
+  std::string global_plan_topic_;
   std::string local_plan_topic_;
   std::string local_plan_status_topic_;
   std::string local_escape_service_name_;
+  std::string map_frame_;
+  std::string odom_frame_;
+  std::string base_frame_;
+  double tf_lookup_timeout_sec_;
   int publish_period_ms_;
   double lookahead_distance_;
   double goal_tolerance_;
@@ -268,11 +279,13 @@ private:
   std::size_t last_progress_index_;
   amr_msgs::msg::MotionCommand latest_command_;
   geometry_msgs::msg::PoseStamped current_pose_;
+  nav_msgs::msg::Path latest_global_plan_;
   nav_msgs::msg::OccupancyGrid::SharedPtr map_occupancy_grid_;
   nav_msgs::msg::OccupancyGrid inflated_map_;
   nav_msgs::msg::OccupancyGrid working_costmap_;
   bool has_command_;
   bool has_current_pose_;
+  bool has_global_plan_;
   bool has_map_;
 
 public:
@@ -342,8 +355,8 @@ private:
 
   void handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message);
   void handle_local_plan(const nav_msgs::msg::Path::SharedPtr message);
-  void handle_current_pose(const geometry_msgs::msg::PoseStamped::SharedPtr message);
   void handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message);
+  bool update_current_pose_from_tf();
   void publish_control();
   void reset_velocity_controller_state();
   void reset_progress_checker_state();
@@ -389,18 +402,22 @@ private:
 
   rclcpp::Subscription<amr_msgs::msg::MotionCommand>::SharedPtr motion_command_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_plan_subscription_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr current_pose_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp_lifecycle::LifecyclePublisher<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
   std::string command_topic_;
   std::string local_plan_topic_;
-  std::string current_pose_topic_;
   std::string scan_topic_;
   std::string status_topic_;
   std::string cmd_vel_topic_;
+  std::string map_frame_;
+  std::string odom_frame_;
+  std::string base_frame_;
+  double tf_lookup_timeout_sec_;
   double control_frequency_;
   double linear_speed_;
   double min_linear_speed_;

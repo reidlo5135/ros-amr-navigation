@@ -24,12 +24,12 @@ public:
   RvizBridge()
   : Node("rviz_bridge")
   {
-    goal_topic_ = this->declare_parameter<std::string>("goal_topic", "/amr/rviz/goal");
-    goals_topic_ = this->declare_parameter<std::string>("goals_topic", "/amr/rviz/goals");
+    goal_topic_ = this->declare_parameter<std::string>("goal_topic", "/rviz/goal");
+    goals_topic_ = this->declare_parameter<std::string>("goals_topic", "/rviz/goals");
     navigate_to_pose_action_ = this->declare_parameter<std::string>(
-      "navigate_to_pose_action", "/amr/navigator/navigate_to_pose");
+      "navigate_to_pose_action", "/navigate_to_pose");
     navigate_to_poses_action_ = this->declare_parameter<std::string>(
-      "navigate_to_poses_action", "/amr/navigator/navigate_to_poses");
+      "navigate_to_poses_action", "/navigate_to_poses");
     default_frame_id_ = this->declare_parameter<std::string>("default_frame_id", "map");
 
     navigate_to_pose_client_ =
