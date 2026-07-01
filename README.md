@@ -1,5 +1,7 @@
 # ros-amr-navigation
-![alt text](docs/amviz.png)
+![alt text](docs/screenshots/amr_screenshot_1.png)
+![alt text](docs/screenshots/amr_screenshot_2.png)
+![alt text](docs/screenshots/amr_screenshot_3.png)
 
 `ros-amr-navigation` is now a navigation-only AMR stack designed for
 `slam_toolbox + AMR` online-async navigation: robot bringup starts the sensors
