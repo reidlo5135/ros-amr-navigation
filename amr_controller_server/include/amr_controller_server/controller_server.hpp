@@ -57,12 +57,16 @@ private:
     std::size_t end_idx{0U};
     double lookahead_m{0.0};
     double dist_goal_m{0.0};
+    double source_path_curvature_score{0.0};
+    double source_path_lateral_error_m{0.0};
+    double source_current_lateral_error_m{0.0};
     bool xy_reached{false};
     bool fallback_used{false};
     bool degenerate{false};
     std::string reason{"none"};
     std::string pose_frame;
     std::string plan_frame;
+    std::string source_straight_axis{"none"};
   };
 
   struct LocalPathQualityMetrics
@@ -71,10 +75,14 @@ private:
     std::size_t simplified_path_points{0U};
     std::size_t refined_path_points{0U};
     double path_length_m{0.0};
+    double raw_path_curvature_score{0.0};
     double path_curvature_score{0.0};
+    double raw_lateral_error_m{0.0};
     double lateral_error_m{0.0};
+    double lateral_error_delta_m{0.0};
     bool line_of_sight_simplified{false};
     int collinear_pruned_count{0};
+    bool corner_smoothing_applied{false};
     bool collision_check_passed{true};
   };
 

@@ -302,6 +302,12 @@ double AStarPlanner::row_bias_penalty(
   const GridCell &start,
   const GridCell &goal) const
 {
+  const int x_delta = std::abs(goal.x - start.x);
+  const int y_delta = std::abs(goal.y - start.y);
+  if (x_delta <= y_delta) {
+    return 0.0;
+  }
+
   double penalty = 0.0;
 
   const bool in_goal_align_zone =

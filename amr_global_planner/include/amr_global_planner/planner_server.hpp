@@ -27,6 +27,13 @@ public:
   virtual ~PlannerServer() = default;
 
 private:
+  enum class StraightAxis
+  {
+    None,
+    Horizontal,
+    Vertical
+  };
+
   using CallbackReturn =
     rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -69,7 +76,7 @@ private:
     GridCell &cell,
     int max_radius,
     double yaw) const;
-  bool is_same_row_straight_candidate(
+  StraightAxis classify_axis_aligned_straight_candidate(
     const geometry_msgs::msg::PoseStamped &start,
     const geometry_msgs::msg::PoseStamped &goal,
     const GridCell &start_cell,
@@ -118,10 +125,15 @@ private:
   int goal_row_align_distance_cells_;
   double goal_row_align_penalty_;
   int nearest_free_search_radius_cells_;
-  bool same_row_straightening_enabled_;
+  bool axis_aligned_straightening_enabled_;
   int same_row_tolerance_cells_;
+  int same_column_tolerance_cells_;
   double same_y_tolerance_m_;
+  double same_x_tolerance_m_;
   int same_row_max_lateral_deviation_cells_;
+  double axis_aligned_interpolation_distance_;
+  bool axis_aligned_require_line_of_sight_;
+  bool same_row_straightening_enabled_;
   double same_row_interpolation_distance_;
   bool same_row_require_line_of_sight_;
   bool structured_logging_enabled_;

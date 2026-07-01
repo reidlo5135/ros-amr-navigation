@@ -36,6 +36,28 @@ const char *frame_label(const std::string &frame)
   return frame.empty() ? "none" : frame.c_str();
 }
 
+const char *path_axis_label(const nav_msgs::msg::Path &path)
+{
+  if (path.poses.size() < 2U)
+  {
+    return "none";
+  }
+
+  const geometry_msgs::msg::Point &start = path.poses.front().pose.position;
+  const geometry_msgs::msg::Point &goal = path.poses.back().pose.position;
+  const double x_delta = std::abs(goal.x - start.x);
+  const double y_delta = std::abs(goal.y - start.y);
+  if (x_delta <= 1e-3 &&y_delta > 1e-6)
+  {
+    return "vertical";
+  }
+  if (y_delta <= 1e-3 &&x_delta > 1e-6)
+  {
+    return "horizontal";
+  }
+  return "none";
+}
+
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
@@ -1029,10 +1051,14 @@ void LocalPlanner::publish_local_plan()
     path_quality.simplified_path_points = build_result.plan.poses.size();
     path_quality.refined_path_points = build_result.plan.poses.size();
     path_quality.path_length_m = this->estimate_path_length(build_result.plan);
+    path_quality.raw_path_curvature_score = this->estimate_path_curvature_score(build_result.plan);
     path_quality.path_curvature_score = this->estimate_path_curvature_score(build_result.plan);
+    path_quality.raw_lateral_error_m = this->estimate_path_lateral_error(build_result.plan);
     path_quality.lateral_error_m = this->estimate_path_lateral_error(build_result.plan);
+    path_quality.lateral_error_delta_m = 0.0;
     path_quality.line_of_sight_simplified = false;
     path_quality.collinear_pruned_count = 0;
+    path_quality.corner_smoothing_applied = false;
     path_quality.collision_check_passed = false;
   }
   if (!build_result.local_plan_valid)
@@ -1064,7 +1090,7 @@ void LocalPlanner::publish_local_plan()
         this->get_logger(),
         *this->get_clock(),
         throttle_ms_from_sec(this->state_log_throttle_sec_),
-        "AMR_LOG schema=v1 component=controller event=local_path_quality node=local_planner goal_id=%u global_path_points=%zu raw_path_points=%zu simplified_path_points=%zu refined_path_points=%zu path_length_m=%.3f path_curvature_score=%.3f lateral_error_m=%.3f pose_frame=%s plan_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu start_idx=%zu end_idx=%zu lookahead_m=%.3f dist_goal_m=%.3f xy_reached=%s rejoin=false rejoin_context_active=false fallback_used=%s reason=%s line_of_sight_simplified=%s collinear_pruned_count=%d collision_check_passed=%s",
+        "AMR_LOG schema=v1 component=controller event=local_path_quality node=local_planner goal_id=%u global_path_points=%zu raw_path_points=%zu simplified_path_points=%zu refined_path_points=%zu path_length_m=%.3f path_curvature_score=%.3f lateral_error_m=%.3f source_straight_axis=%s source_path_curvature_score=%.3f source_path_lateral_error_m=%.3f source_current_lateral_error_m=%.3f raw_path_curvature_score=%.3f raw_lateral_error_m=%.3f lateral_error_delta_m=%.3f corner_smoothing_applied=%s pose_frame=%s plan_frame=%s nearest_idx=%zu candidate_idx=%zu selected_idx=%zu start_idx=%zu end_idx=%zu lookahead_m=%.3f dist_goal_m=%.3f xy_reached=%s rejoin=false rejoin_context_active=false fallback_used=%s reason=%s line_of_sight_simplified=%s collinear_pruned_count=%d collision_check_passed=%s",
         this->latest_command_.command_id,
         build_result.global_path_points,
         path_quality.raw_path_points,
@@ -1073,6 +1099,14 @@ void LocalPlanner::publish_local_plan()
         path_quality.path_length_m,
         path_quality.path_curvature_score,
         path_quality.lateral_error_m,
+        build_result.source_straight_axis.c_str(),
+        build_result.source_path_curvature_score,
+        build_result.source_path_lateral_error_m,
+        build_result.source_current_lateral_error_m,
+        path_quality.raw_path_curvature_score,
+        path_quality.raw_lateral_error_m,
+        path_quality.lateral_error_delta_m,
+        bool_label(path_quality.corner_smoothing_applied),
         frame_label(build_result.pose_frame),
         frame_label(build_result.plan_frame),
         build_result.nearest_idx,
@@ -1144,6 +1178,11 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   result.global_path_points = source_plan.poses.size();
   result.pose_frame = current_pose.header.frame_id;
   result.plan_frame = source_plan.header.frame_id;
+  result.source_path_curvature_score = this->estimate_path_curvature_score(source_plan);
+  result.source_path_lateral_error_m = this->estimate_path_lateral_error(source_plan);
+  result.source_current_lateral_error_m =
+    this->estimate_pose_distance_to_path(current_pose, source_plan);
+  result.source_straight_axis = path_axis_label(source_plan);
   result.plan.header = source_plan.header;
   if (result.plan.header.frame_id.empty())
   {
@@ -1988,10 +2027,14 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(
     quality_metrics->simplified_path_points = plan.poses.size();
     quality_metrics->refined_path_points = plan.poses.size();
     quality_metrics->path_length_m = this->estimate_path_length(plan);
-    quality_metrics->path_curvature_score = this->estimate_path_curvature_score(plan);
-    quality_metrics->lateral_error_m = this->estimate_path_lateral_error(plan);
+    quality_metrics->raw_path_curvature_score = this->estimate_path_curvature_score(plan);
+    quality_metrics->path_curvature_score = quality_metrics->raw_path_curvature_score;
+    quality_metrics->raw_lateral_error_m = this->estimate_path_lateral_error(plan);
+    quality_metrics->lateral_error_m = quality_metrics->raw_lateral_error_m;
+    quality_metrics->lateral_error_delta_m = 0.0;
     quality_metrics->line_of_sight_simplified = false;
     quality_metrics->collinear_pruned_count = 0;
+    quality_metrics->corner_smoothing_applied = false;
     quality_metrics->collision_check_passed =
       !this->path_refiner_collision_check_enabled_ || this->is_path_collision_free(plan);
   }
@@ -2032,10 +2075,24 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(
     {
       if (quality_metrics != nullptr)
       {
+        const double base_path_length = this->estimate_path_length(refined_plan);
+        const double base_curvature_score = this->estimate_path_curvature_score(refined_plan);
+        const double base_lateral_error = this->estimate_path_lateral_error(refined_plan);
+        const double smoothed_path_length = this->estimate_path_length(smoothed_plan);
+        const double smoothed_curvature_score = this->estimate_path_curvature_score(smoothed_plan);
+        const double smoothed_lateral_error = this->estimate_path_lateral_error(smoothed_plan);
+        const bool smoothed_path_changed =
+          smoothed_plan.poses.size() != refined_plan.poses.size() ||
+          std::abs(smoothed_path_length - base_path_length) > 1e-6 ||
+          std::abs(smoothed_curvature_score - base_curvature_score) > 1e-6 ||
+          std::abs(smoothed_lateral_error - base_lateral_error) > 1e-6;
         quality_metrics->refined_path_points = smoothed_plan.poses.size();
-        quality_metrics->path_length_m = this->estimate_path_length(smoothed_plan);
-        quality_metrics->path_curvature_score = this->estimate_path_curvature_score(smoothed_plan);
-        quality_metrics->lateral_error_m = this->estimate_path_lateral_error(smoothed_plan);
+        quality_metrics->path_length_m = smoothed_path_length;
+        quality_metrics->path_curvature_score = smoothed_curvature_score;
+        quality_metrics->lateral_error_m = smoothed_lateral_error;
+        quality_metrics->lateral_error_delta_m =
+          quality_metrics->lateral_error_m - quality_metrics->raw_lateral_error_m;
+        quality_metrics->corner_smoothing_applied = smoothed_path_changed;
         quality_metrics->collision_check_passed =
           !this->path_refiner_collision_check_enabled_ || this->is_path_collision_free(smoothed_plan);
       }
@@ -2053,6 +2110,9 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(
     quality_metrics->path_length_m = this->estimate_path_length(refined_plan);
     quality_metrics->path_curvature_score = this->estimate_path_curvature_score(refined_plan);
     quality_metrics->lateral_error_m = this->estimate_path_lateral_error(refined_plan);
+    quality_metrics->lateral_error_delta_m =
+      quality_metrics->lateral_error_m - quality_metrics->raw_lateral_error_m;
+    quality_metrics->corner_smoothing_applied = false;
     quality_metrics->collision_check_passed =
       !this->path_refiner_collision_check_enabled_ || this->is_path_collision_free(refined_plan);
   }
@@ -2363,9 +2423,7 @@ bool LocalPlanner::is_smoothed_path_acceptable(
     base_lateral_error <= this->path_refiner_collinear_lateral_deviation_threshold_)
   {
     const double smoothed_lateral_error = this->estimate_path_lateral_error(smoothed_plan);
-    if (
-      smoothed_lateral_error >
-      base_lateral_error + std::max(0.01, this->path_refiner_collinear_lateral_deviation_threshold_))
+    if (smoothed_lateral_error > base_lateral_error + 1e-6)
     {
       return false;
     }

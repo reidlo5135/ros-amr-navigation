@@ -80,6 +80,11 @@
       goal_row_align_distance_cells: 6
       goal_row_align_penalty: 1.75
       nearest_free_search_radius_cells: 4
+      axis_aligned_straightening_enabled: true
+      same_x_tolerance_m: 0.05
+      same_column_tolerance_cells: 1
+      axis_aligned_interpolation_distance: 0.10
+      axis_aligned_require_line_of_sight: true
       same_row_straightening_enabled: true
       same_row_tolerance_cells: 1
       same_y_tolerance_m: 0.05

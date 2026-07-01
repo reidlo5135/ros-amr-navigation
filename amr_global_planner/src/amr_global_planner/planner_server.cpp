@@ -62,10 +62,15 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
   goal_row_align_distance_cells_(6),
   goal_row_align_penalty_(1.75),
   nearest_free_search_radius_cells_(4),
-  same_row_straightening_enabled_(true),
+  axis_aligned_straightening_enabled_(true),
   same_row_tolerance_cells_(1),
+  same_column_tolerance_cells_(1),
   same_y_tolerance_m_(0.05),
+  same_x_tolerance_m_(0.05),
   same_row_max_lateral_deviation_cells_(1),
+  axis_aligned_interpolation_distance_(0.10),
+  axis_aligned_require_line_of_sight_(true),
+  same_row_straightening_enabled_(true),
   same_row_interpolation_distance_(0.10),
   same_row_require_line_of_sight_(true),
   structured_logging_enabled_(true)
@@ -86,16 +91,31 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
     "planner.goal_row_align_distance_cells", this->goal_row_align_distance_cells_);
   this->declare_parameter("planner.goal_row_align_penalty", this->goal_row_align_penalty_);
   this->declare_parameter("planner.nearest_free_search_radius_cells", this->nearest_free_search_radius_cells_);
-  this->declare_parameter(
+  this->same_row_straightening_enabled_ = this->declare_parameter(
     "planner.same_row_straightening_enabled", this->same_row_straightening_enabled_);
-  this->declare_parameter("planner.same_row_tolerance_cells", this->same_row_tolerance_cells_);
-  this->declare_parameter("planner.same_y_tolerance_m", this->same_y_tolerance_m_);
-  this->declare_parameter(
+  this->same_row_tolerance_cells_ = this->declare_parameter(
+    "planner.same_row_tolerance_cells", this->same_row_tolerance_cells_);
+  this->same_y_tolerance_m_ = this->declare_parameter(
+    "planner.same_y_tolerance_m", this->same_y_tolerance_m_);
+  this->same_row_max_lateral_deviation_cells_ = this->declare_parameter(
     "planner.same_row_max_lateral_deviation_cells", this->same_row_max_lateral_deviation_cells_);
-  this->declare_parameter(
+  this->same_row_interpolation_distance_ = this->declare_parameter(
     "planner.same_row_interpolation_distance", this->same_row_interpolation_distance_);
-  this->declare_parameter(
+  this->same_row_require_line_of_sight_ = this->declare_parameter(
     "planner.same_row_require_line_of_sight", this->same_row_require_line_of_sight_);
+  this->axis_aligned_straightening_enabled_ = this->same_row_straightening_enabled_;
+  this->same_column_tolerance_cells_ = this->same_row_tolerance_cells_;
+  this->same_x_tolerance_m_ = this->same_y_tolerance_m_;
+  this->axis_aligned_interpolation_distance_ = this->same_row_interpolation_distance_;
+  this->axis_aligned_require_line_of_sight_ = this->same_row_require_line_of_sight_;
+  this->declare_parameter(
+    "planner.axis_aligned_straightening_enabled", this->axis_aligned_straightening_enabled_);
+  this->declare_parameter("planner.same_column_tolerance_cells", this->same_column_tolerance_cells_);
+  this->declare_parameter("planner.same_x_tolerance_m", this->same_x_tolerance_m_);
+  this->declare_parameter(
+    "planner.axis_aligned_interpolation_distance", this->axis_aligned_interpolation_distance_);
+  this->declare_parameter(
+    "planner.axis_aligned_require_line_of_sight", this->axis_aligned_require_line_of_sight_);
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
@@ -130,6 +150,14 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
     "planner.same_row_interpolation_distance", this->same_row_interpolation_distance_);
   this->get_parameter(
     "planner.same_row_require_line_of_sight", this->same_row_require_line_of_sight_);
+  this->get_parameter(
+    "planner.axis_aligned_straightening_enabled", this->axis_aligned_straightening_enabled_);
+  this->get_parameter("planner.same_column_tolerance_cells", this->same_column_tolerance_cells_);
+  this->get_parameter("planner.same_x_tolerance_m", this->same_x_tolerance_m_);
+  this->get_parameter(
+    "planner.axis_aligned_interpolation_distance", this->axis_aligned_interpolation_distance_);
+  this->get_parameter(
+    "planner.axis_aligned_require_line_of_sight", this->axis_aligned_require_line_of_sight_);
   this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
   this->get_parameter("footprint.polygon", this->footprint_polygon_param_);
 
@@ -414,29 +442,46 @@ bool PlannerServer::compute_plan_between_poses(
     return false;
   }
 
-  const bool same_row_candidate = this->is_same_row_straight_candidate(
+  const auto straight_axis_name = [](const StraightAxis axis) {
+      switch (axis) {
+        case StraightAxis::Horizontal:
+          return "horizontal";
+        case StraightAxis::Vertical:
+          return "vertical";
+        case StraightAxis::None:
+        default:
+          return "none";
+      }
+    };
+  const StraightAxis straight_axis = this->classify_axis_aligned_straight_candidate(
     start, goal, start_cell, goal_cell);
+  const bool axis_aligned_candidate = straight_axis != StraightAxis::None;
+  const bool same_row_candidate = straight_axis == StraightAxis::Horizontal;
   const bool straight_line_safe =
-    same_row_candidate && this->is_straight_line_collision_free(start, goal);
+    axis_aligned_candidate && this->is_straight_line_collision_free(start, goal);
   const double y_delta_m = std::abs(goal.pose.position.y - start.pose.position.y);
+  const double x_delta_m = std::abs(goal.pose.position.x - start.pose.position.x);
   const int row_delta = std::abs(goal_cell.y - start_cell.y);
-  std::string fallback_reason = "not_same_row_candidate";
-  if (!this->same_row_straightening_enabled_) {
+  const int col_delta = std::abs(goal_cell.x - start_cell.x);
+  std::string fallback_reason = "not_axis_aligned_candidate";
+  if (!this->axis_aligned_straightening_enabled_) {
     fallback_reason = "straightening_disabled";
-  } else if (same_row_candidate && !straight_line_safe) {
+  } else if (axis_aligned_candidate && !this->axis_aligned_require_line_of_sight_) {
+    fallback_reason = "line_of_sight_check_disabled";
+  } else if (axis_aligned_candidate && !straight_line_safe) {
     fallback_reason = "line_of_sight_blocked";
-  } else if (same_row_candidate) {
+  } else if (axis_aligned_candidate) {
     fallback_reason = "none";
   }
 
-  if (this->same_row_straightening_enabled_ && same_row_candidate && straight_line_safe)
+  if (this->axis_aligned_straightening_enabled_ && axis_aligned_candidate && straight_line_safe)
   {
     path = this->create_straight_path_message(start, goal);
-    message = "Generated same-row straight path";
+    message = "Generated axis-aligned straight path";
     if (this->structured_logging_enabled_) {
       RCLCPP_INFO(
         this->get_logger(),
-        "AMR_LOG schema=v1 component=global_planner event=plan_quality start_row=%d goal_row=%d row_delta=%d requested_start_row=%d requested_goal_row=%d start_y=%.3f goal_y=%.3f y_delta_m=%.3f same_row_candidate=true straight_line_safe=true straight_path_used=true fallback_reason=none raw_path_points=%zu final_path_points=%zu max_row_deviation=0 max_lateral_deviation_m=%.3f",
+        "AMR_LOG schema=v1 component=global_planner event=plan_quality start_row=%d goal_row=%d row_delta=%d requested_start_row=%d requested_goal_row=%d start_y=%.3f goal_y=%.3f y_delta_m=%.3f start_col=%d goal_col=%d col_delta=%d requested_start_col=%d requested_goal_col=%d start_x=%.3f goal_x=%.3f x_delta_m=%.3f same_row_candidate=%s axis_aligned_candidate=true straight_axis=%s straight_line_safe=true straight_path_used=true fallback_reason=none raw_path_points=%zu final_path_points=%zu max_row_deviation=0 max_lateral_deviation_m=%.3f",
         start_cell.y,
         goal_cell.y,
         row_delta,
@@ -445,6 +490,16 @@ bool PlannerServer::compute_plan_between_poses(
         start.pose.position.y,
         goal.pose.position.y,
         y_delta_m,
+        start_cell.x,
+        goal_cell.x,
+        col_delta,
+        requested_start_cell.x,
+        requested_goal_cell.x,
+        start.pose.position.x,
+        goal.pose.position.x,
+        x_delta_m,
+        same_row_candidate ? "true" : "false",
+        straight_axis_name(straight_axis),
         path.poses.size(),
         path.poses.size(),
         this->estimate_path_lateral_deviation(path, start, goal));
@@ -475,24 +530,10 @@ bool PlannerServer::compute_plan_between_poses(
   path = this->create_path_message(result.path);
   const int max_row_deviation = this->estimate_max_row_deviation(result.path, start_cell, goal_cell);
   const double max_lateral_deviation_m = this->estimate_path_lateral_deviation(path, start, goal);
-  const double max_lateral_deviation_threshold =
-    static_cast<double>(std::max(0, this->same_row_max_lateral_deviation_cells_)) *
-    static_cast<double>(this->global_costmap_->info.resolution);
-  if (
-    this->same_row_straightening_enabled_ &&
-    same_row_candidate &&
-    straight_line_safe &&
-    (
-      max_row_deviation > std::max(0, this->same_row_max_lateral_deviation_cells_) ||
-      max_lateral_deviation_m > max_lateral_deviation_threshold))
-  {
-    path = this->create_straight_path_message(start, goal);
-    fallback_reason = "a_star_row_deviation_replaced";
-  }
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=global_planner event=plan_quality start_row=%d goal_row=%d row_delta=%d requested_start_row=%d requested_goal_row=%d start_y=%.3f goal_y=%.3f y_delta_m=%.3f same_row_candidate=%s straight_line_safe=%s straight_path_used=%s fallback_reason=%s raw_path_points=%zu final_path_points=%zu max_row_deviation=%d max_lateral_deviation_m=%.3f",
+      "AMR_LOG schema=v1 component=global_planner event=plan_quality start_row=%d goal_row=%d row_delta=%d requested_start_row=%d requested_goal_row=%d start_y=%.3f goal_y=%.3f y_delta_m=%.3f start_col=%d goal_col=%d col_delta=%d requested_start_col=%d requested_goal_col=%d start_x=%.3f goal_x=%.3f x_delta_m=%.3f same_row_candidate=%s axis_aligned_candidate=%s straight_axis=%s straight_line_safe=%s straight_path_used=false fallback_reason=%s raw_path_points=%zu final_path_points=%zu max_row_deviation=%d max_lateral_deviation_m=%.3f",
       start_cell.y,
       goal_cell.y,
       row_delta,
@@ -501,9 +542,18 @@ bool PlannerServer::compute_plan_between_poses(
       start.pose.position.y,
       goal.pose.position.y,
       y_delta_m,
+      start_cell.x,
+      goal_cell.x,
+      col_delta,
+      requested_start_cell.x,
+      requested_goal_cell.x,
+      start.pose.position.x,
+      goal.pose.position.x,
+      x_delta_m,
       same_row_candidate ? "true" : "false",
+      axis_aligned_candidate ? "true" : "false",
+      straight_axis_name(straight_axis),
       straight_line_safe ? "true" : "false",
-      fallback_reason == "a_star_row_deviation_replaced" ? "true" : "false",
       fallback_reason.c_str(),
       result.path.size(),
       path.poses.size(),
@@ -626,21 +676,38 @@ bool PlannerServer::is_cell_collision(
     this->allow_unknown_);
 }
 
-bool PlannerServer::is_same_row_straight_candidate(
+PlannerServer::StraightAxis PlannerServer::classify_axis_aligned_straight_candidate(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal,
   const GridCell &start_cell,
   const GridCell &goal_cell) const
 {
-  if (!this->same_row_straightening_enabled_) {
-    return false;
+  if (!this->axis_aligned_straightening_enabled_) {
+    return StraightAxis::None;
   }
 
   const int row_delta = std::abs(goal_cell.y - start_cell.y);
+  const int col_delta = std::abs(goal_cell.x - start_cell.x);
   const double y_delta_m = std::abs(goal.pose.position.y - start.pose.position.y);
-  return
-    row_delta <= std::max(0, this->same_row_tolerance_cells_) &&
+  const double x_delta_m = std::abs(goal.pose.position.x - start.pose.position.x);
+  const bool horizontal_candidate =
+    row_delta <= std::max(0, this->same_row_tolerance_cells_) ||
     y_delta_m <= std::max(0.0, this->same_y_tolerance_m_);
+  const bool vertical_candidate =
+    col_delta <= std::max(0, this->same_column_tolerance_cells_) ||
+    x_delta_m <= std::max(0.0, this->same_x_tolerance_m_);
+
+  if (horizontal_candidate &&vertical_candidate) {
+    return x_delta_m >= y_delta_m ? StraightAxis::Horizontal : StraightAxis::Vertical;
+  }
+  if (horizontal_candidate) {
+    return StraightAxis::Horizontal;
+  }
+  if (vertical_candidate) {
+    return StraightAxis::Vertical;
+  }
+
+  return StraightAxis::None;
 }
 
 bool PlannerServer::is_world_pose_collision_free(
@@ -681,7 +748,7 @@ bool PlannerServer::is_straight_line_collision_free(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal) const
 {
-  if (!this->same_row_require_line_of_sight_) {
+  if (!this->axis_aligned_require_line_of_sight_) {
     return false;
   }
   if (!this->global_costmap_ || this->global_costmap_->data.empty()) {
@@ -693,7 +760,7 @@ bool PlannerServer::is_straight_line_collision_free(
   const double distance = std::sqrt((dx * dx) + (dy * dy));
   const double yaw = distance > 1e-6 ? std::atan2(dy, dx) : yaw_from_quaternion(goal.pose.orientation);
   const double step = std::max(
-    std::max(1e-3, this->same_row_interpolation_distance_),
+    std::max(1e-3, this->axis_aligned_interpolation_distance_),
     static_cast<double>(this->global_costmap_->info.resolution));
   const int sample_count = std::max(1, static_cast<int>(std::ceil(distance / step)));
 
@@ -727,7 +794,7 @@ nav_msgs::msg::Path PlannerServer::create_straight_path_message(
   const double dy = goal.pose.position.y - start.pose.position.y;
   const double distance = std::sqrt((dx * dx) + (dy * dy));
   const double yaw = distance > 1e-6 ? std::atan2(dy, dx) : yaw_from_quaternion(goal.pose.orientation);
-  const double step = std::max(1e-3, this->same_row_interpolation_distance_);
+  const double step = std::max(1e-3, this->axis_aligned_interpolation_distance_);
   const int sample_count = std::max(1, static_cast<int>(std::ceil(distance / step)));
 
   path.header = this->global_costmap_->header;
