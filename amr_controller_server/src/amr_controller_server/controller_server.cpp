@@ -3107,6 +3107,23 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   rejoin_min_linear_scale_(0.25),
   heading_slowdown_threshold_(0.16),
   min_heading_motion_scale_(0.18),
+  regulated_pure_pursuit_enabled_(true),
+  rpp_use_velocity_scaled_lookahead_(true),
+  rpp_min_tracking_lookahead_distance_(0.20),
+  rpp_max_tracking_lookahead_distance_(0.80),
+  rpp_lookahead_time_(1.2),
+  rpp_use_curvature_speed_regulation_(true),
+  rpp_regulated_linear_scaling_min_radius_(0.80),
+  rpp_regulated_linear_scaling_min_speed_(0.06),
+  rpp_use_approach_velocity_scaling_(true),
+  rpp_approach_velocity_scaling_distance_(0.60),
+  rpp_min_approach_linear_speed_(0.05),
+  rpp_use_obstacle_velocity_scaling_(true),
+  rpp_obstacle_velocity_scaling_distance_(0.45),
+  rpp_obstacle_velocity_scaling_min_speed_(0.05),
+  rpp_use_collision_projection_(true),
+  rpp_collision_projection_time_(0.8),
+  rpp_collision_projection_step_distance_(0.05),
   max_linear_accel_(0.08),
   max_angular_accel_(0.8),
   progress_required_movement_radius_(0.05),
@@ -3240,6 +3257,56 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->declare_parameter(
     "control.min_heading_motion_scale", this->min_heading_motion_scale_);
+
+  this->declare_parameter(
+    "regulated_pure_pursuit.enabled", this->regulated_pure_pursuit_enabled_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.use_velocity_scaled_lookahead",
+    this->rpp_use_velocity_scaled_lookahead_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.min_tracking_lookahead_distance",
+    this->rpp_min_tracking_lookahead_distance_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.max_tracking_lookahead_distance",
+    this->rpp_max_tracking_lookahead_distance_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.lookahead_time", this->rpp_lookahead_time_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.use_curvature_speed_regulation",
+    this->rpp_use_curvature_speed_regulation_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.regulated_linear_scaling_min_radius",
+    this->rpp_regulated_linear_scaling_min_radius_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.regulated_linear_scaling_min_speed",
+    this->rpp_regulated_linear_scaling_min_speed_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.use_approach_velocity_scaling",
+    this->rpp_use_approach_velocity_scaling_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.approach_velocity_scaling_distance",
+    this->rpp_approach_velocity_scaling_distance_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.min_approach_linear_speed",
+    this->rpp_min_approach_linear_speed_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.use_obstacle_velocity_scaling",
+    this->rpp_use_obstacle_velocity_scaling_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.obstacle_velocity_scaling_distance",
+    this->rpp_obstacle_velocity_scaling_distance_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.obstacle_velocity_scaling_min_speed",
+    this->rpp_obstacle_velocity_scaling_min_speed_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.use_collision_projection",
+    this->rpp_use_collision_projection_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.collision_projection_time",
+    this->rpp_collision_projection_time_);
+  this->declare_parameter(
+    "regulated_pure_pursuit.collision_projection_step_distance",
+    this->rpp_collision_projection_step_distance_);
   this->declare_parameter(
     "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
   this->declare_parameter(
@@ -3366,6 +3433,79 @@ MotionController::CallbackReturn MotionController::on_configure(
     "control.heading_slowdown_threshold", this->heading_slowdown_threshold_);
   this->get_parameter(
     "control.min_heading_motion_scale", this->min_heading_motion_scale_);
+
+  this->get_parameter(
+    "regulated_pure_pursuit.enabled", this->regulated_pure_pursuit_enabled_);
+  this->get_parameter(
+    "regulated_pure_pursuit.use_velocity_scaled_lookahead",
+    this->rpp_use_velocity_scaled_lookahead_);
+  this->get_parameter(
+    "regulated_pure_pursuit.min_tracking_lookahead_distance",
+    this->rpp_min_tracking_lookahead_distance_);
+  this->get_parameter(
+    "regulated_pure_pursuit.max_tracking_lookahead_distance",
+    this->rpp_max_tracking_lookahead_distance_);
+  this->get_parameter(
+    "regulated_pure_pursuit.lookahead_time", this->rpp_lookahead_time_);
+  this->get_parameter(
+    "regulated_pure_pursuit.use_curvature_speed_regulation",
+    this->rpp_use_curvature_speed_regulation_);
+  this->get_parameter(
+    "regulated_pure_pursuit.regulated_linear_scaling_min_radius",
+    this->rpp_regulated_linear_scaling_min_radius_);
+  this->get_parameter(
+    "regulated_pure_pursuit.regulated_linear_scaling_min_speed",
+    this->rpp_regulated_linear_scaling_min_speed_);
+  this->get_parameter(
+    "regulated_pure_pursuit.use_approach_velocity_scaling",
+    this->rpp_use_approach_velocity_scaling_);
+  this->get_parameter(
+    "regulated_pure_pursuit.approach_velocity_scaling_distance",
+    this->rpp_approach_velocity_scaling_distance_);
+  this->get_parameter(
+    "regulated_pure_pursuit.min_approach_linear_speed",
+    this->rpp_min_approach_linear_speed_);
+  this->get_parameter(
+    "regulated_pure_pursuit.use_obstacle_velocity_scaling",
+    this->rpp_use_obstacle_velocity_scaling_);
+  this->get_parameter(
+    "regulated_pure_pursuit.obstacle_velocity_scaling_distance",
+    this->rpp_obstacle_velocity_scaling_distance_);
+  this->get_parameter(
+    "regulated_pure_pursuit.obstacle_velocity_scaling_min_speed",
+    this->rpp_obstacle_velocity_scaling_min_speed_);
+  this->get_parameter(
+    "regulated_pure_pursuit.use_collision_projection",
+    this->rpp_use_collision_projection_);
+  this->get_parameter(
+    "regulated_pure_pursuit.collision_projection_time",
+    this->rpp_collision_projection_time_);
+  this->get_parameter(
+    "regulated_pure_pursuit.collision_projection_step_distance",
+    this->rpp_collision_projection_step_distance_);
+
+  this->rpp_min_tracking_lookahead_distance_ =
+    std::max(0.0, this->rpp_min_tracking_lookahead_distance_);
+  this->rpp_max_tracking_lookahead_distance_ = std::max(
+    this->rpp_min_tracking_lookahead_distance_,
+    this->rpp_max_tracking_lookahead_distance_);
+  this->rpp_lookahead_time_ = std::max(0.0, this->rpp_lookahead_time_);
+  this->rpp_regulated_linear_scaling_min_radius_ =
+    std::max(0.0, this->rpp_regulated_linear_scaling_min_radius_);
+  this->rpp_regulated_linear_scaling_min_speed_ =
+    std::max(0.0, this->rpp_regulated_linear_scaling_min_speed_);
+  this->rpp_approach_velocity_scaling_distance_ =
+    std::max(0.0, this->rpp_approach_velocity_scaling_distance_);
+  this->rpp_min_approach_linear_speed_ =
+    std::max(0.0, this->rpp_min_approach_linear_speed_);
+  this->rpp_obstacle_velocity_scaling_distance_ =
+    std::max(0.0, this->rpp_obstacle_velocity_scaling_distance_);
+  this->rpp_obstacle_velocity_scaling_min_speed_ =
+    std::max(0.0, this->rpp_obstacle_velocity_scaling_min_speed_);
+  this->rpp_collision_projection_time_ =
+    std::max(0.0, this->rpp_collision_projection_time_);
+  this->rpp_collision_projection_step_distance_ =
+    std::max(0.01, this->rpp_collision_projection_step_distance_);
   this->get_parameter(
     "progress_checker.required_movement_radius", this->progress_required_movement_radius_);
   this->get_parameter(
@@ -3847,13 +3987,15 @@ void MotionController::publish_control()
       const bool had_tracking_target = this->has_tracking_target_pose_;
       const std::size_t previous_tracking_target_index = this->tracking_target_index_;
       const geometry_msgs::msg::PoseStamped previous_tracking_target = this->tracking_target_pose_;
+      const double tracking_lookahead_distance = this->compute_tracking_lookahead_distance();
       geometry_msgs::msg::PoseStamped tracking_target = this->select_tracking_target(
-        this->tracking_lookahead_distance_, true);
+        tracking_lookahead_distance, true);
       bool target_jump_activated_rejoin = false;
       debug_has_tracking_target = this->has_tracking_target_pose_;
       debug_tracking_target_index = this->tracking_target_index_;
       debug_tracking_target_x = tracking_target.pose.position.x;
       debug_tracking_target_y = tracking_target.pose.position.y;
+      debug_tracking_lookahead_distance = tracking_lookahead_distance;
       debug_target_jump_m = had_tracking_target ?
         this->pose_distance(previous_tracking_target, tracking_target) : 0.0;
       if (
@@ -3918,9 +4060,14 @@ void MotionController::publish_control()
       if (straight_segment)
       {
         debug_tracking_lookahead_distance = std::max(
-          this->tracking_lookahead_distance_,
+          tracking_lookahead_distance,
           this->straight_tracking_lookahead_distance_);
-        if (debug_tracking_lookahead_distance > this->tracking_lookahead_distance_ + 1e-6)
+        if (this->regulated_pure_pursuit_enabled_ &&goal_distance > 1e-6)
+        {
+          debug_tracking_lookahead_distance =
+            std::min(debug_tracking_lookahead_distance, goal_distance);
+        }
+        if (debug_tracking_lookahead_distance > tracking_lookahead_distance + 1e-6)
         {
           tracking_target = this->select_tracking_target(debug_tracking_lookahead_distance, false);
           debug_has_tracking_target = this->has_tracking_target_pose_;
@@ -3942,7 +4089,7 @@ void MotionController::publish_control()
       }
       else
       {
-        debug_tracking_lookahead_distance = this->tracking_lookahead_distance_;
+        debug_tracking_lookahead_distance = tracking_lookahead_distance;
       }
       debug_straight_segment = straight_segment;
       debug_path_curvature_score = straight_assessment.path_curvature_score;
@@ -4109,6 +4256,8 @@ void MotionController::publish_control()
           this->tracking_target_index_,
           this->tracking_selection_reason_.c_str());
       }
+      const double pure_pursuit_curvature =
+        this->compute_pure_pursuit_curvature(tracking_target);
       double angular_speed_limit = final_align_phase ?
         std::min(this->max_angular_speed_, this->final_align_max_angular_speed_) :
         (straight_control_limited ?
@@ -4126,6 +4275,12 @@ void MotionController::publish_control()
       const bool non_error_hold_phase = final_align_phase;
 
       const bool safety_gate_blocked = this->is_safety_gate_triggered();
+      const double forward_obstacle_distance = this->estimate_forward_obstacle_distance();
+      const bool obstacle_proximity_detected =
+        this->regulated_pure_pursuit_enabled_ &&
+        this->rpp_use_obstacle_velocity_scaling_ &&
+        std::isfinite(forward_obstacle_distance) &&
+        forward_obstacle_distance < std::max(0.0, this->rpp_obstacle_velocity_scaling_distance_);
       const bool blocked_candidate =
         safety_gate_blocked &&
         !command_settling &&
@@ -4133,7 +4288,7 @@ void MotionController::publish_control()
       status.local_plan_valid = this->has_local_plan_ &&!this->latest_local_plan_.poses.empty();
       status.costmap_blocked = false;
       status.safety_gate_blocked = safety_gate_blocked;
-      status.obstacle_detected = safety_gate_blocked;
+      status.obstacle_detected = safety_gate_blocked || obstacle_proximity_detected;
       status.blocked = this->update_blocked_state(blocked_candidate);
       status.has_blocked_pose = false;
       status.blocked_pose = geometry_msgs::msg::PoseStamped();
@@ -4324,6 +4479,20 @@ void MotionController::publish_control()
             desired_twist.linear.x = std::max(
               std::min(this->min_linear_speed_, base_linear_speed),
               desired_twist.linear.x);
+          }
+          if (this->regulated_pure_pursuit_enabled_)
+          {
+            desired_twist.linear.x = this->apply_curvature_speed_regulation(
+              desired_twist.linear.x,
+              pure_pursuit_curvature);
+            desired_twist.linear.x =
+              this->apply_approach_speed_regulation(desired_twist.linear.x);
+            desired_twist.linear.x =
+              this->apply_obstacle_speed_regulation(desired_twist.linear.x);
+            if (this->is_projected_collision_detected(desired_twist))
+            {
+              desired_twist.linear.x = 0.0;
+            }
           }
         }
       }
@@ -4869,6 +5038,268 @@ double MotionController::clamp(
   const double max_value) const
 {
   return std::max(min_value, std::min(value, max_value));
+}
+
+double MotionController::compute_tracking_lookahead_distance() const
+{
+  double lookahead_distance = std::max(0.0, this->tracking_lookahead_distance_);
+  if (!this->regulated_pure_pursuit_enabled_)
+  {
+    return lookahead_distance;
+  }
+
+  const double min_lookahead = std::max(0.0, this->rpp_min_tracking_lookahead_distance_);
+  const double max_lookahead = std::max(min_lookahead, this->rpp_max_tracking_lookahead_distance_);
+  if (this->rpp_use_velocity_scaled_lookahead_)
+  {
+    const double speed_reference = std::max(
+      std::abs(this->current_twist_.linear.x),
+      std::max(0.0, this->linear_speed_));
+    lookahead_distance = this->clamp(
+      speed_reference * std::max(0.0, this->rpp_lookahead_time_),
+      min_lookahead,
+      max_lookahead);
+  }
+  else
+  {
+    lookahead_distance = this->clamp(lookahead_distance, min_lookahead, max_lookahead);
+  }
+
+  if (this->has_command_ &&this->has_current_pose_)
+  {
+    const double goal_distance =
+      this->pose_distance(this->current_pose_, this->latest_command_.goal_pose);
+    if (std::isfinite(goal_distance) &&goal_distance > 1e-6)
+    {
+      lookahead_distance = std::min(lookahead_distance, goal_distance);
+    }
+  }
+
+  return std::max(0.0, lookahead_distance);
+}
+
+double MotionController::compute_pure_pursuit_curvature(
+  const geometry_msgs::msg::PoseStamped &target_pose) const
+{
+  if (!this->has_current_pose_)
+  {
+    return 0.0;
+  }
+
+  const double current_yaw = this->quaternion_yaw(this->current_pose_.pose.orientation);
+  const double dx = target_pose.pose.position.x - this->current_pose_.pose.position.x;
+  const double dy = target_pose.pose.position.y - this->current_pose_.pose.position.y;
+  const double cos_yaw = std::cos(current_yaw);
+  const double sin_yaw = std::sin(current_yaw);
+  const double target_x_robot = (cos_yaw * dx) + (sin_yaw * dy);
+  const double target_y_robot = (-sin_yaw * dx) + (cos_yaw * dy);
+  const double lookahead_sq =
+    (target_x_robot * target_x_robot) + (target_y_robot * target_y_robot);
+  if (lookahead_sq <= 1e-8)
+  {
+    return 0.0;
+  }
+
+  return 2.0 * target_y_robot / lookahead_sq;
+}
+
+double MotionController::apply_curvature_speed_regulation(
+  const double linear_speed,
+  const double curvature) const
+{
+  if (
+    !this->regulated_pure_pursuit_enabled_ ||
+    !this->rpp_use_curvature_speed_regulation_ ||
+    linear_speed <= 0.0)
+  {
+    return linear_speed;
+  }
+
+  const double abs_curvature = std::abs(curvature);
+  const double min_radius = std::max(0.0, this->rpp_regulated_linear_scaling_min_radius_);
+  if (abs_curvature <= 1e-6 || min_radius <= 1e-6)
+  {
+    return linear_speed;
+  }
+
+  const double turning_radius = 1.0 / abs_curvature;
+  if (turning_radius >= min_radius)
+  {
+    return linear_speed;
+  }
+
+  const double scale = this->clamp(turning_radius / min_radius, 0.0, 1.0);
+  const double regulated_speed = linear_speed * scale;
+  const double min_speed = std::max(0.0, this->rpp_regulated_linear_scaling_min_speed_);
+  return std::min(linear_speed, std::max(min_speed, regulated_speed));
+}
+
+double MotionController::apply_approach_speed_regulation(const double linear_speed) const
+{
+  if (
+    !this->regulated_pure_pursuit_enabled_ ||
+    !this->rpp_use_approach_velocity_scaling_ ||
+    linear_speed <= 0.0)
+  {
+    return linear_speed;
+  }
+
+  double remaining_distance = std::numeric_limits<double>::infinity();
+  if (this->has_command_ &&this->has_current_pose_)
+  {
+    remaining_distance =
+      this->pose_distance(this->current_pose_, this->latest_command_.goal_pose);
+  }
+  if (this->latest_local_plan_.poses.size() >= 2U)
+  {
+    const double local_plan_remaining_distance =
+      this->estimate_remaining_distance(this->latest_local_plan_);
+    if (std::isfinite(remaining_distance))
+    {
+      remaining_distance = std::max(remaining_distance, local_plan_remaining_distance);
+    }
+    else
+    {
+      remaining_distance = local_plan_remaining_distance;
+    }
+  }
+
+  const double scaling_distance = std::max(0.0, this->rpp_approach_velocity_scaling_distance_);
+  if (
+    !std::isfinite(remaining_distance) ||
+    scaling_distance <= 1e-6 ||
+    remaining_distance >= scaling_distance)
+  {
+    return linear_speed;
+  }
+
+  const double scale = this->clamp(remaining_distance / scaling_distance, 0.0, 1.0);
+  const double regulated_speed = linear_speed * scale;
+  const double min_speed = std::max(0.0, this->rpp_min_approach_linear_speed_);
+  return std::min(linear_speed, std::max(min_speed, regulated_speed));
+}
+
+double MotionController::estimate_forward_obstacle_distance() const
+{
+  if (!this->has_latest_scan_ || this->latest_scan_.ranges.empty())
+  {
+    return std::numeric_limits<double>::infinity();
+  }
+
+  const double half_angle_rad =
+    (std::max(0.0, this->safety_gate_forward_angle_deg_) *
+    3.14159265358979323846 / 180.0) * 0.5;
+  double min_distance = std::numeric_limits<double>::infinity();
+
+  for (std::size_t index = 0; index < this->latest_scan_.ranges.size(); ++index)
+  {
+    const double angle =
+      this->latest_scan_.angle_min +
+      (static_cast<double>(index) * this->latest_scan_.angle_increment);
+    if (std::abs(angle) > half_angle_rad)
+    {
+      continue;
+    }
+
+    const double range = this->latest_scan_.ranges[index];
+    if (!std::isfinite(range))
+    {
+      continue;
+    }
+    if (
+      range < this->latest_scan_.range_min ||
+      range > this->latest_scan_.range_max)
+    {
+      continue;
+    }
+
+    min_distance = std::min(min_distance, range);
+  }
+
+  return min_distance;
+}
+
+double MotionController::apply_obstacle_speed_regulation(const double linear_speed) const
+{
+  if (
+    !this->regulated_pure_pursuit_enabled_ ||
+    !this->rpp_use_obstacle_velocity_scaling_ ||
+    linear_speed <= 0.0)
+  {
+    return linear_speed;
+  }
+
+  const double obstacle_distance = this->estimate_forward_obstacle_distance();
+  const double scaling_distance = std::max(0.0, this->rpp_obstacle_velocity_scaling_distance_);
+  if (
+    !std::isfinite(obstacle_distance) ||
+    scaling_distance <= 1e-6 ||
+    obstacle_distance >= scaling_distance)
+  {
+    return linear_speed;
+  }
+
+  const double stop_distance = this->safety_gate_enabled_ ?
+    std::min(std::max(0.0, this->safety_gate_stop_distance_), scaling_distance) : 0.0;
+  if (obstacle_distance <= stop_distance)
+  {
+    return 0.0;
+  }
+
+  const double scale = this->clamp(
+    (obstacle_distance - stop_distance) /
+    std::max(scaling_distance - stop_distance, 1e-6),
+    0.0,
+    1.0);
+  const double regulated_speed = linear_speed * scale;
+  const double min_speed = std::max(0.0, this->rpp_obstacle_velocity_scaling_min_speed_);
+  return std::min(linear_speed, std::max(min_speed, regulated_speed));
+}
+
+bool MotionController::is_projected_collision_detected(
+  const geometry_msgs::msg::Twist &cmd) const
+{
+  if (
+    !this->regulated_pure_pursuit_enabled_ ||
+    !this->rpp_use_collision_projection_ ||
+    !this->has_latest_scan_ ||
+    cmd.linear.x <= 1e-6)
+  {
+    return false;
+  }
+
+  const double projection_distance =
+    cmd.linear.x * std::max(0.0, this->rpp_collision_projection_time_);
+  if (projection_distance <= 1e-6)
+  {
+    return false;
+  }
+
+  const double obstacle_distance = this->estimate_forward_obstacle_distance();
+  if (!std::isfinite(obstacle_distance))
+  {
+    return false;
+  }
+
+  const double scaling_distance = std::max(0.0, this->rpp_obstacle_velocity_scaling_distance_);
+  const double configured_stop_distance = this->safety_gate_enabled_ ?
+    std::max(0.0, this->safety_gate_stop_distance_) : 0.0;
+  const double base_stop_distance = scaling_distance > 1e-6 ?
+    std::min(configured_stop_distance, scaling_distance) : configured_stop_distance;
+  const double step_distance = std::max(0.01, this->rpp_collision_projection_step_distance_);
+  const int projection_steps = static_cast<int>(
+    std::ceil(projection_distance / step_distance));
+  for (int step = 1; step <= projection_steps; ++step)
+  {
+    const double projected_stop_distance =
+      base_stop_distance + (static_cast<double>(step) * step_distance);
+    if (obstacle_distance <= projected_stop_distance)
+    {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 MotionController::StraightSegmentAssessment MotionController::assess_straight_segment(

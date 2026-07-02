@@ -75,7 +75,8 @@ remapped.
 
 - `amr_costmap_server`: consumes live `/map`, `/scan`, and TF; publishes global and local costmaps
 - `amr_global_planner`: plans on `/global_costmap` and publishes `/global_plan`
-- `amr_controller_server`: hosts `local_planner` and `motion_controller`
+- `amr_controller_server`: hosts `local_planner` and `motion_controller`; the motion controller uses
+  in-package Pure Pursuit with RPP-style adaptive lookahead, curvature, approach, and scan safety regulation
 - `amr_bt_navigator`: exposes navigation actions and dispatches motion commands
 - `amr_recovery_server`: creates recovery motion commands
 - `amr_runtime_observation`: observes navigation status and emits runtime summaries

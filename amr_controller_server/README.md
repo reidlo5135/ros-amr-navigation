@@ -43,3 +43,26 @@ Outputs:
 
 If TF is temporarily unavailable, both nodes wait without crashing. The motion
 controller publishes no active navigation command until pose lookup succeeds.
+
+The motion controller keeps the in-package Pure Pursuit tracking flow and adds
+an RPP-style regulation layer internally. It does not load Nav2
+`controller_server` or `nav2_regulated_pure_pursuit_controller` plugins, and it
+keeps the existing `/motion_command`, `/local_plan`, `/scan`, `/cmd_vel`, and
+`/motion_status` contract.
+
+RPP-style behavior is configured under `regulated_pure_pursuit`:
+
+- adaptive lookahead scales the tracking lookahead with target/current linear
+  speed and caps it near the goal
+- curvature regulation lowers linear speed on tight turns while preserving the
+  existing rotate-in-place and final alignment states
+- approach regulation slows the robot as the goal/local plan remaining distance
+  enters the configured approach window
+- scan-based obstacle proximity regulation slows forward motion before the
+  safety gate hard-stop distance
+- collision projection is a first implementation of scan-based forward safety
+  regulation; the controller does not subscribe to a costmap for projection
+
+The existing safety gate remains the hard stop path. Obstacle proximity scaling
+only reduces forward speed in the scan cone, while the safety gate still owns
+blocked status confirmation and rotate-in-place allowance.

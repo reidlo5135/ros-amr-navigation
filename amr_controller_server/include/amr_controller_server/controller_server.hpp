@@ -386,6 +386,14 @@ private:
   double quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const;
   double normalize_angle(double angle) const;
   double clamp(double value, double min_value, double max_value) const;
+  double compute_tracking_lookahead_distance() const;
+  double compute_pure_pursuit_curvature(
+    const geometry_msgs::msg::PoseStamped &target_pose) const;
+  double apply_curvature_speed_regulation(double linear_speed, double curvature) const;
+  double apply_approach_speed_regulation(double linear_speed) const;
+  double estimate_forward_obstacle_distance() const;
+  double apply_obstacle_speed_regulation(double linear_speed) const;
+  bool is_projected_collision_detected(const geometry_msgs::msg::Twist &cmd) const;
   StraightSegmentAssessment assess_straight_segment(
     std::size_t start_index,
     double lookahead_distance) const;
@@ -469,6 +477,23 @@ private:
   double rejoin_min_linear_scale_;
   double heading_slowdown_threshold_;
   double min_heading_motion_scale_;
+  bool regulated_pure_pursuit_enabled_;
+  bool rpp_use_velocity_scaled_lookahead_;
+  double rpp_min_tracking_lookahead_distance_;
+  double rpp_max_tracking_lookahead_distance_;
+  double rpp_lookahead_time_;
+  bool rpp_use_curvature_speed_regulation_;
+  double rpp_regulated_linear_scaling_min_radius_;
+  double rpp_regulated_linear_scaling_min_speed_;
+  bool rpp_use_approach_velocity_scaling_;
+  double rpp_approach_velocity_scaling_distance_;
+  double rpp_min_approach_linear_speed_;
+  bool rpp_use_obstacle_velocity_scaling_;
+  double rpp_obstacle_velocity_scaling_distance_;
+  double rpp_obstacle_velocity_scaling_min_speed_;
+  bool rpp_use_collision_projection_;
+  double rpp_collision_projection_time_;
+  double rpp_collision_projection_step_distance_;
   double max_linear_accel_;
   double max_angular_accel_;
   double progress_required_movement_radius_;

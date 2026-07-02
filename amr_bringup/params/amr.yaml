@@ -223,6 +223,24 @@
       rotate_in_place_goal_distance: 0.16
       heading_slowdown_threshold: 0.16
       min_heading_motion_scale: 0.18
+    regulated_pure_pursuit:
+      enabled: true
+      use_velocity_scaled_lookahead: true
+      min_tracking_lookahead_distance: 0.20
+      max_tracking_lookahead_distance: 0.80
+      lookahead_time: 1.2
+      use_curvature_speed_regulation: true
+      regulated_linear_scaling_min_radius: 0.80
+      regulated_linear_scaling_min_speed: 0.06
+      use_approach_velocity_scaling: true
+      approach_velocity_scaling_distance: 0.60
+      min_approach_linear_speed: 0.05
+      use_obstacle_velocity_scaling: true
+      obstacle_velocity_scaling_distance: 0.45
+      obstacle_velocity_scaling_min_speed: 0.05
+      use_collision_projection: true
+      collision_projection_time: 0.8
+      collision_projection_step_distance: 0.05
     progress_checker:
       required_movement_radius: 0.03
       time_allowance_sec: 4.0
