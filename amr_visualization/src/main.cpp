@@ -9,6 +9,7 @@
 #include "amr_visualization/main_window.hpp"
 #include "rclcpp/rclcpp.hpp"
 
+/// @brief Initialize Qt/ROS integration, show the main window, and run the app loop.
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);

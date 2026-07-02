@@ -14,6 +14,7 @@ namespace
 constexpr int kUnknownCellValue = -1;
 constexpr double kPi = 3.14159265358979323846;
 
+/// @brief Return a stable true/false label for structured logs.
 const char *bool_label(const bool value)
 {
   return value ? "true" : "false";
@@ -21,6 +22,7 @@ const char *bool_label(const bool value)
 
 }  // namespace
 
+/// @copydoc CostmapServer::CostmapServer
 CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("costmap_server", options),
   map_topic_("/map"),
@@ -80,6 +82,7 @@ CostmapServer::CostmapServer(const rclcpp::NodeOptions &options)
   this->declare_parameter("footprint.padding", this->footprint_padding_);
 }
 
+/// @copydoc CostmapServer::on_configure
 CostmapServer::CallbackReturn CostmapServer::on_configure(
   const rclcpp_lifecycle::State &state)
 {
@@ -177,6 +180,7 @@ CostmapServer::CallbackReturn CostmapServer::on_configure(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc CostmapServer::on_activate
 CostmapServer::CallbackReturn CostmapServer::on_activate(
   const rclcpp_lifecycle::State &state)
 {
@@ -192,6 +196,7 @@ CostmapServer::CallbackReturn CostmapServer::on_activate(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc CostmapServer::on_deactivate
 CostmapServer::CallbackReturn CostmapServer::on_deactivate(
   const rclcpp_lifecycle::State &state)
 {
@@ -205,6 +210,7 @@ CostmapServer::CallbackReturn CostmapServer::on_deactivate(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc CostmapServer::on_cleanup
 CostmapServer::CallbackReturn CostmapServer::on_cleanup(
   const rclcpp_lifecycle::State &state)
 {
@@ -227,12 +233,14 @@ CostmapServer::CallbackReturn CostmapServer::on_cleanup(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc CostmapServer::on_shutdown
 CostmapServer::CallbackReturn CostmapServer::on_shutdown(
   const rclcpp_lifecycle::State &state)
 {
   return this->on_cleanup(state);
 }
 
+/// @copydoc CostmapServer::handle_map
 void CostmapServer::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
 {
   const auto width = static_cast<std::size_t>(message->info.width);
@@ -267,6 +275,7 @@ void CostmapServer::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mes
   this->publish_costmaps();
 }
 
+/// @copydoc CostmapServer::handle_scan
 void CostmapServer::handle_scan(
   const sensor_msgs::msg::LaserScan::SharedPtr message)
 {
@@ -293,6 +302,7 @@ void CostmapServer::handle_scan(
   }
 }
 
+/// @copydoc CostmapServer::handle_clear_costmap
 void CostmapServer::handle_clear_costmap(
   const std::shared_ptr<amr_msgs::srv::ClearCostmap::Request> request,
   std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response)
@@ -346,6 +356,7 @@ void CostmapServer::handle_clear_costmap(
   }
 }
 
+/// @copydoc CostmapServer::update_current_pose_from_tf
 bool CostmapServer::update_current_pose_from_tf()
 {
   if (!this->tf_buffer_) {
@@ -380,6 +391,7 @@ bool CostmapServer::update_current_pose_from_tf()
   }
 }
 
+/// @copydoc CostmapServer::rebuild_global_costmap
 void CostmapServer::rebuild_global_costmap()
 {
   if (!this->has_map_ || !this->map_) {
@@ -456,6 +468,7 @@ void CostmapServer::rebuild_global_costmap()
 
 }
 
+/// @copydoc CostmapServer::rebuild_local_costmap
 void CostmapServer::rebuild_local_costmap()
 {
   if (this->global_costmap_.data.empty()) {
@@ -622,6 +635,7 @@ void CostmapServer::rebuild_local_costmap()
   }
 }
 
+/// @copydoc CostmapServer::world_to_grid
 bool CostmapServer::world_to_grid(double world_x, double world_y, int &grid_x, int &grid_y) const
 {
   if (!this->map_) {
@@ -641,6 +655,7 @@ bool CostmapServer::world_to_grid(double world_x, double world_y, int &grid_x, i
     grid_y >= 0 &&grid_y < static_cast<int>(this->map_->info.height);
 }
 
+/// @copydoc CostmapServer::world_to_costmap_grid
 bool CostmapServer::world_to_costmap_grid(
   const nav_msgs::msg::OccupancyGrid &costmap,
   double world_x,
@@ -663,6 +678,7 @@ bool CostmapServer::world_to_costmap_grid(
     grid_y >= 0 &&grid_y < static_cast<int>(costmap.info.height);
 }
 
+/// @copydoc CostmapServer::has_static_obstacle_near
 bool CostmapServer::has_static_obstacle_near(int grid_x, int grid_y, int clearance_cells) const
 {
   if (!this->map_ || this->map_->data.empty()) {
@@ -689,6 +705,7 @@ bool CostmapServer::has_static_obstacle_near(int grid_x, int grid_y, int clearan
   return false;
 }
 
+/// @copydoc CostmapServer::publish_costmaps
 void CostmapServer::publish_costmaps()
 {
   if (!this->has_map_ || this->global_costmap_.data.empty() || this->local_costmap_.data.empty()) {
@@ -698,6 +715,7 @@ void CostmapServer::publish_costmaps()
   this->publish_local_costmap();
 }
 
+/// @copydoc CostmapServer::publish_global_costmap
 void CostmapServer::publish_global_costmap()
 {
   if (
@@ -709,6 +727,7 @@ void CostmapServer::publish_global_costmap()
   this->global_costmap_publisher_->publish(this->global_costmap_);
 }
 
+/// @copydoc CostmapServer::publish_local_costmap
 void CostmapServer::publish_local_costmap()
 {
   if (
@@ -721,6 +740,7 @@ void CostmapServer::publish_local_costmap()
   this->last_local_publish_time_ = this->now();
 }
 
+/// @copydoc CostmapServer::should_publish_local_costmap
 bool CostmapServer::should_publish_local_costmap()
 {
   if (this->local_publish_min_period_ms_ <= 0) {
@@ -734,6 +754,7 @@ bool CostmapServer::should_publish_local_costmap()
   return elapsed_ms >= static_cast<double>(this->local_publish_min_period_ms_);
 }
 
+/// @copydoc CostmapServer::update_footprint_metrics
 void CostmapServer::update_footprint_metrics()
 {
   this->footprint_circumscribed_radius_ = 0.0;

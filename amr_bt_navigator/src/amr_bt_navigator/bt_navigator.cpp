@@ -19,6 +19,7 @@ enum class BtOutcome
   kStopped
 };
 
+/// @brief Translate local planner decision codes into structured log labels.
 const char *local_plan_decision_label(const uint8_t decision)
 {
   switch (decision) {
@@ -35,11 +36,13 @@ const char *local_plan_decision_label(const uint8_t decision)
   }
 }
 
+/// @brief Return a stable true/false label for structured logs.
 const char *bool_label(const bool value)
 {
   return value ? "true" : "false";
 }
 
+/// @brief Sanitize a string for single-token structured log fields.
 std::string log_value(std::string value)
 {
   if (value.empty()) {
@@ -53,6 +56,7 @@ std::string log_value(std::string value)
   return value;
 }
 
+/// @brief Resolve the default behavior-tree XML path from the package share directory.
 std::string get_default_behavior_tree_xml_path()
 {
   try {
@@ -63,6 +67,7 @@ std::string get_default_behavior_tree_xml_path()
   }
 }
 
+/// @brief Build a planar quaternion from a yaw angle.
 geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw)
 {
   geometry_msgs::msg::Quaternion orientation;
@@ -73,6 +78,7 @@ geometry_msgs::msg::Quaternion yaw_to_quaternion(double yaw)
   return orientation;
 }
 
+/// @brief Copy a route waypoint and align its heading toward the next waypoint when available.
 geometry_msgs::msg::PoseStamped make_route_goal_pose(
   const std::vector<geometry_msgs::msg::PoseStamped> &goal_poses,
   std::size_t index)
@@ -95,6 +101,7 @@ geometry_msgs::msg::PoseStamped make_route_goal_pose(
 
 }  // namespace
 
+/// @copydoc Btnavigator::Btnavigator
 Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("navigator", options),
   navigate_action_name_("/navigate_to_pose"),
@@ -157,6 +164,7 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   this->declare_parameter("execution.nominal_linear_speed", this->nominal_speed_);
 }
 
+/// @copydoc Btnavigator::on_configure
 Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -293,6 +301,7 @@ Btnavigator::CallbackReturn Btnavigator::on_configure(const rclcpp_lifecycle::St
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc Btnavigator::on_activate
 Btnavigator::CallbackReturn Btnavigator::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -303,6 +312,7 @@ Btnavigator::CallbackReturn Btnavigator::on_activate(const rclcpp_lifecycle::Sta
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc Btnavigator::on_deactivate
 Btnavigator::CallbackReturn Btnavigator::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -313,6 +323,7 @@ Btnavigator::CallbackReturn Btnavigator::on_deactivate(const rclcpp_lifecycle::S
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc Btnavigator::on_cleanup
 Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -339,6 +350,7 @@ Btnavigator::CallbackReturn Btnavigator::on_cleanup(const rclcpp_lifecycle::Stat
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc Btnavigator::on_shutdown
 Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -365,6 +377,7 @@ Btnavigator::CallbackReturn Btnavigator::on_shutdown(const rclcpp_lifecycle::Sta
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc Btnavigator::handle_goal
 rclcpp_action::GoalResponse Btnavigator::handle_goal(
   const rclcpp_action::GoalUUID &uuid,
   std::shared_ptr<const NavigateToPose::Goal> goal)
@@ -404,6 +417,7 @@ rclcpp_action::GoalResponse Btnavigator::handle_goal(
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
+/// @copydoc Btnavigator::handle_goals
 rclcpp_action::GoalResponse Btnavigator::handle_goals(
   const rclcpp_action::GoalUUID &uuid,
   std::shared_ptr<const NavigateToPoses::Goal> goal)
@@ -457,6 +471,7 @@ rclcpp_action::GoalResponse Btnavigator::handle_goals(
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
+/// @copydoc Btnavigator::handle_cancel
 rclcpp_action::CancelResponse Btnavigator::handle_cancel(
   const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
@@ -469,6 +484,7 @@ rclcpp_action::CancelResponse Btnavigator::handle_cancel(
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
+/// @copydoc Btnavigator::handle_cancel_goals
 rclcpp_action::CancelResponse Btnavigator::handle_cancel_goals(
   const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle)
 {
@@ -481,6 +497,7 @@ rclcpp_action::CancelResponse Btnavigator::handle_cancel_goals(
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
+/// @copydoc Btnavigator::handle_accepted
 void Btnavigator::handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
   {
@@ -490,6 +507,7 @@ void Btnavigator::handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose
   std::thread([this, goal_handle]() { this->execute(goal_handle); }).detach();
 }
 
+/// @copydoc Btnavigator::handle_accepted_goals
 void Btnavigator::handle_accepted_goals(
   const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle)
 {
@@ -500,6 +518,7 @@ void Btnavigator::handle_accepted_goals(
   std::thread([this, goal_handle]() { this->execute_goals(goal_handle); }).detach();
 }
 
+/// @copydoc Btnavigator::execute
 void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
   const auto clear_active_goal = [this, &goal_handle]() {
@@ -554,6 +573,7 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   clear_active_goal();
 }
 
+/// @copydoc Btnavigator::execute_goals
 void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle)
 {
   const auto clear_active_goal = [this, &goal_handle]() {
@@ -654,6 +674,7 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
   clear_active_goal();
 }
 
+/// @copydoc Btnavigator::execute_goal_pose
 Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   const geometry_msgs::msg::PoseStamped &goal_pose,
   const std::string &route_id,
@@ -1453,6 +1474,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     9000U};
 }
 
+/// @copydoc Btnavigator::handle_motion_status
 void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message)
 {
   std::scoped_lock lock(this->navigator_mutex_);
@@ -1460,6 +1482,7 @@ void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::Shared
   this->has_motion_status_ = true;
 }
 
+/// @copydoc Btnavigator::handle_local_plan_status
 void Btnavigator::handle_local_plan_status(
   const amr_msgs::msg::LocalPlanStatus::SharedPtr message)
 {
@@ -1468,6 +1491,7 @@ void Btnavigator::handle_local_plan_status(
   this->has_local_plan_status_ = true;
 }
 
+/// @copydoc Btnavigator::update_current_pose_from_tf
 bool Btnavigator::update_current_pose_from_tf()
 {
   if (!this->tf_buffer_) {
@@ -1508,6 +1532,7 @@ bool Btnavigator::update_current_pose_from_tf()
   }
 }
 
+/// @copydoc Btnavigator::get_current_pose_copy
 geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy()
 {
   this->update_current_pose_from_tf();
@@ -1515,18 +1540,21 @@ geometry_msgs::msg::PoseStamped Btnavigator::get_current_pose_copy()
   return this->current_pose_;
 }
 
+/// @copydoc Btnavigator::get_motion_status_copy
 amr_msgs::msg::MotionStatus Btnavigator::get_motion_status_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
   return this->latest_motion_status_;
 }
 
+/// @copydoc Btnavigator::get_local_plan_status_copy
 amr_msgs::msg::LocalPlanStatus Btnavigator::get_local_plan_status_copy() const
 {
   std::scoped_lock lock(this->navigator_mutex_);
   return this->latest_local_plan_status_;
 }
 
+/// @copydoc Btnavigator::is_navigator_ready
 bool Btnavigator::is_navigator_ready(std::string &error_message) const
 {
   if (
@@ -1541,6 +1569,7 @@ bool Btnavigator::is_navigator_ready(std::string &error_message) const
   return true;
 }
 
+/// @copydoc Btnavigator::wait_for_planner_service
 bool Btnavigator::wait_for_planner_service(
   std::string &error_message,
   const std::function<bool()> &is_cancel_requested)
@@ -1572,6 +1601,7 @@ bool Btnavigator::wait_for_planner_service(
   return false;
 }
 
+/// @copydoc Btnavigator::wait_for_recovery_services
 bool Btnavigator::wait_for_recovery_services(
   std::string &error_message,
   const std::function<bool()> &is_cancel_requested)
@@ -1637,6 +1667,7 @@ bool Btnavigator::wait_for_recovery_services(
   return false;
 }
 
+/// @copydoc Btnavigator::request_global_plan
 bool Btnavigator::request_global_plan(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal,
@@ -1710,6 +1741,7 @@ bool Btnavigator::request_global_plan(
   return true;
 }
 
+/// @copydoc Btnavigator::request_recovery_command
 bool Btnavigator::request_recovery_command(
   const std::string &behavior,
   const geometry_msgs::msg::PoseStamped &current_pose,
@@ -1761,6 +1793,7 @@ bool Btnavigator::request_recovery_command(
   return true;
 }
 
+/// @copydoc Btnavigator::request_local_escape_plan
 bool Btnavigator::request_local_escape_plan(
   const geometry_msgs::msg::PoseStamped &current_pose,
   const nav_msgs::msg::Path &source_plan,
@@ -1806,6 +1839,7 @@ bool Btnavigator::request_local_escape_plan(
   return true;
 }
 
+/// @copydoc Btnavigator::should_try_local_escape
 bool Btnavigator::should_try_local_escape(
   const amr_msgs::msg::MotionCommand &active_command,
   const amr_msgs::msg::LocalPlanStatus &local_plan_status,
@@ -1832,6 +1866,7 @@ bool Btnavigator::should_try_local_escape(
   }
 }
 
+/// @copydoc Btnavigator::has_reacquired_navigation
 bool Btnavigator::has_reacquired_navigation(
   const amr_msgs::msg::MotionCommand &active_command,
   const amr_msgs::msg::MotionStatus &motion_status,
@@ -1855,6 +1890,7 @@ bool Btnavigator::has_reacquired_navigation(
     !local_plan_status.recovery_required;
 }
 
+/// @copydoc Btnavigator::has_planner_owned_recovery
 bool Btnavigator::has_planner_owned_recovery(
   const amr_msgs::msg::MotionCommand &active_command,
   const amr_msgs::msg::LocalPlanStatus &local_plan_status) const
@@ -1865,6 +1901,7 @@ bool Btnavigator::has_planner_owned_recovery(
     local_plan_status.recovery_required;
 }
 
+/// @copydoc Btnavigator::select_recovery_behavior
 std::string Btnavigator::select_recovery_behavior(
   const amr_msgs::msg::MotionCommand &active_command,
   const amr_msgs::msg::LocalPlanStatus &local_plan_status,
@@ -1901,6 +1938,7 @@ std::string Btnavigator::select_recovery_behavior(
   }
 }
 
+/// @copydoc Btnavigator::should_redispatch_existing_plan_after_recovery
 bool Btnavigator::should_redispatch_existing_plan_after_recovery(
   const amr_msgs::msg::MotionCommand &active_command,
   const amr_msgs::msg::LocalPlanStatus &local_plan_status,
@@ -1915,6 +1953,7 @@ bool Btnavigator::should_redispatch_existing_plan_after_recovery(
     executed_behavior == "wait";
 }
 
+/// @copydoc Btnavigator::recovery_behavior_timeout_ms
 int Btnavigator::recovery_behavior_timeout_ms(const std::string &behavior) const
 {
   if (behavior == "wait") {
@@ -1929,6 +1968,7 @@ int Btnavigator::recovery_behavior_timeout_ms(const std::string &behavior) const
   return std::max(this->feedback_period_ms_ * 10, this->recovery_retry_delay_ms_);
 }
 
+/// @copydoc Btnavigator::describe_local_escape_failure
 std::string Btnavigator::describe_local_escape_failure(const std::string &planner_message) const
 {
   if (planner_message.empty()) {
@@ -1938,6 +1978,7 @@ std::string Btnavigator::describe_local_escape_failure(const std::string &planne
   return "Local escape planner failed: " + planner_message;
 }
 
+/// @copydoc Btnavigator::describe_recovery_policy
 std::string Btnavigator::describe_recovery_policy(
   const amr_msgs::msg::MotionCommand &active_command,
   const amr_msgs::msg::LocalPlanStatus &local_plan_status,
@@ -1965,6 +2006,7 @@ std::string Btnavigator::describe_recovery_policy(
   }
 }
 
+/// @copydoc Btnavigator::clear_local_costmap
 bool Btnavigator::clear_local_costmap(
   std::string &error_message,
   const std::function<bool()> &is_cancel_requested)
@@ -2005,6 +2047,7 @@ bool Btnavigator::clear_local_costmap(
   return true;
 }
 
+/// @copydoc Btnavigator::wait_for_command_completion
 bool Btnavigator::wait_for_command_completion(
   const uint32_t command_id,
   const int timeout_ms,
@@ -2036,12 +2079,14 @@ bool Btnavigator::wait_for_command_completion(
   return false;
 }
 
+/// @copydoc Btnavigator::has_active_goal
 bool Btnavigator::has_active_goal() const
 {
   std::scoped_lock active_goal_lock(this->active_goal_mutex_);
   return !this->active_goal_handle_.expired() || !this->active_goals_handle_.expired();
 }
 
+/// @copydoc Btnavigator::build_motion_command
 amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   const geometry_msgs::msg::PoseStamped &goal_pose,
   const std::string &route_id,
@@ -2062,6 +2107,7 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   return command;
 }
 
+/// @copydoc Btnavigator::publish_motion_command
 void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand &command)
 {
   if (!this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated()) {
@@ -2081,6 +2127,7 @@ void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand &com
   }
 }
 
+/// @copydoc Btnavigator::publish_stop_command
 void Btnavigator::publish_stop_command()
 {
   if (!this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated()) {

@@ -21,6 +21,7 @@ struct OpenSetEntry
 
 struct OpenSetEntryCompare
 {
+  /// @brief Order priority-queue entries by lowest total A* cost.
   bool operator()(const OpenSetEntry &lhs, const OpenSetEntry &rhs) const
   {
     return lhs.f_cost > rhs.f_cost;
@@ -29,11 +30,13 @@ struct OpenSetEntryCompare
 
 }  // namespace
 
+/// @copydoc GridCell::operator==()
 bool GridCell::operator==(const GridCell &other) const
 {
   return this->x == other.x &&this->y == other.y;
 }
 
+/// @copydoc AStarPlanner::AStarPlanner()
 AStarPlanner::AStarPlanner(
   const int obstacle_threshold,
   const bool allow_unknown,
@@ -57,8 +60,10 @@ AStarPlanner::AStarPlanner(
 {
 }
 
+/// @copydoc AStarPlanner::~AStarPlanner()
 AStarPlanner::~AStarPlanner() = default;
 
+/// @copydoc AStarPlanner::set_collision_model()
 void AStarPlanner::set_collision_model(
   amr::geometry::FootprintPolygon footprint,
   const double resolution,
@@ -71,6 +76,7 @@ void AStarPlanner::set_collision_model(
   map_origin_y_ = origin_y;
 }
 
+/// @copydoc AStarPlanner::plan()
 AStarPlanResult AStarPlanner::plan(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -197,11 +203,13 @@ AStarPlanResult AStarPlanner::plan(
   return {false, {}, "No path found"};
 }
 
+/// @copydoc AStarPlanner::is_within_bounds()
 bool AStarPlanner::is_within_bounds(const GridCell &cell, const int width, const int height) const
 {
   return cell.x >= 0 &&cell.x < width &&cell.y >= 0 &&cell.y < height;
 }
 
+/// @copydoc AStarPlanner::is_occupied()
 bool AStarPlanner::is_occupied(
   const std::vector<int8_t> &occupancy_grid,
   const int height,
@@ -235,6 +243,7 @@ bool AStarPlanner::is_occupied(
   return cell_value >= this->obstacle_threshold_;
 }
 
+/// @copydoc AStarPlanner::is_diagonal_move_blocked()
 bool AStarPlanner::is_diagonal_move_blocked(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -266,11 +275,13 @@ bool AStarPlanner::is_diagonal_move_blocked(
     this->is_occupied(occupancy_grid, height, width, vertical_neighbor, 0.0);
 }
 
+/// @copydoc AStarPlanner::to_index()
 int AStarPlanner::to_index(const GridCell &cell, const int width) const
 {
   return cell.y * width + cell.x;
 }
 
+/// @copydoc AStarPlanner::heuristic()
 double AStarPlanner::heuristic(const GridCell &from, const GridCell &to) const
 {
   const double dx = std::abs(from.x - to.x);
@@ -285,6 +296,7 @@ double AStarPlanner::heuristic(const GridCell &from, const GridCell &to) const
   return dx + dy;
 }
 
+/// @copydoc AStarPlanner::turn_penalty()
 double AStarPlanner::turn_penalty(
   const GridCell &previous,
   const GridCell &current,
@@ -302,6 +314,7 @@ double AStarPlanner::turn_penalty(
   return this->turn_penalty_;
 }
 
+/// @copydoc AStarPlanner::row_bias_penalty()
 double AStarPlanner::row_bias_penalty(
   const GridCell &next,
   const GridCell &start,
@@ -329,6 +342,7 @@ double AStarPlanner::row_bias_penalty(
   return penalty;
 }
 
+/// @copydoc AStarPlanner::get_neighbors()
 std::vector<GridCell> AStarPlanner::get_neighbors(const GridCell &cell) const
 {
   std::vector<GridCell> neighbors{

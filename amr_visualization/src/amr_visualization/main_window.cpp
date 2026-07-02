@@ -31,6 +31,7 @@ namespace amr::visualization
 namespace
 {
 
+/// @brief Create a status value label with the shared panel style.
 QLabel *make_value_label(const QString &text = "--")
 {
   auto *label = new QLabel(text);
@@ -38,6 +39,7 @@ QLabel *make_value_label(const QString &text = "--")
   return label;
 }
 
+/// @brief Create a horizontal separator for control panels.
 QFrame *line()
 {
   auto *frame = new QFrame;
@@ -46,6 +48,7 @@ QFrame *line()
   return frame;
 }
 
+/// @brief Render a compact icon for the requested visualization layer.
 QPixmap make_layer_icon(const QString &name, const QSize &size)
 {
   QPixmap pixmap(size);
@@ -141,6 +144,7 @@ QPixmap make_layer_icon(const QString &name, const QSize &size)
   return pixmap;
 }
 
+/// @brief Format a planar pose for waypoint and status labels.
 QString pose_text(const Pose2D &pose)
 {
   if (!pose.valid) {
@@ -152,6 +156,7 @@ QString pose_text(const Pose2D &pose)
     .arg(pose.z, 0, 'f', 2);
 }
 
+/// @brief Avoid unnecessary Qt label updates when the value is unchanged.
 void set_label_if_changed(QLabel *label, const QString &text)
 {
   if (label && label->text() != text) {
@@ -159,6 +164,7 @@ void set_label_if_changed(QLabel *label, const QString &text)
   }
 }
 
+/// @brief Reduce verbose JSON event payloads to concise operator feedback.
 QString summarize_event_payload(const QString &event)
 {
   const auto document = QJsonDocument::fromJson(event.toUtf8());
@@ -211,6 +217,7 @@ QString summarize_event_payload(const QString &event)
 
 }  // namespace
 
+/// @copydoc MainWindow::MainWindow
 MainWindow::MainWindow(QWidget *parent)
 : QMainWindow(parent),
   ros_worker_(std::make_unique<RosWorker>())
@@ -301,11 +308,13 @@ MainWindow::MainWindow(QWidget *parent)
   ros_worker_->start();
 }
 
+/// @copydoc MainWindow::~MainWindow
 MainWindow::~MainWindow()
 {
   ros_worker_->stop();
 }
 
+/// @copydoc MainWindow::makeTopBar
 QWidget *MainWindow::makeTopBar()
 {
   auto *bar = new QWidget;
@@ -350,6 +359,7 @@ QWidget *MainWindow::makeTopBar()
   return bar;
 }
 
+/// @copydoc MainWindow::makeLeftPanel
 QWidget *MainWindow::makeLeftPanel()
 {
   auto *panel = new QWidget;
@@ -493,6 +503,7 @@ QWidget *MainWindow::makeLeftPanel()
   return panel;
 }
 
+/// @copydoc MainWindow::makeRightPanel
 QWidget *MainWindow::makeRightPanel()
 {
   auto *panel = new QWidget;
@@ -542,6 +553,7 @@ QWidget *MainWindow::makeRightPanel()
   return panel;
 }
 
+/// @copydoc MainWindow::makeLayerCheckBox
 MainWindow::LayerCheckRow MainWindow::makeLayerCheckBox(
   const QString &label,
   const QString &icon_name,
@@ -575,6 +587,7 @@ MainWindow::LayerCheckRow MainWindow::makeLayerCheckBox(
   return {row, check};
 }
 
+/// @copydoc MainWindow::appendStatusRow
 void MainWindow::appendStatusRow(QVBoxLayout *layout, const QString &label, QLabel *value)
 {
   auto *row = new QWidget;
@@ -586,11 +599,13 @@ void MainWindow::appendStatusRow(QVBoxLayout *layout, const QString &label, QLab
   layout->addWidget(row);
 }
 
+/// @copydoc MainWindow::updateAimPose
 void MainWindow::updateAimPose(const Pose2D &pose)
 {
   set_label_if_changed(aim_label_, pose_text(pose));
 }
 
+/// @copydoc MainWindow::updateMotionStatus
 void MainWindow::updateMotionStatus(const MotionStatusData &status)
 {
   QString motion_state = "Idle";
@@ -615,6 +630,7 @@ void MainWindow::updateMotionStatus(const MotionStatusData &status)
   set_label_if_changed(blocked_label_, status.blocked ? status.blocked_source : "Clear");
 }
 
+/// @copydoc MainWindow::updateRuntimeSummary
 void MainWindow::updateRuntimeSummary(const RuntimeSummary &summary)
 {
   if (!summary.action_status.isEmpty() && summary.action_status != "unknown") {
@@ -630,6 +646,7 @@ void MainWindow::updateRuntimeSummary(const RuntimeSummary &summary)
   set_label_if_changed(recovery_label_, summary.recovery_phase);
 }
 
+/// @copydoc MainWindow::updateWaypointList
 void MainWindow::updateWaypointList(const QVector<Pose2D> &waypoints)
 {
   const int selected = scene_->selectedWaypointIndex();
@@ -648,6 +665,7 @@ void MainWindow::updateWaypointList(const QVector<Pose2D> &waypoints)
   waypoint_list_->blockSignals(false);
 }
 
+/// @copydoc MainWindow::appendEvent
 void MainWindow::appendEvent(const QString &event)
 {
   const QString stamp = QDateTime::currentDateTime().toString("HH:mm:ss");
@@ -658,6 +676,7 @@ void MainWindow::appendEvent(const QString &event)
   event_list_->scrollToBottom();
 }
 
+/// @copydoc MainWindow::sendGoal
 void MainWindow::sendGoal()
 {
   if (add_waypoint_button_ && add_waypoint_button_->isChecked()) {
@@ -671,6 +690,7 @@ void MainWindow::sendGoal()
   ros_worker_->sendSingleGoal(scene_->aimPose());
 }
 
+/// @copydoc MainWindow::setWaypointEditingLocked
 void MainWindow::setWaypointEditingLocked(bool locked)
 {
   if (waypoint_editing_locked_ == locked) {
@@ -686,6 +706,7 @@ void MainWindow::setWaypointEditingLocked(bool locked)
   add_waypoint_button_->setEnabled(!locked);
 }
 
+/// @copydoc MainWindow::applyStyle
 void MainWindow::applyStyle()
 {
   qApp->setStyleSheet(R"(

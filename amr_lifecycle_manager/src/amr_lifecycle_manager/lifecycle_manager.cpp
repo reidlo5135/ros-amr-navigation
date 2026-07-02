@@ -13,6 +13,7 @@ using namespace std::chrono_literals;
 namespace
 {
 
+/// @brief Convert lifecycle transition IDs into structured log event names.
 const char *transition_event_name(const std::uint8_t transition_id)
 {
   switch (transition_id) {
@@ -29,6 +30,7 @@ const char *transition_event_name(const std::uint8_t transition_id)
 
 }  // namespace
 
+/// @copydoc LifecycleManager::LifecycleManager
 LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
 : rclcpp::Node("lifecycle_manager", options),
   autostart_(true),
@@ -110,6 +112,7 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions &options)
   }
 }
 
+/// @copydoc LifecycleManager::~LifecycleManager
 LifecycleManager::~LifecycleManager()
 {
   this->shutdown_requested_.store(true);
@@ -118,6 +121,7 @@ LifecycleManager::~LifecycleManager()
   }
 }
 
+/// @copydoc LifecycleManager::run_bringup
 void LifecycleManager::run_bringup()
 {
   const auto service_timeout = std::chrono::milliseconds(this->service_timeout_ms_);
@@ -183,6 +187,7 @@ void LifecycleManager::run_bringup()
   }
 }
 
+/// @copydoc LifecycleManager::wait_for_service_clients
 bool LifecycleManager::wait_for_service_clients(const ManagedNode &managed_node) const
 {
   const auto timeout = std::chrono::milliseconds(this->service_timeout_ms_);
@@ -203,6 +208,7 @@ bool LifecycleManager::wait_for_service_clients(const ManagedNode &managed_node)
   return true;
 }
 
+/// @copydoc LifecycleManager::request_transition
 bool LifecycleManager::request_transition(
   const ManagedNode &managed_node,
   const std::uint8_t transition_id,
@@ -235,6 +241,7 @@ bool LifecycleManager::request_transition(
   return true;
 }
 
+/// @copydoc LifecycleManager::wait_for_state
 bool LifecycleManager::wait_for_state(
   const ManagedNode &managed_node,
   const std::uint8_t target_state_id,
@@ -266,6 +273,7 @@ bool LifecycleManager::wait_for_state(
   return false;
 }
 
+/// @copydoc LifecycleManager::publish_initial_pose
 void LifecycleManager::publish_initial_pose()
 {
   if (!this->initial_pose_publisher_) {

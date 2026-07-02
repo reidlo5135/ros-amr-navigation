@@ -5,6 +5,7 @@
 
 #include "amr_lifecycle_manager/lifecycle_manager.hpp"
 
+/// @brief Initialize ROS, spin the lifecycle manager node, and shut ROS down.
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);

@@ -13,6 +13,7 @@ namespace
 
 constexpr int kUnknownCellValue = -1;
 
+/// @brief Extract planar yaw from a quaternion.
 double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
 {
   return std::atan2(
@@ -20,6 +21,7 @@ double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
     1.0 - (2.0 * ((quaternion.y * quaternion.y) + (quaternion.z * quaternion.z))));
 }
 
+/// @brief Escape whitespace in log values for structured logging.
 std::string log_value(std::string value)
 {
   if (value.empty()) {
@@ -33,6 +35,7 @@ std::string log_value(std::string value)
   return value;
 }
 
+/// @brief Estimate total path length for planning diagnostics.
 double estimate_path_length(const nav_msgs::msg::Path &path)
 {
   double length = 0.0;
@@ -51,6 +54,7 @@ double estimate_path_length(const nav_msgs::msg::Path &path)
 
 }  // namespace
 
+/// @copydoc PlannerServer::PlannerServer()
 PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("global_planner", options),
   costmap_topic_("/global_costmap"),
@@ -125,6 +129,7 @@ PlannerServer::PlannerServer(const rclcpp::NodeOptions &options)
   this->declare_parameter("footprint.polygon", this->footprint_polygon_param_);
 }
 
+/// @copydoc PlannerServer::on_configure()
 PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -229,6 +234,7 @@ PlannerServer::CallbackReturn PlannerServer::on_configure(const rclcpp_lifecycle
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc PlannerServer::on_activate()
 PlannerServer::CallbackReturn PlannerServer::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -239,6 +245,7 @@ PlannerServer::CallbackReturn PlannerServer::on_activate(const rclcpp_lifecycle:
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc PlannerServer::on_deactivate()
 PlannerServer::CallbackReturn PlannerServer::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -248,6 +255,7 @@ PlannerServer::CallbackReturn PlannerServer::on_deactivate(const rclcpp_lifecycl
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc PlannerServer::on_cleanup()
 PlannerServer::CallbackReturn PlannerServer::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -261,6 +269,7 @@ PlannerServer::CallbackReturn PlannerServer::on_cleanup(const rclcpp_lifecycle::
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc PlannerServer::on_shutdown()
 PlannerServer::CallbackReturn PlannerServer::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -274,6 +283,7 @@ PlannerServer::CallbackReturn PlannerServer::on_shutdown(const rclcpp_lifecycle:
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc PlannerServer::handle_plan_segment()
 void PlannerServer::handle_plan_segment(
   const std::shared_ptr<amr_msgs::srv::PlanSegment::Request> request,
   std::shared_ptr<amr_msgs::srv::PlanSegment::Response> response)
@@ -326,6 +336,7 @@ void PlannerServer::handle_plan_segment(
   }
 }
 
+/// @copydoc PlannerServer::handle_plan_route()
 void PlannerServer::handle_plan_route(
   const std::shared_ptr<amr_msgs::srv::PlanRoute::Request> request,
   std::shared_ptr<amr_msgs::srv::PlanRoute::Response> response)
@@ -388,6 +399,7 @@ void PlannerServer::handle_plan_route(
   }
 }
 
+/// @copydoc PlannerServer::compute_plan_between_poses()
 bool PlannerServer::compute_plan_between_poses(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal,
@@ -568,6 +580,7 @@ bool PlannerServer::compute_plan_between_poses(
   return true;
 }
 
+/// @copydoc PlannerServer::world_to_grid()
 bool PlannerServer::world_to_grid(
   const geometry_msgs::msg::PoseStamped &pose,
   GridCell &cell) const
@@ -590,6 +603,7 @@ bool PlannerServer::world_to_grid(
     cell.y < static_cast<int>(map_info.height);
 }
 
+/// @copydoc PlannerServer::grid_to_world()
 geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell &cell) const
 {
   geometry_msgs::msg::PoseStamped pose;
@@ -610,6 +624,7 @@ geometry_msgs::msg::PoseStamped PlannerServer::grid_to_world(const GridCell &cel
   return pose;
 }
 
+/// @copydoc PlannerServer::is_occupied_cell()
 bool PlannerServer::is_occupied_cell(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -627,6 +642,7 @@ bool PlannerServer::is_occupied_cell(
   return value >= this->obstacle_threshold_;
 }
 
+/// @copydoc PlannerServer::find_nearest_free_cell()
 bool PlannerServer::find_nearest_free_cell(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -654,6 +670,7 @@ bool PlannerServer::find_nearest_free_cell(
   return false;
 }
 
+/// @copydoc PlannerServer::is_cell_collision()
 bool PlannerServer::is_cell_collision(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -681,6 +698,7 @@ bool PlannerServer::is_cell_collision(
     this->allow_unknown_);
 }
 
+/// @copydoc PlannerServer::classify_axis_aligned_straight_candidate()
 PlannerServer::StraightAxis PlannerServer::classify_axis_aligned_straight_candidate(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal,
@@ -715,6 +733,7 @@ PlannerServer::StraightAxis PlannerServer::classify_axis_aligned_straight_candid
   return StraightAxis::None;
 }
 
+/// @copydoc PlannerServer::is_world_pose_collision_free()
 bool PlannerServer::is_world_pose_collision_free(
   const geometry_msgs::msg::PoseStamped &pose,
   const double yaw) const
@@ -749,6 +768,7 @@ bool PlannerServer::is_world_pose_collision_free(
     this->allow_unknown_);
 }
 
+/// @copydoc PlannerServer::is_straight_line_collision_free()
 bool PlannerServer::is_straight_line_collision_free(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal) const
@@ -786,6 +806,7 @@ bool PlannerServer::is_straight_line_collision_free(
   return true;
 }
 
+/// @copydoc PlannerServer::create_straight_path_message()
 nav_msgs::msg::Path PlannerServer::create_straight_path_message(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal) const
@@ -822,6 +843,7 @@ nav_msgs::msg::Path PlannerServer::create_straight_path_message(
   return path;
 }
 
+/// @copydoc PlannerServer::estimate_max_row_deviation()
 int PlannerServer::estimate_max_row_deviation(
   const std::vector<GridCell> &grid_path,
   const GridCell &start_cell,
@@ -844,6 +866,7 @@ int PlannerServer::estimate_max_row_deviation(
   return max_deviation;
 }
 
+/// @copydoc PlannerServer::estimate_path_lateral_deviation()
 double PlannerServer::estimate_path_lateral_deviation(
   const nav_msgs::msg::Path &path,
   const geometry_msgs::msg::PoseStamped &start,
@@ -866,6 +889,7 @@ double PlannerServer::estimate_path_lateral_deviation(
   return max_lateral_deviation;
 }
 
+/// @copydoc PlannerServer::simplify_grid_path()
 std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCell> &grid_path) const
 {
   if (!this->simplify_path_ || grid_path.size() <= 2U) {
@@ -895,6 +919,7 @@ std::vector<GridCell> PlannerServer::simplify_grid_path(const std::vector<GridCe
   return simplified_path;
 }
 
+/// @copydoc PlannerServer::create_path_message()
 nav_msgs::msg::Path PlannerServer::create_path_message(
   const std::vector<GridCell> &grid_path) const
 {
@@ -913,6 +938,7 @@ nav_msgs::msg::Path PlannerServer::create_path_message(
   return path;
 }
 
+/// @copydoc PlannerServer::merge_paths()
 nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::Path> &paths) const
 {
   nav_msgs::msg::Path merged;
@@ -936,6 +962,7 @@ nav_msgs::msg::Path PlannerServer::merge_paths(const std::vector<nav_msgs::msg::
   return merged;
 }
 
+/// @copydoc PlannerServer::costmap_subscription_cb()
 void PlannerServer::costmap_subscription_cb(const nav_msgs::msg::OccupancyGrid::SharedPtr map)
 {
   const auto width = static_cast<std::size_t>(map->info.width);

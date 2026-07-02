@@ -29,6 +29,7 @@ namespace amr::visualization
 namespace
 {
 
+/// @brief Return a copy of a color with the requested alpha channel.
 QColor with_alpha(QColor color, int alpha)
 {
   color.setAlpha(alpha);
@@ -45,6 +46,7 @@ constexpr bool k_enable_sync_mesh_rendering = false;
 
 }  // namespace
 
+/// @copydoc SceneWidget::SceneWidget
 SceneWidget::SceneWidget(QWidget *parent)
 : QWidget(parent)
 {
@@ -70,26 +72,31 @@ SceneWidget::SceneWidget(QWidget *parent)
   updateCameraControlsGeometry();
 }
 
+/// @copydoc SceneWidget::aimPose
 Pose2D SceneWidget::aimPose() const
 {
   return aim_pose_;
 }
 
+/// @copydoc SceneWidget::waypoints
 QVector<Pose2D> SceneWidget::waypoints() const
 {
   return waypoints_;
 }
 
+/// @copydoc SceneWidget::selectedWaypointIndex
 int SceneWidget::selectedWaypointIndex() const
 {
   return selected_waypoint_index_;
 }
 
+/// @copydoc SceneWidget::followRobotEnabled
 bool SceneWidget::followRobotEnabled() const
 {
   return follow_robot_;
 }
 
+/// @copydoc SceneWidget::resetView
 void SceneWidget::resetView()
 {
   scale_ = 90.0;
@@ -102,6 +109,7 @@ void SceneWidget::resetView()
   update();
 }
 
+/// @copydoc SceneWidget::setMap
 void SceneWidget::setMap(const GridMap &map)
 {
   map_ = map;
@@ -109,18 +117,21 @@ void SceneWidget::setMap(const GridMap &map)
   update();
 }
 
+/// @copydoc SceneWidget::setTfFrames
 void SceneWidget::setTfFrames(const QVector<amr::visualization::FrameVisual> &frames)
 {
   tf_frames_ = frames;
   update();
 }
 
+/// @copydoc SceneWidget::setRobotModel
 void SceneWidget::setRobotModel(const QVector<amr::visualization::RobotVisual> &visuals)
 {
   robot_visuals_ = visuals;
   update();
 }
 
+/// @copydoc SceneWidget::setGlobalCostmap
 void SceneWidget::setGlobalCostmap(const GridMap &map)
 {
   global_costmap_ = map;
@@ -128,6 +139,7 @@ void SceneWidget::setGlobalCostmap(const GridMap &map)
   update();
 }
 
+/// @copydoc SceneWidget::setLocalCostmap
 void SceneWidget::setLocalCostmap(const GridMap &map)
 {
   local_costmap_ = map;
@@ -135,12 +147,14 @@ void SceneWidget::setLocalCostmap(const GridMap &map)
   update();
 }
 
+/// @copydoc SceneWidget::setScan
 void SceneWidget::setScan(const amr::visualization::ScanData &scan)
 {
   scan_ = scan;
   update();
 }
 
+/// @copydoc SceneWidget::setRobotPose
 void SceneWidget::setRobotPose(const Pose2D &pose)
 {
   robot_pose_ = pose;
@@ -150,30 +164,44 @@ void SceneWidget::setRobotPose(const Pose2D &pose)
   update();
 }
 
+/// @copydoc SceneWidget::setGlobalPath
 void SceneWidget::setGlobalPath(const PathData &path)
 {
   global_path_ = path;
   update();
 }
 
+/// @copydoc SceneWidget::setLocalPath
 void SceneWidget::setLocalPath(const PathData &path)
 {
   local_path_ = path;
   update();
 }
 
+/// @copydoc SceneWidget::setGridVisible
 void SceneWidget::setGridVisible(bool visible) { show_grid_ = visible; update(); }
+/// @copydoc SceneWidget::setMapVisible
 void SceneWidget::setMapVisible(bool visible) { show_map_ = visible; update(); }
+/// @copydoc SceneWidget::setGlobalCostmapVisible
 void SceneWidget::setGlobalCostmapVisible(bool visible) { show_global_costmap_ = visible; update(); }
+/// @copydoc SceneWidget::setLocalCostmapVisible
 void SceneWidget::setLocalCostmapVisible(bool visible) { show_local_costmap_ = visible; update(); }
+/// @copydoc SceneWidget::setFootprintVisible
 void SceneWidget::setFootprintVisible(bool visible) { show_footprint_ = visible; update(); }
+/// @copydoc SceneWidget::setRobotVisible
 void SceneWidget::setRobotVisible(bool visible) { show_robot_ = visible; update(); }
+/// @copydoc SceneWidget::setTfVisible
 void SceneWidget::setTfVisible(bool visible) { show_tf_ = visible; update(); }
+/// @copydoc SceneWidget::setScanVisible
 void SceneWidget::setScanVisible(bool visible) { show_scan_ = visible; update(); }
+/// @copydoc SceneWidget::setGlobalPathVisible
 void SceneWidget::setGlobalPathVisible(bool visible) { show_global_path_ = visible; update(); }
+/// @copydoc SceneWidget::setLocalPathVisible
 void SceneWidget::setLocalPathVisible(bool visible) { show_local_path_ = visible; update(); }
+/// @copydoc SceneWidget::setAddWaypointMode
 void SceneWidget::setAddWaypointMode(bool enabled) { add_waypoint_mode_ = enabled; }
 
+/// @copydoc SceneWidget::addAimAsWaypoint
 void SceneWidget::addAimAsWaypoint()
 {
   if (!aim_pose_.valid) {
@@ -187,6 +215,7 @@ void SceneWidget::addAimAsWaypoint()
   update();
 }
 
+/// @copydoc SceneWidget::clearWaypoints
 void SceneWidget::clearWaypoints()
 {
   waypoints_.clear();
@@ -195,6 +224,7 @@ void SceneWidget::clearWaypoints()
   update();
 }
 
+/// @copydoc SceneWidget::clearSchedule
 void SceneWidget::clearSchedule()
 {
   aim_pose_ = {};
@@ -205,6 +235,7 @@ void SceneWidget::clearSchedule()
   update();
 }
 
+/// @copydoc SceneWidget::clearNavigationOverlays
 void SceneWidget::clearNavigationOverlays()
 {
   global_path_ = {};
@@ -212,6 +243,7 @@ void SceneWidget::clearNavigationOverlays()
   clearSchedule();
 }
 
+/// @copydoc SceneWidget::clearAimPose
 void SceneWidget::clearAimPose()
 {
   if (!aim_pose_.valid) {
@@ -222,6 +254,7 @@ void SceneWidget::clearAimPose()
   update();
 }
 
+/// @copydoc SceneWidget::removeSelectedWaypoint
 void SceneWidget::removeSelectedWaypoint()
 {
   if (selected_waypoint_index_ < 0 || selected_waypoint_index_ >= waypoints_.size()) {
@@ -239,6 +272,7 @@ void SceneWidget::removeSelectedWaypoint()
   update();
 }
 
+/// @copydoc SceneWidget::moveSelectedWaypointUp
 void SceneWidget::moveSelectedWaypointUp()
 {
   if (selected_waypoint_index_ <= 0 || selected_waypoint_index_ >= waypoints_.size()) {
@@ -250,6 +284,7 @@ void SceneWidget::moveSelectedWaypointUp()
   update();
 }
 
+/// @copydoc SceneWidget::moveSelectedWaypointDown
 void SceneWidget::moveSelectedWaypointDown()
 {
   if (selected_waypoint_index_ < 0 || selected_waypoint_index_ >= waypoints_.size() - 1) {
@@ -261,6 +296,7 @@ void SceneWidget::moveSelectedWaypointDown()
   update();
 }
 
+/// @copydoc SceneWidget::selectWaypoint
 void SceneWidget::selectWaypoint(int index)
 {
   selected_waypoint_index_ = index >= 0 && index < waypoints_.size() ? index : -1;
@@ -268,6 +304,7 @@ void SceneWidget::selectWaypoint(int index)
   update();
 }
 
+/// @copydoc SceneWidget::setFollowRobotEnabled
 void SceneWidget::setFollowRobotEnabled(bool enabled)
 {
   follow_robot_ = enabled;
@@ -278,6 +315,7 @@ void SceneWidget::setFollowRobotEnabled(bool enabled)
   update();
 }
 
+/// @copydoc SceneWidget::paintEvent
 void SceneWidget::paintEvent(QPaintEvent *)
 {
   QPainter painter(this);
@@ -322,6 +360,7 @@ void SceneWidget::paintEvent(QPaintEvent *)
   }
 }
 
+/// @copydoc SceneWidget::mousePressEvent
 void SceneWidget::mousePressEvent(QMouseEvent *event)
 {
   if (event->modifiers() &Qt::ShiftModifier) {
@@ -359,6 +398,7 @@ void SceneWidget::mousePressEvent(QMouseEvent *event)
   }
 }
 
+/// @copydoc SceneWidget::mouseMoveEvent
 void SceneWidget::mouseMoveEvent(QMouseEvent *event)
 {
   if (orbiting_camera_) {
@@ -392,6 +432,7 @@ void SceneWidget::mouseMoveEvent(QMouseEvent *event)
   update();
 }
 
+/// @copydoc SceneWidget::mouseReleaseEvent
 void SceneWidget::mouseReleaseEvent(QMouseEvent *event)
 {
   if (event->button() == Qt::RightButton || event->button() == Qt::MiddleButton) {
@@ -416,6 +457,7 @@ void SceneWidget::mouseReleaseEvent(QMouseEvent *event)
   }
 }
 
+/// @copydoc SceneWidget::wheelEvent
 void SceneWidget::wheelEvent(QWheelEvent *event)
 {
   const double factor = event->angleDelta().y() > 0 ? 1.12 : 0.89;
@@ -427,6 +469,7 @@ void SceneWidget::wheelEvent(QWheelEvent *event)
   update();
 }
 
+/// @copydoc SceneWidget::resizeEvent
 void SceneWidget::resizeEvent(QResizeEvent *event)
 {
   QWidget::resizeEvent(event);
@@ -436,11 +479,13 @@ void SceneWidget::resizeEvent(QResizeEvent *event)
   }
 }
 
+/// @copydoc SceneWidget::worldToScreen
 QPointF SceneWidget::worldToScreen(const QPointF &point) const
 {
   return worldToScreen3D(point.x(), point.y(), 0.0);
 }
 
+/// @copydoc SceneWidget::worldToScreen3D
 QPointF SceneWidget::worldToScreen3D(const double x, const double y, const double z) const
 {
   const QVector3D point(
@@ -453,6 +498,7 @@ QPointF SceneWidget::worldToScreen3D(const double x, const double y, const doubl
     (height() * 0.5) - (QVector3D::dotProduct(relative, cameraUp()) * scale_));
 }
 
+/// @copydoc SceneWidget::cameraRight
 QVector3D SceneWidget::cameraRight() const
 {
   return QVector3D(
@@ -461,6 +507,7 @@ QVector3D SceneWidget::cameraRight() const
     0.0F).normalized();
 }
 
+/// @copydoc SceneWidget::cameraForward
 QVector3D SceneWidget::cameraForward() const
 {
   const QVector3D ground_up(
@@ -473,11 +520,13 @@ QVector3D SceneWidget::cameraForward() const
     static_cast<float>(-std::sin(camera_pitch_))).normalized();
 }
 
+/// @copydoc SceneWidget::cameraUp
 QVector3D SceneWidget::cameraUp() const
 {
   return QVector3D::crossProduct(cameraRight(), cameraForward()).normalized();
 }
 
+/// @copydoc SceneWidget::screenToWorld
 QPointF SceneWidget::screenToWorld(const QPointF &point) const
 {
   const QVector3D origin =
@@ -494,6 +543,7 @@ QPointF SceneWidget::screenToWorld(const QPointF &point) const
   return QPointF(world.x(), world.y());
 }
 
+/// @copydoc SceneWidget::panCameraByPixels
 void SceneWidget::panCameraByPixels(const QPoint &delta)
 {
   QVector3D ground_up(cameraUp().x(), cameraUp().y(), 0.0F);
@@ -509,6 +559,7 @@ void SceneWidget::panCameraByPixels(const QPoint &delta)
   focal_point_.setZ(0.0F);
 }
 
+/// @copydoc SceneWidget::centerViewOnRobot
 void SceneWidget::centerViewOnRobot()
 {
   if (!robot_pose_.valid) {
@@ -520,6 +571,7 @@ void SceneWidget::centerViewOnRobot()
     static_cast<float>(robot_pose_.z));
 }
 
+/// @copydoc SceneWidget::updateCameraControlsGeometry
 void SceneWidget::updateCameraControlsGeometry()
 {
   if (!camera_controls_) {
@@ -530,6 +582,7 @@ void SceneWidget::updateCameraControlsGeometry()
   camera_controls_->setGeometry(width() - size.width() - 12, 12, size.width(), size.height());
 }
 
+/// @copydoc SceneWidget::updateCameraControlState
 void SceneWidget::updateCameraControlState()
 {
   if (follow_robot_button_ && follow_robot_button_->isChecked() != follow_robot_) {
@@ -539,6 +592,7 @@ void SceneWidget::updateCameraControlState()
   }
 }
 
+/// @copydoc SceneWidget::makeCameraButton
 QToolButton *SceneWidget::makeCameraButton(
   const QIcon &icon,
   const QString &text,
@@ -556,6 +610,7 @@ QToolButton *SceneWidget::makeCameraButton(
   return button;
 }
 
+/// @copydoc SceneWidget::makeGridImage
 QImage SceneWidget::makeGridImage(
   const GridMap &map,
   const QColor &occupied,
@@ -587,6 +642,7 @@ QImage SceneWidget::makeGridImage(
   return image;
 }
 
+/// @copydoc SceneWidget::makeCostmapImage
 QImage SceneWidget::makeCostmapImage(const GridMap &map) const
 {
   if (!map.valid) {
@@ -621,6 +677,7 @@ QImage SceneWidget::makeCostmapImage(const GridMap &map) const
   return image;
 }
 
+/// @copydoc SceneWidget::drawGrid
 void SceneWidget::drawGrid(QPainter &painter) const
 {
   const double step = scale_ > 150.0 ? 0.5 : 1.0;
@@ -644,6 +701,7 @@ void SceneWidget::drawGrid(QPainter &painter) const
   }
 }
 
+/// @copydoc SceneWidget::drawGridLayer
 void SceneWidget::drawGridLayer(
   QPainter &painter,
   const GridMap &map,
@@ -683,6 +741,7 @@ void SceneWidget::drawGridLayer(
   painter.restore();
 }
 
+/// @copydoc SceneWidget::drawPath
 void SceneWidget::drawPath(
   QPainter &painter,
   const PathData &path,
@@ -701,6 +760,7 @@ void SceneWidget::drawPath(
   painter.drawPath(painter_path);
 }
 
+/// @copydoc SceneWidget::drawPose
 void SceneWidget::drawPose(QPainter &painter, const Pose2D &pose, const QColor &color) const
 {
   const double c = std::cos(pose.yaw);
@@ -734,6 +794,7 @@ void SceneWidget::drawPose(QPainter &painter, const Pose2D &pose, const QColor &
   painter.drawPolygon(arrow);
 }
 
+/// @copydoc SceneWidget::drawExactFootprint
 void SceneWidget::drawExactFootprint(QPainter &painter) const
 {
   Pose2D pose = robot_pose_;
@@ -766,6 +827,7 @@ void SceneWidget::drawExactFootprint(QPainter &painter) const
   painter.drawPolygon(footprint);
 }
 
+/// @copydoc SceneWidget::drawRobotModel
 void SceneWidget::drawRobotModel(QPainter &painter) const
 {
   if (robot_visuals_.isEmpty()) {
@@ -848,6 +910,7 @@ void SceneWidget::drawRobotModel(QPainter &painter) const
   painter.restore();
 }
 
+/// @copydoc SceneWidget::drawBox3D
 void SceneWidget::drawBox3D(
   QPainter &painter,
   const Pose2D &pose,
@@ -901,6 +964,7 @@ void SceneWidget::drawBox3D(
   painter.drawPolygon(face);
 }
 
+/// @copydoc SceneWidget::drawCylinderProxy3D
 void SceneWidget::drawCylinderProxy3D(
   QPainter &painter,
   const Pose2D &pose,
@@ -938,6 +1002,7 @@ void SceneWidget::drawCylinderProxy3D(
   painter.drawPolygon(top);
 }
 
+/// @copydoc SceneWidget::drawBurgerBaseProxy3D
 void SceneWidget::drawBurgerBaseProxy3D(QPainter &painter, const Pose2D &pose) const
 {
   Pose2D lower_plate = pose;
@@ -965,6 +1030,7 @@ void SceneWidget::drawBurgerBaseProxy3D(QPainter &painter, const Pose2D &pose) c
   }
 }
 
+/// @copydoc SceneWidget::drawWheelProxy3D
 void SceneWidget::drawWheelProxy3D(
   QPainter &painter,
   const Pose2D &pose,
@@ -1012,6 +1078,7 @@ void SceneWidget::drawWheelProxy3D(
   painter.drawPolygon(right_face);
 }
 
+/// @copydoc SceneWidget::drawMesh3D
 bool SceneWidget::drawMesh3D(
   QPainter &painter,
   const RobotVisual &visual,
@@ -1089,6 +1156,7 @@ bool SceneWidget::drawMesh3D(
   return true;
 }
 
+/// @copydoc SceneWidget::resolveMeshPath
 QString SceneWidget::resolveMeshPath(const QString &uri) const
 {
   if (uri.isEmpty()) {
@@ -1129,6 +1197,7 @@ QString SceneWidget::resolveMeshPath(const QString &uri) const
   return {};
 }
 
+/// @copydoc SceneWidget::meshForVisual
 const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual &visual) const
 {
   const QString path = resolveMeshPath(visual.mesh_filename);
@@ -1149,6 +1218,7 @@ const SceneWidget::MeshCacheEntry *SceneWidget::meshForVisual(const RobotVisual 
   return &(*it);
 }
 
+/// @copydoc SceneWidget::loadStlMesh
 bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry) const
 {
   QFile file(path);
@@ -1223,6 +1293,7 @@ bool SceneWidget::loadStlMesh(const QString &path, MeshCacheEntry &entry) const
   return !entry.triangles.isEmpty();
 }
 
+/// @copydoc SceneWidget::meshPointToWorld
 QVector3D SceneWidget::meshPointToWorld(const RobotVisual &visual, const QVector3D &point) const
 {
   const double c = std::cos(visual.pose.yaw);
@@ -1236,6 +1307,7 @@ QVector3D SceneWidget::meshPointToWorld(const RobotVisual &visual, const QVector
     static_cast<float>(visual.pose.z + local_z));
 }
 
+/// @copydoc SceneWidget::drawTfFrames
 void SceneWidget::drawTfFrames(QPainter &painter) const
 {
   painter.save();
@@ -1290,6 +1362,7 @@ void SceneWidget::drawTfFrames(QPainter &painter) const
   painter.restore();
 }
 
+/// @copydoc SceneWidget::drawTfChainLine
 void SceneWidget::drawTfChainLine(QPainter &painter, const Pose2D &from, const Pose2D &to) const
 {
   const QPointF start = worldToScreen3D(from.x, from.y, from.z);
@@ -1318,6 +1391,7 @@ void SceneWidget::drawTfChainLine(QPainter &painter, const Pose2D &from, const P
   }
 }
 
+/// @copydoc SceneWidget::drawScan
 void SceneWidget::drawScan(QPainter &painter) const
 {
   if (scan_.points.isEmpty()) {
@@ -1333,6 +1407,7 @@ void SceneWidget::drawScan(QPainter &painter) const
   painter.restore();
 }
 
+/// @copydoc SceneWidget::drawWaypointRoute
 void SceneWidget::drawWaypointRoute(QPainter &painter) const
 {
   QVector<QPointF> route_points;
@@ -1357,6 +1432,7 @@ void SceneWidget::drawWaypointRoute(QPainter &painter) const
   painter.restore();
 }
 
+/// @copydoc SceneWidget::drawWaypoints
 void SceneWidget::drawWaypoints(QPainter &painter) const
 {
   for (int i = 0; i < waypoints_.size(); ++i) {
@@ -1374,6 +1450,7 @@ void SceneWidget::drawWaypoints(QPainter &painter) const
   }
 }
 
+/// @copydoc SceneWidget::waypointAt
 int SceneWidget::waypointAt(const QPointF &screen_position) const
 {
   for (int i = waypoints_.size() - 1; i >= 0; --i) {
@@ -1386,6 +1463,7 @@ int SceneWidget::waypointAt(const QPointF &screen_position) const
   return -1;
 }
 
+/// @copydoc SceneWidget::emitWaypointState
 void SceneWidget::emitWaypointState()
 {
   Q_EMIT waypointCountChanged(waypoints_.size());

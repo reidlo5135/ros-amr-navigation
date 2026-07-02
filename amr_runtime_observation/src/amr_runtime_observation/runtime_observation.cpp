@@ -15,11 +15,13 @@ namespace amr::runtime::observation
 namespace
 {
 
+/// @brief Return a stable true/false label for structured logs.
 const char *bool_label(const bool value)
 {
   return value ? "true" : "false";
 }
 
+/// @brief Convert a seconds duration parameter into a positive throttle period in milliseconds.
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
@@ -27,6 +29,7 @@ int throttle_ms_from_sec(const double seconds)
 
 }  // namespace
 
+/// @copydoc RuntimeObservation::RuntimeObservation
 RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
 : rclcpp::Node("runtime_observation", options)
 {
@@ -119,6 +122,7 @@ RuntimeObservation::RuntimeObservation(const rclcpp::NodeOptions &options)
   }
 }
 
+/// @copydoc RuntimeObservation::handle_motion_command
 void RuntimeObservation::handle_motion_command(
   const amr_msgs::msg::MotionCommand::SharedPtr message)
 {
@@ -161,6 +165,7 @@ void RuntimeObservation::handle_motion_command(
   }
 }
 
+/// @copydoc RuntimeObservation::handle_motion_status
 void RuntimeObservation::handle_motion_status(const amr_msgs::msg::MotionStatus::SharedPtr message)
 {
   const auto now = this->now();
@@ -205,6 +210,7 @@ void RuntimeObservation::handle_motion_status(const amr_msgs::msg::MotionStatus:
   }
 }
 
+/// @copydoc RuntimeObservation::handle_local_plan_status
 void RuntimeObservation::handle_local_plan_status(
   const amr_msgs::msg::LocalPlanStatus::SharedPtr message)
 {
@@ -213,6 +219,7 @@ void RuntimeObservation::handle_local_plan_status(
   this->last_local_plan_status_time_ = this->now();
 }
 
+/// @copydoc RuntimeObservation::handle_navigate_feedback
 void RuntimeObservation::handle_navigate_feedback(
   const NavigateToPosesFeedbackMessage::SharedPtr message)
 {
@@ -232,6 +239,7 @@ void RuntimeObservation::handle_navigate_feedback(
   }
 }
 
+/// @copydoc RuntimeObservation::handle_navigate_status
 void RuntimeObservation::handle_navigate_status(
   const action_msgs::msg::GoalStatusArray::SharedPtr message)
 {
@@ -240,6 +248,7 @@ void RuntimeObservation::handle_navigate_status(
   this->last_navigate_status_time_ = this->now();
 }
 
+/// @copydoc RuntimeObservation::is_route_active
 bool RuntimeObservation::is_route_active(const rclcpp::Time &now) const
 {
   if (!this->has_navigate_feedback_) {
@@ -265,6 +274,7 @@ bool RuntimeObservation::is_route_active(const rclcpp::Time &now) const
   return true;
 }
 
+/// @copydoc RuntimeObservation::is_progress_stalled
 bool RuntimeObservation::is_progress_stalled(const rclcpp::Time &now) const
 {
   if (!this->is_route_active(now) || !this->has_progress_baseline_ || !this->has_motion_status_) {
@@ -287,6 +297,7 @@ bool RuntimeObservation::is_progress_stalled(const rclcpp::Time &now) const
   return time_since_progress.seconds() >= this->progress_stall_window_sec_;
 }
 
+/// @copydoc RuntimeObservation::is_controller_recovery
 bool RuntimeObservation::is_controller_recovery() const
 {
   return
@@ -295,6 +306,7 @@ bool RuntimeObservation::is_controller_recovery() const
     this->latest_motion_status_.mode != amr_msgs::msg::MotionCommand::MODE_NAVIGATE;
 }
 
+/// @copydoc RuntimeObservation::is_controller_clear
 bool RuntimeObservation::is_controller_clear() const
 {
   return
@@ -304,6 +316,7 @@ bool RuntimeObservation::is_controller_clear() const
     !this->is_controller_recovery();
 }
 
+/// @copydoc RuntimeObservation::is_local_plan_status_current
 bool RuntimeObservation::is_local_plan_status_current() const
 {
   return
@@ -312,6 +325,7 @@ bool RuntimeObservation::is_local_plan_status_current() const
     this->latest_local_plan_status_.command_id == this->latest_motion_status_.command_id);
 }
 
+/// @copydoc RuntimeObservation::has_explicit_non_controller_recovery
 bool RuntimeObservation::has_explicit_non_controller_recovery() const
 {
   return
@@ -319,6 +333,7 @@ bool RuntimeObservation::has_explicit_non_controller_recovery() const
     this->latest_local_plan_status_.recovery_required;
 }
 
+/// @copydoc RuntimeObservation::is_goal_approach_context
 bool RuntimeObservation::is_goal_approach_context() const
 {
   return
@@ -331,6 +346,7 @@ bool RuntimeObservation::is_goal_approach_context() const
     this->latest_motion_status_.remaining_distance <= std::max(0.0, this->goal_approach_distance_);
 }
 
+/// @copydoc RuntimeObservation::is_final_heading_alignment_context
 bool RuntimeObservation::is_final_heading_alignment_context() const
 {
   const bool command_matches_status =
@@ -345,6 +361,7 @@ bool RuntimeObservation::is_final_heading_alignment_context() const
       std::max(0.0, this->final_heading_alignment_distance_);
 }
 
+/// @copydoc RuntimeObservation::resolve_action_status
 int8_t RuntimeObservation::resolve_action_status() const
 {
   if (!this->has_navigate_status_ || !this->has_navigate_feedback_) {
@@ -360,6 +377,7 @@ int8_t RuntimeObservation::resolve_action_status() const
   return action_msgs::msg::GoalStatus::STATUS_UNKNOWN;
 }
 
+/// @copydoc RuntimeObservation::resolve_controller_phase
 std::string RuntimeObservation::resolve_controller_phase() const
 {
   if (!this->has_motion_status_)
@@ -409,6 +427,7 @@ std::string RuntimeObservation::resolve_controller_phase() const
   return "tracking";
 }
 
+/// @copydoc RuntimeObservation::resolve_progress_clear_reason
 std::string RuntimeObservation::resolve_progress_clear_reason(
   const bool progress_stalled,
   const bool route_active) const
@@ -462,6 +481,7 @@ std::string RuntimeObservation::resolve_progress_clear_reason(
   return "not_stalled";
 }
 
+/// @copydoc RuntimeObservation::resolve_blocked_context
 std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) const
 {
   const std::string controller_phase = this->resolve_controller_phase();
@@ -520,12 +540,14 @@ std::string RuntimeObservation::resolve_blocked_context(bool progress_stalled) c
   return "clear";
 }
 
+/// @copydoc RuntimeObservation::resolve_recovery_reason
 std::string RuntimeObservation::resolve_recovery_reason(bool progress_stalled) const
 {
   const std::string blocked_context = this->resolve_blocked_context(progress_stalled);
   return blocked_context == "clear" ? "none" : blocked_context;
 }
 
+/// @copydoc RuntimeObservation::resolve_recovery_phase
 std::string RuntimeObservation::resolve_recovery_phase(
   bool route_active,
   bool recovery_triggered) const
@@ -561,6 +583,7 @@ std::string RuntimeObservation::resolve_recovery_phase(
   return "navigating";
 }
 
+/// @copydoc RuntimeObservation::resolve_runtime_state
 std::string RuntimeObservation::resolve_runtime_state(
   bool route_active,
   bool progress_stalled) const
@@ -610,6 +633,7 @@ std::string RuntimeObservation::resolve_runtime_state(
   return "navigating";
 }
 
+/// @copydoc RuntimeObservation::make_snapshot
 RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Time &now) const
 {
   Snapshot snapshot;
@@ -684,6 +708,7 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   return snapshot;
 }
 
+/// @copydoc RuntimeObservation::publish_event_if_needed
 void RuntimeObservation::publish_event_if_needed(const Snapshot &snapshot, const rclcpp::Time &now)
 {
   if (!this->has_previous_snapshot_) {
@@ -744,6 +769,7 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot &snapshot, const
   this->previous_snapshot_ = snapshot;
 }
 
+/// @copydoc RuntimeObservation::publish_event
 void RuntimeObservation::publish_event(
   const std::string &event_type,
   const std::string &reason,
@@ -781,6 +807,7 @@ void RuntimeObservation::publish_event(
   }
 }
 
+/// @copydoc RuntimeObservation::publish_observation
 void RuntimeObservation::publish_observation()
 {
   const auto now = this->now();
@@ -818,6 +845,7 @@ void RuntimeObservation::publish_observation()
   }
 }
 
+/// @copydoc RuntimeObservation::build_summary_json
 std::string RuntimeObservation::build_summary_json(
   const Snapshot &snapshot,
   const rclcpp::Time &now) const
@@ -888,6 +916,7 @@ std::string RuntimeObservation::build_summary_json(
   return stream.str();
 }
 
+/// @copydoc RuntimeObservation::build_event_json
 std::string RuntimeObservation::build_event_json(
   const std::string &event_type,
   const std::string &reason,
@@ -929,6 +958,7 @@ std::string RuntimeObservation::build_event_json(
   return stream.str();
 }
 
+/// @copydoc RuntimeObservation::planner_decision_label
 std::string RuntimeObservation::planner_decision_label(uint8_t decision) const
 {
   switch (decision) {
@@ -945,6 +975,7 @@ std::string RuntimeObservation::planner_decision_label(uint8_t decision) const
   }
 }
 
+/// @copydoc RuntimeObservation::action_status_label
 std::string RuntimeObservation::action_status_label(int8_t status) const
 {
   switch (status) {
@@ -967,6 +998,7 @@ std::string RuntimeObservation::action_status_label(int8_t status) const
   }
 }
 
+/// @copydoc RuntimeObservation::escape_json
 std::string RuntimeObservation::escape_json(const std::string &value)
 {
   std::string escaped;

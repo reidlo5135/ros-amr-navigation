@@ -10,6 +10,7 @@
 namespace amr::visualization
 {
 
+/// @copydoc quaternion_to_yaw
 double quaternion_to_yaw(double x, double y, double z, double w)
 {
   const double siny_cosp = 2.0 * ((w * z) + (x * y));

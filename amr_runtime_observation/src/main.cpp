@@ -5,6 +5,7 @@
 
 #include "amr_runtime_observation/runtime_observation.hpp"
 
+/// @brief Initialize ROS, spin the runtime observation node, and shut ROS down.
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);

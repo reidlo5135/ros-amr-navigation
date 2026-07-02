@@ -5,6 +5,7 @@
 
 #include "amr_recovery_server/recovery_server.hpp"
 
+/// @brief Initialize ROS, spin the recovery server node, and shut ROS down.
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);

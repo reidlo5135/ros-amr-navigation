@@ -14,6 +14,7 @@ namespace
 
 constexpr int kUnknownCellValue = -1;
 
+/// @brief Translate local planner decision codes into structured log labels.
 const char *local_plan_decision_label(const uint8_t decision)
 {
   switch (decision)
@@ -31,16 +32,19 @@ const char *local_plan_decision_label(const uint8_t decision)
   }
 }
 
+/// @brief Return a stable true/false label for structured logs.
 const char *bool_label(const bool value)
 {
   return value ? "true" : "false";
 }
 
+/// @brief Return a non-empty frame label for structured logs.
 const char *frame_label(const std::string &frame)
 {
   return frame.empty() ? "none" : frame.c_str();
 }
 
+/// @brief Classify whether a path is effectively horizontal or vertical.
 const char *path_axis_label(const nav_msgs::msg::Path &path)
 {
   if (path.poses.size() < 2U)
@@ -63,11 +67,13 @@ const char *path_axis_label(const nav_msgs::msg::Path &path)
   return "none";
 }
 
+/// @brief Convert a seconds duration parameter into a positive throttle period in milliseconds.
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
 }
 
+/// @brief Extract planar yaw from a quaternion.
 double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
 {
   return std::atan2(
@@ -75,6 +81,7 @@ double yaw_from_quaternion(const geometry_msgs::msg::Quaternion &quaternion)
     1.0 - 2.0 * ((quaternion.y * quaternion.y) + (quaternion.z * quaternion.z)));
 }
 
+/// @brief Normalize an angle into the [-pi, pi] interval.
 double normalize_angle(double angle)
 {
   constexpr double kPi = 3.14159265358979323846;
@@ -94,6 +101,7 @@ struct GridCell
   int x;
   int y;
 
+  /// @brief Compare grid coordinates for equality.
   bool operator==(const GridCell &other) const
   {
     return this->x == other.x &&this->y == other.y;
@@ -117,22 +125,26 @@ struct OpenSetEntry
 
 struct OpenSetEntryCompare
 {
+  /// @brief Order priority-queue entries by lowest total A* cost.
   bool operator()(const OpenSetEntry &lhs, const OpenSetEntry &rhs) const
   {
     return lhs.f_cost > rhs.f_cost;
   }
 };
 
+/// @brief Check whether a grid cell lies inside map bounds.
 bool is_within_bounds(const GridCell &cell, int width, int height)
 {
   return cell.x >= 0 &&cell.x < width &&cell.y >= 0 &&cell.y < height;
 }
 
+/// @brief Convert a 2D grid cell to a row-major occupancy-grid index.
 int to_index(const GridCell &cell, int width)
 {
   return cell.y * width + cell.x;
 }
 
+/// @brief Test whether a grid cell collides with obstacles or the robot footprint.
 bool is_occupied(
   const std::vector<int8_t> &occupancy_grid,
   int width,
@@ -173,6 +185,7 @@ bool is_occupied(
   return cell_value >= obstacle_threshold;
 }
 
+/// @brief Detect corner-cutting collisions for diagonal grid moves.
 bool is_diagonal_move_blocked(
   const std::vector<int8_t> &occupancy_grid,
   int width,
@@ -213,6 +226,7 @@ bool is_diagonal_move_blocked(
     footprint_polygon, resolution, origin_x, origin_y, 0.0);
 }
 
+/// @brief Estimate remaining grid distance for the configured A* connectivity.
 double heuristic(const GridCell &from, const GridCell &to, int connectivity)
 {
   const double dx = std::abs(from.x - to.x);
@@ -226,6 +240,7 @@ double heuristic(const GridCell &from, const GridCell &to, int connectivity)
   return dx + dy;
 }
 
+/// @brief Return an additional traversal cost when a path changes direction.
 double turn_penalty(
   const GridCell &previous,
   const GridCell &current,
@@ -243,6 +258,7 @@ double turn_penalty(
   return penalty;
 }
 
+/// @brief Enumerate neighboring grid cells for four- or eight-connected search.
 std::vector<GridCell> get_neighbors(const GridCell &cell, int connectivity)
 {
   std::vector<GridCell> neighbors{
@@ -263,6 +279,7 @@ std::vector<GridCell> get_neighbors(const GridCell &cell, int connectivity)
   return neighbors;
 }
 
+/// @brief Sum the Euclidean length of a grid-cell path.
 double grid_path_length(const std::vector<GridCell> &path)
 {
   if (path.size() < 2U)
@@ -281,6 +298,7 @@ double grid_path_length(const std::vector<GridCell> &path)
   return total_length;
 }
 
+/// @brief Run a local A* search over an occupancy grid.
 bool plan_on_grid(
   const std::vector<int8_t> &occupancy_grid,
   int width,
@@ -435,6 +453,7 @@ bool plan_on_grid(
 
 }  // namespace
 
+/// @copydoc LocalPlanner::LocalPlanner
 LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("local_planner", options),
   command_topic_("/motion_command"),
@@ -608,6 +627,7 @@ LocalPlanner::LocalPlanner(const rclcpp::NodeOptions &options)
     this->dynamic_obstacle_clear_confirm_cycles_);
 }
 
+/// @copydoc LocalPlanner::on_configure
 LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -786,6 +806,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_configure(const rclcpp_lifecycle::
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc LocalPlanner::on_activate
 LocalPlanner::CallbackReturn LocalPlanner::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -796,6 +817,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_activate(const rclcpp_lifecycle::S
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc LocalPlanner::on_deactivate
 LocalPlanner::CallbackReturn LocalPlanner::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -815,6 +837,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_deactivate(const rclcpp_lifecycle:
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc LocalPlanner::on_cleanup
 LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -844,6 +867,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_cleanup(const rclcpp_lifecycle::St
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc LocalPlanner::on_shutdown
 LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -873,6 +897,7 @@ LocalPlanner::CallbackReturn LocalPlanner::on_shutdown(const rclcpp_lifecycle::S
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc LocalPlanner::handle_motion_command
 void LocalPlanner::handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message)
 {
   if (message->command_id != this->last_command_id_)
@@ -889,6 +914,7 @@ void LocalPlanner::handle_motion_command(const amr_msgs::msg::MotionCommand::Sha
   this->publish_local_plan();
 }
 
+/// @copydoc LocalPlanner::handle_map
 void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr message)
 {
   const auto width = static_cast<std::size_t>(message->info.width);
@@ -930,12 +956,14 @@ void LocalPlanner::handle_map(const nav_msgs::msg::OccupancyGrid::SharedPtr mess
     message->info.resolution);
 }
 
+/// @copydoc LocalPlanner::handle_global_plan
 void LocalPlanner::handle_global_plan(const nav_msgs::msg::Path::SharedPtr message)
 {
   this->latest_global_plan_ = *message;
   this->has_global_plan_ = true;
 }
 
+/// @copydoc LocalPlanner::update_current_pose_from_tf
 bool LocalPlanner::update_current_pose_from_tf()
 {
   if (!this->tf_buffer_)
@@ -974,6 +1002,7 @@ bool LocalPlanner::update_current_pose_from_tf()
   }
 }
 
+/// @copydoc LocalPlanner::handle_plan_local_escape
 void LocalPlanner::handle_plan_local_escape(
   const std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Request> request,
   std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response)
@@ -1017,6 +1046,7 @@ void LocalPlanner::handle_plan_local_escape(
   response->message = "local_escape_plan_ready";
 }
 
+/// @copydoc LocalPlanner::publish_local_plan
 void LocalPlanner::publish_local_plan()
 {
   this->update_current_pose_from_tf();
@@ -1174,6 +1204,7 @@ void LocalPlanner::publish_local_plan()
   }
 }
 
+/// @copydoc LocalPlanner::build_local_plan
 LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   const amr_msgs::msg::MotionCommand &command,
   const geometry_msgs::msg::PoseStamped &current_pose)
@@ -1423,6 +1454,7 @@ LocalPlanner::LocalPlanBuildResult LocalPlanner::build_local_plan(
   return result;
 }
 
+/// @copydoc LocalPlanner::build_inflated_local_plan
 nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   const nav_msgs::msg::Path &source_plan,
   const geometry_msgs::msg::PoseStamped &current_pose,
@@ -1671,6 +1703,7 @@ nav_msgs::msg::Path LocalPlanner::build_inflated_local_plan(
   return local_plan;
 }
 
+/// @copydoc LocalPlanner::find_first_blocked_pose_on_plan
 bool LocalPlanner::find_first_blocked_pose_on_plan(
   const nav_msgs::msg::Path &plan,
   geometry_msgs::msg::PoseStamped &blocked_pose) const
@@ -1704,6 +1737,7 @@ bool LocalPlanner::find_first_blocked_pose_on_plan(
   return false;
 }
 
+/// @copydoc LocalPlanner::reset_dynamic_blocked_state
 void LocalPlanner::reset_dynamic_blocked_state()
 {
   this->dynamic_blocked_decision_ = amr_msgs::msg::LocalPlanStatus::DECISION_OK;
@@ -1711,6 +1745,7 @@ void LocalPlanner::reset_dynamic_blocked_state()
   this->dynamic_clear_streak_ = 0;
 }
 
+/// @copydoc LocalPlanner::confirm_dynamic_recovery_decision
 bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision, double blocked_distance)
 {
   if (decision == amr_msgs::msg::LocalPlanStatus::DECISION_OK)
@@ -1733,6 +1768,7 @@ bool LocalPlanner::confirm_dynamic_recovery_decision(uint8_t decision, double bl
   return this->dynamic_blocked_streak_ >= required_cycles;
 }
 
+/// @copydoc LocalPlanner::confirm_dynamic_clear
 bool LocalPlanner::confirm_dynamic_clear()
 {
   if (this->dynamic_blocked_decision_ == amr_msgs::msg::LocalPlanStatus::DECISION_OK)
@@ -1751,6 +1787,7 @@ bool LocalPlanner::confirm_dynamic_clear()
   return true;
 }
 
+/// @copydoc LocalPlanner::required_dynamic_recovery_cycles
 int LocalPlanner::required_dynamic_recovery_cycles(uint8_t decision, double blocked_distance) const
 {
   if (decision == amr_msgs::msg::LocalPlanStatus::DECISION_GOAL_PROXIMITY_BLOCKED)
@@ -1768,6 +1805,7 @@ int LocalPlanner::required_dynamic_recovery_cycles(uint8_t decision, double bloc
   return std::max(1, this->dynamic_obstacle_recovery_confirm_cycles_);
 }
 
+/// @copydoc LocalPlanner::sample_lateral_occupancy
 double LocalPlanner::sample_lateral_occupancy(
   double origin_x,
   double origin_y,
@@ -1825,6 +1863,7 @@ double LocalPlanner::sample_lateral_occupancy(
   return score;
 }
 
+/// @copydoc LocalPlanner::build_sliced_local_plan
 nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan(
   const nav_msgs::msg::Path &source_plan,
   const geometry_msgs::msg::PoseStamped &current_pose,
@@ -1837,6 +1876,7 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan(
     this->lookahead_distance_);
 }
 
+/// @copydoc LocalPlanner::build_sliced_local_plan_with_lookahead
 nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
   const nav_msgs::msg::Path &source_plan,
   const geometry_msgs::msg::PoseStamped &current_pose,
@@ -1907,6 +1947,7 @@ nav_msgs::msg::Path LocalPlanner::build_sliced_local_plan_with_lookahead(
   return local_plan;
 }
 
+/// @copydoc LocalPlanner::build_fallback_local_plan
 nav_msgs::msg::Path LocalPlanner::build_fallback_local_plan(
   const nav_msgs::msg::Path &source_plan,
   const geometry_msgs::msg::PoseStamped &current_pose,
@@ -1992,6 +2033,7 @@ nav_msgs::msg::Path LocalPlanner::build_fallback_local_plan(
   return fallback_plan;
 }
 
+/// @copydoc LocalPlanner::is_degenerate_local_path
 bool LocalPlanner::is_degenerate_local_path(
   const nav_msgs::msg::Path &plan,
   const std::size_t global_path_points,
@@ -2022,6 +2064,7 @@ bool LocalPlanner::is_degenerate_local_path(
   return this->estimate_path_length(plan) < std::max(0.0, this->local_path_guard_min_length_m_);
 }
 
+/// @copydoc LocalPlanner::refine_local_plan
 nav_msgs::msg::Path LocalPlanner::refine_local_plan(
   const nav_msgs::msg::Path &plan,
   LocalPathQualityMetrics *quality_metrics) const
@@ -2124,6 +2167,7 @@ nav_msgs::msg::Path LocalPlanner::refine_local_plan(
   return refined_plan;
 }
 
+/// @copydoc LocalPlanner::simplify_path_line_of_sight
 nav_msgs::msg::Path LocalPlanner::simplify_path_line_of_sight(
   const nav_msgs::msg::Path &plan,
   bool &line_of_sight_simplified) const
@@ -2173,6 +2217,7 @@ nav_msgs::msg::Path LocalPlanner::simplify_path_line_of_sight(
   return simplified_plan;
 }
 
+/// @copydoc LocalPlanner::prune_collinear_path
 nav_msgs::msg::Path LocalPlanner::prune_collinear_path(
   const nav_msgs::msg::Path &plan,
   int &collinear_pruned_count) const
@@ -2252,6 +2297,7 @@ nav_msgs::msg::Path LocalPlanner::prune_collinear_path(
   return pruned_plan;
 }
 
+/// @copydoc LocalPlanner::prune_and_interpolate_path
 nav_msgs::msg::Path LocalPlanner::prune_and_interpolate_path(const nav_msgs::msg::Path &plan) const
 {
   nav_msgs::msg::Path refined_plan;
@@ -2299,11 +2345,13 @@ nav_msgs::msg::Path LocalPlanner::prune_and_interpolate_path(const nav_msgs::msg
   return refined_plan;
 }
 
+/// @copydoc LocalPlanner::apply_path_smoother
 nav_msgs::msg::Path LocalPlanner::apply_path_smoother(const nav_msgs::msg::Path &plan) const
 {
   return this->smooth_path_corners(plan);
 }
 
+/// @copydoc LocalPlanner::smooth_path_corners
 nav_msgs::msg::Path LocalPlanner::smooth_path_corners(const nav_msgs::msg::Path &plan) const
 {
   if (plan.poses.size() < 3U)
@@ -2396,6 +2444,7 @@ nav_msgs::msg::Path LocalPlanner::smooth_path_corners(const nav_msgs::msg::Path 
   return smoothed_plan;
 }
 
+/// @copydoc LocalPlanner::is_smoothed_path_acceptable
 bool LocalPlanner::is_smoothed_path_acceptable(
   const nav_msgs::msg::Path &base_plan,
   const nav_msgs::msg::Path &smoothed_plan) const
@@ -2452,6 +2501,7 @@ bool LocalPlanner::is_smoothed_path_acceptable(
   return true;
 }
 
+/// @copydoc LocalPlanner::estimate_path_length
 double LocalPlanner::estimate_path_length(const nav_msgs::msg::Path &plan) const
 {
   double total_distance = 0.0;
@@ -2468,6 +2518,7 @@ double LocalPlanner::estimate_path_length(const nav_msgs::msg::Path &plan) const
   return total_distance;
 }
 
+/// @copydoc LocalPlanner::estimate_pose_distance_to_path
 double LocalPlanner::estimate_pose_distance_to_path(
   const geometry_msgs::msg::PoseStamped &pose,
   const nav_msgs::msg::Path &path) const
@@ -2518,6 +2569,7 @@ double LocalPlanner::estimate_pose_distance_to_path(
   return min_distance;
 }
 
+/// @copydoc LocalPlanner::estimate_path_curvature_score
 double LocalPlanner::estimate_path_curvature_score(const nav_msgs::msg::Path &path) const
 {
   if (path.poses.size() < 2U)
@@ -2556,6 +2608,7 @@ double LocalPlanner::estimate_path_curvature_score(const nav_msgs::msg::Path &pa
   return max_heading_delta;
 }
 
+/// @copydoc LocalPlanner::estimate_path_lateral_error
 double LocalPlanner::estimate_path_lateral_error(const nav_msgs::msg::Path &path) const
 {
   if (path.poses.size() < 3U)
@@ -2586,6 +2639,7 @@ double LocalPlanner::estimate_path_lateral_error(const nav_msgs::msg::Path &path
   return max_lateral_error;
 }
 
+/// @copydoc LocalPlanner::is_path_segment_collision_free
 bool LocalPlanner::is_path_segment_collision_free(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal,
@@ -2638,6 +2692,7 @@ bool LocalPlanner::is_path_segment_collision_free(
   return true;
 }
 
+/// @copydoc LocalPlanner::is_path_collision_free
 bool LocalPlanner::is_path_collision_free(const nav_msgs::msg::Path &plan) const
 {
   if (!this->has_map_ || !this->map_occupancy_grid_ || this->map_occupancy_grid_->data.empty())
@@ -2690,6 +2745,7 @@ bool LocalPlanner::is_path_collision_free(const nav_msgs::msg::Path &plan) const
   return true;
 }
 
+/// @copydoc LocalPlanner::is_pose_collision_free
 bool LocalPlanner::is_pose_collision_free(const geometry_msgs::msg::PoseStamped &pose) const
 {
   int grid_x = 0;
@@ -2708,6 +2764,7 @@ bool LocalPlanner::is_pose_collision_free(const geometry_msgs::msg::PoseStamped 
     yaw_from_quaternion(pose.pose.orientation));
 }
 
+/// @copydoc LocalPlanner::assign_path_headings
 void LocalPlanner::assign_path_headings(nav_msgs::msg::Path &plan) const
 {
   if (plan.poses.size() < 2U)
@@ -2740,6 +2797,7 @@ void LocalPlanner::assign_path_headings(nav_msgs::msg::Path &plan) const
   }
 }
 
+/// @copydoc LocalPlanner::yaw_to_quaternion
 geometry_msgs::msg::Quaternion LocalPlanner::yaw_to_quaternion(const double yaw) const
 {
   geometry_msgs::msg::Quaternion quaternion;
@@ -2750,6 +2808,7 @@ geometry_msgs::msg::Quaternion LocalPlanner::yaw_to_quaternion(const double yaw)
   return quaternion;
 }
 
+/// @copydoc LocalPlanner::build_source_plan
 nav_msgs::msg::Path LocalPlanner::build_source_plan(const amr_msgs::msg::MotionCommand &command) const
 {
   nav_msgs::msg::Path source_plan = command.plan;
@@ -2772,6 +2831,7 @@ nav_msgs::msg::Path LocalPlanner::build_source_plan(const amr_msgs::msg::MotionC
   return source_plan;
 }
 
+/// @copydoc LocalPlanner::find_closest_pose_index
 std::size_t LocalPlanner::find_closest_pose_index(
   const nav_msgs::msg::Path &plan,
   const geometry_msgs::msg::PoseStamped &current_pose,
@@ -2799,6 +2859,7 @@ std::size_t LocalPlanner::find_closest_pose_index(
   return closest_index;
 }
 
+/// @copydoc LocalPlanner::world_to_grid
 bool LocalPlanner::world_to_grid(
   const geometry_msgs::msg::Point &point,
   int &grid_x,
@@ -2822,6 +2883,7 @@ bool LocalPlanner::world_to_grid(
     grid_y >= 0 &&grid_y < static_cast<int>(info.height);
 }
 
+/// @copydoc LocalPlanner::grid_to_pose
 geometry_msgs::msg::PoseStamped LocalPlanner::grid_to_pose(
   const int grid_x,
   const int grid_y,
@@ -2841,6 +2903,7 @@ geometry_msgs::msg::PoseStamped LocalPlanner::grid_to_pose(
   return pose;
 }
 
+/// @copydoc LocalPlanner::is_occupied_cell
 bool LocalPlanner::is_occupied_cell(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -2861,6 +2924,7 @@ bool LocalPlanner::is_occupied_cell(
   return value >= this->obstacle_threshold_;
 }
 
+/// @copydoc LocalPlanner::is_grid_pose_collision
 bool LocalPlanner::is_grid_pose_collision(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -2894,6 +2958,7 @@ bool LocalPlanner::is_grid_pose_collision(
     this->allow_unknown_);
 }
 
+/// @copydoc LocalPlanner::find_nearest_free_cell
 bool LocalPlanner::find_nearest_free_cell(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -2973,6 +3038,7 @@ bool LocalPlanner::find_nearest_free_cell(
   return false;
 }
 
+/// @copydoc LocalPlanner::interpolate_pose
 geometry_msgs::msg::PoseStamped LocalPlanner::interpolate_pose(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal,
@@ -2988,6 +3054,7 @@ geometry_msgs::msg::PoseStamped LocalPlanner::interpolate_pose(
   return pose;
 }
 
+/// @copydoc LocalPlanner::pose_distance
 double LocalPlanner::pose_distance(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal) const
@@ -3005,6 +3072,7 @@ namespace amr::motion::controller
 namespace
 {
 
+/// @brief Translate motion command modes into structured log labels.
 const char *motion_mode_label(const uint8_t mode)
 {
   switch (mode)
@@ -3022,21 +3090,25 @@ const char *motion_mode_label(const uint8_t mode)
   }
 }
 
+/// @brief Return a stable true/false label for structured logs.
 const char *bool_label(const bool value)
 {
   return value ? "true" : "false";
 }
 
+/// @brief Return a non-empty frame label for structured logs.
 const char *frame_label(const std::string &frame)
 {
   return frame.empty() ? "none" : frame.c_str();
 }
 
+/// @brief Describe whether steering hysteresis is active in logs.
 const char *steering_hysteresis_label(const bool active)
 {
   return active ? "active" : "suppressed";
 }
 
+/// @brief Return the sign of a velocity with a small deadband around zero.
 int velocity_sign(const double value)
 {
   constexpr double kSignEpsilon = 1e-4;
@@ -3051,6 +3123,7 @@ int velocity_sign(const double value)
   return 0;
 }
 
+/// @brief Convert a seconds duration parameter into a positive throttle period in milliseconds.
 int throttle_ms_from_sec(const double seconds)
 {
   return static_cast<int>(std::max(0.1, seconds) * 1000.0);
@@ -3058,6 +3131,7 @@ int throttle_ms_from_sec(const double seconds)
 
 }  // namespace
 
+/// @copydoc MotionController::MotionController
 MotionController::MotionController(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("motion_controller", options),
   command_topic_("/motion_command"),
@@ -3357,6 +3431,7 @@ MotionController::MotionController(const rclcpp::NodeOptions &options)
   this->declare_parameter("velocity_controller.max_angular_accel", this->max_angular_accel_);
 }
 
+/// @copydoc MotionController::on_configure
 MotionController::CallbackReturn MotionController::on_configure(
   const rclcpp_lifecycle::State &state)
 {
@@ -3633,6 +3708,7 @@ MotionController::CallbackReturn MotionController::on_configure(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc MotionController::on_activate
 MotionController::CallbackReturn MotionController::on_activate(
   const rclcpp_lifecycle::State &state)
 {
@@ -3644,6 +3720,7 @@ MotionController::CallbackReturn MotionController::on_activate(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc MotionController::on_deactivate
 MotionController::CallbackReturn MotionController::on_deactivate(
   const rclcpp_lifecycle::State &state)
 {
@@ -3665,6 +3742,7 @@ MotionController::CallbackReturn MotionController::on_deactivate(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc MotionController::on_cleanup
 MotionController::CallbackReturn MotionController::on_cleanup(
   const rclcpp_lifecycle::State &state)
 {
@@ -3706,6 +3784,7 @@ MotionController::CallbackReturn MotionController::on_cleanup(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc MotionController::on_shutdown
 MotionController::CallbackReturn MotionController::on_shutdown(
   const rclcpp_lifecycle::State &state)
 {
@@ -3747,6 +3826,7 @@ MotionController::CallbackReturn MotionController::on_shutdown(
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc MotionController::handle_motion_command
 void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand::SharedPtr message)
 {
   this->update_current_pose_from_tf();
@@ -3821,6 +3901,7 @@ void MotionController::handle_motion_command(const amr_msgs::msg::MotionCommand:
   }
 }
 
+/// @copydoc MotionController::handle_local_plan
 void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr message)
 {
   this->latest_local_plan_ = *message;
@@ -3862,12 +3943,14 @@ void MotionController::handle_local_plan(const nav_msgs::msg::Path::SharedPtr me
   }
 }
 
+/// @copydoc MotionController::handle_scan
 void MotionController::handle_scan(const sensor_msgs::msg::LaserScan::SharedPtr message)
 {
   this->latest_scan_ = *message;
   this->has_latest_scan_ = true;
 }
 
+/// @copydoc MotionController::update_current_pose_from_tf
 bool MotionController::update_current_pose_from_tf()
 {
   if (!this->tf_buffer_)
@@ -3906,6 +3989,7 @@ bool MotionController::update_current_pose_from_tf()
   }
 }
 
+/// @copydoc MotionController::publish_control
 void MotionController::publish_control()
 {
   if (
@@ -4755,12 +4839,14 @@ void MotionController::publish_control()
   }
 }
 
+/// @copydoc MotionController::reset_velocity_controller_state
 void MotionController::reset_velocity_controller_state()
 {
   this->linear_controller_state_ = AxisControllerState{};
   this->angular_controller_state_ = AxisControllerState{};
 }
 
+/// @copydoc MotionController::reset_progress_checker_state
 void MotionController::reset_progress_checker_state()
 {
   this->progress_reference_pose_ = geometry_msgs::msg::PoseStamped();
@@ -4772,6 +4858,7 @@ void MotionController::reset_progress_checker_state()
   this->has_recovery_reference_ = false;
 }
 
+/// @copydoc MotionController::reset_goal_checker_state
 void MotionController::reset_goal_checker_state()
 {
   this->goal_checker_hold_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
@@ -4781,6 +4868,7 @@ void MotionController::reset_goal_checker_state()
   this->goal_xy_latched_ = false;
 }
 
+/// @copydoc MotionController::reset_status_semantics_state
 void MotionController::reset_status_semantics_state()
 {
   this->latest_command_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
@@ -4791,6 +4879,7 @@ void MotionController::reset_status_semantics_state()
   this->reset_tracking_diagnostics_state();
 }
 
+/// @copydoc MotionController::reset_tracking_diagnostics_state
 void MotionController::reset_tracking_diagnostics_state()
 {
   this->steering_hysteresis_active_ = false;
@@ -4804,6 +4893,7 @@ void MotionController::reset_tracking_diagnostics_state()
   this->output_ang_flip_count_ = 0;
 }
 
+/// @copydoc MotionController::publish_zero_twist
 void MotionController::publish_zero_twist()
 {
   this->current_twist_ = geometry_msgs::msg::Twist();
@@ -4815,6 +4905,7 @@ void MotionController::publish_zero_twist()
   this->cmd_vel_publisher_->publish(this->current_twist_);
 }
 
+/// @copydoc MotionController::ensure_recovery_reference_initialized
 void MotionController::ensure_recovery_reference_initialized()
 {
   if (this->has_recovery_reference_)
@@ -4828,6 +4919,7 @@ void MotionController::ensure_recovery_reference_initialized()
   this->has_recovery_reference_ = true;
 }
 
+/// @copydoc MotionController::reset_rejoin_context_state
 void MotionController::reset_rejoin_context_state()
 {
   this->rejoin_context_active_ = false;
@@ -4836,6 +4928,7 @@ void MotionController::reset_rejoin_context_state()
   this->rejoin_context_start_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
 }
 
+/// @copydoc MotionController::activate_rejoin_context
 void MotionController::activate_rejoin_context()
 {
   this->rejoin_context_active_ = true;
@@ -4844,6 +4937,7 @@ void MotionController::activate_rejoin_context()
   this->rejoin_context_start_time_ = this->now();
 }
 
+/// @copydoc MotionController::update_rejoin_context_state
 void MotionController::update_rejoin_context_state()
 {
   if (!this->rejoin_context_active_)
@@ -4866,6 +4960,7 @@ void MotionController::update_rejoin_context_state()
   }
 }
 
+/// @copydoc MotionController::parse_velocity_control_mode
 MotionController::VelocityControlMode MotionController::parse_velocity_control_mode(
   const std::string &mode) const
 {
@@ -4898,6 +4993,7 @@ MotionController::VelocityControlMode MotionController::parse_velocity_control_m
   return VelocityControlMode::PID;
 }
 
+/// @copydoc MotionController::apply_axis_controller
 double MotionController::apply_axis_controller(
   const double current,
   const double target,
@@ -4968,6 +5064,7 @@ double MotionController::apply_axis_controller(
   return next;
 }
 
+/// @copydoc MotionController::apply_velocity_controller
 geometry_msgs::msg::Twist MotionController::apply_velocity_controller(
   const geometry_msgs::msg::Twist &current,
   const geometry_msgs::msg::Twist &target)
@@ -4994,6 +5091,7 @@ geometry_msgs::msg::Twist MotionController::apply_velocity_controller(
   return controlled;
 }
 
+/// @copydoc MotionController::estimate_remaining_distance
 double MotionController::estimate_remaining_distance(const nav_msgs::msg::Path &path) const
 {
   double distance = 0.0;
@@ -5014,6 +5112,7 @@ double MotionController::estimate_remaining_distance(const nav_msgs::msg::Path &
   return distance;
 }
 
+/// @copydoc MotionController::quaternion_yaw
 double MotionController::quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation) const
 {
   const double siny_cosp =
@@ -5023,6 +5122,7 @@ double MotionController::quaternion_yaw(const geometry_msgs::msg::Quaternion &or
   return std::atan2(siny_cosp, cosy_cosp);
 }
 
+/// @copydoc MotionController::normalize_angle
 double MotionController::normalize_angle(double angle) const
 {
   constexpr double kPi = 3.14159265358979323846;
@@ -5037,6 +5137,7 @@ double MotionController::normalize_angle(double angle) const
   return angle;
 }
 
+/// @copydoc MotionController::clamp
 double MotionController::clamp(
   const double value,
   const double min_value,
@@ -5045,6 +5146,7 @@ double MotionController::clamp(
   return std::max(min_value, std::min(value, max_value));
 }
 
+/// @copydoc MotionController::compute_tracking_lookahead_distance
 double MotionController::compute_tracking_lookahead_distance() const
 {
   double lookahead_distance = std::max(0.0, this->tracking_lookahead_distance_);
@@ -5083,6 +5185,7 @@ double MotionController::compute_tracking_lookahead_distance() const
   return std::max(0.0, lookahead_distance);
 }
 
+/// @copydoc MotionController::compute_pure_pursuit_curvature
 double MotionController::compute_pure_pursuit_curvature(
   const geometry_msgs::msg::PoseStamped &target_pose) const
 {
@@ -5108,6 +5211,7 @@ double MotionController::compute_pure_pursuit_curvature(
   return 2.0 * target_y_robot / lookahead_sq;
 }
 
+/// @copydoc MotionController::apply_curvature_speed_regulation
 double MotionController::apply_curvature_speed_regulation(
   const double linear_speed,
   const double curvature) const
@@ -5139,6 +5243,7 @@ double MotionController::apply_curvature_speed_regulation(
   return std::min(linear_speed, std::max(min_speed, regulated_speed));
 }
 
+/// @copydoc MotionController::apply_approach_speed_regulation
 double MotionController::apply_approach_speed_regulation(const double linear_speed) const
 {
   if (
@@ -5184,6 +5289,7 @@ double MotionController::apply_approach_speed_regulation(const double linear_spe
   return std::min(linear_speed, std::max(min_speed, regulated_speed));
 }
 
+/// @copydoc MotionController::estimate_forward_obstacle_distance
 double MotionController::estimate_forward_obstacle_distance() const
 {
   if (!this->has_latest_scan_ || this->latest_scan_.ranges.empty())
@@ -5224,6 +5330,7 @@ double MotionController::estimate_forward_obstacle_distance() const
   return min_distance;
 }
 
+/// @copydoc MotionController::apply_obstacle_speed_regulation
 double MotionController::apply_obstacle_speed_regulation(const double linear_speed) const
 {
   if (
@@ -5261,6 +5368,7 @@ double MotionController::apply_obstacle_speed_regulation(const double linear_spe
   return std::min(linear_speed, std::max(min_speed, regulated_speed));
 }
 
+/// @copydoc MotionController::is_projected_collision_detected
 bool MotionController::is_projected_collision_detected(
   const geometry_msgs::msg::Twist &cmd) const
 {
@@ -5307,6 +5415,7 @@ bool MotionController::is_projected_collision_detected(
   return false;
 }
 
+/// @copydoc MotionController::assess_straight_segment
 MotionController::StraightSegmentAssessment MotionController::assess_straight_segment(
   const std::size_t start_index,
   const double lookahead_distance) const
@@ -5389,6 +5498,7 @@ MotionController::StraightSegmentAssessment MotionController::assess_straight_se
   return assessment;
 }
 
+/// @copydoc MotionController::select_tracking_target
 geometry_msgs::msg::PoseStamped MotionController::select_tracking_target(
   const double lookahead_distance,
   const bool allow_retained_target)
@@ -5583,6 +5693,7 @@ geometry_msgs::msg::PoseStamped MotionController::select_tracking_target(
     selected_selection_reason);
 }
 
+/// @copydoc MotionController::check_goal
 MotionController::GoalCheckResult MotionController::check_goal(
   const geometry_msgs::msg::PoseStamped &current_pose,
   const geometry_msgs::msg::PoseStamped &goal_pose,
@@ -5645,6 +5756,7 @@ MotionController::GoalCheckResult MotionController::check_goal(
   return result;
 }
 
+/// @copydoc MotionController::is_safety_gate_triggered
 bool MotionController::is_safety_gate_triggered() const
 {
   if (!this->safety_gate_enabled_ || !this->has_latest_scan_)
@@ -5690,6 +5802,7 @@ bool MotionController::is_safety_gate_triggered() const
   return false;
 }
 
+/// @copydoc MotionController::update_blocked_state
 bool MotionController::update_blocked_state(const bool blocked_candidate)
 {
   if (blocked_candidate)
@@ -5718,6 +5831,7 @@ bool MotionController::update_blocked_state(const bool blocked_candidate)
   return this->blocked_latched_;
 }
 
+/// @copydoc MotionController::update_stalled_state
 bool MotionController::update_stalled_state(const bool stalled_candidate)
 {
   if (!stalled_candidate)
@@ -5730,6 +5844,7 @@ bool MotionController::update_stalled_state(const bool stalled_candidate)
   return this->stalled_streak_ >= std::max(1, this->status_stalled_confirm_cycles_);
 }
 
+/// @copydoc MotionController::pose_distance
 double MotionController::pose_distance(
   const geometry_msgs::msg::PoseStamped &start,
   const geometry_msgs::msg::PoseStamped &goal) const
@@ -5744,12 +5859,14 @@ double MotionController::pose_distance(
 namespace amr::controller::server
 {
 
+/// @copydoc ControllerServer::ControllerServer
 ControllerServer::ControllerServer()
 : local_planner_(std::make_shared<amr::planner::local::LocalPlanner>()),
   motion_controller_(std::make_shared<amr::motion::controller::MotionController>())
 {
 }
 
+/// @copydoc ControllerServer::spin
 void ControllerServer::spin()
 {
   rclcpp::executors::SingleThreadedExecutor executor;

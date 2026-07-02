@@ -24,6 +24,7 @@ namespace
 
 using namespace std::chrono_literals;
 
+/// @brief Build a planar quaternion from a yaw angle.
 geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
 {
   geometry_msgs::msg::Quaternion orientation;
@@ -34,6 +35,7 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   return orientation;
 }
 
+/// @brief Parse a whitespace-separated scalar list from URDF attributes.
 QVector<double> parse_scalar_list(const QString &text, int expected_count)
 {
   QVector<double> values;
@@ -53,6 +55,7 @@ QVector<double> parse_scalar_list(const QString &text, int expected_count)
   return values;
 }
 
+/// @brief Extract a 2D origin pose from URDF origin attributes.
 Pose2D parse_origin_attributes(const QXmlStreamAttributes &attributes)
 {
   Pose2D pose;
@@ -70,6 +73,7 @@ Pose2D parse_origin_attributes(const QXmlStreamAttributes &attributes)
   return pose;
 }
 
+/// @brief Parse a URDF visual geometry block into a runtime robot visual.
 bool parse_geometry(
   QXmlStreamReader &reader,
   const QString &frame_id,
@@ -134,6 +138,7 @@ bool parse_geometry(
 
 }  // namespace
 
+/// @copydoc RosWorker::compose_pose
 Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
 {
   Pose2D pose;
@@ -145,16 +150,19 @@ Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
   return pose;
 }
 
+/// @copydoc RosWorker::RosWorker
 RosWorker::RosWorker(QObject *parent)
 : QObject(parent)
 {
 }
 
+/// @copydoc RosWorker::~RosWorker
 RosWorker::~RosWorker()
 {
   stop();
 }
 
+/// @copydoc RosWorker::start
 void RosWorker::start()
 {
   if (running_.exchange(true)) {
@@ -168,6 +176,7 @@ void RosWorker::start()
   Q_EMIT connectionStateChanged("ROS connected");
 }
 
+/// @copydoc RosWorker::stop
 void RosWorker::stop()
 {
   if (!running_.exchange(false)) {
@@ -188,6 +197,7 @@ void RosWorker::stop()
   Q_EMIT connectionStateChanged("ROS stopped");
 }
 
+/// @copydoc RosWorker::configure_ros_interfaces
 void RosWorker::configure_ros_interfaces()
 {
   default_frame_id_ = node_->declare_parameter<std::string>("default_frame_id", default_frame_id_);
@@ -329,6 +339,7 @@ void RosWorker::configure_ros_interfaces()
     rclcpp_action::create_client<NavigateToPoses>(node_, navigate_to_poses_action_);
 }
 
+/// @copydoc RosWorker::handle_tf_message
 void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool is_static)
 {
   auto &storage = is_static ? static_frames_ : dynamic_frames_;
@@ -352,6 +363,7 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool 
   Q_EMIT robotModelChanged(build_robot_visuals());
 }
 
+/// @copydoc RosWorker::build_frame_visuals
 QVector<FrameVisual> RosWorker::build_frame_visuals() const
 {
   QVector<FrameVisual> frames;
@@ -412,6 +424,7 @@ QVector<FrameVisual> RosWorker::build_frame_visuals() const
   return frames;
 }
 
+/// @copydoc RosWorker::update_global_costmap_subscription
 void RosWorker::update_global_costmap_subscription()
 {
   global_costmap_subscription_.reset();
@@ -435,6 +448,7 @@ void RosWorker::update_global_costmap_subscription()
   Q_EMIT eventReceived("Global costmap subscription enabled");
 }
 
+/// @copydoc RosWorker::update_local_costmap_subscription
 void RosWorker::update_local_costmap_subscription()
 {
   local_costmap_subscription_.reset();
@@ -458,6 +472,7 @@ void RosWorker::update_local_costmap_subscription()
   Q_EMIT eventReceived("Local costmap subscription enabled");
 }
 
+/// @copydoc RosWorker::update_scan_subscription
 void RosWorker::update_scan_subscription()
 {
   scan_subscription_.reset();
@@ -473,6 +488,7 @@ void RosWorker::update_scan_subscription()
   Q_EMIT eventReceived("Scan subscription enabled");
 }
 
+/// @copydoc RosWorker::spin
 void RosWorker::spin()
 {
   try {
@@ -482,6 +498,7 @@ void RosWorker::spin()
   }
 }
 
+/// @copydoc RosWorker::convert_grid
 GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid &message) const
 {
   GridMap map;
@@ -504,6 +521,7 @@ GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid &message) con
   return map;
 }
 
+/// @copydoc RosWorker::convert_path
 PathData RosWorker::convert_path(const nav_msgs::msg::Path &message) const
 {
   PathData path;
@@ -514,6 +532,7 @@ PathData RosWorker::convert_path(const nav_msgs::msg::Path &message) const
   return path;
 }
 
+/// @copydoc RosWorker::convert_pose
 Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) const
 {
   Pose2D pose;
@@ -529,6 +548,7 @@ Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) c
   return pose;
 }
 
+/// @copydoc RosWorker::convert_scan
 ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan &message) const
 {
   ScanData scan;
@@ -558,6 +578,7 @@ ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan &message) con
   return scan;
 }
 
+/// @copydoc RosWorker::to_pose_stamped
 geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D &pose) const
 {
   geometry_msgs::msg::PoseStamped stamped;
@@ -570,6 +591,7 @@ geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D &pose) c
   return stamped;
 }
 
+/// @copydoc RosWorker::parse_runtime_summary
 RuntimeSummary RosWorker::parse_runtime_summary(const std::string &payload) const
 {
   RuntimeSummary summary;
@@ -587,6 +609,7 @@ RuntimeSummary RosWorker::parse_runtime_summary(const std::string &payload) cons
   return summary;
 }
 
+/// @copydoc RosWorker::parse_robot_description
 QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &payload)
 {
   robot_joints_.clear();
@@ -687,6 +710,7 @@ QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &paylo
   return visuals;
 }
 
+/// @copydoc RosWorker::build_robot_visuals
 QVector<RobotVisual> RosWorker::build_robot_visuals() const
 {
   QVector<RobotVisual> visuals;
@@ -752,6 +776,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
   return visuals;
 }
 
+/// @copydoc RosWorker::resolve_robot_link_pose
 Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
 {
   const Pose2D tf_pose = resolve_frame_pose(link_frame.toStdString());
@@ -785,6 +810,7 @@ Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
   return resolve(link_frame, 0);
 }
 
+/// @copydoc RosWorker::resolve_frame_pose
 Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
 {
   const auto find_frame = [this](const std::string &child) -> const FrameVisual *{
@@ -825,6 +851,7 @@ Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
   return resolve(child_frame, 0);
 }
 
+/// @copydoc RosWorker::sendSingleGoal
 void RosWorker::sendSingleGoal(const Pose2D &pose)
 {
   if (!node_ || !pose.valid) {
@@ -858,6 +885,7 @@ void RosWorker::sendSingleGoal(const Pose2D &pose)
   Q_EMIT eventReceived("Single goal sent");
 }
 
+/// @copydoc RosWorker::sendRoute
 void RosWorker::sendRoute(const QVector<Pose2D> &route)
 {
   if (!node_ || route.empty()) {
@@ -909,6 +937,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> &route)
     QString("Route sent: %1 waypoint(s)").arg(static_cast<int>(goal.goal_poses.size())));
 }
 
+/// @copydoc RosWorker::publishInitialPose
 void RosWorker::publishInitialPose(const Pose2D &pose)
 {
   if (!node_ || !pose.valid) {
@@ -929,6 +958,7 @@ void RosWorker::publishInitialPose(const Pose2D &pose)
   Q_EMIT eventReceived("Initial pose published");
 }
 
+/// @copydoc RosWorker::cancelNavigation
 void RosWorker::cancelNavigation()
 {
   if (!node_) {
@@ -944,6 +974,7 @@ void RosWorker::cancelNavigation()
   Q_EMIT eventReceived("Cancel requested");
 }
 
+/// @copydoc RosWorker::setGlobalCostmapSubscriptionEnabled
 void RosWorker::setGlobalCostmapSubscriptionEnabled(bool enabled)
 {
   subscribe_global_costmap_ = enabled;
@@ -954,6 +985,7 @@ void RosWorker::setGlobalCostmapSubscriptionEnabled(bool enabled)
   }
 }
 
+/// @copydoc RosWorker::setLocalCostmapSubscriptionEnabled
 void RosWorker::setLocalCostmapSubscriptionEnabled(bool enabled)
 {
   subscribe_local_costmap_ = enabled;
@@ -964,6 +996,7 @@ void RosWorker::setLocalCostmapSubscriptionEnabled(bool enabled)
   }
 }
 
+/// @copydoc RosWorker::setScanSubscriptionEnabled
 void RosWorker::setScanSubscriptionEnabled(bool enabled)
 {
   subscribe_scan_ = enabled;

@@ -13,6 +13,7 @@ namespace
 
 constexpr double kPi = 3.14159265358979323846;
 
+/// @brief Sanitize a string for single-token structured log fields.
 std::string log_value(std::string value)
 {
   if (value.empty()) {
@@ -28,6 +29,7 @@ std::string log_value(std::string value)
 
 }  // namespace
 
+/// @copydoc RecoveryServer::RecoveryServer
 RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
 : rclcpp_lifecycle::LifecycleNode("recovery_server", options),
   plan_recovery_service_name_("/plan_recovery"),
@@ -47,6 +49,7 @@ RecoveryServer::RecoveryServer(const rclcpp::NodeOptions &options)
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
 }
 
+/// @copydoc RecoveryServer::on_configure
 RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -79,6 +82,7 @@ RecoveryServer::CallbackReturn RecoveryServer::on_configure(const rclcpp_lifecyc
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc RecoveryServer::on_activate
 RecoveryServer::CallbackReturn RecoveryServer::on_activate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -86,12 +90,14 @@ RecoveryServer::CallbackReturn RecoveryServer::on_activate(const rclcpp_lifecycl
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc RecoveryServer::on_deactivate
 RecoveryServer::CallbackReturn RecoveryServer::on_deactivate(const rclcpp_lifecycle::State &state)
 {
   (void)state;
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc RecoveryServer::on_cleanup
 RecoveryServer::CallbackReturn RecoveryServer::on_cleanup(const rclcpp_lifecycle::State &state)
 {
   (void)state;
@@ -99,11 +105,13 @@ RecoveryServer::CallbackReturn RecoveryServer::on_cleanup(const rclcpp_lifecycle
   return CallbackReturn::SUCCESS;
 }
 
+/// @copydoc RecoveryServer::on_shutdown
 RecoveryServer::CallbackReturn RecoveryServer::on_shutdown(const rclcpp_lifecycle::State &state)
 {
   return this->on_cleanup(state);
 }
 
+/// @copydoc RecoveryServer::handle_plan_recovery
 void RecoveryServer::handle_plan_recovery(
   const std::shared_ptr<amr_msgs::srv::PlanRecovery::Request> request,
   std::shared_ptr<amr_msgs::srv::PlanRecovery::Response> response)
@@ -164,6 +172,7 @@ void RecoveryServer::handle_plan_recovery(
     log_value(response->message).c_str());
 }
 
+/// @copydoc RecoveryServer::build_backup_command
 amr_msgs::msg::MotionCommand RecoveryServer::build_backup_command(
   const geometry_msgs::msg::PoseStamped &current_pose) const
 {
@@ -183,6 +192,7 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_backup_command(
   return command;
 }
 
+/// @copydoc RecoveryServer::build_spin_command
 amr_msgs::msg::MotionCommand RecoveryServer::build_spin_command(
   const geometry_msgs::msg::PoseStamped &current_pose) const
 {
@@ -202,6 +212,7 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_spin_command(
   return command;
 }
 
+/// @copydoc RecoveryServer::build_wait_command
 amr_msgs::msg::MotionCommand RecoveryServer::build_wait_command(
   const geometry_msgs::msg::PoseStamped &current_pose) const
 {
@@ -218,6 +229,7 @@ amr_msgs::msg::MotionCommand RecoveryServer::build_wait_command(
   return command;
 }
 
+/// @copydoc RecoveryServer::quaternion_yaw
 double RecoveryServer::quaternion_yaw(const geometry_msgs::msg::Quaternion &orientation)
 {
   return std::atan2(
@@ -229,6 +241,7 @@ double RecoveryServer::quaternion_yaw(const geometry_msgs::msg::Quaternion &orie
       orientation.z * orientation.z));
 }
 
+/// @copydoc RecoveryServer::yaw_to_quaternion
 geometry_msgs::msg::Quaternion RecoveryServer::yaw_to_quaternion(const double yaw)
 {
   geometry_msgs::msg::Quaternion orientation;

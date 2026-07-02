@@ -5,6 +5,7 @@
 
 #include "amr_bt_navigator/bt_navigator.hpp"
 
+/// @brief Initialize ROS, spin the behavior-tree navigator node, and shut ROS down.
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);

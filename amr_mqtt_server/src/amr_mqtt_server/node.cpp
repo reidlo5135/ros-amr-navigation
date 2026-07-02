@@ -19,6 +19,7 @@ constexpr uint64_t k_max_processed_mqtt_messages = 8U;
 using NavigateToPoses = amr_msgs::action::NavigateToPoses;
 using GoalHandleNavigateToPoses = rclcpp_action::ClientGoalHandle<NavigateToPoses>;
 
+/// @brief Append printf-formatted text to a JSON payload buffer.
 template<typename... Args>
 void appendf(std::string &out, const char *format, Args... args)
 {
@@ -31,6 +32,7 @@ void appendf(std::string &out, const char *format, Args... args)
   out += buffer;
 }
 
+/// @brief Escape a string as a JSON string literal.
 std::string escape_json(std::string_view text)
 {
   std::string out;
@@ -62,6 +64,7 @@ std::string escape_json(std::string_view text)
   return out;
 }
 
+/// @brief Return monotonic time in milliseconds for MQTT rate limiting.
 uint64_t now_ms()
 {
   struct timespec timestamp;
@@ -72,6 +75,7 @@ uint64_t now_ms()
          (static_cast<uint64_t>(timestamp.tv_nsec) / 1000000ULL);
 }
 
+/// @brief Validate robot IDs accepted in scoped MQTT topics.
 bool is_valid_robot_id(const std::string &robot_id)
 {
   if (robot_id.empty()) {
@@ -89,6 +93,7 @@ bool is_valid_robot_id(const std::string &robot_id)
   return true;
 }
 
+/// @brief Normalize an MQTT root topic to a single leading slash and no trailing slash.
 std::string normalize_root(const std::string &root)
 {
   if (root.empty()) {
@@ -101,6 +106,7 @@ std::string normalize_root(const std::string &root)
   return normalized;
 }
 
+/// @brief Compose a robot-scoped MQTT topic from the root, robot ID, and suffix.
 std::string scoped_topic(
   const std::string &root,
   const std::string &robot_id,
@@ -109,6 +115,7 @@ std::string scoped_topic(
   return normalize_root(root) + "/" + robot_id + "/" + suffix;
 }
 
+/// @brief Convert a raw telemetry topic into its visualization JSON topic.
 std::string build_viz_topic(const std::string &raw_topic)
 {
   const std::string marker = "/telemetry/";
@@ -119,6 +126,7 @@ std::string build_viz_topic(const std::string &raw_topic)
   return raw_topic.substr(0U, position) + "/viz/" + raw_topic.substr(position + marker.size());
 }
 
+/// @brief Extract planar yaw from quaternion components.
 double quaternion_to_yaw(double x, double y, double z, double w)
 {
   const double siny_cosp = 2.0 * ((w * z) + (x * y));
@@ -126,6 +134,7 @@ double quaternion_to_yaw(double x, double y, double z, double w)
   return std::atan2(siny_cosp, cosy_cosp);
 }
 
+/// @brief Build a planar quaternion from a yaw angle.
 geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
 {
   geometry_msgs::msg::Quaternion orientation;
@@ -136,6 +145,7 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
   return orientation;
 }
 
+/// @brief Append a ROS header object to a JSON payload.
 void append_header(std::string &out, const std_msgs::msg::Header &header)
 {
   appendf(
@@ -146,6 +156,7 @@ void append_header(std::string &out, const std_msgs::msg::Header &header)
     escape_json(header.frame_id).c_str());
 }
 
+/// @brief Append a non-empty frame ID field to a JSON payload.
 void append_frame(std::string &out, const std::string &frame_id)
 {
   if (frame_id.empty()) {
@@ -155,6 +166,7 @@ void append_frame(std::string &out, const std::string &frame_id)
   out += escape_json(frame_id);
 }
 
+/// @brief Append position, quaternion, and yaw fields for a pose.
 void append_pose_fields(std::string &out, const geometry_msgs::msg::Pose &pose)
 {
   const double yaw = quaternion_to_yaw(
@@ -176,6 +188,7 @@ void append_pose_fields(std::string &out, const geometry_msgs::msg::Pose &pose)
     yaw);
 }
 
+/// @brief Append a PoseStamped-style object to a JSON payload.
 void append_pose_stamped(std::string &out, const geometry_msgs::msg::PoseStamped &pose)
 {
   out += "{";
@@ -187,6 +200,7 @@ void append_pose_stamped(std::string &out, const geometry_msgs::msg::PoseStamped
   out += "}";
 }
 
+/// @brief Serialize a pose stamped message into visualization JSON.
 std::string serialize_pose_stamped(const geometry_msgs::msg::PoseStamped &pose)
 {
   std::string out;
@@ -195,6 +209,7 @@ std::string serialize_pose_stamped(const geometry_msgs::msg::PoseStamped &pose)
   return out;
 }
 
+/// @brief Serialize a path message into visualization JSON.
 std::string serialize_path(const nav_msgs::msg::Path &path)
 {
   std::string out;
@@ -215,6 +230,7 @@ std::string serialize_path(const nav_msgs::msg::Path &path)
   return out;
 }
 
+/// @brief Serialize an occupancy grid, including metadata and cell data, into JSON.
 std::string serialize_occupancy_grid(const nav_msgs::msg::OccupancyGrid &grid)
 {
   std::string out;
@@ -255,6 +271,7 @@ std::string serialize_occupancy_grid(const nav_msgs::msg::OccupancyGrid &grid)
   return out;
 }
 
+/// @brief Serialize controller motion status into visualization JSON.
 std::string serialize_motion_status(const amr_msgs::msg::MotionStatus &status)
 {
   std::string out;
@@ -289,6 +306,7 @@ std::string serialize_motion_status(const amr_msgs::msg::MotionStatus &status)
   return out;
 }
 
+/// @brief Serialize a laser scan into visualization JSON.
 std::string serialize_scan(const sensor_msgs::msg::LaserScan &scan)
 {
   std::string out;
@@ -322,6 +340,7 @@ std::string serialize_scan(const sensor_msgs::msg::LaserScan &scan)
   return out;
 }
 
+/// @brief Serialize odometry pose and twist fields into visualization JSON.
 std::string serialize_odom(const nav_msgs::msg::Odometry &odom)
 {
   std::string out;
@@ -355,6 +374,7 @@ std::string serialize_odom(const nav_msgs::msg::Odometry &odom)
   return out;
 }
 
+/// @brief Serialize IMU orientation, angular velocity, and acceleration fields into JSON.
 std::string serialize_imu(const sensor_msgs::msg::Imu &imu)
 {
   std::string out;
@@ -382,6 +402,7 @@ std::string serialize_imu(const sensor_msgs::msg::Imu &imu)
   return out;
 }
 
+/// @brief Append an array of doubles to a JSON payload.
 void append_double_array(std::string &out, const std::vector<double> &values)
 {
   out += "[";
@@ -394,6 +415,7 @@ void append_double_array(std::string &out, const std::vector<double> &values)
   out += "]";
 }
 
+/// @brief Append an array of strings to a JSON payload.
 void append_string_array(std::string &out, const std::vector<std::string> &values)
 {
   out += "[";
@@ -406,6 +428,7 @@ void append_string_array(std::string &out, const std::vector<std::string> &value
   out += "]";
 }
 
+/// @brief Serialize joint-state arrays into visualization JSON.
 std::string serialize_joint_states(const sensor_msgs::msg::JointState &joint_states)
 {
   std::string out;
@@ -442,6 +465,7 @@ std::string serialize_joint_states(const sensor_msgs::msg::JointState &joint_sta
   return out;
 }
 
+/// @brief Append a transform stamped object to a JSON payload.
 void append_transform_stamped(std::string &out, const geometry_msgs::msg::TransformStamped &transform)
 {
   const double yaw = quaternion_to_yaw(
@@ -467,6 +491,7 @@ void append_transform_stamped(std::string &out, const geometry_msgs::msg::Transf
     yaw);
 }
 
+/// @brief Serialize a TF message as a JSON transform array.
 std::string serialize_tf_message(const tf2_msgs::msg::TFMessage &tf_message)
 {
   std::string out;
@@ -482,6 +507,7 @@ std::string serialize_tf_message(const tf2_msgs::msg::TFMessage &tf_message)
   return out;
 }
 
+/// @brief Serialize a string message with optional footprint metadata.
 std::string serialize_string_message(
   const std_msgs::msg::String &message,
   const std::vector<double> &footprint_polygon)
@@ -496,11 +522,13 @@ std::string serialize_string_message(
   return out;
 }
 
+/// @brief Forward an existing JSON string payload without re-encoding it.
 std::string serialize_string_json_message(const std_msgs::msg::String &message)
 {
   return message.data;
 }
 
+/// @brief Serialize battery state fields into visualization JSON.
 std::string serialize_battery_state(const sensor_msgs::msg::BatteryState &battery_state)
 {
   std::string out;
@@ -524,6 +552,7 @@ std::string serialize_battery_state(const sensor_msgs::msg::BatteryState &batter
   return out;
 }
 
+/// @brief Convert a ROS action UUID into lowercase hexadecimal text.
 std::string uuid_to_hex(const std::array<uint8_t, 16> &uuid)
 {
   static const char hex_chars[] = "0123456789abcdef";
@@ -536,6 +565,7 @@ std::string uuid_to_hex(const std::array<uint8_t, 16> &uuid)
   return out;
 }
 
+/// @brief Serialize NavigateToPoses feedback into MQTT response JSON.
 std::string serialize_navigation_feedback(
   const std::string &goal_id_hex,
   const NavigateToPoses::Feedback &feedback)
@@ -563,6 +593,7 @@ std::string serialize_navigation_feedback(
   return out;
 }
 
+/// @brief Serialize action status entries into MQTT status JSON.
 std::string serialize_navigation_status(const action_msgs::msg::GoalStatusArray &status_array)
 {
   std::string out = "{\"status_list\":[";
@@ -580,6 +611,7 @@ std::string serialize_navigation_status(const action_msgs::msg::GoalStatusArray 
   return out;
 }
 
+/// @brief Serialize a generic request/response result JSON payload.
 std::string serialize_simple_response(
   const std::string &request_id,
   bool success,
@@ -593,6 +625,7 @@ std::string serialize_simple_response(
   return out;
 }
 
+/// @brief Serialize a ping response with bridge timing metadata.
 std::string serialize_ping_response(
   const std::string &request_id,
   bool success,
@@ -613,6 +646,7 @@ std::string serialize_ping_response(
   return out;
 }
 
+/// @brief Serialize a NavigateToPoses result into MQTT response JSON.
 std::string serialize_navigation_result(
   const std::string &request_id,
   bool success,
@@ -638,6 +672,7 @@ std::string serialize_navigation_result(
   return out;
 }
 
+/// @brief Advance a JSON cursor past whitespace.
 const char *skip_ws(const char *cursor, const char *end)
 {
   while (cursor < end && std::isspace(static_cast<unsigned char>(*cursor))) {
@@ -646,6 +681,7 @@ const char *skip_ws(const char *cursor, const char *end)
   return cursor;
 }
 
+/// @brief Find a named JSON object key inside a character range.
 const char *find_key(const char *begin, const char *end, const char *key)
 {
   std::string pattern = "\"";
@@ -659,6 +695,7 @@ const char *find_key(const char *begin, const char *end, const char *key)
   return nullptr;
 }
 
+/// @brief Extract a string value for a JSON key within a character range.
 bool extract_json_string_in_range(
   const char *begin,
   const char *end,
@@ -689,6 +726,7 @@ bool extract_json_string_in_range(
   return cursor < end;
 }
 
+/// @brief Extract a double value for a JSON key within a character range.
 bool extract_json_double_in_range(
   const char *begin,
   const char *end,
@@ -709,6 +747,7 @@ bool extract_json_double_in_range(
   return parsed_end != cursor;
 }
 
+/// @brief Extract the bounds of a nested JSON object for a key.
 bool extract_json_object_in_range(
   const char *begin,
   const char *end,
@@ -745,6 +784,7 @@ bool extract_json_object_in_range(
   return false;
 }
 
+/// @brief Extract the bounds of a nested JSON array for a key.
 bool extract_json_array_in_range(
   const char *begin,
   const char *end,
@@ -781,6 +821,7 @@ bool extract_json_array_in_range(
   return false;
 }
 
+/// @brief Parse a PoseStamped object from a JSON character range.
 bool parse_pose_stamped_in_range(
   const char *begin,
   const char *end,
@@ -850,6 +891,7 @@ bool parse_pose_stamped_in_range(
   return true;
 }
 
+/// @brief Parse a JSON waypoint array into pose stamped messages.
 bool parse_waypoints_array(
   const char *begin,
   const char *end,
@@ -896,6 +938,7 @@ bool parse_waypoints_array(
   return true;
 }
 
+/// @brief Deserialize a raw CDR Twist payload from MQTT.
 bool deserialize_twist_raw(
   const void *payload,
   size_t payload_length,
@@ -914,6 +957,7 @@ bool deserialize_twist_raw(
   }
 }
 
+/// @brief Parse a JSON twist command into a ROS Twist message.
 bool extract_twist_from_json(const std::string &payload, geometry_msgs::msg::Twist &twist)
 {
   const char *begin = payload.c_str();
@@ -944,6 +988,7 @@ bool extract_twist_from_json(const std::string &payload, geometry_msgs::msg::Twi
   return true;
 }
 
+/// @brief Ensure a directory path exists before writing map files.
 bool ensure_directory_exists(const std::string &path)
 {
   if (path.empty()) {
@@ -964,6 +1009,7 @@ bool ensure_directory_exists(const std::string &path)
   return (::mkdir(buffer.c_str(), 0775) == 0 || errno == EEXIST);
 }
 
+/// @brief Validate a map basename used for saved map artifacts.
 bool is_valid_map_basename(const std::string &basename)
 {
   if (basename.empty()) {
@@ -981,6 +1027,7 @@ bool is_valid_map_basename(const std::string &basename)
   return true;
 }
 
+/// @brief Write temporary occupancy-grid data as PGM and YAML map files.
 bool write_temp_map_files(
   const nav_msgs::msg::OccupancyGrid &map,
   const std::string &directory,
@@ -1040,6 +1087,7 @@ bool write_temp_map_files(
   return true;
 }
 
+/// @brief Convert action result codes into the bridge's numeric status values.
 int wrapped_result_status(rclcpp_action::ResultCode code)
 {
   switch (code) {
@@ -1053,6 +1101,7 @@ int wrapped_result_status(rclcpp_action::ResultCode code)
   }
 }
 
+/// @brief Serialize a ROS message into its raw CDR byte representation.
 template<typename MsgT>
 std::vector<uint8_t> serialize_raw_message(const MsgT &message)
 {
@@ -1179,6 +1228,7 @@ private:
   template<typename MsgT>
   using JsonSerializer = std::function<std::string(const MsgT &)>;
 
+  /// @brief Load ROS, MQTT, broker, and bridge parameters from the node.
   void load_parameters()
   {
     this->get_parameter_or("broker.host", broker_.host, broker_.host);
@@ -1227,6 +1277,7 @@ private:
     this->get_parameter_or("footprint.polygon", footprint_polygon_, footprint_polygon_);
   }
 
+  /// @brief Rebuild all scoped MQTT topics after root or robot ID changes.
   void rebuild_mqtt_topics()
   {
     mqtt_.root = normalize_root(mqtt_.root);
@@ -1281,6 +1332,7 @@ private:
     broker_.client_id = broker_.client_id_prefix + "_" + mqtt_.robot_id;
   }
 
+  /// @brief Create ROS publishers, subscribers, service clients, and action clients.
   void init_ros_interfaces()
   {
     cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(ros_.topic_cmd_vel, 10);
@@ -1566,6 +1618,7 @@ private:
       mqtt_.robot_id.c_str());
   }
 
+  /// @brief Register a ROS telemetry endpoint and bridge it to MQTT payloads.
   template<typename MsgT>
   void add_endpoint(
     const std::string &label,
@@ -1639,6 +1692,7 @@ private:
     subscriptions_.push_back(subscription);
   }
 
+  /// @brief Establish a new MQTT client connection and subscribe to command topics.
   void connect_mqtt()
   {
     disconnect_mqtt();
@@ -1680,6 +1734,7 @@ private:
     subscribe_command_topics();
   }
 
+  /// @brief Disconnect and destroy the current MQTT client if present.
   void disconnect_mqtt()
   {
     if (mqtt_client_ != nullptr) {
@@ -1692,6 +1747,7 @@ private:
     connected_ = false;
   }
 
+  /// @brief Reconnect to the MQTT broker when the client is unavailable.
   bool ensure_connected()
   {
     if (mqtt_client_ == nullptr) {
@@ -1726,6 +1782,7 @@ private:
     return true;
   }
 
+  /// @brief Subscribe the connected MQTT client to all command and request topics.
   void subscribe_command_topics()
   {
     if (mqtt_client_ == nullptr) {
@@ -1747,6 +1804,7 @@ private:
     }
   }
 
+  /// @brief Publish a UTF-8 payload to MQTT with the requested QoS and retain flag.
   void publish_payload(const std::string &topic, const std::string &payload, int qos, bool retained)
   {
     if (!ensure_connected()) {
@@ -1766,6 +1824,7 @@ private:
     (void)MQTTClient_waitForCompletion(mqtt_client_, token, 1000L);
   }
 
+  /// @brief Publish a binary payload to MQTT with the requested QoS and retain flag.
   void publish_binary_payload(
     const std::string &topic,
     const std::vector<uint8_t> &payload,
@@ -1789,6 +1848,7 @@ private:
     (void)MQTTClient_waitForCompletion(mqtt_client_, token, 1000L);
   }
 
+  /// @brief Publish a standard JSON response on a service response topic.
   void publish_simple_response(
     const std::string &topic,
     const std::string &request_id,
@@ -1798,6 +1858,7 @@ private:
     publish_payload(topic, serialize_simple_response(request_id, success, message), mqtt_.service_qos, false);
   }
 
+  /// @brief Publish the final navigation result for an MQTT navigation request.
   void publish_navigation_result(
     const std::string &request_id,
     bool success,
@@ -1821,6 +1882,7 @@ private:
       false);
   }
 
+  /// @brief Decode and forward an MQTT velocity command to ROS cmd_vel.
   void handle_cmd_vel_message(const void *payload, size_t payload_length)
   {
     geometry_msgs::msg::Twist twist;
@@ -1835,6 +1897,7 @@ private:
     cmd_vel_publisher_->publish(twist);
   }
 
+  /// @brief Parse and publish an initial pose command from MQTT JSON.
   void handle_set_initial_pose_command(const std::string &payload)
   {
     std::string request_id;
@@ -1901,6 +1964,7 @@ private:
     publish_simple_response(mqtt_.response_set_initial_pose, request_id, true, "initial pose published");
   }
 
+  /// @brief Save the latest temporary map using an MQTT save-map command.
   void handle_save_map_command(const std::string &payload)
   {
     std::string request_id;
@@ -1924,6 +1988,7 @@ private:
     publish_simple_response(mqtt_.response_save_map, request_id, true, "saved map files");
   }
 
+  /// @brief Forward an MQTT plan-segment request to the ROS service.
   void handle_plan_segment_request(const std::string &payload)
   {
     std::string request_id;
@@ -1951,6 +2016,7 @@ private:
     publish_simple_response(mqtt_.response_plan_segment, request_id, true, "plan_segment request dispatched");
   }
 
+  /// @brief Forward an MQTT plan-route request to the ROS service.
   void handle_plan_route_request(const std::string &payload)
   {
     std::string request_id;
@@ -1978,6 +2044,7 @@ private:
     publish_simple_response(mqtt_.response_plan_route, request_id, true, "plan_route request dispatched");
   }
 
+  /// @brief Start a NavigateToPoses action goal from an MQTT command payload.
   void handle_navigation_command(const std::string &payload)
   {
     std::string request_id;
@@ -2062,6 +2129,7 @@ private:
     (void)navigate_client_->async_send_goal(goal, options);
   }
 
+  /// @brief Cancel the active NavigateToPoses action goal from MQTT.
   void handle_navigation_cancel(const std::string &payload)
   {
     std::string request_id;
@@ -2074,6 +2142,7 @@ private:
     publish_simple_response(mqtt_.response_navigate_to_poses, request_id, true, "goal cancel dispatched");
   }
 
+  /// @brief Reply to an MQTT bridge ping command.
   void handle_ping(const std::string &payload)
   {
     std::string request_id;
@@ -2089,6 +2158,7 @@ private:
       false);
   }
 
+  /// @brief Schedule a robot ID change requested over MQTT.
   void handle_set_robot_id(const std::string &payload)
   {
     std::string request_id;
@@ -2111,6 +2181,7 @@ private:
     publish_simple_response(mqtt_.response_set_robot_id, request_id, true, "robot_id change scheduled");
   }
 
+  /// @brief Apply a pending robot ID change and reconnect with rebuilt topics.
   void apply_pending_robot_id_change()
   {
     if (!robot_id_change_pending_) {
@@ -2137,6 +2208,7 @@ private:
     pending_robot_id_.clear();
   }
 
+  /// @brief Drain queued MQTT command messages during the timer callback.
   void poll_mqtt()
   {
     if (!ensure_connected()) {
@@ -2224,6 +2296,7 @@ public:
   virtual ~MqttServerNode();
 };
 
+/// @brief Construct the MQTT bridge node and start polling timers.
 MqttServerNode::MqttServerNode()
 : rclcpp::Node(
     "mqtt_server",
@@ -2237,6 +2310,7 @@ MqttServerNode::MqttServerNode()
   robot_id_timer_ = this->create_wall_timer(200ms, std::bind(&MqttServerNode::apply_pending_robot_id_change, this));
 }
 
+/// @brief Disconnect the MQTT client before node destruction.
 MqttServerNode::~MqttServerNode()
 {
   disconnect_mqtt();
@@ -2244,6 +2318,7 @@ MqttServerNode::~MqttServerNode()
 
 }  // namespace
 
+/// @copydoc make_node
 std::shared_ptr<rclcpp::Node> make_node()
 {
   return std::make_shared<MqttServerNode>();

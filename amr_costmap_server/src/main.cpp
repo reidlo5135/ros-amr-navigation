@@ -5,6 +5,7 @@
 
 #include "amr_costmap_server/costmap_server.hpp"
 
+/// @brief Initialize ROS, spin the costmap server node, and shut ROS down.
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);

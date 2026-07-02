@@ -5,6 +5,7 @@
 
 #include "amr_controller_server/controller_server.hpp"
 
+/// @brief Initialize ROS, spin the combined controller server, and shut ROS down.
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);

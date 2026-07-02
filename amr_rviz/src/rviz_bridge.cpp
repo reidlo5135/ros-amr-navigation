@@ -211,6 +211,7 @@ private:
 
 }  // namespace
 
+/// @brief Initialize ROS, spin the RViz bridge node, and shut ROS down.
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);

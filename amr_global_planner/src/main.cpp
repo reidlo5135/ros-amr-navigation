@@ -5,6 +5,7 @@
 
 #include "amr_global_planner/planner_server.hpp"
 
+/// @brief Initialize ROS, spin the global planner node, and shut ROS down.
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
