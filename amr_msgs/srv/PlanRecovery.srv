@@ -1,7 +1,15 @@
+# @brief Request a recovery motion command.
+
+# @brief Requested recovery behavior name.
 string behavior
+# @brief Current robot pose.
 geometry_msgs/PoseStamped current_pose
+# @brief Navigation goal pose.
 geometry_msgs/PoseStamped goal_pose
 ---
+# @brief True when a recovery command was generated.
 bool success
+# @brief Human-readable result or failure message.
 string message
+# @brief Generated motion command.
 amr_msgs/MotionCommand command

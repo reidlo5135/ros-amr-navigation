@@ -1,3 +1,7 @@
+"""@file rviz.launch.py
+@brief Launch RViz with the packaged AMR visualization configuration.
+"""
+
 import os
 
 from ament_index_python.packages import get_package_share_directory

@@ -1,6 +1,13 @@
+# @brief Plan a global segment between two poses.
+
+# @brief Segment start pose.
 geometry_msgs/PoseStamped start
+# @brief Segment goal pose.
 geometry_msgs/PoseStamped goal
 ---
+# @brief True when a plan was found.
 bool success
+# @brief Planned path when success is true.
 nav_msgs/Path plan
+# @brief Human-readable result or failure message.
 string message

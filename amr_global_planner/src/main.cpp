@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR global planner node.
+ */
+
 #include "amr_global_planner/planner_server.hpp"
 
 int main(int argc, char **argv)

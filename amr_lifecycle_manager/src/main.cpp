@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR lifecycle manager node.
+ */
+
 #include "amr_lifecycle_manager/lifecycle_manager.hpp"
 
 int main(int argc, char **argv)

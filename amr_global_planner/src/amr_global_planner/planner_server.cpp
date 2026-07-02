@@ -1,3 +1,8 @@
+/**
+ * @file planner_server.cpp
+ * @brief Implementation of the global planner lifecycle node.
+ */
+
 #include "amr_global_planner/planner_server.hpp"
 
 namespace amr::planner::global

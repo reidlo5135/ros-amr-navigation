@@ -1,3 +1,8 @@
+/**
+ * @file a_star.cpp
+ * @brief Implementation of the footprint-aware grid A* planner.
+ */
+
 #include "amr_global_planner/a_star.hpp"
 
 namespace amr::planner::global

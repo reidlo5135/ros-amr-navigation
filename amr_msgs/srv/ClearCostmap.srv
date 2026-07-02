@@ -1,4 +1,9 @@
+# @brief Clear costmap data.
+
+# @brief True to clear only local/dynamic costmap data.
 bool local_only
 ---
+# @brief True when the clear request succeeded.
 bool success
+# @brief Human-readable result message.
 string message

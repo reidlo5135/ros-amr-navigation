@@ -1,3 +1,8 @@
+/**
+ * @file ros_worker.cpp
+ * @brief Implementation of ROS-to-Qt worker subscriptions, actions, and conversions.
+ */
+
 #include "amr_visualization/ros_worker.hpp"
 
 #include <QJsonDocument>

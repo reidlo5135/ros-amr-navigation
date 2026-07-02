@@ -1,3 +1,7 @@
+"""@file amr_mqtt_server.launch.py
+@brief Launch the AMR MQTT bridge node with configurable broker parameters.
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration

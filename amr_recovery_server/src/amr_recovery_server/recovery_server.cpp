@@ -1,3 +1,8 @@
+/**
+ * @file recovery_server.cpp
+ * @brief Implementation of recovery command generation.
+ */
+
 #include "amr_recovery_server/recovery_server.hpp"
 
 namespace amr::recovery::server

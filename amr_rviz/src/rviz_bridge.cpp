@@ -1,3 +1,8 @@
+/**
+ * @file rviz_bridge.cpp
+ * @brief Bridge from RViz goal topics to AMR navigation actions.
+ */
+
 #include <chrono>
 #include <memory>
 #include <string>
@@ -15,12 +20,16 @@ namespace
 
 using namespace std::chrono_literals;
 
+/// @brief Forwards RViz goal topics to AMR NavigateToPose/NavigateToPoses actions.
 class RvizBridge : public rclcpp::Node
 {
 public:
+  /// @brief NavigateToPose action alias.
   using NavigateToPose = amr_msgs::action::NavigateToPose;
+  /// @brief NavigateToPoses action alias.
   using NavigateToPoses = amr_msgs::action::NavigateToPoses;
 
+  /// @brief Construct subscriptions and action clients for RViz goal forwarding.
   RvizBridge()
   : Node("rviz_bridge")
   {
@@ -61,6 +70,7 @@ public:
   }
 
 private:
+  /// @brief Fill missing frame/stamp metadata on a pose stamped message.
   geometry_msgs::msg::PoseStamped normalize_pose(
     const geometry_msgs::msg::PoseStamped &input) const
   {
@@ -74,6 +84,7 @@ private:
     return normalized;
   }
 
+  /// @brief Convert a PoseArray element into a stamped pose with default metadata.
   geometry_msgs::msg::PoseStamped to_pose_stamped(
     const std_msgs::msg::Header &header,
     const geometry_msgs::msg::Pose &pose) const
@@ -89,6 +100,7 @@ private:
     return stamped;
   }
 
+  /// @brief Wait briefly for the selected navigation action server.
   bool wait_for_server(const std::string &name, bool multi_goal)
   {
     const bool available = multi_goal ?
@@ -101,6 +113,7 @@ private:
     return available;
   }
 
+  /// @brief Forward one RViz PoseStamped goal to NavigateToPose.
   void handle_goal(const geometry_msgs::msg::PoseStamped &message)
   {
     if (!wait_for_server(navigate_to_pose_action_, false)) {
@@ -136,6 +149,7 @@ private:
     navigate_to_pose_client_->async_send_goal(goal, options);
   }
 
+  /// @brief Forward an RViz PoseArray route to NavigateToPoses.
   void handle_goals(const geometry_msgs::msg::PoseArray &message)
   {
     if (message.poses.empty()) {

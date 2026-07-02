@@ -1,6 +1,13 @@
+# @brief Plan a route from a start pose through multiple waypoints.
+
+# @brief Route start pose.
 geometry_msgs/PoseStamped start
+# @brief Ordered route waypoints.
 geometry_msgs/PoseStamped[] waypoints
 ---
+# @brief True when all route segments were planned.
 bool success
+# @brief Planned path for each route segment.
 nav_msgs/Path[] plans
+# @brief Human-readable result or failure message.
 string message

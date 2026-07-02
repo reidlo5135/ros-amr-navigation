@@ -1,3 +1,7 @@
+"""@file localization.launch.py
+@brief Deprecated localization launch shim that points users to slam_toolbox navigation.
+"""
+
 from launch import LaunchDescription
 from launch.actions import LogInfo
 

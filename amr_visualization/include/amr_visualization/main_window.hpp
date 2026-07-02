@@ -1,6 +1,11 @@
 #ifndef AMR_VISUALIZATION__MAIN_WINDOW_HPP_
 #define AMR_VISUALIZATION__MAIN_WINDOW_HPP_
 
+/**
+ * @file main_window.hpp
+ * @brief Main Qt window for the AMR operator visualization.
+ */
+
 #include <QLabel>
 #include <QListWidget>
 #include <QMainWindow>
@@ -19,35 +24,54 @@ class QVBoxLayout;
 namespace amr::visualization
 {
 
+/// @brief Top-level operator UI that wires controls, scene rendering, and ROS worker signals.
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
 
 public:
+  /// @brief Construct the main window and initialize UI panels.
   explicit MainWindow(QWidget *parent = nullptr);
+  /// @brief Stop worker resources and destroy the window.
   ~MainWindow() override;
 
 private Q_SLOTS:
+  /// @brief Update the UI label for the current aim pose.
   void updateAimPose(const amr::visualization::Pose2D &pose);
+  /// @brief Update motion status labels and waypoint edit lock state.
   void updateMotionStatus(const amr::visualization::MotionStatusData &status);
+  /// @brief Update runtime summary labels.
   void updateRuntimeSummary(const amr::visualization::RuntimeSummary &summary);
+  /// @brief Refresh the waypoint list widget.
   void updateWaypointList(const QVector<amr::visualization::Pose2D> &waypoints);
+  /// @brief Append one event line to the feedback list.
   void appendEvent(const QString &event);
+  /// @brief Send either a single goal or route based on current waypoints.
   void sendGoal();
 
 private:
+  /// @brief Row widgets associated with one visualization layer checkbox.
   struct LayerCheckRow
   {
+    /// @brief Container row widget.
     QWidget *row{nullptr};
+    /// @brief Checkbox controlling layer visibility.
     QCheckBox *check{nullptr};
   };
 
+  /// @brief Build the command and visualization layer panel.
   QWidget *makeLeftPanel();
+  /// @brief Build the navigation status, events, and joystick panel.
   QWidget *makeRightPanel();
+  /// @brief Build the top status bar.
   QWidget *makeTopBar();
+  /// @brief Build one visualization layer checkbox row.
   LayerCheckRow makeLayerCheckBox(const QString &label, const QString &icon_name, bool checked);
+  /// @brief Append a key/value status row to a panel layout.
   void appendStatusRow(QVBoxLayout *layout, const QString &label, QLabel *value);
+  /// @brief Apply the application stylesheet.
   void applyStyle();
+  /// @brief Enable or disable waypoint editing while navigation is running.
   void setWaypointEditingLocked(bool locked);
 
   std::unique_ptr<RosWorker> ros_worker_;

@@ -1,3 +1,8 @@
+/**
+ * @file operator_state.cpp
+ * @brief Utility implementations for Qt-friendly operator state values.
+ */
+
 #include "amr_visualization/operator_state.hpp"
 
 #include <cmath>

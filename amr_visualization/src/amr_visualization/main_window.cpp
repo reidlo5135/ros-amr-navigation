@@ -1,3 +1,8 @@
+/**
+ * @file main_window.cpp
+ * @brief Implementation of the AMR operator visualization main window.
+ */
+
 #include "amr_visualization/main_window.hpp"
 
 #include <QApplication>

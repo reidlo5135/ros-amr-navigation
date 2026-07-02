@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR controller server process.
+ */
+
 #include "amr_controller_server/controller_server.hpp"
 
 int main(int argc, char **argv)

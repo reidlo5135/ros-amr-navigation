@@ -1,6 +1,13 @@
+# @brief Request a local escape path around a blocked local plan.
+
+# @brief Current robot pose.
 geometry_msgs/PoseStamped current_pose
+# @brief Source plan to escape or rejoin.
 nav_msgs/Path source_plan
 ---
+# @brief True when a local escape plan was found.
 bool success
+# @brief Escape path when success is true.
 nav_msgs/Path plan
+# @brief Human-readable result or failure message.
 string message

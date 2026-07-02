@@ -1,3 +1,8 @@
+/**
+ * @file node.cpp
+ * @brief Implementation of the AMR MQTT bridge and ROS endpoint serialization.
+ */
+
 #include "amr_mqtt_server/node.hpp"
 
 namespace amr::mqtt::server

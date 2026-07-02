@@ -1,3 +1,8 @@
+/**
+ * @file scene_widget.cpp
+ * @brief Implementation of the interactive AMR scene rendering widget.
+ */
+
 #include "amr_visualization/scene_widget.hpp"
 
 #include <QDataStream>

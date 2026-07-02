@@ -1,3 +1,8 @@
+/**
+ * @file costmap_server.cpp
+ * @brief Implementation of global/local AMR costmap generation.
+ */
+
 #include "amr_costmap_server/costmap_server.hpp"
 
 namespace amr::costmap::server

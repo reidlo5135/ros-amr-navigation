@@ -1,3 +1,8 @@
+/**
+ * @file bt_navigator.cpp
+ * @brief Implementation of AMR navigation action orchestration and recovery policy.
+ */
+
 #include "amr_bt_navigator/bt_navigator.hpp"
 
 namespace amr::bt::navigator

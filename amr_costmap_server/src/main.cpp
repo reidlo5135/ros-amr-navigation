@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR costmap server node.
+ */
+
 #include "amr_costmap_server/costmap_server.hpp"
 
 int main(int argc, char **argv)

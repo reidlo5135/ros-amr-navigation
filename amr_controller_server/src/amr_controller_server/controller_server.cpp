@@ -1,3 +1,8 @@
+/**
+ * @file controller_server.cpp
+ * @brief Implementation of local planning, motion control, and combined controller spinning.
+ */
+
 #include "amr_controller_server/controller_server.hpp"
 
 

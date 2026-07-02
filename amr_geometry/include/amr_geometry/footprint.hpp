@@ -1,6 +1,11 @@
 #ifndef AMR_GEOMETRY__FOOTPRINT_HPP_
 #define AMR_GEOMETRY__FOOTPRINT_HPP_
 
+/**
+ * @file footprint.hpp
+ * @brief Inline footprint geometry helpers shared by costmap and planner nodes.
+ */
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -12,14 +17,19 @@
 namespace amr::geometry
 {
 
+/// @brief 2D point expressed in the robot footprint or world frame.
 struct FootprintPoint
 {
+  /// @brief X coordinate in meters.
   double x;
+  /// @brief Y coordinate in meters.
   double y;
 };
 
+/// @brief Ordered polygon describing a robot footprint boundary.
 using FootprintPolygon = std::vector<FootprintPoint>;
 
+/// @brief Convert a flat x/y parameter vector into a footprint polygon.
 inline FootprintPolygon make_footprint_polygon(const std::vector<double> &flat_polygon)
 {
   FootprintPolygon polygon;
@@ -30,6 +40,7 @@ inline FootprintPolygon make_footprint_polygon(const std::vector<double> &flat_p
   return polygon;
 }
 
+/// @brief Compute the maximum distance from the footprint origin to any vertex.
 inline double footprint_circumscribed_radius(const FootprintPolygon &polygon)
 {
   double radius = 0.0;
@@ -39,6 +50,7 @@ inline double footprint_circumscribed_radius(const FootprintPolygon &polygon)
   return radius;
 }
 
+/// @brief Transform a footprint polygon from robot coordinates into world coordinates.
 inline FootprintPolygon transform_footprint(
   const FootprintPolygon &polygon,
   const double pose_x,
@@ -58,6 +70,7 @@ inline FootprintPolygon transform_footprint(
   return transformed;
 }
 
+/// @brief Test whether a 2D point lies inside a polygon using ray casting.
 inline bool point_in_polygon(
   const double x,
   const double y,
@@ -83,6 +96,7 @@ inline bool point_in_polygon(
   return inside;
 }
 
+/// @brief Compute the signed orientation of three points.
 inline double orientation(
   const FootprintPoint &a,
   const FootprintPoint &b,
@@ -91,6 +105,7 @@ inline double orientation(
   return ((b.x - a.x) * (c.y - a.y)) - ((b.y - a.y) * (c.x - a.x));
 }
 
+/// @brief Test whether a point lies on the bounding box of a segment.
 inline bool on_segment(
   const FootprintPoint &a,
   const FootprintPoint &b,
@@ -103,6 +118,7 @@ inline bool on_segment(
     p.y <= std::max(a.y, b.y) + 1e-9;
 }
 
+/// @brief Test whether two line segments intersect, including collinear overlap.
 inline bool segments_intersect(
   const FootprintPoint &p1,
   const FootprintPoint &q1,
@@ -134,6 +150,7 @@ inline bool segments_intersect(
   return false;
 }
 
+/// @brief Test whether a polygon overlaps an axis-aligned grid cell.
 inline bool polygon_intersects_cell(
   const FootprintPolygon &polygon,
   const double cell_min_x,
@@ -181,6 +198,7 @@ inline bool polygon_intersects_cell(
   return false;
 }
 
+/// @brief Test whether a world-frame polygon collides with occupied grid cells.
 inline bool polygon_collides_with_grid(
   const std::vector<int8_t> &occupancy_grid,
   const int width,
@@ -242,6 +260,7 @@ inline bool polygon_collides_with_grid(
   return false;
 }
 
+/// @brief Transform a robot footprint pose and test it against an occupancy grid.
 inline bool footprint_pose_collides(
   const std::vector<int8_t> &occupancy_grid,
   const int width,

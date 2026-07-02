@@ -1,16 +1,29 @@
+# @brief Navigate to a single stamped goal pose.
 geometry_msgs/PoseStamped goal_pose
 ---
+# @brief No action error.
 uint16 NONE=0
+# @brief Unknown action error.
 uint16 UNKNOWN=9000
+# @brief Behavior tree could not be loaded.
 uint16 FAILED_TO_LOAD_BEHAVIOR_TREE=9001
+# @brief Required TF lookup failed.
 uint16 TF_ERROR=9002
+# @brief Navigation timed out.
 uint16 TIMEOUT=9003
 
+# @brief Result error code.
 uint16 error_code
+# @brief Human-readable result or error message.
 string error_msg
 ---
+# @brief Current robot pose.
 geometry_msgs/PoseStamped current_pose
+# @brief Elapsed navigation time.
 builtin_interfaces/Duration navigation_time
+# @brief Estimated time remaining.
 builtin_interfaces/Duration estimated_time_remaining
+# @brief Number of recovery behaviors executed.
 int16 number_of_recoveries
+# @brief Remaining distance in meters.
 float32 distance_remaining

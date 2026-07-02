@@ -1,3 +1,7 @@
+"""@file navigation.launch.py
+@brief Launch the AMR navigation stack and optional MQTT bridge.
+"""
+
 import os
 
 from ament_index_python.packages import get_package_share_directory

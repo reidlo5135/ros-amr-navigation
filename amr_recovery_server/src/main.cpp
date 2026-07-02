@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR recovery server node.
+ */
+
 #include "amr_recovery_server/recovery_server.hpp"
 
 int main(int argc, char **argv)

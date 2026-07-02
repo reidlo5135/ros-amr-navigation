@@ -1,3 +1,8 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR behavior-tree navigator node.
+ */
+
 #include "amr_bt_navigator/bt_navigator.hpp"
 
 int main(int argc, char **argv)

@@ -1,6 +1,11 @@
 #include <QApplication>
 #include <QIcon>
 
+/**
+ * @file main.cpp
+ * @brief Entry point for the AMR Qt visualization application.
+ */
+
 #include "amr_visualization/main_window.hpp"
 #include "rclcpp/rclcpp.hpp"
 

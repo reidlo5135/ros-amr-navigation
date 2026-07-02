@@ -1,6 +1,11 @@
 #ifndef AMR_MQTT_SERVER__NODE_HPP_
 #define AMR_MQTT_SERVER__NODE_HPP_
 
+/**
+ * @file node.hpp
+ * @brief Factory for the AMR MQTT bridge node.
+ */
+
 #include <MQTTClient.h>
 
 #include <action_msgs/msg/goal_status_array.hpp>
@@ -46,6 +51,7 @@
 
 namespace amr::mqtt::server
 {
+    /// @brief Create the MQTT bridge ROS node with all configured endpoints.
     std::shared_ptr<rclcpp::Node> make_node();
 }
 

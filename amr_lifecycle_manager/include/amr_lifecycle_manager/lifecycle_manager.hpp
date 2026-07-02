@@ -1,6 +1,11 @@
 #ifndef AMR_LIFECYCLE_MANAGER__LIFECYCLE_MANAGER_HPP_
 #define AMR_LIFECYCLE_MANAGER__LIFECYCLE_MANAGER_HPP_
 
+/**
+ * @file lifecycle_manager.hpp
+ * @brief Startup coordinator for AMR lifecycle-managed navigation nodes.
+ */
+
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -18,30 +23,42 @@
 namespace amr::lifecycle::manager
 {
 
+/// @brief Drives configured lifecycle nodes through configure and activate transitions.
 class LifecycleManager : public rclcpp::Node
 {
 public:
+  /// @brief Construct the lifecycle manager and optionally start autostart bringup.
   explicit LifecycleManager(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
+  /// @brief Request bringup-thread shutdown and destroy the manager.
   virtual ~LifecycleManager() override;
 
 private:
+  /// @brief Service clients associated with one managed lifecycle node.
   struct ManagedNode
   {
+    /// @brief Fully qualified node name.
     std::string name;
+    /// @brief Client used to query the lifecycle state.
     rclcpp::Client<lifecycle_msgs::srv::GetState>::SharedPtr get_state_client;
+    /// @brief Client used to request lifecycle transitions.
     rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr change_state_client;
   };
 
+  /// @brief Configure and activate each managed node in sequence.
   void run_bringup();
+  /// @brief Wait until lifecycle service clients are available for a node.
   bool wait_for_service_clients(const ManagedNode &managed_node) const;
+  /// @brief Request one lifecycle transition and wait for the service response.
   bool request_transition(
     const ManagedNode &managed_node,
     std::uint8_t transition_id,
     std::chrono::milliseconds timeout) const;
+  /// @brief Poll a managed node until it reaches the requested lifecycle state.
   bool wait_for_state(
     const ManagedNode &managed_node,
     std::uint8_t target_state_id,
     std::chrono::milliseconds timeout) const;
+  /// @brief Publish the configured initial pose after bringup when enabled.
   void publish_initial_pose();
 
   std::vector<std::string> managed_node_names_;

@@ -1,3 +1,8 @@
+/**
+ * @file runtime_observation.cpp
+ * @brief Implementation of runtime summary and event observation.
+ */
+
 #include "amr_runtime_observation/runtime_observation.hpp"
 
 #include <algorithm>

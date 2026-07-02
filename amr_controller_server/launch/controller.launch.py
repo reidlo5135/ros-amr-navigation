@@ -1,3 +1,7 @@
+"""@file controller.launch.py
+@brief Launch the AMR controller server with a configurable params file.
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration

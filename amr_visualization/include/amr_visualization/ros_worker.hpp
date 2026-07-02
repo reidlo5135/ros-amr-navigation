@@ -1,6 +1,11 @@
 #ifndef AMR_VISUALIZATION__ROS_WORKER_HPP_
 #define AMR_VISUALIZATION__ROS_WORKER_HPP_
 
+/**
+ * @file ros_worker.hpp
+ * @brief Qt object that owns ROS subscriptions, action clients, and data conversion for the UI.
+ */
+
 #include <QObject>
 
 #include <atomic>
@@ -27,76 +32,129 @@
 namespace amr::visualization
 {
 
+/// @brief Runs ROS spinning in a worker thread and emits Qt-friendly visualization data.
 class RosWorker : public QObject
 {
   Q_OBJECT
 
 public:
+  /// @brief Construct the worker without starting ROS spinning.
   explicit RosWorker(QObject *parent = nullptr);
+  /// @brief Stop spinning and destroy the worker.
   ~RosWorker() override;
 
+  /// @brief Configure ROS interfaces and start the executor thread.
   void start();
+  /// @brief Stop the executor thread and release runtime activity.
   void stop();
 
 public Q_SLOTS:
+  /// @brief Send a NavigateToPose goal from a UI pose.
   void sendSingleGoal(const amr::visualization::Pose2D &pose);
+  /// @brief Send a NavigateToPoses route from UI waypoints.
   void sendRoute(const QVector<amr::visualization::Pose2D> &route);
+  /// @brief Publish an initial pose message.
   void publishInitialPose(const amr::visualization::Pose2D &pose);
+  /// @brief Cancel active navigation action goals.
   void cancelNavigation();
+  /// @brief Enable or disable the global costmap subscription.
   void setGlobalCostmapSubscriptionEnabled(bool enabled);
+  /// @brief Enable or disable the local costmap subscription.
   void setLocalCostmapSubscriptionEnabled(bool enabled);
+  /// @brief Enable or disable the laser scan subscription.
   void setScanSubscriptionEnabled(bool enabled);
 
 Q_SIGNALS:
+  /// @brief Emitted when ROS connection/spin state changes.
   void connectionStateChanged(const QString &state);
+  /// @brief Emitted when a map update is available.
   void mapChanged(const amr::visualization::GridMap &map);
+  /// @brief Emitted when TF frame visuals change.
   void tfFramesChanged(const QVector<amr::visualization::FrameVisual> &frames);
+  /// @brief Emitted when robot model visuals change.
   void robotModelChanged(const QVector<amr::visualization::RobotVisual> &visuals);
+  /// @brief Emitted when global costmap data changes.
   void globalCostmapChanged(const amr::visualization::GridMap &map);
+  /// @brief Emitted when local costmap data changes.
   void localCostmapChanged(const amr::visualization::GridMap &map);
+  /// @brief Emitted when scan points change.
   void scanChanged(const amr::visualization::ScanData &scan);
+  /// @brief Emitted when robot pose changes.
   void robotPoseChanged(const amr::visualization::Pose2D &pose);
+  /// @brief Emitted when the global path changes.
   void globalPathChanged(const amr::visualization::PathData &path);
+  /// @brief Emitted when the local path changes.
   void localPathChanged(const amr::visualization::PathData &path);
+  /// @brief Emitted when motion status changes.
   void motionStatusChanged(const amr::visualization::MotionStatusData &status);
+  /// @brief Emitted when runtime observation summary changes.
   void runtimeSummaryChanged(const amr::visualization::RuntimeSummary &summary);
+  /// @brief Emitted when battery percentage or presence changes.
   void batteryStateChanged(double percentage, bool present);
+  /// @brief Emitted when action goal state changes.
   void goalStateChanged(const QString &state);
+  /// @brief Emitted when navigation completes.
   void navigationCompleted(bool succeeded);
+  /// @brief Emitted when a runtime event line is received.
   void eventReceived(const QString &event);
 
 private:
+  /// @brief Parsed fixed joint from robot_description.
   struct RobotJoint
   {
+    /// @brief Parent link frame.
     QString parent_frame;
+    /// @brief Child link frame.
     QString child_frame;
+    /// @brief Joint origin transform.
     Pose2D origin;
+    /// @brief True when the joint was parsed successfully.
     bool valid{false};
   };
 
+  /// @brief NavigateToPose action alias.
   using NavigateToPose = amr_msgs::action::NavigateToPose;
+  /// @brief NavigateToPoses action alias.
   using NavigateToPoses = amr_msgs::action::NavigateToPoses;
 
+  /// @brief Create subscriptions, publishers, and action clients.
   void configure_ros_interfaces();
+  /// @brief Recreate or drop the global costmap subscription based on UI state.
   void update_global_costmap_subscription();
+  /// @brief Recreate or drop the local costmap subscription based on UI state.
   void update_local_costmap_subscription();
+  /// @brief Recreate or drop the scan subscription based on UI state.
   void update_scan_subscription();
+  /// @brief Cache transforms from a TF or TF static message.
   void handle_tf_message(
     const tf2_msgs::msg::TFMessage &message,
     bool is_static);
+  /// @brief Spin the ROS executor on the worker thread.
   void spin();
 
+  /// @brief Convert an occupancy grid into a Qt-friendly grid model.
   GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
+  /// @brief Convert a nav_msgs path into Qt-friendly path points.
   PathData convert_path(const nav_msgs::msg::Path &message) const;
+  /// @brief Convert a stamped pose into a UI pose.
   Pose2D convert_pose(const geometry_msgs::msg::PoseStamped &message) const;
+  /// @brief Convert a laser scan into projected UI points.
   ScanData convert_scan(const sensor_msgs::msg::LaserScan &message) const;
+  /// @brief Convert a UI pose into a stamped ROS pose.
   geometry_msgs::msg::PoseStamped to_pose_stamped(const Pose2D &pose) const;
+  /// @brief Parse runtime observation summary JSON into UI state.
   RuntimeSummary parse_runtime_summary(const std::string &payload) const;
+  /// @brief Parse robot_description XML into visual elements and joints.
   QVector<RobotVisual> parse_robot_description(const std::string &payload);
+  /// @brief Resolve parsed robot visuals into the fixed frame.
   QVector<RobotVisual> build_robot_visuals() const;
+  /// @brief Resolve a robot link pose from TF and fixed joints.
   Pose2D resolve_robot_link_pose(const QString &link_frame) const;
+  /// @brief Build frame visuals from cached dynamic and static transforms.
   QVector<FrameVisual> build_frame_visuals() const;
+  /// @brief Compose two planar poses.
   static Pose2D compose_pose(const Pose2D &parent, const Pose2D &child);
+  /// @brief Resolve an arbitrary child frame pose in the fixed frame.
   Pose2D resolve_frame_pose(const std::string &child_frame) const;
 
   rclcpp::Node::SharedPtr node_;

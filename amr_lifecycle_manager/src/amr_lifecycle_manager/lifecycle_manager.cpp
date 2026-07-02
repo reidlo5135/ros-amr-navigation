@@ -1,3 +1,8 @@
+/**
+ * @file lifecycle_manager.cpp
+ * @brief Implementation of lifecycle bringup coordination for AMR nodes.
+ */
+
 #include "amr_lifecycle_manager/lifecycle_manager.hpp"
 
 namespace amr::lifecycle::manager
