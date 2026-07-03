@@ -1,0 +1,35 @@
+amr_mcp_server:
+  ros__parameters:
+    default_provider: "ollama"
+    default_robot_id: "burger1"
+    default_frame_id: "map"
+
+    ollama_base_url: "http://192.168.61.35:11434"
+    ollama_chat_endpoint: "/api/chat"
+    ollama_model: "qwen3"
+    ollama_timeout_ms: 30000
+    ollama_enable: true
+
+    chat_service_name: "/amr_mcp/chat"
+    events_topic: "/amr_mcp/events"
+    feedback_topic: "/amr_mcp/feedback"
+
+    navigate_to_pose_action: "/navigate_to_pose"
+    navigate_to_poses_action: "/navigate_to_poses"
+    initial_pose_topic: "/initialpose"
+    cmd_vel_topic: "/cmd_vel"
+
+    battery_topic: "/battery_state"
+    pose_topic: "/pose"
+    motion_status_topic: "/motion_status"
+    runtime_summary_topic: "/observation/runtime/summary"
+    runtime_event_topic: "/observation/runtime/events"
+
+    enable_direct_cmd_vel: false
+    max_linear_speed: 0.12
+    max_angular_speed: 0.8
+    cmd_vel_duration_ms: 500
+
+    rule_based_first: true
+    require_confirmation_for_motion: false
+    dry_run: false

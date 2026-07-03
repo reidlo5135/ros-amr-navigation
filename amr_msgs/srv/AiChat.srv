@@ -1,0 +1,18 @@
+# @brief Chat request from AMR Viz to the AMR Mission/Command Processor.
+string provider
+string robot_id
+string default_frame
+string message
+---
+# @brief True when the request was accepted by the MCP server.
+bool accepted
+# @brief True when a structured robot command was executed or dispatched.
+bool command_executed
+# @brief Structured command type selected by the MCP server.
+string command_type
+# @brief Operator-facing natural-language response.
+string response
+# @brief Server-generated request identifier for correlation.
+string request_id
+# @brief Error detail when accepted is false or execution failed.
+string error_message

@@ -1,15 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>amr_visualization</name>
+  <name>amr_mcp_server</name>
   <version>0.1.0</version>
-  <description>ROS-native Qt6 operator visualization app for the AMR navigation stack.</description>
+  <description>ROS-native AMR Mission/Command Processor for AI-assisted operation.</description>
   <maintainer email="reidlo4215@gmail.com">reidlo</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>qt6-base-dev</depend>
   <depend>amr_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
@@ -17,11 +16,10 @@
   <depend>rclcpp_action</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>tf2_msgs</depend>
+  <depend>libcurl4-openssl-dev</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>amr_mcp_server</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

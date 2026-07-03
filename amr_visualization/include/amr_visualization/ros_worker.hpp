@@ -17,9 +17,11 @@
 #include "amr_msgs/action/navigate_to_pose.hpp"
 #include "amr_msgs/action/navigate_to_poses.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
+#include "amr_msgs/srv/ai_chat.hpp"
 #include "amr_visualization/operator_state.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -57,6 +59,18 @@ public Q_SLOTS:
   void publishInitialPose(const amr::visualization::Pose2D &pose);
   /// @brief Cancel active navigation action goals.
   void cancelNavigation();
+  /// @brief Publish a velocity command to the configured cmd_vel topic.
+  void publishVelocityCommand(double linear_x, double angular_z);
+  /// @brief Publish one zero velocity command to stop manual motion.
+  void publishStopCommand();
+  /// @brief Send an AI chat request to the AMR MCP server.
+  void sendAiChatRequest(
+    const QString &provider,
+    const QString &robot_id,
+    const QString &default_frame,
+    const QString &message);
+  /// @brief Recreate the AI chat service client for a new service name.
+  void setAiChatServiceName(const QString &service_name);
   /// @brief Enable or disable the global costmap subscription.
   void setGlobalCostmapSubscriptionEnabled(bool enabled);
   /// @brief Enable or disable the local costmap subscription.
@@ -97,6 +111,23 @@ Q_SIGNALS:
   void navigationCompleted(bool succeeded);
   /// @brief Emitted when a runtime event line is received.
   void eventReceived(const QString &event);
+  /// @brief Emitted after joystick-related ROS parameters are loaded.
+  void joystickConfigurationChanged(
+    double max_linear_speed,
+    double max_angular_speed,
+    double publish_rate_hz);
+  /// @brief Emitted when the MCP chat service availability changes.
+  void aiChatServiceAvailabilityChanged(bool available);
+  /// @brief Emitted when an MCP chat response is received.
+  void aiChatResponseReceived(
+    bool accepted,
+    bool command_executed,
+    const QString &command_type,
+    const QString &response,
+    const QString &request_id,
+    const QString &error_message);
+  /// @brief Emitted when one asynchronous MCP feedback line is received.
+  void mcpFeedbackReceived(const QString &message);
 
 private:
   /// @brief Parsed fixed joint from robot_description.
@@ -116,6 +147,8 @@ private:
   using NavigateToPose = amr_msgs::action::NavigateToPose;
   /// @brief NavigateToPoses action alias.
   using NavigateToPoses = amr_msgs::action::NavigateToPoses;
+  /// @brief AI chat service alias.
+  using AiChat = amr_msgs::srv::AiChat;
 
   /// @brief Create subscriptions, publishers, and action clients.
   void configure_ros_interfaces();
@@ -150,6 +183,8 @@ private:
   QVector<RobotVisual> build_robot_visuals() const;
   /// @brief Resolve a robot link pose from TF and fixed joints.
   Pose2D resolve_robot_link_pose(const QString &link_frame) const;
+  /// @brief Resolve the primary robot base pose from TF when /pose is unavailable.
+  Pose2D resolve_primary_robot_pose() const;
   /// @brief Build frame visuals from cached dynamic and static transforms.
   QVector<FrameVisual> build_frame_visuals() const;
   /// @brief Compose two planar poses.
@@ -172,11 +207,14 @@ private:
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr runtime_summary_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr runtime_event_subscription_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr mcp_feedback_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_description_subscription_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_subscription_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_static_subscription_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
+  rclcpp::Client<AiChat>::SharedPtr ai_chat_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr navigate_to_pose_client_;
   rclcpp_action::Client<NavigateToPoses>::SharedPtr navigate_to_poses_client_;
   rclcpp::Time last_global_costmap_emit_time_{0, 0, RCL_ROS_TIME};
@@ -193,6 +231,7 @@ private:
   std::string motion_status_topic_{"/motion_status"};
   std::string runtime_summary_topic_{"/observation/runtime/summary"};
   std::string runtime_event_topic_{"/observation/runtime/events"};
+  std::string mcp_feedback_topic_{"/amr_mcp/feedback"};
   std::string battery_state_topic_{"/battery_state"};
   std::string robot_description_topic_{"/robot_description"};
   std::string scan_topic_{"/scan"};
@@ -200,6 +239,11 @@ private:
   std::string tf_static_topic_{"/tf_static"};
   std::string navigate_to_pose_action_{"/navigate_to_pose"};
   std::string navigate_to_poses_action_{"/navigate_to_poses"};
+  std::string ai_chat_service_name_{"/amr_mcp/chat"};
+  std::string cmd_vel_topic_{"/cmd_vel"};
+  double max_linear_speed_{0.22};
+  double max_angular_speed_{1.8};
+  double joystick_publish_rate_hz_{20.0};
   bool subscribe_global_costmap_{true};
   bool subscribe_local_costmap_{true};
   bool subscribe_scan_{true};

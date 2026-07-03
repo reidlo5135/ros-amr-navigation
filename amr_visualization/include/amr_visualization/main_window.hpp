@@ -15,10 +15,13 @@
 #include <memory>
 
 #include "amr_visualization/operator_state.hpp"
+#include "amr_visualization/ai_chat_panel.hpp"
+#include "amr_visualization/joystick_widget.hpp"
 #include "amr_visualization/ros_worker.hpp"
 #include "amr_visualization/scene_widget.hpp"
 
 class QCheckBox;
+class QParallelAnimationGroup;
 class QVBoxLayout;
 
 namespace amr::visualization
@@ -36,6 +39,8 @@ public:
   ~MainWindow() override;
 
 private Q_SLOTS:
+  /// @brief Switch the operator shell between manual and AI modes.
+  void setControlMode(bool ai_mode);
   /// @brief Update the UI label for the current aim pose.
   void updateAimPose(const amr::visualization::Pose2D &pose);
   /// @brief Update motion status labels and waypoint edit lock state.
@@ -73,13 +78,24 @@ private:
   void applyStyle();
   /// @brief Enable or disable waypoint editing while navigation is running.
   void setWaypointEditingLocked(bool locked);
+  /// @brief Update the topbar segmented control active state.
+  void refreshModeButtons();
+  /// @brief Return the AI panel target width for the current window size.
+  int aiPanelWidth() const;
+  /// @brief Apply a fixed panel width immediately and hide zero-width panels.
+  void applyPanelWidth(QWidget *panel, int width);
+  /// @brief Add a width slide animation for one panel.
+  void animatePanelWidth(QParallelAnimationGroup *group, QWidget *panel, int target_width);
 
   std::unique_ptr<RosWorker> ros_worker_;
+  QWidget *manual_left_panel_{nullptr};
+  QWidget *manual_right_panel_{nullptr};
+  AiChatPanel *ai_chat_panel_{nullptr};
   SceneWidget *scene_{nullptr};
   QLabel *frame_label_{nullptr};
   QLabel *aim_label_{nullptr};
-  QLabel *mode_label_{nullptr};
-  QLabel *ai_label_{nullptr};
+  QPushButton *manual_mode_button_{nullptr};
+  QPushButton *ai_mode_button_{nullptr};
   QLabel *battery_label_{nullptr};
   QProgressBar *battery_bar_{nullptr};
   QLabel *motion_label_{nullptr};
@@ -88,11 +104,17 @@ private:
   QLabel *goal_label_{nullptr};
   QLabel *blocked_label_{nullptr};
   QLabel *recovery_label_{nullptr};
+  QLabel *linear_label_{nullptr};
+  QLabel *angular_label_{nullptr};
+  JoystickWidget *joystick_{nullptr};
   QListWidget *waypoint_list_{nullptr};
   QListWidget *event_list_{nullptr};
   QPushButton *add_waypoint_button_{nullptr};
   QPushButton *send_button_{nullptr};
+  QParallelAnimationGroup *mode_animation_{nullptr};
   bool waypoint_editing_locked_{false};
+  bool ai_mode_{false};
+  bool pose_label_has_value_{false};
 };
 
 }  // namespace amr::visualization

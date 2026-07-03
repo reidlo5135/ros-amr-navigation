@@ -20,7 +20,8 @@ def bringup_params_file() -> str:
 
 def generate_launch_description() -> LaunchDescription:
     params_file = LaunchConfiguration("params_file")
-    use_mqtt_server = LaunchConfiguration("use_mqtt_server")
+    mqtt = LaunchConfiguration("mqtt")
+    mcp = LaunchConfiguration("mcp")
 
     costmap_server = LifecycleNode(
         package="amr_costmap_server",
@@ -99,7 +100,17 @@ def generate_launch_description() -> LaunchDescription:
                 "amr_mqtt_server.launch.py",
             )
         ),
-        condition=IfCondition(use_mqtt_server),
+        condition=IfCondition(mqtt),
+    )
+    mcp_server_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("amr_mcp_server"),
+                "launch",
+                "amr_mcp_server.launch.py",
+            )
+        ),
+        condition=IfCondition(mcp),
     )
 
     return LaunchDescription(
@@ -110,9 +121,14 @@ def generate_launch_description() -> LaunchDescription:
                 description="Navigation parameter file.",
             ),
             DeclareLaunchArgument(
-                "use_mqtt_server",
+                "mqtt",
                 default_value="false",
                 description="Start the optional MQTT bridge with the navigation stack.",
+            ),
+            DeclareLaunchArgument(
+                "mcp",
+                default_value="false",
+                description="Start the optional MCP server with the navigation stack.",
             ),
             costmap_server,
             global_planner,
@@ -122,5 +138,6 @@ def generate_launch_description() -> LaunchDescription:
             runtime_observation,
             lifecycle_manager,
             mqtt_server_launch,
+            mcp_server_launch,
         ]
     )

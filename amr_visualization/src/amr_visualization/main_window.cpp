@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDateTime>
+#include <QEasingCurve>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -16,13 +17,19 @@
 #include <QJsonObject>
 #include <QListWidget>
 #include <QPainter>
+#include <QParallelAnimationGroup>
 #include <QPixmap>
+#include <QPoint>
 #include <QProgressBar>
+#include <QPropertyAnimation>
 #include <QSize>
 #include <QSizePolicy>
+#include <QStyle>
 #include <QToolButton>
+#include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 
 namespace amr::visualization
@@ -30,6 +37,10 @@ namespace amr::visualization
 
 namespace
 {
+
+constexpr int kManualLeftPanelWidth = 268;
+constexpr int kManualRightPanelWidth = 330;
+constexpr int kModeTransitionMs = 230;
 
 /// @brief Create a status value label with the shared panel style.
 QLabel *make_value_label(const QString &text = "--")
@@ -148,12 +159,12 @@ QPixmap make_layer_icon(const QString &name, const QSize &size)
 QString pose_text(const Pose2D &pose)
 {
   if (!pose.valid) {
-    return "Pose x --, y --, z --";
+    return "Pose --, --, --";
   }
-  return QString("Pose x %1, y %2, z %3")
+  return QString("Pose %1, %2, %3")
     .arg(pose.x, 0, 'f', 2)
     .arg(pose.y, 0, 'f', 2)
-    .arg(pose.z, 0, 'f', 2);
+    .arg(pose.yaw, 0, 'f', 2);
 }
 
 /// @brief Avoid unnecessary Qt label updates when the value is unchanged.
@@ -237,13 +248,55 @@ MainWindow::MainWindow(QWidget *parent)
   content_layout->setSpacing(6);
 
   scene_ = new SceneWidget;
-  content_layout->addWidget(makeLeftPanel());
+  scene_->setMinimumWidth(620);
+  ai_chat_panel_ = new AiChatPanel;
+  ai_chat_panel_->setMinimumWidth(0);
+  ai_chat_panel_->setMaximumWidth(0);
+  ai_chat_panel_->hide();
+  manual_left_panel_ = makeLeftPanel();
+  manual_right_panel_ = makeRightPanel();
+  content_layout->addWidget(ai_chat_panel_);
+  content_layout->addWidget(manual_left_panel_);
   content_layout->addWidget(scene_, 1);
-  content_layout->addWidget(makeRightPanel());
+  content_layout->addWidget(manual_right_panel_);
   root_layout->addWidget(content, 1);
   setCentralWidget(root);
 
+  connect(ai_chat_panel_, &AiChatPanel::initialPoseRequested, this, [this]() {
+    ros_worker_->publishInitialPose(scene_->aimPose());
+  });
+  connect(ai_chat_panel_, &AiChatPanel::goalRequested, this, &MainWindow::sendGoal);
+  connect(ai_chat_panel_, &AiChatPanel::waypointRequested, this, [this]() {
+    if (!waypoint_editing_locked_) {
+      scene_->addAimAsWaypoint();
+    }
+  });
+  connect(ai_chat_panel_, &AiChatPanel::cancelRequested, this, [this]() {
+    ros_worker_->cancelNavigation();
+    setWaypointEditingLocked(false);
+  });
+  connect(ai_chat_panel_, &AiChatPanel::clearRequested, scene_, &SceneWidget::clearSchedule);
+  connect(
+    ai_chat_panel_, &AiChatPanel::chatRequested,
+    ros_worker_.get(), &RosWorker::sendAiChatRequest);
+  connect(
+    ai_chat_panel_, &AiChatPanel::chatServiceNameChanged,
+    ros_worker_.get(), &RosWorker::setAiChatServiceName);
+  connect(
+    ros_worker_.get(), &RosWorker::aiChatResponseReceived,
+    ai_chat_panel_, &AiChatPanel::handleChatResponse);
+  connect(
+    ros_worker_.get(), &RosWorker::aiChatServiceAvailabilityChanged,
+    ai_chat_panel_, &AiChatPanel::setServiceAvailable);
+  connect(
+    ros_worker_.get(), &RosWorker::mcpFeedbackReceived,
+    ai_chat_panel_, &AiChatPanel::handleMcpFeedback);
+  connect(
+    ros_worker_.get(), &RosWorker::joystickConfigurationChanged,
+    joystick_, &JoystickWidget::configure);
+
   connect(scene_, &SceneWidget::waypointsChanged, this, &MainWindow::updateWaypointList);
+  connect(scene_, &SceneWidget::aimPoseChanged, this, &MainWindow::updateAimPose);
   connect(scene_, &SceneWidget::selectedWaypointChanged, this, [this](int index) {
     if (!waypoint_list_) {
       return;
@@ -305,12 +358,17 @@ MainWindow::MainWindow(QWidget *parent)
   connect(ros_worker_.get(), &RosWorker::eventReceived, this, &MainWindow::appendEvent);
 
   applyStyle();
+  setControlMode(false);
   ros_worker_->start();
 }
 
 /// @copydoc MainWindow::~MainWindow
 MainWindow::~MainWindow()
 {
+  if (joystick_) {
+    joystick_->resetControl();
+  }
+  ros_worker_->publishStopCommand();
   ros_worker_->stop();
 }
 
@@ -319,20 +377,45 @@ QWidget *MainWindow::makeTopBar()
 {
   auto *bar = new QWidget;
   bar->setObjectName("topBar");
-  auto *layout = new QHBoxLayout(bar);
+  auto *layout = new QGridLayout(bar);
   layout->setContentsMargins(8, 5, 8, 5);
-  layout->setSpacing(8);
+  layout->setSpacing(0);
 
   auto *title = new QLabel("AMR");
   title->setObjectName("brandLabel");
+
+  auto *mode_tabs = new QWidget;
+  mode_tabs->setObjectName("modeTabSet");
+  auto *mode_layout = new QHBoxLayout(mode_tabs);
+  mode_layout->setContentsMargins(2, 2, 2, 2);
+  mode_layout->setSpacing(2);
+  manual_mode_button_ = new QPushButton("MANUAL");
+  manual_mode_button_->setObjectName("modeTabButton");
+  manual_mode_button_->setProperty("mode", "manual");
+  manual_mode_button_->setCheckable(true);
+  ai_mode_button_ = new QPushButton("AI");
+  ai_mode_button_->setObjectName("modeTabButton");
+  ai_mode_button_->setProperty("mode", "ai");
+  ai_mode_button_->setCheckable(true);
+  mode_layout->addWidget(manual_mode_button_);
+  mode_layout->addWidget(ai_mode_button_);
+  connect(manual_mode_button_, &QPushButton::clicked, this, [this]() {
+    setControlMode(false);
+  });
+  connect(ai_mode_button_, &QPushButton::clicked, this, [this]() {
+    setControlMode(true);
+  });
+
+  auto *right = new QWidget;
+  right->setObjectName("topBarRight");
+  auto *right_layout = new QHBoxLayout(right);
+  right_layout->setContentsMargins(0, 0, 0, 0);
+  right_layout->setSpacing(8);
+
   frame_label_ = new QLabel("Fixed Frame: map");
   frame_label_->setObjectName("pill");
-  aim_label_ = new QLabel("Pose x --, y --, z --");
+  aim_label_ = new QLabel("Pose --, --, --");
   aim_label_->setObjectName("pill");
-  mode_label_ = new QLabel("MANUAL");
-  mode_label_->setObjectName("modePill");
-  ai_label_ = new QLabel("AI");
-  ai_label_->setObjectName("statusPill");
   auto *battery_pill = new QWidget;
   battery_pill->setObjectName("batteryPill");
   auto *battery_layout = new QHBoxLayout(battery_pill);
@@ -349,13 +432,14 @@ QWidget *MainWindow::makeTopBar()
   battery_layout->addWidget(battery_bar_);
   battery_layout->addWidget(battery_label_);
 
-  layout->addWidget(title);
-  layout->addStretch(1);
-  layout->addWidget(frame_label_);
-  layout->addWidget(aim_label_);
-  layout->addWidget(mode_label_);
-  layout->addWidget(ai_label_);
-  layout->addWidget(battery_pill);
+  right_layout->addWidget(frame_label_);
+  right_layout->addWidget(aim_label_);
+  right_layout->addWidget(battery_pill);
+
+  layout->addWidget(title, 0, 0, Qt::AlignLeft | Qt::AlignVCenter);
+  layout->addWidget(mode_tabs, 0, 0, Qt::AlignHCenter | Qt::AlignVCenter);
+  layout->addWidget(right, 0, 0, Qt::AlignRight | Qt::AlignVCenter);
+  refreshModeButtons();
   return bar;
 }
 
@@ -363,8 +447,10 @@ QWidget *MainWindow::makeTopBar()
 QWidget *MainWindow::makeLeftPanel()
 {
   auto *panel = new QWidget;
-  panel->setObjectName("sidePanel");
-  panel->setFixedWidth(268);
+  panel->setObjectName("manualSidePanel");
+  panel->setMinimumWidth(kManualLeftPanelWidth);
+  panel->setMaximumWidth(kManualLeftPanelWidth);
+  panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
   auto *layout = new QVBoxLayout(panel);
   layout->setContentsMargins(6, 10, 10, 10);
   layout->setSpacing(8);
@@ -507,8 +593,10 @@ QWidget *MainWindow::makeLeftPanel()
 QWidget *MainWindow::makeRightPanel()
 {
   auto *panel = new QWidget;
-  panel->setObjectName("sidePanel");
-  panel->setFixedWidth(278);
+  panel->setObjectName("manualSidePanel");
+  panel->setMinimumWidth(kManualRightPanelWidth);
+  panel->setMaximumWidth(kManualRightPanelWidth);
+  panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
   auto *layout = new QVBoxLayout(panel);
   layout->setContentsMargins(10, 10, 10, 10);
   layout->setSpacing(10);
@@ -536,20 +624,33 @@ QWidget *MainWindow::makeRightPanel()
   layout->addWidget(events_title);
   event_list_ = new QListWidget;
   event_list_->setObjectName("eventList");
+  event_list_->setWordWrap(true);
+  event_list_->setTextElideMode(Qt::ElideNone);
+  event_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   layout->addWidget(event_list_, 1);
 
   layout->addWidget(line());
   auto *joystick_title = new QLabel("JOYSTICK");
   joystick_title->setObjectName("sectionTitle");
   layout->addWidget(joystick_title);
-  auto *joystick = new QLabel;
-  joystick->setObjectName("joystick");
-  joystick->setMinimumHeight(150);
-  joystick->setAlignment(Qt::AlignCenter);
-  joystick->setText("●");
-  layout->addWidget(joystick);
-  appendStatusRow(layout, "Linear X", make_value_label("0.000 m/s"));
-  appendStatusRow(layout, "Angular Z", make_value_label("0.000 rad/s"));
+  joystick_ = new JoystickWidget;
+  layout->addWidget(joystick_, 0, Qt::AlignHCenter);
+  linear_label_ = make_value_label("0.000 m/s");
+  angular_label_ = make_value_label("0.000 rad/s");
+  appendStatusRow(layout, "Linear X", linear_label_);
+  appendStatusRow(layout, "Angular Z", angular_label_);
+  connect(joystick_, &JoystickWidget::velocityChanged, this, [this](double linear_x, double angular_z) {
+    set_label_if_changed(linear_label_, QString("%1 m/s").arg(linear_x, 0, 'f', 3));
+    set_label_if_changed(angular_label_, QString("%1 rad/s").arg(angular_z, 0, 'f', 3));
+  });
+  connect(
+    joystick_, &JoystickWidget::commandRequested,
+    ros_worker_.get(), &RosWorker::publishVelocityCommand,
+    Qt::QueuedConnection);
+  connect(
+    joystick_, &JoystickWidget::stopRequested,
+    ros_worker_.get(), &RosWorker::publishStopCommand,
+    Qt::QueuedConnection);
   return panel;
 }
 
@@ -599,9 +700,131 @@ void MainWindow::appendStatusRow(QVBoxLayout *layout, const QString &label, QLab
   layout->addWidget(row);
 }
 
+/// @copydoc MainWindow::setControlMode
+void MainWindow::setControlMode(bool ai_mode)
+{
+  const QSize previous_size = size();
+  const QPoint previous_position = pos();
+  const bool animate_transition = isVisible();
+
+  if (mode_animation_) {
+    mode_animation_->stop();
+    mode_animation_->deleteLater();
+    mode_animation_ = nullptr;
+  }
+
+  ai_mode_ = ai_mode;
+  if (joystick_ && ai_mode_) {
+    joystick_->resetControl();
+  }
+  refreshModeButtons();
+
+  const int ai_width = aiPanelWidth();
+  if (!animate_transition) {
+    applyPanelWidth(manual_left_panel_, ai_mode_ ? 0 : kManualLeftPanelWidth);
+    applyPanelWidth(manual_right_panel_, ai_mode_ ? 0 : kManualRightPanelWidth);
+    applyPanelWidth(ai_chat_panel_, ai_mode_ ? ai_width : 0);
+    return;
+  }
+
+  auto *animation_group = new QParallelAnimationGroup(this);
+  mode_animation_ = animation_group;
+  animatePanelWidth(animation_group, manual_left_panel_, ai_mode_ ? 0 : kManualLeftPanelWidth);
+  animatePanelWidth(animation_group, manual_right_panel_, ai_mode_ ? 0 : kManualRightPanelWidth);
+  animatePanelWidth(animation_group, ai_chat_panel_, ai_mode_ ? ai_width : 0);
+
+  connect(animation_group, &QParallelAnimationGroup::finished, this, [this, animation_group, previous_size, previous_position]() {
+    applyPanelWidth(manual_left_panel_, ai_mode_ ? 0 : kManualLeftPanelWidth);
+    applyPanelWidth(manual_right_panel_, ai_mode_ ? 0 : kManualRightPanelWidth);
+    applyPanelWidth(ai_chat_panel_, ai_mode_ ? aiPanelWidth() : 0);
+    if (mode_animation_ == animation_group) {
+      mode_animation_ = nullptr;
+    }
+    animation_group->deleteLater();
+    if (isVisible() && previous_size.isValid()) {
+      resize(previous_size);
+      move(previous_position);
+    }
+  });
+
+  animation_group->start();
+  if (previous_size.isValid()) {
+    resize(previous_size);
+    move(previous_position);
+    QTimer::singleShot(0, this, [this, previous_size, previous_position]() {
+      if (isVisible()) {
+        resize(previous_size);
+        move(previous_position);
+      }
+    });
+  }
+}
+
+/// @copydoc MainWindow::aiPanelWidth
+int MainWindow::aiPanelWidth() const
+{
+  return std::clamp(width() / 2, 520, 820);
+}
+
+/// @copydoc MainWindow::applyPanelWidth
+void MainWindow::applyPanelWidth(QWidget *panel, int width)
+{
+  if (!panel) {
+    return;
+  }
+  width = std::max(0, width);
+  panel->setMinimumWidth(width);
+  panel->setMaximumWidth(width);
+  panel->setVisible(width > 0);
+}
+
+/// @copydoc MainWindow::animatePanelWidth
+void MainWindow::animatePanelWidth(QParallelAnimationGroup *group, QWidget *panel, int target_width)
+{
+  if (!group || !panel) {
+    return;
+  }
+
+  target_width = std::max(0, target_width);
+  const int start_width = panel->isVisible() ? panel->width() : 0;
+  panel->setVisible(true);
+  panel->setMinimumWidth(start_width);
+  panel->setMaximumWidth(start_width);
+
+  auto *minimum_animation = new QPropertyAnimation(panel, "minimumWidth", group);
+  auto *maximum_animation = new QPropertyAnimation(panel, "maximumWidth", group);
+  for (auto *animation : {minimum_animation, maximum_animation}) {
+    animation->setDuration(kModeTransitionMs);
+    animation->setEasingCurve(QEasingCurve::OutCubic);
+    animation->setStartValue(start_width);
+    animation->setEndValue(target_width);
+    group->addAnimation(animation);
+  }
+}
+
+/// @copydoc MainWindow::refreshModeButtons
+void MainWindow::refreshModeButtons()
+{
+  if (!manual_mode_button_ || !ai_mode_button_) {
+    return;
+  }
+
+  manual_mode_button_->setChecked(!ai_mode_);
+  ai_mode_button_->setChecked(ai_mode_);
+  for (auto *button : {manual_mode_button_, ai_mode_button_}) {
+    button->setProperty("active", button->isChecked());
+    button->style()->unpolish(button);
+    button->style()->polish(button);
+  }
+}
+
 /// @copydoc MainWindow::updateAimPose
 void MainWindow::updateAimPose(const Pose2D &pose)
 {
+  if (!pose.valid && pose_label_has_value_) {
+    return;
+  }
+  pose_label_has_value_ = pose.valid;
   set_label_if_changed(aim_label_, pose_text(pose));
 }
 
@@ -723,37 +946,72 @@ void MainWindow::applyStyle()
     #brandLabel {
       color: #f0a321;
       font-weight: 700;
+      font-size: 15px;
+      min-width: 120px;
     }
-    #sidePanel {
-      background: #090c0b;
-      border-right: 1px solid #2e3837;
-      border-left: 1px solid #2e3837;
+    #topBarRight {
+      background: transparent;
+    }
+    #modeTabSet {
+      background: #0a1118;
+      border: 1px solid #26384f;
+      border-radius: 6px;
+      padding: 0px;
+    }
+    #modeTabButton {
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: #91a0ad;
+      font-size: 12px;
+      font-weight: 800;
+      min-width: 86px;
+      padding: 6px 18px;
+    }
+    #modeTabButton:hover {
+      color: #d8e4ff;
+      background: #14202d;
+    }
+    #modeTabButton[mode="manual"]:hover {
+      color: #d9fff1;
+      background: #112b27;
+    }
+    #modeTabButton[mode="ai"]:hover {
+      color: #e1ebff;
+      background: #152644;
+    }
+    #modeTabButton:checked {
+      background: #24438e;
+      color: #ffffff;
+    }
+    #modeTabButton[mode="manual"]:checked {
+      background: #14624f;
+      color: #e5fff5;
+    }
+    #modeTabButton[mode="ai"]:checked {
+      background: #24438e;
+      color: #ffffff;
+    }
+    #manualSidePanel {
+      background: #07110f;
+      border-right: 1px solid #24534c;
+      border-left: 1px solid #24534c;
     }
     #sectionTitle {
-      color: #9fb0ad;
+      color: #94d8c7;
       font-size: 12px;
       font-weight: 700;
     }
-    #pill, #modePill, #statusPill, #batteryPill, #topMetric {
+    #pill, #batteryPill, #topMetric {
       background: #111923;
       border: 1px solid #26384f;
       border-radius: 3px;
       padding: 4px 10px;
       color: #a9b8c6;
     }
-    #modePill {
-      background: #18315f;
-      border-color: #386cc8;
-      color: #d8e4ff;
-    }
-    #statusPill, #batteryPill {
+    #batteryPill {
       color: #c3ccd8;
       min-height: 18px;
-    }
-    #statusPill {
-      min-width: 42px;
-    }
-    #batteryPill {
       min-width: 92px;
       padding: 0px;
     }
@@ -870,7 +1128,7 @@ void MainWindow::applyStyle()
       min-height: 26px;
     }
     #layerRow:hover {
-      background: #111817;
+      background: #0f211d;
     }
     #layerLabel {
       color: #b8c5c0;
@@ -895,7 +1153,7 @@ void MainWindow::applyStyle()
       min-height: 20px;
     }
     #panelIconButton:hover {
-      background: #162021;
+      background: #13302b;
       border-radius: 3px;
     }
     #cameraControls {
@@ -922,8 +1180,8 @@ void MainWindow::applyStyle()
       color: #eafff7;
     }
     #separator {
-      color: #4c5654;
-      background: #4c5654;
+      color: #2f5a52;
+      background: #2f5a52;
       max-height: 1px;
     }
     #eventList, #waypointList {
@@ -948,12 +1206,169 @@ void MainWindow::applyStyle()
       border-color: #753135;
       color: #ff9292;
     }
-    #joystick {
-      color: #ff9917;
-      font-size: 38px;
-      background: #08101a;
-      border: 1px solid #2e4c80;
-      border-radius: 75px;
+    #joystickPad {
+      background: transparent;
+      min-height: 154px;
+    }
+    #aiMissionPanel {
+      background: #050a1d;
+      border-right: 1px solid #18356e;
+    }
+    #aiPanelTitle {
+      color: #cfe1ff;
+      font-size: 22px;
+      font-weight: 500;
+    }
+    #aiSummaryLabel {
+      background: transparent;
+      border: none;
+      color: #a9b4ca;
+      padding: 0px;
+      font-size: 12px;
+    }
+    #aiMutedLabel {
+      color: #a9b4ca;
+      font-size: 12px;
+    }
+    #aiStatusPill {
+      border: 1px solid #2b5cb8;
+      border-radius: 8px;
+      background: #050915;
+      color: #cfe1ff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 4px 12px;
+    }
+    #aiStatusPill[state="online"] {
+      border-color: #2f8b63;
+      background: #081b18;
+      color: #8ff3c8;
+    }
+    #aiClearButton, #aiSettingsButton {
+      background: transparent;
+      border: none;
+      color: #9fb0d2;
+      padding: 5px 9px;
+      font-size: 12px;
+      min-height: 24px;
+    }
+    #aiClearButton:hover, #aiSettingsButton:hover {
+      background: #0e1832;
+      border-radius: 4px;
+      color: #d7e6ff;
+    }
+    #aiSettingsButton {
+      min-width: 30px;
+      max-width: 34px;
+      padding: 5px 0px;
+    }
+    #aiToolButton, #aiDangerToolButton {
+      background: #111725;
+      border: 1px solid #1d2b47;
+      border-radius: 5px;
+      color: #e1e9f7;
+      padding: 6px 12px;
+      font-size: 12px;
+      min-height: 28px;
+    }
+    #aiToolButton:hover {
+      background: #162441;
+      border-color: #3964a8;
+      color: #ffffff;
+    }
+    #aiDangerToolButton {
+      background: #241114;
+      border-color: #5b2a34;
+      color: #ffb1b9;
+    }
+    #aiDangerToolButton:hover {
+      background: #35171c;
+      border-color: #8b3c48;
+      color: #ffe5e8;
+    }
+    #aiSubsectionTitle {
+      color: #5985d6;
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+    #promptButton {
+      background: #11161d;
+      border: 1px solid #2b3a56;
+      border-radius: 6px;
+      color: #dce6f7;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      padding: 10px 12px;
+      min-height: 38px;
+    }
+    #promptButton:hover {
+      background: #151d2a;
+      border-color: #3d70d0;
+      color: #ffffff;
+    }
+    #transcriptScroll {
+      background: #03050b;
+      border: 1px solid #2d62c8;
+      border-radius: 7px;
+    }
+    #transcriptContent {
+      background: #03050b;
+    }
+    #transcriptBubble {
+      border: 1px solid #34445c;
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: #151d2c;
+      color: #d8e4f5;
+      font-size: 13px;
+    }
+    #transcriptBubble[role="system"] {
+      background: #141c2b;
+      border-color: #384a65;
+      color: #d8e4f5;
+    }
+    #transcriptBubble[role="user"] {
+      background: #122a23;
+      border-color: #2e8460;
+      color: #e0fff0;
+    }
+    #transcriptBubble[role="assistant"] {
+      background: #14203a;
+      border-color: #3d70d0;
+      color: #e2edff;
+    }
+    #aiInput, #aiEndpointInput {
+      background: #03050b;
+      border: 1px solid #2d62c8;
+      border-radius: 7px;
+      color: #e5ece8;
+      padding: 12px;
+      selection-background-color: #24438e;
+    }
+    #aiInput:focus, #aiEndpointInput:focus {
+      border-color: #4f8fb8;
+    }
+    #aiSendButton {
+      background: #123d30;
+      border-color: #2a8565;
+      color: #8ff3c8;
+      min-height: 34px;
+    }
+    #aiConnectButton {
+      background: #123d30;
+      border-color: #2a8565;
+      color: #8ff3c8;
+    }
+    #aiDisconnectButton {
+      background: #3d1518;
+      border-color: #79313a;
+      color: #ff9ba2;
+    }
+    #aiSettingsDialog {
+      background: #101312;
+      min-width: 420px;
     }
   )");
 }

@@ -1,10 +1,8 @@
 cmake_minimum_required(VERSION 3.8)
-project(amr_visualization VERSION 0.1.0 LANGUAGES CXX)
+project(amr_mcp_server VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -14,28 +12,19 @@ find_package(ament_cmake REQUIRED)
 find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(tf2_msgs REQUIRED)
+find_package(CURL REQUIRED)
 
 set(${PROJECT_NAME}_SOURCES
-  include/amr_visualization/main_window.hpp
-  include/amr_visualization/ai_chat_panel.hpp
-  include/amr_visualization/joystick_widget.hpp
-  include/amr_visualization/operator_state.hpp
-  include/amr_visualization/ros_worker.hpp
-  include/amr_visualization/scene_widget.hpp
-  resources/resources.qrc
+  src/amr_mcp_node.cpp
+  src/ollama_client.cpp
+  src/prompt_interpreter.cpp
+  src/ros_tool_executor.cpp
+  src/topic_snapshot.cpp
   src/main.cpp
-  src/amr_visualization/ai_chat_panel.cpp
-  src/amr_visualization/joystick_widget.cpp
-  src/amr_visualization/main_window.cpp
-  src/amr_visualization/operator_state.cpp
-  src/amr_visualization/ros_worker.cpp
-  src/amr_visualization/scene_widget.cpp
 )
 
 add_executable(${PROJECT_NAME}
@@ -55,13 +44,10 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp_action
   sensor_msgs
   std_msgs
-  tf2_msgs
 )
 
 target_link_libraries(${PROJECT_NAME}
-  Qt6::Core
-  Qt6::Gui
-  Qt6::Widgets
+  CURL::libcurl
 )
 
 install(TARGETS
@@ -70,24 +56,9 @@ install(TARGETS
 )
 
 install(DIRECTORY
+  config
   launch
   DESTINATION share/${PROJECT_NAME}
-)
-
-install(FILES
-  assets/icons/rcs.svg
-  DESTINATION share/icons/hicolor/scalable/apps
-  RENAME ${PROJECT_NAME}.svg
-)
-
-install(FILES
-  resources/${PROJECT_NAME}.desktop
-  DESTINATION share/applications
-)
-
-install(PROGRAMS
-  scripts/${PROJECT_NAME}
-  DESTINATION bin
 )
 
 if(BUILD_TESTING)

@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QXmlStreamReader>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -183,6 +184,7 @@ void RosWorker::stop()
     return;
   }
 
+  publishStopCommand();
   executor_.cancel();
   if (spin_thread_.joinable()) {
     spin_thread_.join();
@@ -217,6 +219,8 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<std::string>("runtime_summary_topic", runtime_summary_topic_);
   runtime_event_topic_ =
     node_->declare_parameter<std::string>("runtime_event_topic", runtime_event_topic_);
+  mcp_feedback_topic_ =
+    node_->declare_parameter<std::string>("mcp_feedback_topic", mcp_feedback_topic_);
   battery_state_topic_ =
     node_->declare_parameter<std::string>("battery_state_topic", battery_state_topic_);
   robot_description_topic_ =
@@ -228,6 +232,24 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<std::string>("navigate_to_pose_action", navigate_to_pose_action_);
   navigate_to_poses_action_ =
     node_->declare_parameter<std::string>("navigate_to_poses_action", navigate_to_poses_action_);
+  ai_chat_service_name_ =
+    node_->declare_parameter<std::string>("ai_chat_service_name", ai_chat_service_name_);
+  cmd_vel_topic_ = node_->declare_parameter<std::string>("cmd_vel_topic", cmd_vel_topic_);
+  max_linear_speed_ = node_->declare_parameter<double>("max_linear_speed", max_linear_speed_);
+  max_angular_speed_ = node_->declare_parameter<double>("max_angular_speed", max_angular_speed_);
+  joystick_publish_rate_hz_ =
+    node_->declare_parameter<double>("joystick_publish_rate_hz", joystick_publish_rate_hz_);
+  if (!std::isfinite(max_linear_speed_) || max_linear_speed_ <= 0.0) {
+    max_linear_speed_ = 0.22;
+  }
+  if (!std::isfinite(max_angular_speed_) || max_angular_speed_ <= 0.0) {
+    max_angular_speed_ = 1.8;
+  }
+  if (!std::isfinite(joystick_publish_rate_hz_) || joystick_publish_rate_hz_ <= 0.0) {
+    joystick_publish_rate_hz_ = 20.0;
+  }
+  Q_EMIT joystickConfigurationChanged(
+    max_linear_speed_, max_angular_speed_, joystick_publish_rate_hz_);
   subscribe_global_costmap_ =
     node_->declare_parameter<bool>("subscribe_global_costmap", subscribe_global_costmap_);
   subscribe_local_costmap_ =
@@ -299,6 +321,10 @@ void RosWorker::configure_ros_interfaces()
     runtime_event_topic_, live_qos, [this](const std_msgs::msg::String::SharedPtr message) {
       Q_EMIT eventReceived(QString::fromStdString(message->data));
     });
+  mcp_feedback_subscription_ = node_->create_subscription<std_msgs::msg::String>(
+    mcp_feedback_topic_, live_qos, [this](const std_msgs::msg::String::SharedPtr message) {
+      Q_EMIT mcpFeedbackReceived(QString::fromStdString(message->data));
+    });
   battery_subscription_ = node_->create_subscription<sensor_msgs::msg::BatteryState>(
     battery_state_topic_, live_qos,
     [this](const sensor_msgs::msg::BatteryState::SharedPtr message) {
@@ -333,6 +359,10 @@ void RosWorker::configure_ros_interfaces()
   initial_pose_publisher_ =
     node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
       initial_pose_topic_, live_qos);
+  cmd_vel_publisher_ = node_->create_publisher<geometry_msgs::msg::Twist>(
+    cmd_vel_topic_, rclcpp::QoS(10));
+  ai_chat_client_ = node_->create_client<AiChat>(ai_chat_service_name_);
+  Q_EMIT aiChatServiceAvailabilityChanged(ai_chat_client_->service_is_ready());
   navigate_to_pose_client_ =
     rclcpp_action::create_client<NavigateToPose>(node_, navigate_to_pose_action_);
   navigate_to_poses_client_ =
@@ -361,6 +391,10 @@ void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool 
   }
   Q_EMIT tfFramesChanged(build_frame_visuals());
   Q_EMIT robotModelChanged(build_robot_visuals());
+  const Pose2D robot_pose = resolve_primary_robot_pose();
+  if (robot_pose.valid) {
+    Q_EMIT robotPoseChanged(robot_pose);
+  }
 }
 
 /// @copydoc RosWorker::build_frame_visuals
@@ -810,6 +844,44 @@ Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
   return resolve(link_frame, 0);
 }
 
+/// @copydoc RosWorker::resolve_primary_robot_pose
+Pose2D RosWorker::resolve_primary_robot_pose() const
+{
+  for (const auto &frame : {"base_footprint", "base_link"}) {
+    const Pose2D pose = resolve_frame_pose(frame);
+    if (pose.valid) {
+      return pose;
+    }
+  }
+
+  const auto resolve_by_suffix = [this](const QString &suffix) {
+      for (const auto &frame_store : {&dynamic_frames_, &static_frames_}) {
+        for (const auto &[child_frame, frame] : *frame_store) {
+          (void)frame;
+          const QString child = QString::fromStdString(child_frame);
+          if (!child.endsWith(suffix)) {
+            continue;
+          }
+          const Pose2D pose = resolve_frame_pose(child_frame);
+          if (pose.valid) {
+            return pose;
+          }
+        }
+      }
+      return Pose2D{};
+    };
+
+  Pose2D pose = resolve_by_suffix("/base_footprint");
+  if (pose.valid) {
+    return pose;
+  }
+  pose = resolve_by_suffix("/base_link");
+  if (pose.valid) {
+    return pose;
+  }
+  return {};
+}
+
 /// @copydoc RosWorker::resolve_frame_pose
 Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
 {
@@ -972,6 +1044,88 @@ void RosWorker::cancelNavigation()
   }
   Q_EMIT goalStateChanged("Canceling");
   Q_EMIT eventReceived("Cancel requested");
+}
+
+/// @copydoc RosWorker::publishVelocityCommand
+void RosWorker::publishVelocityCommand(double linear_x, double angular_z)
+{
+  if (!cmd_vel_publisher_) {
+    return;
+  }
+
+  if (!std::isfinite(linear_x)) {
+    linear_x = 0.0;
+  }
+  if (!std::isfinite(angular_z)) {
+    angular_z = 0.0;
+  }
+
+  geometry_msgs::msg::Twist message;
+  message.linear.x = std::clamp(linear_x, -max_linear_speed_, max_linear_speed_);
+  message.angular.z = std::clamp(angular_z, -max_angular_speed_, max_angular_speed_);
+  cmd_vel_publisher_->publish(message);
+}
+
+/// @copydoc RosWorker::publishStopCommand
+void RosWorker::publishStopCommand()
+{
+  publishVelocityCommand(0.0, 0.0);
+}
+
+/// @copydoc RosWorker::sendAiChatRequest
+void RosWorker::sendAiChatRequest(
+  const QString &provider,
+  const QString &robot_id,
+  const QString &default_frame,
+  const QString &message)
+{
+  if (!ai_chat_client_) {
+    Q_EMIT aiChatServiceAvailabilityChanged(false);
+    Q_EMIT aiChatResponseReceived(
+      false, false, "Unknown", "", "", "amr_mcp_server가 실행 중인지 확인하세요.");
+    return;
+  }
+
+  if (!ai_chat_client_->service_is_ready()) {
+    Q_EMIT aiChatServiceAvailabilityChanged(false);
+    Q_EMIT aiChatResponseReceived(
+      false, false, "Unknown", "", "", "amr_mcp_server가 실행 중인지 확인하세요.");
+    return;
+  }
+
+  auto request = std::make_shared<AiChat::Request>();
+  request->provider = provider.toStdString();
+  request->robot_id = robot_id.toStdString();
+  request->default_frame = default_frame.toStdString();
+  request->message = message.toStdString();
+  Q_EMIT aiChatServiceAvailabilityChanged(true);
+
+  ai_chat_client_->async_send_request(
+    request,
+    [this](rclcpp::Client<AiChat>::SharedFuture future) {
+      const auto response = future.get();
+      Q_EMIT aiChatResponseReceived(
+        response->accepted,
+        response->command_executed,
+        QString::fromStdString(response->command_type),
+        QString::fromStdString(response->response),
+        QString::fromStdString(response->request_id),
+        QString::fromStdString(response->error_message));
+    });
+}
+
+/// @copydoc RosWorker::setAiChatServiceName
+void RosWorker::setAiChatServiceName(const QString &service_name)
+{
+  const QString trimmed = service_name.trimmed();
+  if (trimmed.isEmpty()) {
+    return;
+  }
+  ai_chat_service_name_ = trimmed.toStdString();
+  if (node_) {
+    ai_chat_client_ = node_->create_client<AiChat>(ai_chat_service_name_);
+    Q_EMIT aiChatServiceAvailabilityChanged(ai_chat_client_->service_is_ready());
+  }
 }
 
 /// @copydoc RosWorker::setGlobalCostmapSubscriptionEnabled
