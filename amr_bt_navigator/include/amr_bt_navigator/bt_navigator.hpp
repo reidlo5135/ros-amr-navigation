@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -117,6 +118,8 @@ private:
   ExecutionResult execute_goal_pose(
     const geometry_msgs::msg::PoseStamped &goal_pose,
     const std::string &route_id,
+    uint32_t current_goal_index,
+    uint32_t goal_count,
     bool align_heading_at_goal,
     const std::function<bool()> &is_cancel_requested,
     const std::function<void(
@@ -222,9 +225,50 @@ private:
     const nav_msgs::msg::Path &plan,
     bool align_heading_at_goal);
   /// @brief Publish a motion command when the lifecycle publisher is active.
-  void publish_motion_command(const amr_msgs::msg::MotionCommand &command);
+  void publish_motion_command(
+    const amr_msgs::msg::MotionCommand &command,
+    uint32_t current_goal_index = 0U,
+    uint32_t goal_count = 0U,
+    const std::string &command_type = "motion_command");
   /// @brief Publish a stop command to halt active motion.
-  void publish_stop_command();
+  void publish_stop_command(
+    uint32_t current_goal_index = 0U,
+    uint32_t goal_count = 0U,
+    const std::string &reason = "stop_command");
+  /// @brief Clear the active single-goal handle when execution finishes.
+  void clear_active_goal(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle);
+  /// @brief Clear the active route-goal handle when execution finishes.
+  void clear_active_goal(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle);
+  /// @brief Finalize a single-goal result once, guarding action state transitions.
+  bool finalize_goal(
+    const std::shared_ptr<GoalHandleNavigateToPose> goal_handle,
+    const std::shared_ptr<NavigateToPose::Result> result,
+    const std::string &requested_status,
+    const std::string &reason);
+  /// @brief Finalize a route-goal result once, guarding action state transitions.
+  bool finalize_goal(
+    const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle,
+    const std::shared_ptr<NavigateToPoses::Result> result,
+    const std::string &requested_status,
+    const std::string &reason);
+  /// @brief Reset the latched terminal motion status before dispatching a new command.
+  void reset_terminal_latch(uint32_t next_command_id);
+  /// @brief Latch a terminal motion status for the active command when observed.
+  void latch_terminal_status_if_matches(
+    const amr_msgs::msg::MotionStatus &status,
+    uint32_t active_command_id);
+  /// @brief Return true when the active command has a latched terminal status.
+  bool has_latched_terminal_status(uint32_t active_command_id) const;
+  /// @brief Convert a goal UUID to a stable key used for duplicate result protection.
+  std::string goal_uuid_key(const rclcpp_action::GoalUUID &uuid) const;
+  /// @brief Log a caught exception with consistent structured fields.
+  void log_exception(
+    const std::string &phase,
+    const std::string &exception_type,
+    const std::exception &error,
+    bool fatal) const;
+  /// @brief Log an unknown exception with consistent structured fields.
+  void log_unknown_exception(const std::string &phase, bool fatal) const;
 
   rclcpp_action::Server<NavigateToPose>::SharedPtr action_server_;
   rclcpp_action::Server<NavigateToPoses>::SharedPtr action_server_poses_;
@@ -270,6 +314,12 @@ private:
   bool has_local_plan_status_;
   mutable std::mutex navigator_mutex_;
   mutable std::mutex active_goal_mutex_;
+  mutable std::mutex result_mutex_;
+  std::set<std::string> finalized_goal_ids_;
+  uint32_t last_terminal_command_id_;
+  rclcpp::Time last_terminal_status_time_;
+  bool latched_goal_reached_;
+  bool latched_command_completed_;
   std::weak_ptr<GoalHandleNavigateToPose> active_goal_handle_;
   std::weak_ptr<GoalHandleNavigateToPoses> active_goals_handle_;
 };

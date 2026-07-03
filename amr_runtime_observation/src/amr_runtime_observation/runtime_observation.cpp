@@ -639,6 +639,26 @@ RuntimeObservation::Snapshot RuntimeObservation::make_snapshot(const rclcpp::Tim
   Snapshot snapshot;
   snapshot.route_active = this->is_route_active(now);
   snapshot.action_status = this->resolve_action_status();
+  const bool action_terminal =
+    snapshot.action_status == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
+    snapshot.action_status == action_msgs::msg::GoalStatus::STATUS_CANCELED ||
+    snapshot.action_status == action_msgs::msg::GoalStatus::STATUS_ABORTED;
+  if (this->has_navigate_feedback_) {
+    const auto feedback_age = now - this->last_navigate_feedback_time_;
+    snapshot.route_feedback_stale = feedback_age > rclcpp::Duration::from_seconds(
+      static_cast<double>(this->route_stale_timeout_ms_) / 1000.0);
+  }
+  snapshot.route_terminal_status_missing =
+    snapshot.route_active && snapshot.route_feedback_stale && !action_terminal;
+  if (!this->has_navigate_feedback_) {
+    snapshot.route_active_state = "no_feedback";
+  } else if (action_terminal) {
+    snapshot.route_active_state = "terminal_status";
+  } else if (snapshot.route_feedback_stale) {
+    snapshot.route_active_state = "stale_nonterminal_status";
+  } else {
+    snapshot.route_active_state = "active_recent_feedback";
+  }
   snapshot.controller_phase = this->resolve_controller_phase();
   snapshot.controller_recovery = this->is_controller_recovery();
   snapshot.dist_goal_delta_m = this->last_dist_goal_delta_m_;
@@ -724,6 +744,9 @@ void RuntimeObservation::publish_event_if_needed(const Snapshot &snapshot, const
   if (this->previous_snapshot_.route_active && !snapshot.route_active) {
     this->publish_event("route_inactive", "route_became_inactive", snapshot, now);
   }
+  if (snapshot.route_active_state != this->previous_snapshot_.route_active_state) {
+    this->publish_event("route_active_state_changed", "route_active_state_changed", snapshot, now);
+  }
   if (snapshot.current_goal_index != this->previous_snapshot_.current_goal_index) {
     this->publish_event("goal_advanced", "current_goal_index_changed", snapshot, now);
   }
@@ -782,11 +805,14 @@ void RuntimeObservation::publish_event(
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=runtime_observation event=runtime_event phase=%s state=%s reason=%s route_active=%s recovery=%s recovery_count=%d blocked=%s blocked_count=%d dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_clear_delta_m=%.3f progress_stalled=%s progress_clear_reason=%s recovery_reason=%s",
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_event phase=%s state=%s reason=%s route_active=%s route_active_state=%s route_feedback_stale=%s route_terminal_status_missing=%s recovery=%s recovery_count=%d blocked=%s blocked_count=%d dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_clear_delta_m=%.3f progress_stalled=%s progress_clear_reason=%s recovery_reason=%s",
       event_type.c_str(),
       snapshot.runtime_state.c_str(),
       reason.c_str(),
       bool_label(snapshot.route_active),
+      snapshot.route_active_state.c_str(),
+      bool_label(snapshot.route_feedback_stale),
+      bool_label(snapshot.route_terminal_status_missing),
       bool_label(snapshot.recovery_triggered),
       snapshot.number_of_recoveries,
       bool_label(snapshot.motion_blocked || snapshot.progress_stalled || snapshot.local_recovery_required),
@@ -822,9 +848,12 @@ void RuntimeObservation::publish_observation()
       this->get_logger(),
       *this->get_clock(),
       throttle_ms_from_sec(this->summary_log_throttle_sec_),
-      "AMR_LOG schema=v1 component=runtime_observation event=runtime_summary phase=%s route_active=%s dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_clear_delta_m=%.3f recovery_count=%d blocked_count=%d progress_stalled=%s recovery=%s reason=%s progress_clear_reason=%s recovery_reason=%s",
+      "AMR_LOG schema=v1 component=runtime_observation event=runtime_summary phase=%s route_active=%s route_active_state=%s route_feedback_stale=%s route_terminal_status_missing=%s dist_goal_m=%.3f dist_goal_delta_m=%.3f heading_err_rad=%.3f controller_phase=%s controller_blocked=%s controller_stalled=%s controller_recovery=%s controller_goal_reached=%s progress_stall_window_sec=%.3f progress_clear_delta_m=%.3f recovery_count=%d blocked_count=%d progress_stalled=%s recovery=%s reason=%s progress_clear_reason=%s recovery_reason=%s",
       snapshot.runtime_state.c_str(),
       bool_label(snapshot.route_active),
+      snapshot.route_active_state.c_str(),
+      bool_label(snapshot.route_feedback_stale),
+      bool_label(snapshot.route_terminal_status_missing),
       this->has_motion_status_ ? this->latest_motion_status_.remaining_distance : 0.0,
       snapshot.dist_goal_delta_m,
       this->has_motion_status_ ? this->latest_motion_status_.heading_error : 0.0,
@@ -857,6 +886,9 @@ std::string RuntimeObservation::build_summary_json(
     (now.nanoseconds() % 1000000000LL) << "},";
   stream << "\"runtime_state\":\"" << escape_json(snapshot.runtime_state) << "\",";
   stream << "\"route_active\":" << snapshot.route_active << ",";
+  stream << "\"route_active_state\":\"" << escape_json(snapshot.route_active_state) << "\",";
+  stream << "\"route_feedback_stale\":" << snapshot.route_feedback_stale << ",";
+  stream << "\"route_terminal_status_missing\":" << snapshot.route_terminal_status_missing << ",";
   stream << "\"progress_stalled\":" << snapshot.progress_stalled << ",";
   stream << "\"progress_stall_window_sec\":" << this->progress_stall_window_sec_ << ",";
   stream << "\"progress_clear_delta_m\":" << this->progress_clear_delta_m_ << ",";
@@ -930,6 +962,9 @@ std::string RuntimeObservation::build_event_json(
   stream << "\"reason\":\"" << escape_json(reason) << "\",";
   stream << "\"runtime_state\":\"" << escape_json(snapshot.runtime_state) << "\",";
   stream << "\"route_active\":" << snapshot.route_active << ",";
+  stream << "\"route_active_state\":\"" << escape_json(snapshot.route_active_state) << "\",";
+  stream << "\"route_feedback_stale\":" << snapshot.route_feedback_stale << ",";
+  stream << "\"route_terminal_status_missing\":" << snapshot.route_terminal_status_missing << ",";
   stream << "\"current_goal_index\":" << snapshot.current_goal_index << ",";
   stream << "\"goal_count\":" << snapshot.goal_count << ",";
   stream << "\"number_of_recoveries\":" << snapshot.number_of_recoveries << ",";

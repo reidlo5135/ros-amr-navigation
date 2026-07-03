@@ -5,6 +5,9 @@
 
 #include "amr_bt_navigator/bt_navigator.hpp"
 
+#include <iomanip>
+#include <sstream>
+
 namespace amr::bt::navigator
 {
 
@@ -131,7 +134,11 @@ Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
   next_command_id_(1U),
   has_current_pose_(false),
   has_motion_status_(false),
-  has_local_plan_status_(false)
+  has_local_plan_status_(false),
+  last_terminal_command_id_(0U),
+  last_terminal_status_time_(0, 0, this->get_clock()->get_clock_type()),
+  latched_goal_reached_(false),
+  latched_command_completed_(false)
 {
   this->behavior_tree_xml_path_ = get_default_behavior_tree_xml_path();
   this->declare_parameter("actions.navigate_to_pose", this->navigate_action_name_);
@@ -504,7 +511,47 @@ void Btnavigator::handle_accepted(const std::shared_ptr<GoalHandleNavigateToPose
     std::scoped_lock active_goal_lock(this->active_goal_mutex_);
     this->active_goal_handle_ = goal_handle;
   }
-  std::thread([this, goal_handle]() { this->execute(goal_handle); }).detach();
+  std::thread(
+    [this, goal_handle]() {
+      try {
+        this->execute(goal_handle);
+      } catch (const BT::RuntimeError &error) {
+        this->log_exception("execute_thread_navigate_to_pose", "BT::RuntimeError", error, true);
+        auto result = std::make_shared<NavigateToPose::Result>();
+        result->error_code = NavigateToPose::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled BT runtime exception: ") + error.what();
+        this->finalize_goal(goal_handle, result, "aborted", "thread_bt_runtime_error");
+        this->clear_active_goal(goal_handle);
+      } catch (const std::future_error &error) {
+        this->log_exception("execute_thread_navigate_to_pose", "std::future_error", error, true);
+        auto result = std::make_shared<NavigateToPose::Result>();
+        result->error_code = NavigateToPose::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled future exception: ") + error.what();
+        this->finalize_goal(goal_handle, result, "aborted", "thread_future_error");
+        this->clear_active_goal(goal_handle);
+      } catch (const rclcpp::exceptions::RCLError &error) {
+        this->log_exception("execute_thread_navigate_to_pose", "rclcpp::exceptions::RCLError", error, true);
+        auto result = std::make_shared<NavigateToPose::Result>();
+        result->error_code = NavigateToPose::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled ROS client exception: ") + error.what();
+        this->finalize_goal(goal_handle, result, "aborted", "thread_rclcpp_error");
+        this->clear_active_goal(goal_handle);
+      } catch (const std::exception &error) {
+        this->log_exception("execute_thread_navigate_to_pose", "std::exception", error, true);
+        auto result = std::make_shared<NavigateToPose::Result>();
+        result->error_code = NavigateToPose::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled exception: ") + error.what();
+        this->finalize_goal(goal_handle, result, "aborted", "thread_exception");
+        this->clear_active_goal(goal_handle);
+      } catch (...) {
+        this->log_unknown_exception("execute_thread_navigate_to_pose", true);
+        auto result = std::make_shared<NavigateToPose::Result>();
+        result->error_code = NavigateToPose::Result::UNKNOWN;
+        result->error_msg = "Unhandled unknown exception.";
+        this->finalize_goal(goal_handle, result, "aborted", "thread_unknown_exception");
+        this->clear_active_goal(goal_handle);
+      }
+    }).detach();
 }
 
 /// @copydoc Btnavigator::handle_accepted_goals
@@ -515,24 +562,63 @@ void Btnavigator::handle_accepted_goals(
     std::scoped_lock active_goal_lock(this->active_goal_mutex_);
     this->active_goals_handle_ = goal_handle;
   }
-  std::thread([this, goal_handle]() { this->execute_goals(goal_handle); }).detach();
+  std::thread(
+    [this, goal_handle]() {
+      try {
+        this->execute_goals(goal_handle);
+      } catch (const BT::RuntimeError &error) {
+        this->log_exception("execute_thread_navigate_to_poses", "BT::RuntimeError", error, true);
+        auto result = std::make_shared<NavigateToPoses::Result>();
+        result->error_code = NavigateToPoses::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled BT runtime exception: ") + error.what();
+        result->completed_goals = 0U;
+        this->finalize_goal(goal_handle, result, "aborted", "thread_bt_runtime_error");
+        this->clear_active_goal(goal_handle);
+      } catch (const std::future_error &error) {
+        this->log_exception("execute_thread_navigate_to_poses", "std::future_error", error, true);
+        auto result = std::make_shared<NavigateToPoses::Result>();
+        result->error_code = NavigateToPoses::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled future exception: ") + error.what();
+        result->completed_goals = 0U;
+        this->finalize_goal(goal_handle, result, "aborted", "thread_future_error");
+        this->clear_active_goal(goal_handle);
+      } catch (const rclcpp::exceptions::RCLError &error) {
+        this->log_exception("execute_thread_navigate_to_poses", "rclcpp::exceptions::RCLError", error, true);
+        auto result = std::make_shared<NavigateToPoses::Result>();
+        result->error_code = NavigateToPoses::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled ROS client exception: ") + error.what();
+        result->completed_goals = 0U;
+        this->finalize_goal(goal_handle, result, "aborted", "thread_rclcpp_error");
+        this->clear_active_goal(goal_handle);
+      } catch (const std::exception &error) {
+        this->log_exception("execute_thread_navigate_to_poses", "std::exception", error, true);
+        auto result = std::make_shared<NavigateToPoses::Result>();
+        result->error_code = NavigateToPoses::Result::UNKNOWN;
+        result->error_msg = std::string("Unhandled exception: ") + error.what();
+        result->completed_goals = 0U;
+        this->finalize_goal(goal_handle, result, "aborted", "thread_exception");
+        this->clear_active_goal(goal_handle);
+      } catch (...) {
+        this->log_unknown_exception("execute_thread_navigate_to_poses", true);
+        auto result = std::make_shared<NavigateToPoses::Result>();
+        result->error_code = NavigateToPoses::Result::UNKNOWN;
+        result->error_msg = "Unhandled unknown exception.";
+        result->completed_goals = 0U;
+        this->finalize_goal(goal_handle, result, "aborted", "thread_unknown_exception");
+        this->clear_active_goal(goal_handle);
+      }
+    }).detach();
 }
 
 /// @copydoc Btnavigator::execute
 void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
 {
-  const auto clear_active_goal = [this, &goal_handle]() {
-    std::scoped_lock active_goal_lock(this->active_goal_mutex_);
-    const auto active_goal = this->active_goal_handle_.lock();
-    if (active_goal == goal_handle) {
-      this->active_goal_handle_.reset();
-    }
-  };
-
   const auto goal = goal_handle->get_goal();
   const auto result = this->execute_goal_pose(
     goal->goal_pose,
     "navigate_to_pose",
+    0U,
+    1U,
     this->align_heading_at_goal_,
     [goal_handle]() { return goal_handle->is_canceling(); },
     [goal_handle, this](
@@ -561,29 +647,21 @@ void Btnavigator::execute(const std::shared_ptr<GoalHandleNavigateToPose> goal_h
   action_result->error_msg = result.message;
   if (result.canceled) {
     action_result->error_code = NavigateToPose::Result::NONE;
-    goal_handle->canceled(action_result);
+    this->finalize_goal(goal_handle, action_result, "canceled", "execute_result_canceled");
   } else if (result.success) {
     action_result->error_code = NavigateToPose::Result::NONE;
-    goal_handle->succeed(action_result);
+    this->finalize_goal(goal_handle, action_result, "succeeded", "execute_result_succeeded");
   } else {
     action_result->error_code = result.error_code;
-    goal_handle->abort(action_result);
+    this->finalize_goal(goal_handle, action_result, "aborted", "execute_result_failed");
   }
 
-  clear_active_goal();
+  this->clear_active_goal(goal_handle);
 }
 
 /// @copydoc Btnavigator::execute_goals
 void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle)
 {
-  const auto clear_active_goal = [this, &goal_handle]() {
-    std::scoped_lock active_goal_lock(this->active_goal_mutex_);
-    const auto active_goal = this->active_goals_handle_.lock();
-    if (active_goal == goal_handle) {
-      this->active_goals_handle_.reset();
-    }
-  };
-
   const auto goal = goal_handle->get_goal();
   uint32_t completed_goals = 0U;
   const auto goal_count = static_cast<uint32_t>(goal->goal_poses.size());
@@ -593,8 +671,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
     result->error_code = NavigateToPoses::Result::UNKNOWN;
     result->error_msg = "Waypoint route is empty.";
     result->completed_goals = 0U;
-    goal_handle->abort(result);
-    clear_active_goal();
+    this->finalize_goal(goal_handle, result, "aborted", "empty_route");
+    this->clear_active_goal(goal_handle);
     return;
   }
 
@@ -604,8 +682,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
       result->error_code = NavigateToPoses::Result::NONE;
       result->error_msg = "Waypoint route canceled.";
       result->completed_goals = completed_goals;
-      goal_handle->canceled(result);
-      clear_active_goal();
+      this->finalize_goal(goal_handle, result, "canceled", "route_cancel_requested");
+      this->clear_active_goal(goal_handle);
       return;
     }
 
@@ -615,6 +693,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
     const auto waypoint_result = this->execute_goal_pose(
       route_goal_pose,
       "navigate_to_poses",
+      static_cast<uint32_t>(index),
+      goal_count,
       align_heading_at_goal,
       [goal_handle]() { return goal_handle->is_canceling(); },
       [goal_handle, index, goal_count, this](
@@ -646,8 +726,8 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
       result->error_code = NavigateToPoses::Result::NONE;
       result->error_msg = waypoint_result.message;
       result->completed_goals = completed_goals;
-      goal_handle->canceled(result);
-      clear_active_goal();
+      this->finalize_goal(goal_handle, result, "canceled", "waypoint_canceled");
+      this->clear_active_goal(goal_handle);
       return;
     }
 
@@ -657,12 +737,20 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
       result->error_msg =
         "Waypoint " + std::to_string(index + 1) + " failed: " + waypoint_result.message;
       result->completed_goals = completed_goals;
-      goal_handle->abort(result);
-      clear_active_goal();
+      this->finalize_goal(goal_handle, result, "aborted", "waypoint_failed");
+      this->clear_active_goal(goal_handle);
       return;
     }
 
     completed_goals += 1U;
+    if (this->structured_logging_enabled_) {
+      RCLCPP_INFO(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=waypoint_completed route_id=navigate_to_poses current_goal_index=%zu goal_count=%u completed_goals=%u result=success reason=goal_reached",
+        index,
+        goal_count,
+        completed_goals);
+    }
   }
 
   auto result = std::make_shared<NavigateToPoses::Result>();
@@ -670,14 +758,16 @@ void Btnavigator::execute_goals(const std::shared_ptr<GoalHandleNavigateToPoses>
   result->error_msg =
     "Completed all " + std::to_string(completed_goals) + " waypoint goals.";
   result->completed_goals = completed_goals;
-  goal_handle->succeed(result);
-  clear_active_goal();
+  this->finalize_goal(goal_handle, result, "succeeded", "route_completed");
+  this->clear_active_goal(goal_handle);
 }
 
 /// @copydoc Btnavigator::execute_goal_pose
 Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   const geometry_msgs::msg::PoseStamped &goal_pose,
   const std::string &route_id,
+  const uint32_t current_goal_index,
+  const uint32_t goal_count,
   const bool align_heading_at_goal,
   const std::function<bool()> &is_cancel_requested,
   const std::function<void(
@@ -703,6 +793,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
   blackboard->set("navigator", this);
   blackboard->set("goal_pose", goal_pose);
   blackboard->set("route_id", route_id);
+  blackboard->set("current_goal_index", current_goal_index);
+  blackboard->set("goal_count", goal_count);
   blackboard->set("align_heading_at_goal", align_heading_at_goal);
   blackboard->set("is_cancel_requested", is_cancel_requested);
   blackboard->set("planned_path", nav_msgs::msg::Path());
@@ -800,16 +892,20 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
+      const auto current_goal_index = blackboard->get<uint32_t>("current_goal_index");
+      const auto goal_count = blackboard->get<uint32_t>("goal_count");
       const bool align_heading_at_goal = blackboard->get<bool>("align_heading_at_goal");
       const auto plan = blackboard->get<nav_msgs::msg::Path>("planned_path");
       auto command = navigator->build_motion_command(goal_pose, route_id, plan, align_heading_at_goal);
-      navigator->publish_motion_command(command);
+      navigator->publish_motion_command(command, current_goal_index, goal_count, "navigate");
       if (navigator->structured_logging_enabled_) {
         RCLCPP_INFO(
           navigator->get_logger(),
-          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s path_points=%zu result=dispatched",
+          "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s current_goal_index=%u goal_count=%u path_points=%zu result=dispatched",
           command.command_id,
           route_id.c_str(),
+          current_goal_index,
+          goal_count,
           plan.poses.size());
       }
       blackboard->set("active_command", command);
@@ -835,7 +931,22 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       auto *navigator = blackboard->get<Btnavigator *>("navigator");
       const auto status = navigator->get_motion_status_copy();
       const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
-      if (status.command_id == command.command_id && status.goal_reached) {
+      navigator->latch_terminal_status_if_matches(status, command.command_id);
+      if (navigator->has_latched_terminal_status(command.command_id)) {
+        if (navigator->structured_logging_enabled_) {
+          const auto current_goal_index = blackboard->get<uint32_t>("current_goal_index");
+          const auto goal_count = blackboard->get<uint32_t>("goal_count");
+          RCLCPP_INFO(
+            navigator->get_logger(),
+            "AMR_LOG schema=v1 component=bt_navigator event=terminal_latch_observed phase=check_goal_reached route_goal_id=%u active_command_id=%u motion_command_id=%u current_goal_index=%u goal_count=%u goal_reached=%s command_completed=%s result=success",
+            command.command_id,
+            command.command_id,
+            status.command_id,
+            current_goal_index,
+            goal_count,
+            bool_label(status.goal_reached),
+            bool_label(status.command_completed));
+        }
         return BT::NodeStatus::SUCCESS;
       }
       return BT::NodeStatus::FAILURE;
@@ -1009,6 +1120,8 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       const auto current_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("current_pose");
       const auto goal_pose = blackboard->get<geometry_msgs::msg::PoseStamped>("goal_pose");
       const auto route_id = blackboard->get<std::string>("route_id");
+      const auto current_goal_index = blackboard->get<uint32_t>("current_goal_index");
+      const auto goal_count = blackboard->get<uint32_t>("goal_count");
       const bool align_heading_at_goal = blackboard->get<bool>("align_heading_at_goal");
       const auto active_command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
       const auto planned_path = blackboard->get<nav_msgs::msg::Path>("planned_path");
@@ -1028,7 +1141,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           blackboard->set("recovery_reacquire_command_id", dispatched_command.command_id);
         };
       const auto finish_canceled = [&]() {
-        navigator->publish_stop_command();
+        navigator->publish_stop_command(current_goal_index, goal_count, "cancel_requested");
         blackboard->set("recovery_condition_since_ns", static_cast<int64_t>(0));
         blackboard->set("recovery_reacquire_until_ns", static_cast<int64_t>(0));
         blackboard->set("recovery_reacquire_command_id", static_cast<uint32_t>(0U));
@@ -1081,7 +1194,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         }
       }
 
-      navigator->publish_stop_command();
+      navigator->publish_stop_command(current_goal_index, goal_count, "recovery_start_stop_active_command");
 
       if (!navigator->wait_for_recovery_services(error_message, cancel_requested)) {
         if (cancel_requested()) {
@@ -1119,7 +1232,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
         {
           auto command = navigator->build_motion_command(
             goal_pose, route_id, escape_plan, align_heading_at_goal);
-          navigator->publish_motion_command(command);
+          navigator->publish_motion_command(command, current_goal_index, goal_count, "local_escape");
           arm_recovery_reacquire(command);
           blackboard->set("local_escape_dispatched", true);
           blackboard->set("planned_path", escape_plan);
@@ -1168,7 +1281,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           attempts += 1;
           blackboard->set("recovery_attempts", attempts);
           if (attempts >= navigator->recovery_max_retries_) {
-            navigator->publish_stop_command();
+            navigator->publish_stop_command(current_goal_index, goal_count, "global_replan_retry_exceeded");
             blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
             blackboard->set(
               "status_message",
@@ -1177,7 +1290,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
           }
           auto command = navigator->build_motion_command(
             goal_pose, route_id, replanned_path, align_heading_at_goal);
-          navigator->publish_motion_command(command);
+          navigator->publish_motion_command(command, current_goal_index, goal_count, "global_replan");
           arm_recovery_reacquire(command);
           blackboard->set("planned_path", replanned_path);
           if (navigator->structured_logging_enabled_) {
@@ -1224,7 +1337,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               local_plan_decision_label(local_plan_status.decision),
               attempts + 1);
           }
-          navigator->publish_motion_command(recovery_command);
+          navigator->publish_motion_command(recovery_command, current_goal_index, goal_count, recovery_behavior);
           if (!navigator->wait_for_command_completion(
               recovery_command.command_id,
               navigator->recovery_behavior_timeout_ms(recovery_behavior),
@@ -1262,7 +1375,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               attempts += 1;
               blackboard->set("recovery_attempts", attempts);
               if (attempts >= navigator->recovery_max_retries_) {
-                navigator->publish_stop_command();
+                navigator->publish_stop_command(current_goal_index, goal_count, "redispatch_retry_exceeded");
                 blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
                 blackboard->set(
                   "status_message",
@@ -1271,7 +1384,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
               }
               auto command = navigator->build_motion_command(
                 goal_pose, route_id, planned_path, align_heading_at_goal);
-              navigator->publish_motion_command(command);
+              navigator->publish_motion_command(command, current_goal_index, goal_count, "redispatch_existing_plan");
               arm_recovery_reacquire(command);
               if (navigator->structured_logging_enabled_) {
                 RCLCPP_INFO(
@@ -1306,7 +1419,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       blackboard->set("recovery_attempts", attempts);
 
       if (attempts >= navigator->recovery_max_retries_) {
-        navigator->publish_stop_command();
+        navigator->publish_stop_command(current_goal_index, goal_count, "recovery_retry_exceeded");
         blackboard->set("bt_outcome", static_cast<int>(BtOutcome::kStopped));
         blackboard->set(
           "status_message",
@@ -1329,7 +1442,7 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
 
       auto command = navigator->build_motion_command(
         goal_pose, route_id, replanned_path, align_heading_at_goal);
-      navigator->publish_motion_command(command);
+      navigator->publish_motion_command(command, current_goal_index, goal_count, "fresh_global_replan");
       arm_recovery_reacquire(command);
       blackboard->set("planned_path", replanned_path);
       if (navigator->structured_logging_enabled_) {
@@ -1353,7 +1466,23 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     "PublishStopCommand",
     [blackboard](BT::TreeNode &) {
       auto *navigator = blackboard->get<Btnavigator *>("navigator");
-      navigator->publish_stop_command();
+      const auto command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
+      const auto current_goal_index = blackboard->get<uint32_t>("current_goal_index");
+      const auto goal_count = blackboard->get<uint32_t>("goal_count");
+      const auto motion_status = navigator->get_motion_status_copy();
+      const auto local_plan_status = navigator->get_local_plan_status_copy();
+      if (navigator->structured_logging_enabled_) {
+        RCLCPP_INFO(
+          navigator->get_logger(),
+          "AMR_LOG schema=v1 component=bt_navigator event=stale_command_clear phase=publish_stop_command route_goal_id=%u active_command_id=%u motion_command_id=%u local_plan_command_id=%u current_goal_index=%u goal_count=%u reason=bt_terminal_or_cancel",
+          command.command_id,
+          command.command_id,
+          motion_status.command_id,
+          local_plan_status.command_id,
+          current_goal_index,
+          goal_count);
+      }
+      navigator->publish_stop_command(current_goal_index, goal_count, "bt_terminal_or_cancel");
       blackboard->set("status_message", std::string("Stop command dispatched."));
       if (navigator->structured_logging_enabled_) {
         RCLCPP_WARN(
@@ -1401,7 +1530,27 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
       9001U};  // FAILED_TO_LOAD_BEHAVIOR_TREE
   }
 
-  if (plan_tree.tickRoot() != BT::NodeStatus::SUCCESS) {
+  BT::NodeStatus plan_status = BT::NodeStatus::IDLE;
+  try {
+    plan_status = plan_tree.tickRoot();
+  } catch (const BT::RuntimeError &error) {
+    this->log_exception("plan_tree.tickRoot", "BT::RuntimeError", error, false);
+    return ExecutionResult{false, false, std::string("Behavior tree plan tick failed: ") + error.what(), 9000U};
+  } catch (const std::future_error &error) {
+    this->log_exception("plan_tree.tickRoot", "std::future_error", error, false);
+    return ExecutionResult{false, false, std::string("Behavior tree plan future failed: ") + error.what(), 9000U};
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("plan_tree.tickRoot", "rclcpp::exceptions::RCLError", error, false);
+    return ExecutionResult{false, false, std::string("Behavior tree plan ROS client failed: ") + error.what(), 9000U};
+  } catch (const std::exception &error) {
+    this->log_exception("plan_tree.tickRoot", "std::exception", error, false);
+    return ExecutionResult{false, false, std::string("Behavior tree plan tick failed: ") + error.what(), 9000U};
+  } catch (...) {
+    this->log_unknown_exception("plan_tree.tickRoot", false);
+    return ExecutionResult{false, false, "Behavior tree plan tick failed with an unknown exception.", 9000U};
+  }
+
+  if (plan_status != BT::NodeStatus::SUCCESS) {
     if (is_cancel_requested()) {
       const auto message = blackboard->get<std::string>("status_message");
       return ExecutionResult{
@@ -1422,17 +1571,67 @@ Btnavigator::ExecutionResult Btnavigator::execute_goal_pose(
     const auto status = this->get_motion_status_copy();
     const auto pose = this->get_current_pose_copy();
 
-    if (publish_feedback) {
-      const auto recovery_count = blackboard->get<int>("recovery_attempts");
-      publish_feedback(pose, status, recovery_count, this->now() - goal_start);
+    try {
+      if (publish_feedback) {
+        const auto recovery_count = blackboard->get<int>("recovery_attempts");
+        publish_feedback(pose, status, recovery_count, this->now() - goal_start);
+      }
+    } catch (const std::exception &error) {
+      this->log_exception("publish_feedback", "std::exception", error, false);
+      return ExecutionResult{false, false, std::string("Failed to publish action feedback: ") + error.what(), 9000U};
+    } catch (...) {
+      this->log_unknown_exception("publish_feedback", false);
+      return ExecutionResult{false, false, "Failed to publish action feedback with an unknown exception.", 9000U};
     }
 
-    blackboard->set("current_pose", pose);
-    const auto monitor_status = monitor_tree.tickRoot();
-    (void)monitor_status;
+    BT::NodeStatus monitor_status = BT::NodeStatus::IDLE;
+    BtOutcome outcome = BtOutcome::kRunning;
+    std::string message;
+    try {
+      blackboard->set("current_pose", pose);
+      monitor_status = monitor_tree.tickRoot();
+      outcome = static_cast<BtOutcome>(blackboard->get<int>("bt_outcome"));
+      message = blackboard->get<std::string>("status_message");
+    } catch (const BT::RuntimeError &error) {
+      this->log_exception("monitor_tree.tickRoot", "BT::RuntimeError", error, false);
+      return ExecutionResult{false, false, std::string("Behavior tree monitor tick failed: ") + error.what(), 9000U};
+    } catch (const std::future_error &error) {
+      this->log_exception("monitor_tree.tickRoot", "std::future_error", error, false);
+      return ExecutionResult{false, false, std::string("Behavior tree monitor future failed: ") + error.what(), 9000U};
+    } catch (const rclcpp::exceptions::RCLError &error) {
+      this->log_exception("monitor_tree.tickRoot", "rclcpp::exceptions::RCLError", error, false);
+      return ExecutionResult{false, false, std::string("Behavior tree monitor ROS client failed: ") + error.what(), 9000U};
+    } catch (const std::exception &error) {
+      this->log_exception("monitor_tree.tickRoot", "std::exception", error, false);
+      return ExecutionResult{false, false, std::string("Behavior tree monitor tick failed: ") + error.what(), 9000U};
+    } catch (...) {
+      this->log_unknown_exception("monitor_tree.tickRoot", false);
+      return ExecutionResult{false, false, "Behavior tree monitor tick failed with an unknown exception.", 9000U};
+    }
 
-    const auto outcome = static_cast<BtOutcome>(blackboard->get<int>("bt_outcome"));
-    const auto message = blackboard->get<std::string>("status_message");
+    if (this->structured_logging_enabled_) {
+      const auto active_command = blackboard->get<amr_msgs::msg::MotionCommand>("active_command");
+      const auto local_plan_status = this->get_local_plan_status_copy();
+      RCLCPP_INFO_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        1000,
+        "AMR_LOG schema=v1 component=bt_navigator event=bt_monitor_tick route_id=%s route_goal_id=%u active_command_id=%u motion_command_id=%u local_plan_command_id=%u current_goal_index=%u goal_count=%u monitor_status=%d bt_outcome=%d motion_goal_reached=%s motion_command_completed=%s latched_terminal=%s recovery_count=%d status_message=%s",
+        route_id.c_str(),
+        active_command.command_id,
+        active_command.command_id,
+        status.command_id,
+        local_plan_status.command_id,
+        current_goal_index,
+        goal_count,
+        static_cast<int>(monitor_status),
+        static_cast<int>(outcome),
+        bool_label(status.goal_reached),
+        bool_label(status.command_completed),
+        bool_label(this->has_latched_terminal_status(active_command.command_id)),
+        blackboard->get<int>("recovery_attempts"),
+        log_value(message).c_str());
+    }
     if (outcome == BtOutcome::kSucceeded) {
       if (this->structured_logging_enabled_) {
         RCLCPP_INFO(
@@ -1480,6 +1679,12 @@ void Btnavigator::handle_motion_status(const amr_msgs::msg::MotionStatus::Shared
   std::scoped_lock lock(this->navigator_mutex_);
   this->latest_motion_status_ = *message;
   this->has_motion_status_ = true;
+  if (message->command_id != 0U && (message->goal_reached || message->command_completed)) {
+    this->last_terminal_command_id_ = message->command_id;
+    this->last_terminal_status_time_ = this->now();
+    this->latched_goal_reached_ = message->goal_reached;
+    this->latched_command_completed_ = message->command_completed;
+  }
 }
 
 /// @copydoc Btnavigator::handle_local_plan_status
@@ -1718,7 +1923,26 @@ bool Btnavigator::request_global_plan(
     return false;
   }
 
-  const auto response = future.get();
+  std::shared_ptr<amr_msgs::srv::PlanSegment::Response> response;
+  try {
+    response = future.get();
+  } catch (const std::future_error &error) {
+    this->log_exception("request_global_plan.future.get", "std::future_error", error, false);
+    error_message = std::string("Global planner future failed: ") + error.what();
+    return false;
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("request_global_plan.future.get", "rclcpp::exceptions::RCLError", error, false);
+    error_message = std::string("Global planner ROS client failed: ") + error.what();
+    return false;
+  } catch (const std::exception &error) {
+    this->log_exception("request_global_plan.future.get", "std::exception", error, false);
+    error_message = std::string("Global planner request failed: ") + error.what();
+    return false;
+  } catch (...) {
+    this->log_unknown_exception("request_global_plan.future.get", false);
+    error_message = "Global planner request failed with an unknown exception.";
+    return false;
+  }
   if (!response->success) {
     error_message = response->message;
     if (this->structured_logging_enabled_) {
@@ -1778,7 +2002,26 @@ bool Btnavigator::request_recovery_command(
     return false;
   }
 
-  const auto response = future.get();
+  std::shared_ptr<amr_msgs::srv::PlanRecovery::Response> response;
+  try {
+    response = future.get();
+  } catch (const std::future_error &error) {
+    this->log_exception("request_recovery_command.future.get", "std::future_error", error, false);
+    error_message = std::string("Recovery planner future failed: ") + error.what();
+    return false;
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("request_recovery_command.future.get", "rclcpp::exceptions::RCLError", error, false);
+    error_message = std::string("Recovery planner ROS client failed: ") + error.what();
+    return false;
+  } catch (const std::exception &error) {
+    this->log_exception("request_recovery_command.future.get", "std::exception", error, false);
+    error_message = std::string("Recovery planner request failed: ") + error.what();
+    return false;
+  } catch (...) {
+    this->log_unknown_exception("request_recovery_command.future.get", false);
+    error_message = "Recovery planner request failed with an unknown exception.";
+    return false;
+  }
   if (!response->success) {
     error_message = response->message;
     return false;
@@ -1828,7 +2071,26 @@ bool Btnavigator::request_local_escape_plan(
     return false;
   }
 
-  const auto response = future.get();
+  std::shared_ptr<amr_msgs::srv::PlanLocalEscape::Response> response;
+  try {
+    response = future.get();
+  } catch (const std::future_error &error) {
+    this->log_exception("request_local_escape_plan.future.get", "std::future_error", error, false);
+    error_message = std::string("Local escape planner future failed: ") + error.what();
+    return false;
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("request_local_escape_plan.future.get", "rclcpp::exceptions::RCLError", error, false);
+    error_message = std::string("Local escape planner ROS client failed: ") + error.what();
+    return false;
+  } catch (const std::exception &error) {
+    this->log_exception("request_local_escape_plan.future.get", "std::exception", error, false);
+    error_message = std::string("Local escape planner request failed: ") + error.what();
+    return false;
+  } catch (...) {
+    this->log_unknown_exception("request_local_escape_plan.future.get", false);
+    error_message = "Local escape planner request failed with an unknown exception.";
+    return false;
+  }
   if (!response->success) {
     error_message = this->describe_local_escape_failure(response->message);
     return false;
@@ -2037,7 +2299,26 @@ bool Btnavigator::clear_local_costmap(
     return false;
   }
 
-  const auto response = future.get();
+  std::shared_ptr<amr_msgs::srv::ClearCostmap::Response> response;
+  try {
+    response = future.get();
+  } catch (const std::future_error &error) {
+    this->log_exception("clear_local_costmap.future.get", "std::future_error", error, false);
+    error_message = std::string("Clear costmap future failed: ") + error.what();
+    return false;
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("clear_local_costmap.future.get", "rclcpp::exceptions::RCLError", error, false);
+    error_message = std::string("Clear costmap ROS client failed: ") + error.what();
+    return false;
+  } catch (const std::exception &error) {
+    this->log_exception("clear_local_costmap.future.get", "std::exception", error, false);
+    error_message = std::string("Clear costmap request failed: ") + error.what();
+    return false;
+  } catch (...) {
+    this->log_unknown_exception("clear_local_costmap.future.get", false);
+    error_message = "Clear costmap request failed with an unknown exception.";
+    return false;
+  }
   if (!response->success) {
     error_message = response->message;
     return false;
@@ -2086,6 +2367,253 @@ bool Btnavigator::has_active_goal() const
   return !this->active_goal_handle_.expired() || !this->active_goals_handle_.expired();
 }
 
+/// @copydoc Btnavigator::clear_active_goal
+void Btnavigator::clear_active_goal(const std::shared_ptr<GoalHandleNavigateToPose> goal_handle)
+{
+  std::scoped_lock active_goal_lock(this->active_goal_mutex_);
+  const auto active_goal = this->active_goal_handle_.lock();
+  if (active_goal == goal_handle) {
+    this->active_goal_handle_.reset();
+  }
+}
+
+/// @copydoc Btnavigator::clear_active_goal
+void Btnavigator::clear_active_goal(const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle)
+{
+  std::scoped_lock active_goal_lock(this->active_goal_mutex_);
+  const auto active_goal = this->active_goals_handle_.lock();
+  if (active_goal == goal_handle) {
+    this->active_goals_handle_.reset();
+  }
+}
+
+/// @copydoc Btnavigator::finalize_goal
+bool Btnavigator::finalize_goal(
+  const std::shared_ptr<GoalHandleNavigateToPose> goal_handle,
+  const std::shared_ptr<NavigateToPose::Result> result,
+  const std::string &requested_status,
+  const std::string &reason)
+{
+  const std::string goal_key = this->goal_uuid_key(goal_handle->get_goal_id());
+  const bool active = goal_handle->is_active();
+  const bool canceling = goal_handle->is_canceling();
+  {
+    std::scoped_lock result_lock(this->result_mutex_);
+    if (this->finalized_goal_ids_.find(goal_key) != this->finalized_goal_ids_.end()) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=action_result_duplicate route_id=navigate_to_pose goal_uuid=%s requested_status=%s reason=%s result=ignored",
+        goal_key.c_str(),
+        requested_status.c_str(),
+        log_value(reason).c_str());
+      return false;
+    }
+    if (!active && !canceling) {
+      this->finalized_goal_ids_.insert(goal_key);
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=action_result_inactive route_id=navigate_to_pose goal_uuid=%s requested_status=%s reason=%s is_active=false is_canceling=false result=ignored",
+        goal_key.c_str(),
+        requested_status.c_str(),
+        log_value(reason).c_str());
+      return false;
+    }
+    this->finalized_goal_ids_.insert(goal_key);
+  }
+
+  const std::string final_status = canceling ? std::string("canceled") : requested_status;
+  try {
+    if (final_status == "succeeded") {
+      goal_handle->succeed(result);
+    } else if (final_status == "canceled") {
+      goal_handle->canceled(result);
+    } else {
+      goal_handle->abort(result);
+    }
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=action_result_finalized route_id=navigate_to_pose goal_uuid=%s requested_status=%s final_status=%s reason=%s is_active=%s is_canceling=%s result=sent",
+      goal_key.c_str(),
+      requested_status.c_str(),
+      final_status.c_str(),
+      log_value(reason).c_str(),
+      bool_label(active),
+      bool_label(canceling));
+    return true;
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("finalize_goal.navigate_to_pose", "rclcpp::exceptions::RCLError", error, true);
+  } catch (const std::exception &error) {
+    this->log_exception("finalize_goal.navigate_to_pose", "std::exception", error, true);
+  } catch (...) {
+    this->log_unknown_exception("finalize_goal.navigate_to_pose", true);
+  }
+  return false;
+}
+
+/// @copydoc Btnavigator::finalize_goal
+bool Btnavigator::finalize_goal(
+  const std::shared_ptr<GoalHandleNavigateToPoses> goal_handle,
+  const std::shared_ptr<NavigateToPoses::Result> result,
+  const std::string &requested_status,
+  const std::string &reason)
+{
+  const std::string goal_key = this->goal_uuid_key(goal_handle->get_goal_id());
+  const bool active = goal_handle->is_active();
+  const bool canceling = goal_handle->is_canceling();
+  {
+    std::scoped_lock result_lock(this->result_mutex_);
+    if (this->finalized_goal_ids_.find(goal_key) != this->finalized_goal_ids_.end()) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=action_result_duplicate route_id=navigate_to_poses goal_uuid=%s requested_status=%s reason=%s completed_goals=%u result=ignored",
+        goal_key.c_str(),
+        requested_status.c_str(),
+        log_value(reason).c_str(),
+        result->completed_goals);
+      return false;
+    }
+    if (!active && !canceling) {
+      this->finalized_goal_ids_.insert(goal_key);
+      RCLCPP_WARN(
+        this->get_logger(),
+        "AMR_LOG schema=v1 component=bt_navigator event=action_result_inactive route_id=navigate_to_poses goal_uuid=%s requested_status=%s reason=%s completed_goals=%u is_active=false is_canceling=false result=ignored",
+        goal_key.c_str(),
+        requested_status.c_str(),
+        log_value(reason).c_str(),
+        result->completed_goals);
+      return false;
+    }
+    this->finalized_goal_ids_.insert(goal_key);
+  }
+
+  const std::string final_status = canceling ? std::string("canceled") : requested_status;
+  try {
+    if (final_status == "succeeded") {
+      goal_handle->succeed(result);
+    } else if (final_status == "canceled") {
+      goal_handle->canceled(result);
+    } else {
+      goal_handle->abort(result);
+    }
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=action_result_finalized route_id=navigate_to_poses goal_uuid=%s requested_status=%s final_status=%s reason=%s completed_goals=%u is_active=%s is_canceling=%s result=sent",
+      goal_key.c_str(),
+      requested_status.c_str(),
+      final_status.c_str(),
+      log_value(reason).c_str(),
+      result->completed_goals,
+      bool_label(active),
+      bool_label(canceling));
+    return true;
+  } catch (const rclcpp::exceptions::RCLError &error) {
+    this->log_exception("finalize_goal.navigate_to_poses", "rclcpp::exceptions::RCLError", error, true);
+  } catch (const std::exception &error) {
+    this->log_exception("finalize_goal.navigate_to_poses", "std::exception", error, true);
+  } catch (...) {
+    this->log_unknown_exception("finalize_goal.navigate_to_poses", true);
+  }
+  return false;
+}
+
+/// @copydoc Btnavigator::reset_terminal_latch
+void Btnavigator::reset_terminal_latch(const uint32_t next_command_id)
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  if (this->latched_goal_reached_ || this->latched_command_completed_) {
+    RCLCPP_INFO(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=terminal_latch_reset previous_command_id=%u next_command_id=%u goal_reached=%s command_completed=%s result=cleared",
+      this->last_terminal_command_id_,
+      next_command_id,
+      bool_label(this->latched_goal_reached_),
+      bool_label(this->latched_command_completed_));
+  }
+  this->last_terminal_command_id_ = 0U;
+  this->last_terminal_status_time_ = rclcpp::Time(0, 0, this->get_clock()->get_clock_type());
+  this->latched_goal_reached_ = false;
+  this->latched_command_completed_ = false;
+}
+
+/// @copydoc Btnavigator::latch_terminal_status_if_matches
+void Btnavigator::latch_terminal_status_if_matches(
+  const amr_msgs::msg::MotionStatus &status,
+  const uint32_t active_command_id)
+{
+  if (
+    active_command_id == 0U || status.command_id != active_command_id ||
+    (!status.goal_reached && !status.command_completed))
+  {
+    return;
+  }
+  std::scoped_lock lock(this->navigator_mutex_);
+  this->last_terminal_command_id_ = active_command_id;
+  this->last_terminal_status_time_ = this->now();
+  this->latched_goal_reached_ = this->latched_goal_reached_ || status.goal_reached;
+  this->latched_command_completed_ = this->latched_command_completed_ || status.command_completed;
+}
+
+/// @copydoc Btnavigator::has_latched_terminal_status
+bool Btnavigator::has_latched_terminal_status(const uint32_t active_command_id) const
+{
+  std::scoped_lock lock(this->navigator_mutex_);
+  return
+    active_command_id != 0U &&
+    this->last_terminal_command_id_ == active_command_id &&
+    (this->latched_goal_reached_ || this->latched_command_completed_);
+}
+
+/// @copydoc Btnavigator::goal_uuid_key
+std::string Btnavigator::goal_uuid_key(const rclcpp_action::GoalUUID &uuid) const
+{
+  std::ostringstream stream;
+  stream << std::hex << std::setfill('0');
+  for (const auto byte : uuid) {
+    stream << std::setw(2) << static_cast<int>(byte);
+  }
+  return stream.str();
+}
+
+/// @copydoc Btnavigator::log_exception
+void Btnavigator::log_exception(
+  const std::string &phase,
+  const std::string &exception_type,
+  const std::exception &error,
+  const bool fatal) const
+{
+  if (fatal) {
+    RCLCPP_FATAL(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=fatal_exception phase=%s exception_type=%s reason=%s",
+      phase.c_str(),
+      exception_type.c_str(),
+      log_value(error.what()).c_str());
+    return;
+  }
+  RCLCPP_ERROR(
+    this->get_logger(),
+    "AMR_LOG schema=v1 component=bt_navigator event=caught_exception phase=%s exception_type=%s reason=%s",
+    phase.c_str(),
+    exception_type.c_str(),
+    log_value(error.what()).c_str());
+}
+
+/// @copydoc Btnavigator::log_unknown_exception
+void Btnavigator::log_unknown_exception(const std::string &phase, const bool fatal) const
+{
+  if (fatal) {
+    RCLCPP_FATAL(
+      this->get_logger(),
+      "AMR_LOG schema=v1 component=bt_navigator event=fatal_exception phase=%s exception_type=unknown reason=unknown_exception",
+      phase.c_str());
+    return;
+  }
+  RCLCPP_ERROR(
+    this->get_logger(),
+    "AMR_LOG schema=v1 component=bt_navigator event=caught_exception phase=%s exception_type=unknown reason=unknown_exception",
+    phase.c_str());
+}
+
 /// @copydoc Btnavigator::build_motion_command
 amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
   const geometry_msgs::msg::PoseStamped &goal_pose,
@@ -2108,27 +2636,45 @@ amr_msgs::msg::MotionCommand Btnavigator::build_motion_command(
 }
 
 /// @copydoc Btnavigator::publish_motion_command
-void Btnavigator::publish_motion_command(const amr_msgs::msg::MotionCommand &command)
+void Btnavigator::publish_motion_command(
+  const amr_msgs::msg::MotionCommand &command,
+  const uint32_t current_goal_index,
+  const uint32_t goal_count,
+  const std::string &command_type)
 {
   if (!this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated()) {
     return;
   }
+  this->reset_terminal_latch(command.command_id);
   this->motion_command_publisher_->publish(command);
   if (this->structured_logging_enabled_) {
+    const bool has_plan_last_pose = !command.plan.poses.empty();
+    const auto &plan_last_pose = has_plan_last_pose ? command.plan.poses.back() : command.goal_pose;
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command goal_id=%u route_id=%s mode=%u target_x=%.3f target_y=%.3f align_heading_at_goal=%s result=published",
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_motion_command command_id=%u goal_id=%u route_goal_id=%u current_goal_index=%u goal_count=%u command_type=%s route_id=%s mode=%u plan_size=%zu goal_x=%.3f goal_y=%.3f plan_last_x=%.3f plan_last_y=%.3f align_heading_at_goal=%s result=published",
       command.command_id,
+      command.command_id,
+      command.command_id,
+      current_goal_index,
+      goal_count,
+      command_type.c_str(),
       command.route_id.empty() ? "none" : command.route_id.c_str(),
       command.mode,
+      command.plan.poses.size(),
       command.goal_pose.pose.position.x,
       command.goal_pose.pose.position.y,
+      plan_last_pose.pose.position.x,
+      plan_last_pose.pose.position.y,
       bool_label(command.align_heading_at_goal));
   }
 }
 
 /// @copydoc Btnavigator::publish_stop_command
-void Btnavigator::publish_stop_command()
+void Btnavigator::publish_stop_command(
+  const uint32_t current_goal_index,
+  const uint32_t goal_count,
+  const std::string &reason)
 {
   if (!this->motion_command_publisher_ || !this->motion_command_publisher_->is_activated()) {
     return;
@@ -2146,12 +2692,22 @@ void Btnavigator::publish_stop_command()
   stop_command.goal_pose = current_pose;
   stop_command.align_heading_at_goal = false;
   stop_command.recovery_duration = 0.0;
+  this->reset_terminal_latch(stop_command.command_id);
   this->motion_command_publisher_->publish(stop_command);
   if (this->structured_logging_enabled_) {
     RCLCPP_INFO(
       this->get_logger(),
-      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_stop_command goal_id=%u result=published",
-      stop_command.command_id);
+      "AMR_LOG schema=v1 component=bt_navigator event=bt_phase_transition phase=publish_stop_command command_id=%u goal_id=%u route_goal_id=%u current_goal_index=%u goal_count=%u command_type=stop_clear_reset plan_size=0 goal_x=%.3f goal_y=%.3f plan_last_x=%.3f plan_last_y=%.3f reason=%s result=published",
+      stop_command.command_id,
+      stop_command.command_id,
+      stop_command.command_id,
+      current_goal_index,
+      goal_count,
+      stop_command.goal_pose.pose.position.x,
+      stop_command.goal_pose.pose.position.y,
+      stop_command.goal_pose.pose.position.x,
+      stop_command.goal_pose.pose.position.y,
+      log_value(reason).c_str());
   }
 }
 

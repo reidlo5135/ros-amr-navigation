@@ -38,6 +38,10 @@ private:
   {
     /// @brief True when route execution is currently considered active.
     bool route_active{false};
+    /// @brief True when route feedback is older than the stale timeout.
+    bool route_feedback_stale{false};
+    /// @brief True when stale route activity is caused by missing terminal action status.
+    bool route_terminal_status_missing{false};
     /// @brief True when route feedback has stopped making distance progress.
     bool progress_stalled{false};
     /// @brief True when the motion controller reports blocked.
@@ -72,6 +76,8 @@ private:
     std::string recovery_phase{"idle"};
     /// @brief Human-readable runtime state label.
     std::string runtime_state{"idle"};
+    /// @brief Human-readable route activity diagnosis label.
+    std::string route_active_state{"no_feedback"};
     /// @brief Human-readable controller phase label.
     std::string controller_phase{"idle"};
     /// @brief Human-readable reason for clearing progress-stall context.
