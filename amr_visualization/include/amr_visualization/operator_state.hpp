@@ -169,6 +169,23 @@ struct RuntimeSummary
   bool local_escape_active{false};
 };
 
+/// @brief Frontier navigation status data displayed by the operator UI.
+struct FrontierStatusData
+{
+  /// @brief High-level frontier navigation phase.
+  QString phase{"IDLE"};
+  /// @brief Human-readable detail from the frontier navigator.
+  QString message;
+  /// @brief Current staging iteration.
+  int iteration{0};
+  /// @brief True while the unknown-goal action is active.
+  bool active{false};
+  /// @brief True when the original goal is known/free in the latest map.
+  bool original_goal_known{false};
+  /// @brief Distance from the current pose to the original goal.
+  double distance_to_original_goal{-1.0};
+};
+
 /// @brief Convert a quaternion into planar yaw.
 double quaternion_to_yaw(double x, double y, double z, double w);
 
@@ -182,6 +199,7 @@ Q_DECLARE_METATYPE(amr::visualization::PathData)
 Q_DECLARE_METATYPE(amr::visualization::ScanData)
 Q_DECLARE_METATYPE(amr::visualization::MotionStatusData)
 Q_DECLARE_METATYPE(amr::visualization::RuntimeSummary)
+Q_DECLARE_METATYPE(amr::visualization::FrontierStatusData)
 Q_DECLARE_METATYPE(QVector<amr::visualization::FrameVisual>)
 Q_DECLARE_METATYPE(QVector<amr::visualization::RobotVisual>)
 

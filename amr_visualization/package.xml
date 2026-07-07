@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>amr_visualization</name>
-  <version>0.1.0</version>
+  <version>0.19.4</version>
   <description>ROS-native Qt6 operator visualization app for the AMR navigation stack.</description>
   <maintainer email="reidlo4215@gmail.com">reidlo</maintainer>
   <license>TODO: License declaration</license>

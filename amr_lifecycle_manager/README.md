@@ -9,7 +9,8 @@ The current navigation launch manages only navigation core lifecycle nodes:
 - `/local_planner`
 - `/motion_controller`
 - `/recovery_server`
-- `/navigator`
+- `/bt_navigator`
+- `/ft_navigator` when frontier navigation is enabled
 
 It does not manage a map server or localization node. Initial pose publication is
 disabled by default; `/initialpose` belongs to RViz or external `slam_toolbox`

@@ -178,6 +178,34 @@ void SceneWidget::setLocalPath(const PathData &path)
   update();
 }
 
+/// @copydoc SceneWidget::setFrontierUnknownGoal
+void SceneWidget::setFrontierUnknownGoal(const Pose2D &pose)
+{
+  frontier_unknown_goal_ = pose;
+  update();
+}
+
+/// @copydoc SceneWidget::setFrontierKnownGoal
+void SceneWidget::setFrontierKnownGoal(const Pose2D &pose)
+{
+  frontier_known_goal_ = pose;
+  update();
+}
+
+/// @copydoc SceneWidget::setFrontierGlobalPath
+void SceneWidget::setFrontierGlobalPath(const PathData &path)
+{
+  frontier_global_path_ = path;
+  update();
+}
+
+/// @copydoc SceneWidget::setFrontierLocalPath
+void SceneWidget::setFrontierLocalPath(const PathData &path)
+{
+  frontier_local_path_ = path;
+  update();
+}
+
 /// @copydoc SceneWidget::setGridVisible
 void SceneWidget::setGridVisible(bool visible) { show_grid_ = visible; update(); }
 /// @copydoc SceneWidget::setMapVisible
@@ -198,6 +226,14 @@ void SceneWidget::setScanVisible(bool visible) { show_scan_ = visible; update();
 void SceneWidget::setGlobalPathVisible(bool visible) { show_global_path_ = visible; update(); }
 /// @copydoc SceneWidget::setLocalPathVisible
 void SceneWidget::setLocalPathVisible(bool visible) { show_local_path_ = visible; update(); }
+/// @copydoc SceneWidget::setFrontierUnknownGoalVisible
+void SceneWidget::setFrontierUnknownGoalVisible(bool visible) { show_frontier_unknown_goal_ = visible; update(); }
+/// @copydoc SceneWidget::setFrontierKnownGoalVisible
+void SceneWidget::setFrontierKnownGoalVisible(bool visible) { show_frontier_known_goal_ = visible; update(); }
+/// @copydoc SceneWidget::setFrontierGlobalPathVisible
+void SceneWidget::setFrontierGlobalPathVisible(bool visible) { show_frontier_global_path_ = visible; update(); }
+/// @copydoc SceneWidget::setFrontierLocalPathVisible
+void SceneWidget::setFrontierLocalPathVisible(bool visible) { show_frontier_local_path_ = visible; update(); }
 /// @copydoc SceneWidget::setAddWaypointMode
 void SceneWidget::setAddWaypointMode(bool enabled) { add_waypoint_mode_ = enabled; }
 
@@ -240,6 +276,10 @@ void SceneWidget::clearNavigationOverlays()
 {
   global_path_ = {};
   local_path_ = {};
+  frontier_unknown_goal_ = {};
+  frontier_known_goal_ = {};
+  frontier_global_path_ = {};
+  frontier_local_path_ = {};
   clearSchedule();
 }
 
@@ -343,6 +383,12 @@ void SceneWidget::paintEvent(QPaintEvent *)
   if (show_local_path_) {
     drawPath(painter, local_path_, QColor(0, 200, 255), 3.5);
   }
+  if (show_frontier_global_path_) {
+    drawPath(painter, frontier_global_path_, QColor(255, 70, 210), 3.0, Qt::DashLine);
+  }
+  if (show_frontier_local_path_) {
+    drawPath(painter, frontier_local_path_, QColor(95, 255, 152), 3.0, Qt::DotLine);
+  }
   if (show_footprint_) {
     drawExactFootprint(painter);
   }
@@ -354,6 +400,12 @@ void SceneWidget::paintEvent(QPaintEvent *)
   drawWaypoints(painter);
   if (aim_pose_.valid) {
     drawPose(painter, aim_pose_, QColor(255, 180, 0));
+  }
+  if (show_frontier_unknown_goal_ && frontier_unknown_goal_.valid) {
+    drawPose(painter, frontier_unknown_goal_, QColor(255, 70, 210));
+  }
+  if (show_frontier_known_goal_ && frontier_known_goal_.valid) {
+    drawPose(painter, frontier_known_goal_, QColor(95, 255, 152));
   }
   if (show_tf_) {
     drawTfFrames(painter);
@@ -746,7 +798,8 @@ void SceneWidget::drawPath(
   QPainter &painter,
   const PathData &path,
   const QColor &color,
-  qreal width) const
+  qreal width,
+  Qt::PenStyle style) const
 {
   if (path.points.size() < 2) {
     return;
@@ -756,7 +809,7 @@ void SceneWidget::drawPath(
   for (int i = 1; i < path.points.size(); ++i) {
     painter_path.lineTo(worldToScreen(path.points[i]));
   }
-  painter.setPen(QPen(color, width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+  painter.setPen(QPen(color, width, style, Qt::RoundCap, Qt::RoundJoin));
   painter.drawPath(painter_path);
 }
 

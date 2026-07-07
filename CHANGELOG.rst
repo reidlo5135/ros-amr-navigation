@@ -1,6 +1,27 @@
 Changelog
 =========
 
+2026-07-07
+----------
+
+- Started the ``0.19.4`` unknown-goal frontier navigation line:
+
+  - added ``amr_frontier_navigator`` as an optional lifecycle action
+    orchestrator for ``slam_toolbox`` online maps
+  - added ``NavigateToUnknownPose`` and ``FrontierNavigationStatus`` interfaces
+    in ``amr_msgs``
+  - resolved unknown/out-of-map goals into reachable known/free staging goals
+    using the latest ``/map`` and ``/plan_segment`` validation
+  - delegated all robot motion to existing ``/navigate_to_pose`` without
+    publishing ``/motion_command`` from the frontier package
+  - added ``/frontier/unknown_goal``, ``/frontier/known_goal``,
+    ``/frontier/global_plan``, ``/frontier/local_plan``, and
+    ``/frontier/status`` overlay topics
+  - added optional bringup launch argument ``use_frontier_navigation`` with the
+    default kept ``false`` for 0.19.3 behavior preservation
+  - extended ``amr_visualization`` with backend-routed single-goal navigation and separate frontier
+    overlay layers
+
 2026-06-30
 ----------
 

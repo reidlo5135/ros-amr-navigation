@@ -126,6 +126,26 @@ QPixmap make_layer_icon(const QString &name, const QSize &size)
     painter.setBrush(QColor("#8cff3a"));
     painter.drawEllipse(QPointF(2.5, 11.5), 1.2, 1.2);
     painter.drawEllipse(QPointF(12.5, 4.0), 1.2, 1.2);
+  } else if (name == "unknown_goal") {
+    pen(QColor("#ff46d2"), 1.7);
+    painter.drawEllipse(QPointF(8.0, 8.0), 4.5, 4.5);
+    painter.drawLine(QPointF(5.0, 5.0), QPointF(11.0, 11.0));
+    painter.drawLine(QPointF(11.0, 5.0), QPointF(5.0, 11.0));
+  } else if (name == "known_goal") {
+    pen(QColor("#5fff98"), 1.8);
+    painter.drawEllipse(QPointF(8.0, 8.0), 4.5, 4.5);
+    painter.drawLine(QPointF(5.5, 8.0), QPointF(7.2, 10.0));
+    painter.drawLine(QPointF(7.2, 10.0), QPointF(11.0, 5.6));
+  } else if (name == "frontier_global_plan") {
+    pen(QColor("#ff46d2"), 1.8);
+    painter.drawPolyline(QPolygonF{
+      QPointF(2.5, 12.0), QPointF(5.5, 9.0), QPointF(8.0, 9.5),
+      QPointF(10.5, 5.5), QPointF(13.5, 4.0)});
+  } else if (name == "frontier_local_plan") {
+    pen(QColor("#5fff98"), 1.8);
+    painter.drawPolyline(QPolygonF{
+      QPointF(2.5, 11.0), QPointF(5.0, 8.5), QPointF(8.5, 8.0),
+      QPointF(10.5, 6.0), QPointF(13.5, 5.0)});
   } else if (name == "laser_scan") {
     pen(QColor("#66ff54"), 1.5);
     painter.drawArc(QRectF(4.0, 5.0, 12.0, 12.0), 90 * 16, 90 * 16);
@@ -317,6 +337,21 @@ MainWindow::MainWindow(QWidget *parent)
   connect(ros_worker_.get(), &RosWorker::robotPoseChanged, this, &MainWindow::updateAimPose);
   connect(ros_worker_.get(), &RosWorker::globalPathChanged, scene_, &SceneWidget::setGlobalPath);
   connect(ros_worker_.get(), &RosWorker::localPathChanged, scene_, &SceneWidget::setLocalPath);
+  connect(
+    ros_worker_.get(), &RosWorker::frontierUnknownGoalChanged,
+    scene_, &SceneWidget::setFrontierUnknownGoal);
+  connect(
+    ros_worker_.get(), &RosWorker::frontierKnownGoalChanged,
+    scene_, &SceneWidget::setFrontierKnownGoal);
+  connect(
+    ros_worker_.get(), &RosWorker::frontierGlobalPathChanged,
+    scene_, &SceneWidget::setFrontierGlobalPath);
+  connect(
+    ros_worker_.get(), &RosWorker::frontierLocalPathChanged,
+    scene_, &SceneWidget::setFrontierLocalPath);
+  connect(
+    ros_worker_.get(), &RosWorker::frontierStatusChanged,
+    this, &MainWindow::updateFrontierStatus);
   connect(ros_worker_.get(), &RosWorker::motionStatusChanged, this, &MainWindow::updateMotionStatus);
   connect(ros_worker_.get(), &RosWorker::runtimeSummaryChanged, this, &MainWindow::updateRuntimeSummary);
   connect(ros_worker_.get(), &RosWorker::batteryStateChanged, this, [this](double percentage, bool present) {
@@ -553,6 +588,14 @@ QWidget *MainWindow::makeLeftPanel()
     makeLayerCheckBox("Global Plan", "global_plan", true);
   auto local_path =
     makeLayerCheckBox("Local Plan", "local_plan", true);
+  auto frontier_unknown_goal =
+    makeLayerCheckBox("Original Goal", "unknown_goal", true);
+  auto frontier_known_goal =
+    makeLayerCheckBox("Known/Staging Goal", "known_goal", true);
+  auto frontier_global_path =
+    makeLayerCheckBox("Frontier Global Plan", "frontier_global_plan", true);
+  auto frontier_local_path =
+    makeLayerCheckBox("Frontier Local Plan", "frontier_local_plan", true);
   auto scan =
     makeLayerCheckBox("LaserScan", "laser_scan", true);
   auto tf =
@@ -565,6 +608,10 @@ QWidget *MainWindow::makeLeftPanel()
   visualization_layout->addWidget(robot.row, 1);
   visualization_layout->addWidget(global_path.row, 1);
   visualization_layout->addWidget(local_path.row, 1);
+  visualization_layout->addWidget(frontier_unknown_goal.row, 1);
+  visualization_layout->addWidget(frontier_known_goal.row, 1);
+  visualization_layout->addWidget(frontier_global_path.row, 1);
+  visualization_layout->addWidget(frontier_local_path.row, 1);
   visualization_layout->addWidget(scan.row, 1);
   visualization_layout->addWidget(tf.row, 1);
   connect(grid.check, &QCheckBox::toggled, scene_, &SceneWidget::setGridVisible);
@@ -584,6 +631,18 @@ QWidget *MainWindow::makeLeftPanel()
   connect(tf.check, &QCheckBox::toggled, scene_, &SceneWidget::setTfVisible);
   connect(global_path.check, &QCheckBox::toggled, scene_, &SceneWidget::setGlobalPathVisible);
   connect(local_path.check, &QCheckBox::toggled, scene_, &SceneWidget::setLocalPathVisible);
+  connect(
+    frontier_unknown_goal.check, &QCheckBox::toggled,
+    scene_, &SceneWidget::setFrontierUnknownGoalVisible);
+  connect(
+    frontier_known_goal.check, &QCheckBox::toggled,
+    scene_, &SceneWidget::setFrontierKnownGoalVisible);
+  connect(
+    frontier_global_path.check, &QCheckBox::toggled,
+    scene_, &SceneWidget::setFrontierGlobalPathVisible);
+  connect(
+    frontier_local_path.check, &QCheckBox::toggled,
+    scene_, &SceneWidget::setFrontierLocalPathVisible);
   visualization_layout->addStretch(1);
   layout->addWidget(visualization_panel, 2);
   return panel;
@@ -611,12 +670,14 @@ QWidget *MainWindow::makeRightPanel()
   goal_label_ = make_value_label("Idle");
   blocked_label_ = make_value_label("Clear");
   recovery_label_ = make_value_label("idle");
+  frontier_label_ = make_value_label("IDLE");
   appendStatusRow(layout, "Motion", motion_label_);
   appendStatusRow(layout, "Remaining", remaining_label_);
   appendStatusRow(layout, "Heading", heading_label_);
   appendStatusRow(layout, "Goal", goal_label_);
   appendStatusRow(layout, "Blocked Source", blocked_label_);
   appendStatusRow(layout, "Recovery", recovery_label_);
+  appendStatusRow(layout, "Frontier", frontier_label_);
 
   layout->addWidget(line());
   auto *events_title = new QLabel("EVENTS / FEEDBACK");
@@ -869,6 +930,25 @@ void MainWindow::updateRuntimeSummary(const RuntimeSummary &summary)
   set_label_if_changed(recovery_label_, summary.recovery_phase);
 }
 
+/// @copydoc MainWindow::updateFrontierStatus
+void MainWindow::updateFrontierStatus(const FrontierStatusData &status)
+{
+  QString frontier_text = status.phase;
+  if (status.iteration > 0) {
+    frontier_text += QString(" #%1").arg(status.iteration);
+  }
+  if (status.original_goal_known) {
+    frontier_text += " known";
+  }
+  if (!status.active && status.phase == "IDLE") {
+    frontier_text = "IDLE";
+  }
+  set_label_if_changed(frontier_label_, frontier_text);
+  if (status.active && !status.phase.isEmpty()) {
+    set_label_if_changed(goal_label_, status.phase);
+  }
+}
+
 /// @copydoc MainWindow::updateWaypointList
 void MainWindow::updateWaypointList(const QVector<Pose2D> &waypoints)
 {
@@ -906,6 +986,10 @@ void MainWindow::sendGoal()
     add_waypoint_button_->setChecked(false);
   }
   const auto waypoints = scene_->waypoints();
+  if (waypoints.size() == 1) {
+    ros_worker_->sendSingleGoal(waypoints.front());
+    return;
+  }
   if (!waypoints.empty()) {
     ros_worker_->sendRoute(waypoints);
     return;

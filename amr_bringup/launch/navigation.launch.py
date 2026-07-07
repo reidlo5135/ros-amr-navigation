@@ -7,7 +7,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
@@ -22,6 +22,7 @@ def generate_launch_description() -> LaunchDescription:
     params_file = LaunchConfiguration("params_file")
     mqtt = LaunchConfiguration("mqtt")
     mcp = LaunchConfiguration("mcp")
+    use_frontier_navigation = LaunchConfiguration("use_frontier_navigation")
 
     costmap_server = LifecycleNode(
         package="amr_costmap_server",
@@ -60,10 +61,19 @@ def generate_launch_description() -> LaunchDescription:
     bt_navigator = LifecycleNode(
         package="amr_bt_navigator",
         executable="amr_bt_navigator",
-        name="navigator",
+        name="bt_navigator",
         namespace="",
         output="screen",
         parameters=[params_file],
+    )
+    ft_navigator = LifecycleNode(
+        package="amr_frontier_navigator",
+        executable="ft_navigator",
+        name="ft_navigator",
+        namespace="",
+        output="screen",
+        parameters=[params_file],
+        condition=IfCondition(use_frontier_navigation),
     )
     runtime_observation = Node(
         package="amr_runtime_observation",
@@ -77,6 +87,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="amr_lifecycle_manager",
         name="navigation_manager",
         output="screen",
+        condition=UnlessCondition(use_frontier_navigation),
         parameters=[
             params_file,
             {
@@ -86,7 +97,29 @@ def generate_launch_description() -> LaunchDescription:
                     "/local_planner",
                     "/motion_controller",
                     "/recovery_server",
-                    "/navigator",
+                    "/bt_navigator",
+                ],
+                "initial_pose.enabled": False,
+            },
+        ],
+    )
+    lifecycle_manager_with_frontier = Node(
+        package="amr_lifecycle_manager",
+        executable="amr_lifecycle_manager",
+        name="navigation_manager",
+        output="screen",
+        condition=IfCondition(use_frontier_navigation),
+        parameters=[
+            params_file,
+            {
+                "managed_nodes": [
+                    "/costmap_server",
+                    "/global_planner",
+                    "/local_planner",
+                    "/motion_controller",
+                    "/recovery_server",
+                    "/bt_navigator",
+                    "/ft_navigator",
                 ],
                 "initial_pose.enabled": False,
             },
@@ -130,13 +163,20 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="false",
                 description="Start the optional MCP server with the navigation stack.",
             ),
+            DeclareLaunchArgument(
+                "use_frontier_navigation",
+                default_value="false",
+                description="Start the optional unknown-goal frontier navigation action server.",
+            ),
             costmap_server,
             global_planner,
             controller_launch,
             recovery_server,
             bt_navigator,
+            ft_navigator,
             runtime_observation,
             lifecycle_manager,
+            lifecycle_manager_with_frontier,
             mqtt_server_launch,
             mcp_server_launch,
         ]

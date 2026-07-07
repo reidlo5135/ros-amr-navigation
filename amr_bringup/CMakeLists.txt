@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(amr_bringup VERSION 0.1.0 LANGUAGES C CXX)
+project(amr_bringup VERSION 0.19.4 LANGUAGES C CXX)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)

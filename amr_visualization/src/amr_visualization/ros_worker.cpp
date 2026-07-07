@@ -213,6 +213,16 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<std::string>("initial_pose_topic", initial_pose_topic_);
   global_path_topic_ = node_->declare_parameter<std::string>("global_path_topic", global_path_topic_);
   local_path_topic_ = node_->declare_parameter<std::string>("local_path_topic", local_path_topic_);
+  frontier_unknown_goal_topic_ =
+    node_->declare_parameter<std::string>("frontier_unknown_goal_topic", frontier_unknown_goal_topic_);
+  frontier_known_goal_topic_ =
+    node_->declare_parameter<std::string>("frontier_known_goal_topic", frontier_known_goal_topic_);
+  frontier_global_path_topic_ =
+    node_->declare_parameter<std::string>("frontier_global_path_topic", frontier_global_path_topic_);
+  frontier_local_path_topic_ =
+    node_->declare_parameter<std::string>("frontier_local_path_topic", frontier_local_path_topic_);
+  frontier_status_topic_ =
+    node_->declare_parameter<std::string>("frontier_status_topic", frontier_status_topic_);
   motion_status_topic_ =
     node_->declare_parameter<std::string>("motion_status_topic", motion_status_topic_);
   runtime_summary_topic_ =
@@ -232,6 +242,9 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<std::string>("navigate_to_pose_action", navigate_to_pose_action_);
   navigate_to_poses_action_ =
     node_->declare_parameter<std::string>("navigate_to_poses_action", navigate_to_poses_action_);
+  navigate_to_unknown_pose_action_ =
+    node_->declare_parameter<std::string>(
+    "navigate_to_unknown_pose_action", navigate_to_unknown_pose_action_);
   ai_chat_service_name_ =
     node_->declare_parameter<std::string>("ai_chat_service_name", ai_chat_service_name_);
   cmd_vel_topic_ = node_->declare_parameter<std::string>("cmd_vel_topic", cmd_vel_topic_);
@@ -256,6 +269,8 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<bool>("subscribe_local_costmap", subscribe_local_costmap_);
   subscribe_scan_ =
     node_->declare_parameter<bool>("subscribe_scan", subscribe_scan_);
+  subscribe_frontier_overlay_ =
+    node_->declare_parameter<bool>("subscribe_frontier_overlay", subscribe_frontier_overlay_);
   costmap_emit_period_ms_ =
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
 
@@ -281,6 +296,43 @@ void RosWorker::configure_ros_interfaces()
     local_path_topic_, live_qos, [this](const nav_msgs::msg::Path::SharedPtr message) {
       Q_EMIT localPathChanged(convert_path(*message));
     });
+  if (subscribe_frontier_overlay_) {
+    frontier_unknown_goal_subscription_ =
+      node_->create_subscription<geometry_msgs::msg::PoseStamped>(
+      frontier_unknown_goal_topic_, live_qos,
+      [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
+        Q_EMIT frontierUnknownGoalChanged(convert_pose(*message));
+      });
+    frontier_known_goal_subscription_ =
+      node_->create_subscription<geometry_msgs::msg::PoseStamped>(
+      frontier_known_goal_topic_, live_qos,
+      [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
+        Q_EMIT frontierKnownGoalChanged(convert_pose(*message));
+      });
+    frontier_global_path_subscription_ = node_->create_subscription<nav_msgs::msg::Path>(
+      frontier_global_path_topic_, live_qos,
+      [this](const nav_msgs::msg::Path::SharedPtr message) {
+        Q_EMIT frontierGlobalPathChanged(convert_path(*message));
+      });
+    frontier_local_path_subscription_ = node_->create_subscription<nav_msgs::msg::Path>(
+      frontier_local_path_topic_, live_qos,
+      [this](const nav_msgs::msg::Path::SharedPtr message) {
+        Q_EMIT frontierLocalPathChanged(convert_path(*message));
+      });
+    frontier_status_subscription_ =
+      node_->create_subscription<amr_msgs::msg::FrontierNavigationStatus>(
+      frontier_status_topic_, live_qos,
+      [this](const amr_msgs::msg::FrontierNavigationStatus::SharedPtr message) {
+        FrontierStatusData status;
+        status.phase = QString::fromStdString(message->phase);
+        status.message = QString::fromStdString(message->message);
+        status.iteration = static_cast<int>(message->iteration);
+        status.active = message->active;
+        status.original_goal_known = message->original_goal_known;
+        status.distance_to_original_goal = message->distance_to_original_goal;
+        Q_EMIT frontierStatusChanged(status);
+      });
+  }
   motion_status_subscription_ = node_->create_subscription<amr_msgs::msg::MotionStatus>(
     motion_status_topic_, live_qos,
     [this](const amr_msgs::msg::MotionStatus::SharedPtr message) {
@@ -367,6 +419,8 @@ void RosWorker::configure_ros_interfaces()
     rclcpp_action::create_client<NavigateToPose>(node_, navigate_to_pose_action_);
   navigate_to_poses_client_ =
     rclcpp_action::create_client<NavigateToPoses>(node_, navigate_to_poses_action_);
+  navigate_to_unknown_pose_client_ =
+    rclcpp_action::create_client<NavigateToUnknownPose>(node_, navigate_to_unknown_pose_action_);
 }
 
 /// @copydoc RosWorker::handle_tf_message
@@ -578,7 +632,7 @@ Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) c
     message.pose.orientation.y,
     message.pose.orientation.z,
     message.pose.orientation.w);
-  pose.valid = true;
+  pose.valid = !message.header.frame_id.empty();
   return pose;
 }
 
@@ -929,6 +983,14 @@ void RosWorker::sendSingleGoal(const Pose2D &pose)
   if (!node_ || !pose.valid) {
     return;
   }
+  if (
+    navigate_to_unknown_pose_client_ &&
+    (navigate_to_unknown_pose_client_->action_server_is_ready() ||
+    navigate_to_unknown_pose_client_->wait_for_action_server(100ms)))
+  {
+    sendUnknownGoal(pose);
+    return;
+  }
   if (!navigate_to_pose_client_->action_server_is_ready() &&
     !navigate_to_pose_client_->wait_for_action_server(100ms))
   {
@@ -943,18 +1005,74 @@ void RosWorker::sendSingleGoal(const Pose2D &pose)
     [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr &handle) {
       const QString state = handle ? "Accepted" : "Rejected";
       Q_EMIT goalStateChanged(state);
-      Q_EMIT eventReceived(QString("Single goal %1").arg(state.toLower()));
+      Q_EMIT eventReceived(QString("Goal %1").arg(state.toLower()));
     };
   options.result_callback =
     [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult &result) {
       const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
       Q_EMIT goalStateChanged(state);
       Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
-      Q_EMIT eventReceived(QString("Single goal %1").arg(state));
+      Q_EMIT eventReceived(QString("Goal %1").arg(state));
     };
   navigate_to_pose_client_->async_send_goal(goal, options);
   Q_EMIT goalStateChanged("Sending");
-  Q_EMIT eventReceived("Single goal sent");
+  Q_EMIT eventReceived("Goal sent");
+}
+
+/// @copydoc RosWorker::sendUnknownGoal
+void RosWorker::sendUnknownGoal(const Pose2D &pose)
+{
+  if (!node_ || !pose.valid) {
+    return;
+  }
+  if (!navigate_to_unknown_pose_client_->action_server_is_ready() &&
+    !navigate_to_unknown_pose_client_->wait_for_action_server(100ms))
+  {
+    Q_EMIT eventReceived("Frontier navigation action server is not ready");
+    return;
+  }
+
+  NavigateToUnknownPose::Goal goal;
+  goal.unknown_goal = to_pose_stamped(pose);
+  goal.allow_final_unknown_retry = false;
+  goal.max_iterations = 0U;
+  goal.goal_known_wait_timeout_sec = 0.0F;
+  goal.max_staging_search_radius_m = 0.0F;
+  goal.min_staging_progress_m = 0.0F;
+
+  rclcpp_action::Client<NavigateToUnknownPose>::SendGoalOptions options;
+  options.goal_response_callback =
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::SharedPtr &handle) {
+      const QString state = handle ? "Accepted" : "Rejected";
+      Q_EMIT goalStateChanged(state);
+      Q_EMIT eventReceived(QString("Goal %1").arg(state.toLower()));
+    };
+  options.feedback_callback =
+    [this](
+      rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::SharedPtr,
+      const std::shared_ptr<const NavigateToUnknownPose::Feedback> feedback) {
+      Q_EMIT goalStateChanged(
+        QString("Frontier %1 #%2")
+          .arg(QString::fromStdString(feedback->phase))
+          .arg(feedback->iteration));
+    };
+  options.result_callback =
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::WrappedResult &result) {
+      const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
+      Q_EMIT goalStateChanged(state);
+      Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
+      if (result.result) {
+        Q_EMIT eventReceived(
+          QString("Goal %1: %2")
+            .arg(state)
+            .arg(QString::fromStdString(result.result->error_msg)));
+      } else {
+        Q_EMIT eventReceived(QString("Goal %1").arg(state));
+      }
+    };
+  navigate_to_unknown_pose_client_->async_send_goal(goal, options);
+  Q_EMIT goalStateChanged("Sending");
+  Q_EMIT eventReceived("Goal sent");
 }
 
 /// @copydoc RosWorker::sendRoute
@@ -1041,6 +1159,9 @@ void RosWorker::cancelNavigation()
   }
   if (navigate_to_poses_client_) {
     navigate_to_poses_client_->async_cancel_all_goals();
+  }
+  if (navigate_to_unknown_pose_client_) {
+    navigate_to_unknown_pose_client_->async_cancel_all_goals();
   }
   Q_EMIT goalStateChanged("Canceling");
   Q_EMIT eventReceived("Cancel requested");

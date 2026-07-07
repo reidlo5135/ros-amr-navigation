@@ -1,0 +1,63 @@
+# @brief Navigate to a goal that may currently be unknown in the SLAM map.
+geometry_msgs/PoseStamped unknown_goal
+# @brief Reserved for future policies; the orchestrator never forwards unsafe unknown goals.
+bool allow_final_unknown_retry
+# @brief Maximum staging-goal iterations. Zero uses the node default.
+uint16 max_iterations
+# @brief Seconds to wait after staging for the original goal to become known. Zero uses default.
+float32 goal_known_wait_timeout_sec
+# @brief Maximum radius around the original goal to search for a staging goal. Zero uses default.
+float32 max_staging_search_radius_m
+# @brief Minimum required progress toward the original goal per staging iteration. Zero uses default.
+float32 min_staging_progress_m
+---
+# @brief No action error.
+uint16 NONE=0
+# @brief Unknown action error.
+uint16 UNKNOWN=9000
+# @brief Required TF lookup failed.
+uint16 TF_ERROR=9002
+# @brief Navigation timed out.
+uint16 TIMEOUT=9003
+# @brief SLAM map has not been received or is invalid.
+uint16 MAP_NOT_READY=9100
+# @brief No reachable known/free staging goal could be planned.
+uint16 NO_REACHABLE_STAGING_GOAL=9101
+# @brief Existing NavigateToPose failed while driving to a staging goal.
+uint16 STAGING_NAVIGATION_FAILED=9102
+# @brief Existing NavigateToPose failed while driving to the original goal.
+uint16 FINAL_NAVIGATION_FAILED=9103
+# @brief Action was canceled by the client.
+uint16 CANCELED=9104
+# @brief Original goal is inside occupied/non-traversable known space.
+uint16 OCCUPIED_GOAL=9105
+
+# @brief Result error code.
+uint16 error_code
+# @brief Human-readable result or error message.
+string error_msg
+# @brief User-requested original unknown-capable goal in the map frame.
+geometry_msgs/PoseStamped original_goal
+# @brief Last resolved known/free goal sent to NavigateToPose.
+geometry_msgs/PoseStamped last_known_goal
+# @brief Number of staging iterations attempted.
+uint16 iterations
+# @brief True when the original goal became known/free before final navigation.
+bool original_goal_became_known
+# @brief True when final original goal navigation succeeded.
+bool final_goal_reached
+---
+# @brief Current robot pose in the map frame.
+geometry_msgs/PoseStamped current_pose
+# @brief User-requested original goal in the map frame.
+geometry_msgs/PoseStamped original_goal
+# @brief Active known/free original or staging goal.
+geometry_msgs/PoseStamped active_known_goal
+# @brief Current staging iteration.
+uint16 iteration
+# @brief High-level frontier-navigation phase.
+string phase
+# @brief Euclidean distance from current pose to the original goal.
+float32 distance_to_original_goal
+# @brief True when the latest map says the original goal is known/free.
+bool original_goal_known

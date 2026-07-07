@@ -7,7 +7,9 @@ Custom ROS interfaces used by the AMR stack.
 - actions:
   - `NavigateToPose`
   - `NavigateToPoses`
+  - `NavigateToUnknownPose`
 - messages:
+  - `FrontierNavigationStatus`
   - `LocalPlanStatus`
   - `MotionCommand`
   - `MotionStatus`

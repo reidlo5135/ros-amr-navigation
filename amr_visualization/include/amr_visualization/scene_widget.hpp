@@ -60,6 +60,14 @@ public Q_SLOTS:
   void setGlobalPath(const amr::visualization::PathData &path);
   /// @brief Replace the displayed local path.
   void setLocalPath(const amr::visualization::PathData &path);
+  /// @brief Replace the displayed original unknown goal marker.
+  void setFrontierUnknownGoal(const amr::visualization::Pose2D &pose);
+  /// @brief Replace the displayed resolved known/staging goal marker.
+  void setFrontierKnownGoal(const amr::visualization::Pose2D &pose);
+  /// @brief Replace the displayed frontier global path overlay.
+  void setFrontierGlobalPath(const amr::visualization::PathData &path);
+  /// @brief Replace the displayed frontier local path overlay.
+  void setFrontierLocalPath(const amr::visualization::PathData &path);
   /// @brief Toggle grid overlay visibility.
   void setGridVisible(bool visible);
   /// @brief Toggle map visibility.
@@ -80,6 +88,14 @@ public Q_SLOTS:
   void setGlobalPathVisible(bool visible);
   /// @brief Toggle local path visibility.
   void setLocalPathVisible(bool visible);
+  /// @brief Toggle original unknown goal visibility.
+  void setFrontierUnknownGoalVisible(bool visible);
+  /// @brief Toggle resolved known/staging goal visibility.
+  void setFrontierKnownGoalVisible(bool visible);
+  /// @brief Toggle frontier global path visibility.
+  void setFrontierGlobalPathVisible(bool visible);
+  /// @brief Toggle frontier local path visibility.
+  void setFrontierLocalPathVisible(bool visible);
   /// @brief Enable or disable add-waypoint click mode.
   void setAddWaypointMode(bool enabled);
   /// @brief Append the current aim pose to the waypoint list.
@@ -183,7 +199,12 @@ private:
   /// @brief Draw one occupancy grid layer.
   void drawGridLayer(QPainter &painter, const GridMap &map, const QImage &image, qreal opacity);
   /// @brief Draw a world-frame path polyline.
-  void drawPath(QPainter &painter, const PathData &path, const QColor &color, qreal width) const;
+  void drawPath(
+    QPainter &painter,
+    const PathData &path,
+    const QColor &color,
+    qreal width,
+    Qt::PenStyle style = Qt::SolidLine) const;
   /// @brief Draw a pose marker with heading.
   void drawPose(QPainter &painter, const Pose2D &pose, const QColor &color) const;
   /// @brief Draw the configured exact footprint overlay.
@@ -247,6 +268,10 @@ private:
   Pose2D aim_pose_;
   PathData global_path_;
   PathData local_path_;
+  Pose2D frontier_unknown_goal_;
+  Pose2D frontier_known_goal_;
+  PathData frontier_global_path_;
+  PathData frontier_local_path_;
   QVector<Pose2D> waypoints_;
   int selected_waypoint_index_{-1};
 
@@ -260,6 +285,10 @@ private:
   bool show_scan_{true};
   bool show_global_path_{true};
   bool show_local_path_{true};
+  bool show_frontier_unknown_goal_{true};
+  bool show_frontier_known_goal_{true};
+  bool show_frontier_global_path_{true};
+  bool show_frontier_local_path_{true};
   bool add_waypoint_mode_{false};
   double scale_{90.0};
   QVector3D focal_point_{0.0F, 0.0F, 0.0F};

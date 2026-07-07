@@ -94,7 +94,8 @@ flowchart LR
     Manager --> Local["/local_planner"]
     Manager --> Motion["/motion_controller"]
     Manager --> Recovery["/recovery_server"]
-    Manager --> Navigator["/navigator"]
+    Manager --> Navigator["/bt_navigator"]
+    Manager -. optional .-> Frontier["/ft_navigator"]
 ```
 
 `/navigation_manager` manages only navigation core lifecycle nodes. It does not
@@ -103,4 +104,5 @@ interface.
 
 The lifecycle nodes are launched in the root namespace. Their managed names are
 `/costmap_server`, `/global_planner`, `/local_planner`, `/motion_controller`,
-`/recovery_server`, and `/navigator`.
+`/recovery_server`, and `/bt_navigator`. When frontier navigation is enabled,
+`/ft_navigator` is added to the managed lifecycle list.

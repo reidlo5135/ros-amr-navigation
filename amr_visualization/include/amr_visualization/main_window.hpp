@@ -47,6 +47,8 @@ private Q_SLOTS:
   void updateMotionStatus(const amr::visualization::MotionStatusData &status);
   /// @brief Update runtime summary labels.
   void updateRuntimeSummary(const amr::visualization::RuntimeSummary &summary);
+  /// @brief Update frontier navigation status labels.
+  void updateFrontierStatus(const amr::visualization::FrontierStatusData &status);
   /// @brief Refresh the waypoint list widget.
   void updateWaypointList(const QVector<amr::visualization::Pose2D> &waypoints);
   /// @brief Append one event line to the feedback list.
@@ -104,6 +106,7 @@ private:
   QLabel *goal_label_{nullptr};
   QLabel *blocked_label_{nullptr};
   QLabel *recovery_label_{nullptr};
+  QLabel *frontier_label_{nullptr};
   QLabel *linear_label_{nullptr};
   QLabel *angular_label_{nullptr};
   JoystickWidget *joystick_{nullptr};

@@ -60,6 +60,12 @@ Terminal 3:
 ros2 launch amr_bringup navigation.launch.py
 ```
 
+Optional unknown-goal frontier navigation:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py use_frontier_navigation:=true
+```
+
 Optional MQTT bridge:
 
 ```bash
@@ -78,6 +84,7 @@ remapped.
 - `amr_controller_server`: hosts `local_planner` and `motion_controller`; the motion controller uses
   in-package Pure Pursuit with RPP-style adaptive lookahead, curvature, approach, and scan safety regulation
 - `amr_bt_navigator`: exposes navigation actions and dispatches motion commands
+- `amr_frontier_navigator`: optional unknown-goal orchestrator that resolves reachable known/free staging goals from live `/map` and delegates motion to `/navigate_to_pose`
 - `amr_recovery_server`: creates recovery motion commands
 - `amr_runtime_observation`: observes navigation status and emits runtime summaries
 - `amr_lifecycle_manager`: lifecycle bringup for navigation core nodes only
@@ -124,6 +131,11 @@ Outputs:
 | velocity command | `/cmd_vel` |
 | runtime observation summary | `/observation/runtime/summary` |
 | runtime observation events | `/observation/runtime/events` |
+| frontier original goal | `/frontier/unknown_goal` |
+| frontier resolved known/staging goal | `/frontier/known_goal` |
+| frontier global plan overlay | `/frontier/global_plan` |
+| frontier local plan overlay | `/frontier/local_plan` |
+| frontier status | `/frontier/status` |
 
 Actions and services:
 
@@ -131,6 +143,7 @@ Actions and services:
 | --- | --- |
 | navigate to pose | `/navigate_to_pose` |
 | navigate through poses | `/navigate_to_poses` |
+| navigate to unknown pose | `/navigate_to_unknown_pose` |
 | global plan segment | `/plan_segment` |
 | global plan route | `/plan_route` |
 | recovery plan | `/plan_recovery` |
@@ -160,3 +173,25 @@ The navigation core tolerates online SLAM startup order:
 
 This behavior is intentional for online `slam_toolbox` operation where map and
 TF can become available after navigation nodes are already active.
+
+## Unknown Goal Navigation
+
+`amr_frontier_navigator` is optional and disabled by default to preserve the
+normal 0.19.3 known-goal behavior. When enabled, clients can send
+`amr_msgs/action/NavigateToUnknownPose` goals to `/navigate_to_unknown_pose`.
+
+The frontier navigator never forwards an unknown or out-of-map goal directly to
+`amr_bt_navigator`. It checks the latest `/map`, finds a known/free staging goal
+near the requested unknown target, falls back to reachable map-frontier cells
+when needed, validates reachability with `/plan_segment`, then sends that
+staging goal through the existing `/navigate_to_pose` action.
+If SLAM map expansion later makes the original goal known/free, the node switches
+to the original goal and preserves the user's original orientation.
+
+`amr_visualization` keeps the existing `/global_plan` and `/local_plan` displays
+for current navigation while adding separate frontier overlay layers for the
+original goal, active known/staging goal, frontier global plan, and frontier
+local plan. The UI uses one `Send` command for single goals; when
+`ft_navigator` is available, `RosWorker` sends that request to
+`/navigate_to_unknown_pose` so the backend can decide whether the goal is
+already known/free or needs a staging goal.

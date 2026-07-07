@@ -16,6 +16,8 @@
 
 #include "amr_msgs/action/navigate_to_pose.hpp"
 #include "amr_msgs/action/navigate_to_poses.hpp"
+#include "amr_msgs/action/navigate_to_unknown_pose.hpp"
+#include "amr_msgs/msg/frontier_navigation_status.hpp"
 #include "amr_msgs/msg/motion_status.hpp"
 #include "amr_msgs/srv/ai_chat.hpp"
 #include "amr_visualization/operator_state.hpp"
@@ -51,7 +53,7 @@ public:
   void stop();
 
 public Q_SLOTS:
-  /// @brief Send a NavigateToPose goal from a UI pose.
+  /// @brief Send a single navigation goal from a UI pose.
   void sendSingleGoal(const amr::visualization::Pose2D &pose);
   /// @brief Send a NavigateToPoses route from UI waypoints.
   void sendRoute(const QVector<amr::visualization::Pose2D> &route);
@@ -77,7 +79,6 @@ public Q_SLOTS:
   void setLocalCostmapSubscriptionEnabled(bool enabled);
   /// @brief Enable or disable the laser scan subscription.
   void setScanSubscriptionEnabled(bool enabled);
-
 Q_SIGNALS:
   /// @brief Emitted when ROS connection/spin state changes.
   void connectionStateChanged(const QString &state);
@@ -99,6 +100,16 @@ Q_SIGNALS:
   void globalPathChanged(const amr::visualization::PathData &path);
   /// @brief Emitted when the local path changes.
   void localPathChanged(const amr::visualization::PathData &path);
+  /// @brief Emitted when the original unknown goal marker changes.
+  void frontierUnknownGoalChanged(const amr::visualization::Pose2D &pose);
+  /// @brief Emitted when the resolved known/staging goal marker changes.
+  void frontierKnownGoalChanged(const amr::visualization::Pose2D &pose);
+  /// @brief Emitted when the frontier global path overlay changes.
+  void frontierGlobalPathChanged(const amr::visualization::PathData &path);
+  /// @brief Emitted when the frontier local path overlay changes.
+  void frontierLocalPathChanged(const amr::visualization::PathData &path);
+  /// @brief Emitted when frontier navigation status changes.
+  void frontierStatusChanged(const amr::visualization::FrontierStatusData &status);
   /// @brief Emitted when motion status changes.
   void motionStatusChanged(const amr::visualization::MotionStatusData &status);
   /// @brief Emitted when runtime observation summary changes.
@@ -147,6 +158,8 @@ private:
   using NavigateToPose = amr_msgs::action::NavigateToPose;
   /// @brief NavigateToPoses action alias.
   using NavigateToPoses = amr_msgs::action::NavigateToPoses;
+  /// @brief NavigateToUnknownPose action alias.
+  using NavigateToUnknownPose = amr_msgs::action::NavigateToUnknownPose;
   /// @brief AI chat service alias.
   using AiChat = amr_msgs::srv::AiChat;
 
@@ -158,6 +171,8 @@ private:
   void update_local_costmap_subscription();
   /// @brief Recreate or drop the scan subscription based on UI state.
   void update_scan_subscription();
+  /// @brief Send a NavigateToUnknownPose goal from a UI pose.
+  void sendUnknownGoal(const amr::visualization::Pose2D &pose);
   /// @brief Cache transforms from a TF or TF static message.
   void handle_tf_message(
     const tf2_msgs::msg::TFMessage &message,
@@ -203,6 +218,11 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr global_path_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_path_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr frontier_unknown_goal_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr frontier_known_goal_subscription_;
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr frontier_global_path_subscription_;
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr frontier_local_path_subscription_;
+  rclcpp::Subscription<amr_msgs::msg::FrontierNavigationStatus>::SharedPtr frontier_status_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr runtime_summary_subscription_;
@@ -217,6 +237,7 @@ private:
   rclcpp::Client<AiChat>::SharedPtr ai_chat_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr navigate_to_pose_client_;
   rclcpp_action::Client<NavigateToPoses>::SharedPtr navigate_to_poses_client_;
+  rclcpp_action::Client<NavigateToUnknownPose>::SharedPtr navigate_to_unknown_pose_client_;
   rclcpp::Time last_global_costmap_emit_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_local_costmap_emit_time_{0, 0, RCL_ROS_TIME};
 
@@ -228,6 +249,11 @@ private:
   std::string initial_pose_topic_{"/initialpose"};
   std::string global_path_topic_{"/global_plan"};
   std::string local_path_topic_{"/local_plan"};
+  std::string frontier_unknown_goal_topic_{"/frontier/unknown_goal"};
+  std::string frontier_known_goal_topic_{"/frontier/known_goal"};
+  std::string frontier_global_path_topic_{"/frontier/global_plan"};
+  std::string frontier_local_path_topic_{"/frontier/local_plan"};
+  std::string frontier_status_topic_{"/frontier/status"};
   std::string motion_status_topic_{"/motion_status"};
   std::string runtime_summary_topic_{"/observation/runtime/summary"};
   std::string runtime_event_topic_{"/observation/runtime/events"};
@@ -239,6 +265,7 @@ private:
   std::string tf_static_topic_{"/tf_static"};
   std::string navigate_to_pose_action_{"/navigate_to_pose"};
   std::string navigate_to_poses_action_{"/navigate_to_poses"};
+  std::string navigate_to_unknown_pose_action_{"/navigate_to_unknown_pose"};
   std::string ai_chat_service_name_{"/amr_mcp/chat"};
   std::string cmd_vel_topic_{"/cmd_vel"};
   double max_linear_speed_{0.22};
@@ -247,6 +274,7 @@ private:
   bool subscribe_global_costmap_{true};
   bool subscribe_local_costmap_{true};
   bool subscribe_scan_{true};
+  bool subscribe_frontier_overlay_{true};
   int costmap_emit_period_ms_{1000};
   std::map<std::string, FrameVisual> dynamic_frames_;
   std::map<std::string, FrameVisual> static_frames_;

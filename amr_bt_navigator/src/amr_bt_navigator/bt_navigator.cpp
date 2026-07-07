@@ -106,7 +106,7 @@ geometry_msgs::msg::PoseStamped make_route_goal_pose(
 
 /// @copydoc Btnavigator::Btnavigator
 Btnavigator::Btnavigator(const rclcpp::NodeOptions &options)
-: rclcpp_lifecycle::LifecycleNode("navigator", options),
+: rclcpp_lifecycle::LifecycleNode("bt_navigator", options),
   navigate_action_name_("/navigate_to_pose"),
   navigate_poses_action_name_("/navigate_to_poses"),
   command_topic_("/motion_command"),

@@ -13,7 +13,8 @@ Current core components:
 | `costmap_server` | `/costmap_server` | consume `/map`, `/scan`, TF and publish costmaps |
 | `global_planner` | `/global_planner` | plan on `/global_costmap` |
 | `controller` | `/local_planner`, `/motion_controller` | local planning and `/cmd_vel` control |
-| `bt_navigator` | `/navigator` | navigation actions, planning requests, recovery flow |
+| `bt_navigator` | `/bt_navigator` | navigation actions, planning requests, recovery flow |
+| `ft_navigator` | `/ft_navigator` | optional unknown-goal staging orchestration |
 | `recovery_server` | `/recovery_server` | recovery motion command planning |
 | `runtime_observation` | `/runtime_observation` | status summary and event observation |
 | `lifecycle_manager` | `/navigation_manager` | lifecycle bringup for navigation core |
