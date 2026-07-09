@@ -60,6 +60,8 @@ public Q_SLOTS:
   void setGlobalPath(const amr::visualization::PathData &path);
   /// @brief Replace the displayed local path.
   void setLocalPath(const amr::visualization::PathData &path);
+  /// @brief Replace the displayed spatial segmentation overlay.
+  void setSpatialOverlay(const amr::visualization::SpatialOverlayData &overlay);
   /// @brief Replace the displayed original unknown goal marker.
   void setFrontierUnknownGoal(const amr::visualization::Pose2D &pose);
   /// @brief Replace the displayed resolved known/staging goal marker.
@@ -88,6 +90,8 @@ public Q_SLOTS:
   void setGlobalPathVisible(bool visible);
   /// @brief Toggle local path visibility.
   void setLocalPathVisible(bool visible);
+  /// @brief Toggle spatial segmentation overlay visibility.
+  void setSpatialOverlayVisible(bool visible);
   /// @brief Toggle original unknown goal visibility.
   void setFrontierUnknownGoalVisible(bool visible);
   /// @brief Toggle resolved known/staging goal visibility.
@@ -205,6 +209,8 @@ private:
     const QColor &color,
     qreal width,
     Qt::PenStyle style = Qt::SolidLine) const;
+  /// @brief Draw the spatial segmentation overlay above costmap/path layers.
+  void drawSpatialOverlay(QPainter &painter) const;
   /// @brief Draw a pose marker with heading.
   void drawPose(QPainter &painter, const Pose2D &pose, const QColor &color) const;
   /// @brief Draw the configured exact footprint overlay.
@@ -268,6 +274,7 @@ private:
   Pose2D aim_pose_;
   PathData global_path_;
   PathData local_path_;
+  SpatialOverlayData spatial_overlay_;
   Pose2D frontier_unknown_goal_;
   Pose2D frontier_known_goal_;
   PathData frontier_global_path_;
@@ -285,6 +292,7 @@ private:
   bool show_scan_{true};
   bool show_global_path_{true};
   bool show_local_path_{true};
+  bool show_spatial_overlay_{true};
   bool show_frontier_unknown_goal_{true};
   bool show_frontier_known_goal_{true};
   bool show_frontier_global_path_{true};

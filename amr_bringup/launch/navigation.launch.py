@@ -18,11 +18,17 @@ def bringup_params_file() -> str:
     return os.path.join(package_share_directory, "params", "amr.yaml")
 
 
+def spatial_segmenter_params_file() -> str:
+    package_share_directory = get_package_share_directory("amr_bringup")
+    return os.path.join(package_share_directory, "params", "spatial_segmenter.yaml")
+
+
 def generate_launch_description() -> LaunchDescription:
     params_file = LaunchConfiguration("params_file")
     mqtt = LaunchConfiguration("mqtt")
     mcp = LaunchConfiguration("mcp")
     use_frontier_navigation = LaunchConfiguration("use_frontier_navigation")
+    use_spatial_segmenter = LaunchConfiguration("use_spatial_segmenter")
 
     costmap_server = LifecycleNode(
         package="amr_costmap_server",
@@ -81,6 +87,30 @@ def generate_launch_description() -> LaunchDescription:
         name="runtime_observation",
         output="screen",
         parameters=[params_file],
+    )
+    spatial_segmenter = LifecycleNode(
+        package="amr_spatial_segmenter",
+        executable="amr_spatial_segmenter",
+        name="spatial_segmenter",
+        namespace="",
+        output="screen",
+        parameters=[params_file, spatial_segmenter_params_file()],
+        condition=IfCondition(use_spatial_segmenter),
+    )
+    spatial_segmenter_lifecycle_manager = Node(
+        package="amr_lifecycle_manager",
+        executable="amr_lifecycle_manager",
+        name="spatial_segmenter_manager",
+        output="screen",
+        condition=IfCondition(use_spatial_segmenter),
+        parameters=[
+            {
+                "managed_nodes": [
+                    "/spatial_segmenter",
+                ],
+                "initial_pose.enabled": False,
+            },
+        ],
     )
     lifecycle_manager = Node(
         package="amr_lifecycle_manager",
@@ -165,8 +195,13 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "use_frontier_navigation",
-                default_value="false",
+                default_value="true",
                 description="Start the optional unknown-goal frontier navigation action server.",
+            ),
+            DeclareLaunchArgument(
+                "use_spatial_segmenter",
+                default_value="true",
+                description="Start the optional OccupancyGrid spatial segmentation overlay node.",
             ),
             costmap_server,
             global_planner,
@@ -175,6 +210,8 @@ def generate_launch_description() -> LaunchDescription:
             bt_navigator,
             ft_navigator,
             runtime_observation,
+            spatial_segmenter,
+            spatial_segmenter_lifecycle_manager,
             lifecycle_manager,
             lifecycle_manager_with_frontier,
             mqtt_server_launch,

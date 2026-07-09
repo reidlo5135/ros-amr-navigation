@@ -15,6 +15,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <sstream>
 #include <utility>
 
 namespace amr::visualization
@@ -37,12 +38,12 @@ geometry_msgs::msg::Quaternion quaternion_from_yaw(double yaw)
 }
 
 /// @brief Parse a whitespace-separated scalar list from URDF attributes.
-QVector<double> parse_scalar_list(const QString &text, int expected_count)
+QVector<double> parse_scalar_list(const QString & text, int expected_count)
 {
   QVector<double> values;
   const QStringList tokens = text.split(' ', Qt::SkipEmptyParts);
   values.reserve(tokens.size());
-  for (const auto &token : tokens) {
+  for (const auto & token : tokens) {
     bool ok = false;
     const double value = token.toDouble(&ok);
     if (!ok) {
@@ -57,7 +58,7 @@ QVector<double> parse_scalar_list(const QString &text, int expected_count)
 }
 
 /// @brief Extract a 2D origin pose from URDF origin attributes.
-Pose2D parse_origin_attributes(const QXmlStreamAttributes &attributes)
+Pose2D parse_origin_attributes(const QXmlStreamAttributes & attributes)
 {
   Pose2D pose;
   pose.valid = true;
@@ -76,10 +77,10 @@ Pose2D parse_origin_attributes(const QXmlStreamAttributes &attributes)
 
 /// @brief Parse a URDF visual geometry block into a runtime robot visual.
 bool parse_geometry(
-  QXmlStreamReader &reader,
-  const QString &frame_id,
-  const Pose2D &origin,
-  RobotVisual &visual)
+  QXmlStreamReader & reader,
+  const QString & frame_id,
+  const Pose2D & origin,
+  RobotVisual & visual)
 {
   while (reader.readNextStartElement()) {
     const auto name = reader.name();
@@ -140,7 +141,7 @@ bool parse_geometry(
 }  // namespace
 
 /// @copydoc RosWorker::compose_pose
-Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
+Pose2D RosWorker::compose_pose(const Pose2D & parent, const Pose2D & child)
 {
   Pose2D pose;
   pose.x = parent.x + (std::cos(parent.yaw) * child.x) - (std::sin(parent.yaw) * child.y);
@@ -152,7 +153,7 @@ Pose2D RosWorker::compose_pose(const Pose2D &parent, const Pose2D &child)
 }
 
 /// @copydoc RosWorker::RosWorker
-RosWorker::RosWorker(QObject *parent)
+RosWorker::RosWorker(QObject * parent)
 : QObject(parent)
 {
 }
@@ -173,7 +174,7 @@ void RosWorker::start()
   node_ = std::make_shared<rclcpp::Node>("amr_visualization");
   configure_ros_interfaces();
   executor_.add_node(node_);
-  spin_thread_ = std::thread([this]() { spin(); });
+  spin_thread_ = std::thread([this]() {spin();});
   Q_EMIT connectionStateChanged("ROS connected");
 }
 
@@ -211,14 +212,21 @@ void RosWorker::configure_ros_interfaces()
   pose_topic_ = node_->declare_parameter<std::string>("pose_topic", pose_topic_);
   initial_pose_topic_ =
     node_->declare_parameter<std::string>("initial_pose_topic", initial_pose_topic_);
-  global_path_topic_ = node_->declare_parameter<std::string>("global_path_topic", global_path_topic_);
+  global_path_topic_ =
+    node_->declare_parameter<std::string>("global_path_topic", global_path_topic_);
   local_path_topic_ = node_->declare_parameter<std::string>("local_path_topic", local_path_topic_);
+  spatial_markers_topic_ =
+    node_->declare_parameter<std::string>("spatial_markers_topic", spatial_markers_topic_);
   frontier_unknown_goal_topic_ =
-    node_->declare_parameter<std::string>("frontier_unknown_goal_topic", frontier_unknown_goal_topic_);
+    node_->declare_parameter<std::string>(
+    "frontier_unknown_goal_topic",
+    frontier_unknown_goal_topic_);
   frontier_known_goal_topic_ =
     node_->declare_parameter<std::string>("frontier_known_goal_topic", frontier_known_goal_topic_);
   frontier_global_path_topic_ =
-    node_->declare_parameter<std::string>("frontier_global_path_topic", frontier_global_path_topic_);
+    node_->declare_parameter<std::string>(
+    "frontier_global_path_topic",
+    frontier_global_path_topic_);
   frontier_local_path_topic_ =
     node_->declare_parameter<std::string>("frontier_local_path_topic", frontier_local_path_topic_);
   frontier_status_topic_ =
@@ -295,6 +303,12 @@ void RosWorker::configure_ros_interfaces()
   local_path_subscription_ = node_->create_subscription<nav_msgs::msg::Path>(
     local_path_topic_, live_qos, [this](const nav_msgs::msg::Path::SharedPtr message) {
       Q_EMIT localPathChanged(convert_path(*message));
+    });
+  spatial_markers_subscription_ =
+    node_->create_subscription<visualization_msgs::msg::MarkerArray>(
+    spatial_markers_topic_, latched_map_qos,
+    [this](const visualization_msgs::msg::MarkerArray::SharedPtr message) {
+      Q_EMIT spatialOverlayChanged(convert_spatial_markers(*message));
     });
   if (subscribe_frontier_overlay_) {
     frontier_unknown_goal_subscription_ =
@@ -410,7 +424,7 @@ void RosWorker::configure_ros_interfaces()
 
   initial_pose_publisher_ =
     node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-      initial_pose_topic_, live_qos);
+    initial_pose_topic_, live_qos);
   cmd_vel_publisher_ = node_->create_publisher<geometry_msgs::msg::Twist>(
     cmd_vel_topic_, rclcpp::QoS(10));
   ai_chat_client_ = node_->create_client<AiChat>(ai_chat_service_name_);
@@ -424,10 +438,10 @@ void RosWorker::configure_ros_interfaces()
 }
 
 /// @copydoc RosWorker::handle_tf_message
-void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage &message, bool is_static)
+void RosWorker::handle_tf_message(const tf2_msgs::msg::TFMessage & message, bool is_static)
 {
-  auto &storage = is_static ? static_frames_ : dynamic_frames_;
-  for (const auto &transform : message.transforms) {
+  auto & storage = is_static ? static_frames_ : dynamic_frames_;
+  for (const auto & transform : message.transforms) {
     FrameVisual frame;
     frame.parent_frame = QString::fromStdString(transform.header.frame_id);
     frame.child_frame = QString::fromStdString(transform.child_frame_id);
@@ -465,7 +479,7 @@ QVector<FrameVisual> RosWorker::build_frame_visuals() const
   emitted_frames.insert("map");
 
   auto add_frame =
-    [this, &frames, &emitted_frames](const std::string &child_frame) {
+    [this, &frames, &emitted_frames](const std::string & child_frame) {
       if (child_frame.empty() || emitted_frames.count(child_frame) > 0) {
         return;
       }
@@ -480,13 +494,19 @@ QVector<FrameVisual> RosWorker::build_frame_visuals() const
 
       FrameVisual frame;
       frame.child_frame = QString::fromStdString(child_frame);
-      if (const auto dynamic_it = dynamic_frames_.find(child_frame); dynamic_it != dynamic_frames_.end()) {
+      if (const auto dynamic_it = dynamic_frames_.find(child_frame);
+        dynamic_it != dynamic_frames_.end())
+      {
         frame.parent_frame = dynamic_it->second.parent_frame;
         frame.is_static = dynamic_it->second.is_static;
-      } else if (const auto static_it = static_frames_.find(child_frame); static_it != static_frames_.end()) {
+      } else if (const auto static_it = static_frames_.find(child_frame);
+        static_it != static_frames_.end())
+      {
         frame.parent_frame = static_it->second.parent_frame;
         frame.is_static = true;
-      } else if (const auto joint_it = robot_joints_.find(child_frame); joint_it != robot_joints_.end()) {
+      } else if (const auto joint_it = robot_joints_.find(child_frame);
+        joint_it != robot_joints_.end())
+      {
         frame.parent_frame = joint_it->second.parent_frame;
         frame.is_static = true;
       }
@@ -526,7 +546,7 @@ void RosWorker::update_global_costmap_subscription()
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       const rclcpp::Time now = node_->now();
       if (last_global_costmap_emit_time_.nanoseconds() != 0 &&
-        ((now - last_global_costmap_emit_time_).seconds() * 1000.0) < costmap_emit_period_ms_)
+      ((now - last_global_costmap_emit_time_).seconds() * 1000.0) < costmap_emit_period_ms_)
       {
         return;
       }
@@ -550,7 +570,7 @@ void RosWorker::update_local_costmap_subscription()
     [this](const nav_msgs::msg::OccupancyGrid::SharedPtr message) {
       const rclcpp::Time now = node_->now();
       if (last_local_costmap_emit_time_.nanoseconds() != 0 &&
-        ((now - last_local_costmap_emit_time_).seconds() * 1000.0) < costmap_emit_period_ms_)
+      ((now - last_local_costmap_emit_time_).seconds() * 1000.0) < costmap_emit_period_ms_)
       {
         return;
       }
@@ -581,13 +601,13 @@ void RosWorker::spin()
 {
   try {
     executor_.spin();
-  } catch (const std::exception &error) {
+  } catch (const std::exception & error) {
     Q_EMIT eventReceived(QString("ROS executor stopped: %1").arg(error.what()));
   }
 }
 
 /// @copydoc RosWorker::convert_grid
-GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid &message) const
+GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid & message) const
 {
   GridMap map;
   map.width = static_cast<int>(message.info.width);
@@ -610,18 +630,113 @@ GridMap RosWorker::convert_grid(const nav_msgs::msg::OccupancyGrid &message) con
 }
 
 /// @copydoc RosWorker::convert_path
-PathData RosWorker::convert_path(const nav_msgs::msg::Path &message) const
+PathData RosWorker::convert_path(const nav_msgs::msg::Path & message) const
 {
   PathData path;
   path.points.reserve(static_cast<int>(message.poses.size()));
-  for (const auto &pose : message.poses) {
+  for (const auto & pose : message.poses) {
     path.points.push_back(QPointF(pose.pose.position.x, pose.pose.position.y));
   }
   return path;
 }
 
+/// @copydoc RosWorker::convert_spatial_markers
+SpatialOverlayData RosWorker::convert_spatial_markers(
+  const visualization_msgs::msg::MarkerArray & message) const
+{
+  const std::set<std::string> allowed_namespaces = {
+    "spatial_corridors",
+    "spatial_area_boxes",
+    "spatial_doors",
+    "spatial_labels",
+  };
+  std::set<std::string> namespaces;
+  int total_points = 0;
+  std::ostringstream signature;
+  for (const auto & marker : message.markers) {
+    namespaces.insert(marker.ns);
+    total_points += static_cast<int>(marker.points.size());
+    signature << marker.ns << ':' << marker.id << ':' << marker.type << ':' << marker.action << ':';
+    for (const auto & point : marker.points) {
+      signature << point.x << ',' << point.y << ',' << point.z << ';';
+    }
+    signature << '|';
+  }
+  std::string namespace_text;
+  for (const auto & ns : namespaces) {
+    if (!namespace_text.empty()) {
+      namespace_text += ",";
+    }
+    namespace_text += ns;
+  }
+  if (node_) {
+    RCLCPP_INFO(
+      node_->get_logger(),
+      "AMR_LOG schema=v1 component=amr_visualization event=spatial_overlay_received markers=%d points=%d namespaces=%s",
+      static_cast<int>(message.markers.size()),
+      total_points,
+      namespace_text.c_str());
+  }
+
+  const std::string signature_text = signature.str();
+  if (signature_text == last_spatial_marker_signature_) {
+    return cached_spatial_overlay_;
+  }
+
+  SpatialOverlayData overlay;
+  for (const auto & marker : message.markers) {
+    if (marker.action == visualization_msgs::msg::Marker::DELETEALL) {
+      overlay = {};
+      continue;
+    }
+    if (marker.action == visualization_msgs::msg::Marker::DELETE) {
+      continue;
+    }
+    if (allowed_namespaces.count(marker.ns) == 0U) {
+      continue;
+    }
+
+    if (marker.type == visualization_msgs::msg::Marker::LINE_STRIP) {
+      PathData path;
+      path.points.reserve(static_cast<int>(marker.points.size()));
+      for (const auto & point : marker.points) {
+        path.points.push_back(QPointF(point.x, point.y));
+      }
+      if (path.points.size() >= 2) {
+        overlay.line_strips.push_back(path);
+      }
+    } else if (marker.type == visualization_msgs::msg::Marker::LINE_LIST) {
+      for (std::size_t i = 1; i < marker.points.size(); i += 2) {
+        PathData path;
+        path.points.push_back(QPointF(marker.points[i - 1].x, marker.points[i - 1].y));
+        path.points.push_back(QPointF(marker.points[i].x, marker.points[i].y));
+        overlay.line_strips.push_back(path);
+      }
+    } else if (
+      marker.type == visualization_msgs::msg::Marker::SPHERE ||
+      marker.type == visualization_msgs::msg::Marker::CUBE ||
+      marker.type == visualization_msgs::msg::Marker::CYLINDER)
+    {
+      Pose2D pose;
+      pose.x = marker.pose.position.x;
+      pose.y = marker.pose.position.y;
+      pose.z = marker.pose.position.z;
+      pose.yaw = quaternion_to_yaw(
+        marker.pose.orientation.x,
+        marker.pose.orientation.y,
+        marker.pose.orientation.z,
+        marker.pose.orientation.w);
+      pose.valid = true;
+      overlay.points.push_back(pose);
+    }
+  }
+  last_spatial_marker_signature_ = signature_text;
+  cached_spatial_overlay_ = overlay;
+  return overlay;
+}
+
 /// @copydoc RosWorker::convert_pose
-Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) const
+Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped & message) const
 {
   Pose2D pose;
   pose.x = message.pose.position.x;
@@ -637,7 +752,7 @@ Pose2D RosWorker::convert_pose(const geometry_msgs::msg::PoseStamped &message) c
 }
 
 /// @copydoc RosWorker::convert_scan
-ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan &message) const
+ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan & message) const
 {
   ScanData scan;
   const Pose2D frame_pose = resolve_frame_pose(message.header.frame_id);
@@ -667,7 +782,7 @@ ScanData RosWorker::convert_scan(const sensor_msgs::msg::LaserScan &message) con
 }
 
 /// @copydoc RosWorker::to_pose_stamped
-geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D &pose) const
+geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D & pose) const
 {
   geometry_msgs::msg::PoseStamped stamped;
   stamped.header.frame_id = default_frame_id_;
@@ -680,7 +795,7 @@ geometry_msgs::msg::PoseStamped RosWorker::to_pose_stamped(const Pose2D &pose) c
 }
 
 /// @copydoc RosWorker::parse_runtime_summary
-RuntimeSummary RosWorker::parse_runtime_summary(const std::string &payload) const
+RuntimeSummary RosWorker::parse_runtime_summary(const std::string & payload) const
 {
   RuntimeSummary summary;
   const auto document = QJsonDocument::fromJson(QByteArray::fromStdString(payload));
@@ -693,12 +808,13 @@ RuntimeSummary RosWorker::parse_runtime_summary(const std::string &payload) cons
   summary.recovery_phase = object.value("recovery_phase").toString(summary.recovery_phase);
   summary.recovery_reason = object.value("recovery_reason").toString(summary.recovery_reason);
   summary.action_status = object.value("action_status").toString(summary.action_status);
-  summary.local_escape_active = object.value("local_escape_active").toBool(summary.local_escape_active);
+  summary.local_escape_active = object.value("local_escape_active").toBool(
+    summary.local_escape_active);
   return summary;
 }
 
 /// @copydoc RosWorker::parse_robot_description
-QVector<RobotVisual> RosWorker::parse_robot_description(const std::string &payload)
+QVector<RobotVisual> RosWorker::parse_robot_description(const std::string & payload)
 {
   robot_joints_.clear();
   QVector<RobotVisual> visuals;
@@ -805,7 +921,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
   visuals.reserve(robot_description_visuals_.size());
   std::set<QString> visual_frames;
 
-  for (const auto &source_visual : robot_description_visuals_) {
+  for (const auto & source_visual : robot_description_visuals_) {
     const Pose2D frame_pose = resolve_robot_link_pose(source_visual.frame_id);
     if (!frame_pose.valid) {
       continue;
@@ -818,7 +934,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
     visual_frames.insert(source_visual.frame_id);
   }
 
-  auto add_proxy_visual = [this, &visuals, &visual_frames](const QString &frame_id) {
+  auto add_proxy_visual = [this, &visuals, &visual_frames](const QString & frame_id) {
       if (visual_frames.count(frame_id) > 0) {
         return;
       }
@@ -865,7 +981,7 @@ QVector<RobotVisual> RosWorker::build_robot_visuals() const
 }
 
 /// @copydoc RosWorker::resolve_robot_link_pose
-Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
+Pose2D RosWorker::resolve_robot_link_pose(const QString & link_frame) const
 {
   const Pose2D tf_pose = resolve_frame_pose(link_frame.toStdString());
   if (tf_pose.valid) {
@@ -873,7 +989,7 @@ Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
   }
 
   std::function<Pose2D(const QString &, int)> resolve =
-    [this, &resolve](const QString &frame_name, int depth) -> Pose2D {
+    [this, &resolve](const QString & frame_name, int depth) -> Pose2D {
       if (depth > 32) {
         return {};
       }
@@ -901,15 +1017,15 @@ Pose2D RosWorker::resolve_robot_link_pose(const QString &link_frame) const
 /// @copydoc RosWorker::resolve_primary_robot_pose
 Pose2D RosWorker::resolve_primary_robot_pose() const
 {
-  for (const auto &frame : {"base_footprint", "base_link"}) {
+  for (const auto & frame : {"base_footprint", "base_link"}) {
     const Pose2D pose = resolve_frame_pose(frame);
     if (pose.valid) {
       return pose;
     }
   }
 
-  const auto resolve_by_suffix = [this](const QString &suffix) {
-      for (const auto &frame_store : {&dynamic_frames_, &static_frames_}) {
+  const auto resolve_by_suffix = [this](const QString & suffix) {
+      for (const auto & frame_store : {&dynamic_frames_, &static_frames_}) {
         for (const auto &[child_frame, frame] : *frame_store) {
           (void)frame;
           const QString child = QString::fromStdString(child_frame);
@@ -937,22 +1053,22 @@ Pose2D RosWorker::resolve_primary_robot_pose() const
 }
 
 /// @copydoc RosWorker::resolve_frame_pose
-Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
+Pose2D RosWorker::resolve_frame_pose(const std::string & child_frame) const
 {
-  const auto find_frame = [this](const std::string &child) -> const FrameVisual *{
-    const auto dynamic_it = dynamic_frames_.find(child);
-    if (dynamic_it != dynamic_frames_.end()) {
-      return &dynamic_it->second;
-    }
-    const auto static_it = static_frames_.find(child);
-    if (static_it != static_frames_.end()) {
-      return &static_it->second;
-    }
-    return nullptr;
-  };
+  const auto find_frame = [this](const std::string & child) -> const FrameVisual *{
+      const auto dynamic_it = dynamic_frames_.find(child);
+      if (dynamic_it != dynamic_frames_.end()) {
+        return &dynamic_it->second;
+      }
+      const auto static_it = static_frames_.find(child);
+      if (static_it != static_frames_.end()) {
+        return &static_it->second;
+      }
+      return nullptr;
+    };
 
   std::function<Pose2D(const std::string &, int)> resolve =
-    [&](const std::string &frame_name, int depth) -> Pose2D {
+    [&](const std::string & frame_name, int depth) -> Pose2D {
       if (depth > 16) {
         return {};
       }
@@ -962,7 +1078,7 @@ Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
         return identity;
       }
 
-      const FrameVisual *frame = find_frame(frame_name);
+      const FrameVisual * frame = find_frame(frame_name);
       if (!frame || !frame->pose.valid || frame->parent_frame.isEmpty()) {
         return {};
       }
@@ -978,7 +1094,7 @@ Pose2D RosWorker::resolve_frame_pose(const std::string &child_frame) const
 }
 
 /// @copydoc RosWorker::sendSingleGoal
-void RosWorker::sendSingleGoal(const Pose2D &pose)
+void RosWorker::sendSingleGoal(const Pose2D & pose)
 {
   if (!node_ || !pose.valid) {
     return;
@@ -1002,13 +1118,13 @@ void RosWorker::sendSingleGoal(const Pose2D &pose)
   goal.goal_pose = to_pose_stamped(pose);
   rclcpp_action::Client<NavigateToPose>::SendGoalOptions options;
   options.goal_response_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr &handle) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::SharedPtr & handle) {
       const QString state = handle ? "Accepted" : "Rejected";
       Q_EMIT goalStateChanged(state);
       Q_EMIT eventReceived(QString("Goal %1").arg(state.toLower()));
     };
   options.result_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult &result) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPose>::WrappedResult & result) {
       const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
       Q_EMIT goalStateChanged(state);
       Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
@@ -1020,7 +1136,7 @@ void RosWorker::sendSingleGoal(const Pose2D &pose)
 }
 
 /// @copydoc RosWorker::sendUnknownGoal
-void RosWorker::sendUnknownGoal(const Pose2D &pose)
+void RosWorker::sendUnknownGoal(const Pose2D & pose)
 {
   if (!node_ || !pose.valid) {
     return;
@@ -1042,30 +1158,30 @@ void RosWorker::sendUnknownGoal(const Pose2D &pose)
 
   rclcpp_action::Client<NavigateToUnknownPose>::SendGoalOptions options;
   options.goal_response_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::SharedPtr &handle) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::SharedPtr & handle) {
       const QString state = handle ? "Accepted" : "Rejected";
       Q_EMIT goalStateChanged(state);
       Q_EMIT eventReceived(QString("Goal %1").arg(state.toLower()));
     };
   options.feedback_callback =
     [this](
-      rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::SharedPtr,
-      const std::shared_ptr<const NavigateToUnknownPose::Feedback> feedback) {
+    rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::SharedPtr,
+    const std::shared_ptr<const NavigateToUnknownPose::Feedback> feedback) {
       Q_EMIT goalStateChanged(
         QString("Frontier %1 #%2")
-          .arg(QString::fromStdString(feedback->phase))
-          .arg(feedback->iteration));
+        .arg(QString::fromStdString(feedback->phase))
+        .arg(feedback->iteration));
     };
   options.result_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::WrappedResult &result) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToUnknownPose>::WrappedResult & result) {
       const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
       Q_EMIT goalStateChanged(state);
       Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
       if (result.result) {
         Q_EMIT eventReceived(
           QString("Goal %1: %2")
-            .arg(state)
-            .arg(QString::fromStdString(result.result->error_msg)));
+          .arg(state)
+          .arg(QString::fromStdString(result.result->error_msg)));
       } else {
         Q_EMIT eventReceived(QString("Goal %1").arg(state));
       }
@@ -1076,7 +1192,7 @@ void RosWorker::sendUnknownGoal(const Pose2D &pose)
 }
 
 /// @copydoc RosWorker::sendRoute
-void RosWorker::sendRoute(const QVector<Pose2D> &route)
+void RosWorker::sendRoute(const QVector<Pose2D> & route)
 {
   if (!node_ || route.empty()) {
     return;
@@ -1090,7 +1206,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> &route)
 
   NavigateToPoses::Goal goal;
   goal.goal_poses.reserve(static_cast<size_t>(route.size()));
-  for (const auto &pose : route) {
+  for (const auto & pose : route) {
     if (pose.valid) {
       goal.goal_poses.push_back(to_pose_stamped(pose));
     }
@@ -1100,22 +1216,22 @@ void RosWorker::sendRoute(const QVector<Pose2D> &route)
   }
   rclcpp_action::Client<NavigateToPoses>::SendGoalOptions options;
   options.goal_response_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr &handle) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr & handle) {
       const QString state = handle ? "Accepted" : "Rejected";
       Q_EMIT goalStateChanged(state);
       Q_EMIT eventReceived(QString("Route %1").arg(state.toLower()));
     };
   options.feedback_callback =
     [this](
-      rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr,
-      const std::shared_ptr<const NavigateToPoses::Feedback> feedback) {
+    rclcpp_action::ClientGoalHandle<NavigateToPoses>::SharedPtr,
+    const std::shared_ptr<const NavigateToPoses::Feedback> feedback) {
       Q_EMIT goalStateChanged(
         QString("Running %1/%2")
-          .arg(feedback->current_goal_index + 1U)
-          .arg(feedback->goal_count));
+        .arg(feedback->current_goal_index + 1U)
+        .arg(feedback->goal_count));
     };
   options.result_callback =
-    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::WrappedResult &result) {
+    [this](const rclcpp_action::ClientGoalHandle<NavigateToPoses>::WrappedResult & result) {
       const QString state = QString("Finished (%1)").arg(static_cast<int>(result.code));
       Q_EMIT goalStateChanged(state);
       Q_EMIT navigationCompleted(result.code == rclcpp_action::ResultCode::SUCCEEDED);
@@ -1128,7 +1244,7 @@ void RosWorker::sendRoute(const QVector<Pose2D> &route)
 }
 
 /// @copydoc RosWorker::publishInitialPose
-void RosWorker::publishInitialPose(const Pose2D &pose)
+void RosWorker::publishInitialPose(const Pose2D & pose)
 {
   if (!node_ || !pose.valid) {
     return;
@@ -1195,10 +1311,10 @@ void RosWorker::publishStopCommand()
 
 /// @copydoc RosWorker::sendAiChatRequest
 void RosWorker::sendAiChatRequest(
-  const QString &provider,
-  const QString &robot_id,
-  const QString &default_frame,
-  const QString &message)
+  const QString & provider,
+  const QString & robot_id,
+  const QString & default_frame,
+  const QString & message)
 {
   if (!ai_chat_client_) {
     Q_EMIT aiChatServiceAvailabilityChanged(false);
@@ -1236,7 +1352,7 @@ void RosWorker::sendAiChatRequest(
 }
 
 /// @copydoc RosWorker::setAiChatServiceName
-void RosWorker::setAiChatServiceName(const QString &service_name)
+void RosWorker::setAiChatServiceName(const QString & service_name)
 {
   const QString trimmed = service_name.trimmed();
   if (trimmed.isEmpty()) {

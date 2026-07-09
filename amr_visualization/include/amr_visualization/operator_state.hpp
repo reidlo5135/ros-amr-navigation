@@ -123,6 +123,15 @@ struct ScanData
   QVector<QPointF> points;
 };
 
+/// @brief Spatial segmentation overlay converted from visualization markers.
+struct SpatialOverlayData
+{
+  /// @brief Overlay line strips in world coordinates.
+  QVector<PathData> line_strips;
+  /// @brief Point markers such as future door candidates.
+  QVector<Pose2D> points;
+};
+
 /// @brief Motion status data displayed by the operator UI.
 struct MotionStatusData
 {
@@ -197,6 +206,7 @@ Q_DECLARE_METATYPE(amr::visualization::RobotVisual)
 Q_DECLARE_METATYPE(amr::visualization::GridMap)
 Q_DECLARE_METATYPE(amr::visualization::PathData)
 Q_DECLARE_METATYPE(amr::visualization::ScanData)
+Q_DECLARE_METATYPE(amr::visualization::SpatialOverlayData)
 Q_DECLARE_METATYPE(amr::visualization::MotionStatusData)
 Q_DECLARE_METATYPE(amr::visualization::RuntimeSummary)
 Q_DECLARE_METATYPE(amr::visualization::FrontierStatusData)

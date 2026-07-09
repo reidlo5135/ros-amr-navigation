@@ -32,6 +32,7 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 
 namespace amr::visualization
 {
@@ -43,7 +44,7 @@ class RosWorker : public QObject
 
 public:
   /// @brief Construct the worker without starting ROS spinning.
-  explicit RosWorker(QObject *parent = nullptr);
+  explicit RosWorker(QObject * parent = nullptr);
   /// @brief Stop spinning and destroy the worker.
   ~RosWorker() override;
 
@@ -54,11 +55,11 @@ public:
 
 public Q_SLOTS:
   /// @brief Send a single navigation goal from a UI pose.
-  void sendSingleGoal(const amr::visualization::Pose2D &pose);
+  void sendSingleGoal(const amr::visualization::Pose2D & pose);
   /// @brief Send a NavigateToPoses route from UI waypoints.
-  void sendRoute(const QVector<amr::visualization::Pose2D> &route);
+  void sendRoute(const QVector<amr::visualization::Pose2D> & route);
   /// @brief Publish an initial pose message.
-  void publishInitialPose(const amr::visualization::Pose2D &pose);
+  void publishInitialPose(const amr::visualization::Pose2D & pose);
   /// @brief Cancel active navigation action goals.
   void cancelNavigation();
   /// @brief Publish a velocity command to the configured cmd_vel topic.
@@ -67,61 +68,64 @@ public Q_SLOTS:
   void publishStopCommand();
   /// @brief Send an AI chat request to the AMR MCP server.
   void sendAiChatRequest(
-    const QString &provider,
-    const QString &robot_id,
-    const QString &default_frame,
-    const QString &message);
+    const QString & provider,
+    const QString & robot_id,
+    const QString & default_frame,
+    const QString & message);
   /// @brief Recreate the AI chat service client for a new service name.
-  void setAiChatServiceName(const QString &service_name);
+  void setAiChatServiceName(const QString & service_name);
   /// @brief Enable or disable the global costmap subscription.
   void setGlobalCostmapSubscriptionEnabled(bool enabled);
   /// @brief Enable or disable the local costmap subscription.
   void setLocalCostmapSubscriptionEnabled(bool enabled);
   /// @brief Enable or disable the laser scan subscription.
   void setScanSubscriptionEnabled(bool enabled);
+
 Q_SIGNALS:
   /// @brief Emitted when ROS connection/spin state changes.
-  void connectionStateChanged(const QString &state);
+  void connectionStateChanged(const QString & state);
   /// @brief Emitted when a map update is available.
-  void mapChanged(const amr::visualization::GridMap &map);
+  void mapChanged(const amr::visualization::GridMap & map);
   /// @brief Emitted when TF frame visuals change.
-  void tfFramesChanged(const QVector<amr::visualization::FrameVisual> &frames);
+  void tfFramesChanged(const QVector<amr::visualization::FrameVisual> & frames);
   /// @brief Emitted when robot model visuals change.
-  void robotModelChanged(const QVector<amr::visualization::RobotVisual> &visuals);
+  void robotModelChanged(const QVector<amr::visualization::RobotVisual> & visuals);
   /// @brief Emitted when global costmap data changes.
-  void globalCostmapChanged(const amr::visualization::GridMap &map);
+  void globalCostmapChanged(const amr::visualization::GridMap & map);
   /// @brief Emitted when local costmap data changes.
-  void localCostmapChanged(const amr::visualization::GridMap &map);
+  void localCostmapChanged(const amr::visualization::GridMap & map);
   /// @brief Emitted when scan points change.
-  void scanChanged(const amr::visualization::ScanData &scan);
+  void scanChanged(const amr::visualization::ScanData & scan);
   /// @brief Emitted when robot pose changes.
-  void robotPoseChanged(const amr::visualization::Pose2D &pose);
+  void robotPoseChanged(const amr::visualization::Pose2D & pose);
   /// @brief Emitted when the global path changes.
-  void globalPathChanged(const amr::visualization::PathData &path);
+  void globalPathChanged(const amr::visualization::PathData & path);
   /// @brief Emitted when the local path changes.
-  void localPathChanged(const amr::visualization::PathData &path);
+  void localPathChanged(const amr::visualization::PathData & path);
+  /// @brief Emitted when spatial segmentation overlay markers change.
+  void spatialOverlayChanged(const amr::visualization::SpatialOverlayData & overlay);
   /// @brief Emitted when the original unknown goal marker changes.
-  void frontierUnknownGoalChanged(const amr::visualization::Pose2D &pose);
+  void frontierUnknownGoalChanged(const amr::visualization::Pose2D & pose);
   /// @brief Emitted when the resolved known/staging goal marker changes.
-  void frontierKnownGoalChanged(const amr::visualization::Pose2D &pose);
+  void frontierKnownGoalChanged(const amr::visualization::Pose2D & pose);
   /// @brief Emitted when the frontier global path overlay changes.
-  void frontierGlobalPathChanged(const amr::visualization::PathData &path);
+  void frontierGlobalPathChanged(const amr::visualization::PathData & path);
   /// @brief Emitted when the frontier local path overlay changes.
-  void frontierLocalPathChanged(const amr::visualization::PathData &path);
+  void frontierLocalPathChanged(const amr::visualization::PathData & path);
   /// @brief Emitted when frontier navigation status changes.
-  void frontierStatusChanged(const amr::visualization::FrontierStatusData &status);
+  void frontierStatusChanged(const amr::visualization::FrontierStatusData & status);
   /// @brief Emitted when motion status changes.
-  void motionStatusChanged(const amr::visualization::MotionStatusData &status);
+  void motionStatusChanged(const amr::visualization::MotionStatusData & status);
   /// @brief Emitted when runtime observation summary changes.
-  void runtimeSummaryChanged(const amr::visualization::RuntimeSummary &summary);
+  void runtimeSummaryChanged(const amr::visualization::RuntimeSummary & summary);
   /// @brief Emitted when battery percentage or presence changes.
   void batteryStateChanged(double percentage, bool present);
   /// @brief Emitted when action goal state changes.
-  void goalStateChanged(const QString &state);
+  void goalStateChanged(const QString & state);
   /// @brief Emitted when navigation completes.
   void navigationCompleted(bool succeeded);
   /// @brief Emitted when a runtime event line is received.
-  void eventReceived(const QString &event);
+  void eventReceived(const QString & event);
   /// @brief Emitted after joystick-related ROS parameters are loaded.
   void joystickConfigurationChanged(
     double max_linear_speed,
@@ -133,12 +137,12 @@ Q_SIGNALS:
   void aiChatResponseReceived(
     bool accepted,
     bool command_executed,
-    const QString &command_type,
-    const QString &response,
-    const QString &request_id,
-    const QString &error_message);
+    const QString & command_type,
+    const QString & response,
+    const QString & request_id,
+    const QString & error_message);
   /// @brief Emitted when one asynchronous MCP feedback line is received.
-  void mcpFeedbackReceived(const QString &message);
+  void mcpFeedbackReceived(const QString & message);
 
 private:
   /// @brief Parsed fixed joint from robot_description.
@@ -172,40 +176,43 @@ private:
   /// @brief Recreate or drop the scan subscription based on UI state.
   void update_scan_subscription();
   /// @brief Send a NavigateToUnknownPose goal from a UI pose.
-  void sendUnknownGoal(const amr::visualization::Pose2D &pose);
+  void sendUnknownGoal(const amr::visualization::Pose2D & pose);
   /// @brief Cache transforms from a TF or TF static message.
   void handle_tf_message(
-    const tf2_msgs::msg::TFMessage &message,
+    const tf2_msgs::msg::TFMessage & message,
     bool is_static);
   /// @brief Spin the ROS executor on the worker thread.
   void spin();
 
   /// @brief Convert an occupancy grid into a Qt-friendly grid model.
-  GridMap convert_grid(const nav_msgs::msg::OccupancyGrid &message) const;
+  GridMap convert_grid(const nav_msgs::msg::OccupancyGrid & message) const;
   /// @brief Convert a nav_msgs path into Qt-friendly path points.
-  PathData convert_path(const nav_msgs::msg::Path &message) const;
+  PathData convert_path(const nav_msgs::msg::Path & message) const;
+  /// @brief Convert spatial segmentation markers into Qt-friendly overlay primitives.
+  SpatialOverlayData convert_spatial_markers(
+    const visualization_msgs::msg::MarkerArray & message) const;
   /// @brief Convert a stamped pose into a UI pose.
-  Pose2D convert_pose(const geometry_msgs::msg::PoseStamped &message) const;
+  Pose2D convert_pose(const geometry_msgs::msg::PoseStamped & message) const;
   /// @brief Convert a laser scan into projected UI points.
-  ScanData convert_scan(const sensor_msgs::msg::LaserScan &message) const;
+  ScanData convert_scan(const sensor_msgs::msg::LaserScan & message) const;
   /// @brief Convert a UI pose into a stamped ROS pose.
-  geometry_msgs::msg::PoseStamped to_pose_stamped(const Pose2D &pose) const;
+  geometry_msgs::msg::PoseStamped to_pose_stamped(const Pose2D & pose) const;
   /// @brief Parse runtime observation summary JSON into UI state.
-  RuntimeSummary parse_runtime_summary(const std::string &payload) const;
+  RuntimeSummary parse_runtime_summary(const std::string & payload) const;
   /// @brief Parse robot_description XML into visual elements and joints.
-  QVector<RobotVisual> parse_robot_description(const std::string &payload);
+  QVector<RobotVisual> parse_robot_description(const std::string & payload);
   /// @brief Resolve parsed robot visuals into the fixed frame.
   QVector<RobotVisual> build_robot_visuals() const;
   /// @brief Resolve a robot link pose from TF and fixed joints.
-  Pose2D resolve_robot_link_pose(const QString &link_frame) const;
+  Pose2D resolve_robot_link_pose(const QString & link_frame) const;
   /// @brief Resolve the primary robot base pose from TF when /pose is unavailable.
   Pose2D resolve_primary_robot_pose() const;
   /// @brief Build frame visuals from cached dynamic and static transforms.
   QVector<FrameVisual> build_frame_visuals() const;
   /// @brief Compose two planar poses.
-  static Pose2D compose_pose(const Pose2D &parent, const Pose2D &child);
+  static Pose2D compose_pose(const Pose2D & parent, const Pose2D & child);
   /// @brief Resolve an arbitrary child frame pose in the fixed frame.
-  Pose2D resolve_frame_pose(const std::string &child_frame) const;
+  Pose2D resolve_frame_pose(const std::string & child_frame) const;
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::executors::MultiThreadedExecutor executor_;
@@ -218,11 +225,15 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr global_path_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr local_path_subscription_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr frontier_unknown_goal_subscription_;
+  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr
+    spatial_markers_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr
+    frontier_unknown_goal_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr frontier_known_goal_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr frontier_global_path_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr frontier_local_path_subscription_;
-  rclcpp::Subscription<amr_msgs::msg::FrontierNavigationStatus>::SharedPtr frontier_status_subscription_;
+  rclcpp::Subscription<amr_msgs::msg::FrontierNavigationStatus>::SharedPtr
+    frontier_status_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscription_;
   rclcpp::Subscription<amr_msgs::msg::MotionStatus>::SharedPtr motion_status_subscription_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr runtime_summary_subscription_;
@@ -232,7 +243,8 @@ private:
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr robot_description_subscription_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_subscription_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_static_subscription_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
+    initial_pose_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
   rclcpp::Client<AiChat>::SharedPtr ai_chat_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr navigate_to_pose_client_;
@@ -249,6 +261,7 @@ private:
   std::string initial_pose_topic_{"/initialpose"};
   std::string global_path_topic_{"/global_plan"};
   std::string local_path_topic_{"/local_plan"};
+  std::string spatial_markers_topic_{"/spatial_segment_markers"};
   std::string frontier_unknown_goal_topic_{"/frontier/unknown_goal"};
   std::string frontier_known_goal_topic_{"/frontier/known_goal"};
   std::string frontier_global_path_topic_{"/frontier/global_plan"};
@@ -280,6 +293,8 @@ private:
   std::map<std::string, FrameVisual> static_frames_;
   QVector<RobotVisual> robot_description_visuals_;
   std::map<std::string, RobotJoint> robot_joints_;
+  mutable std::string last_spatial_marker_signature_;
+  mutable SpatialOverlayData cached_spatial_overlay_;
 };
 
 }  // namespace amr::visualization

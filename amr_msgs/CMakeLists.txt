@@ -22,6 +22,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObstacleReport.msg"
   "msg/MotionStatus.msg"
   "msg/LocalPlanStatus.msg"
+  "msg/SpatialSegment.msg"
+  "msg/SpatialSegmentArray.msg"
   "srv/ClearCostmap.srv"
   "srv/AiChat.srv"
   "srv/PlanLocalEscape.srv"

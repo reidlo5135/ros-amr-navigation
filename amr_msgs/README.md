@@ -14,6 +14,8 @@ Custom ROS interfaces used by the AMR stack.
   - `MotionCommand`
   - `MotionStatus`
   - `ObstacleReport`
+  - `SpatialSegment`
+  - `SpatialSegmentArray`
 - services:
   - `PlanSegment`
   - `PlanRoute`

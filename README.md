@@ -60,10 +60,16 @@ Terminal 3:
 ros2 launch amr_bringup navigation.launch.py
 ```
 
-Optional unknown-goal frontier navigation:
+Unknown-goal frontier navigation is enabled by default. To disable it:
 
 ```bash
-ros2 launch amr_bringup navigation.launch.py use_frontier_navigation:=true
+ros2 launch amr_bringup navigation.launch.py use_frontier_navigation:=false
+```
+
+Spatial segmentation overlay is enabled by default. To disable it:
+
+```bash
+ros2 launch amr_bringup navigation.launch.py use_spatial_segmenter:=false
 ```
 
 Optional MQTT bridge:
@@ -87,7 +93,8 @@ remapped.
 - `amr_frontier_navigator`: optional unknown-goal orchestrator that resolves reachable known/free staging goals from live `/map` and delegates motion to `/navigate_to_pose`
 - `amr_recovery_server`: creates recovery motion commands
 - `amr_runtime_observation`: observes navigation status and emits runtime summaries
-- `amr_lifecycle_manager`: lifecycle bringup for navigation core nodes only
+- `amr_spatial_segmenter`: optional rule-based OccupancyGrid corridor/open-area overlay publisher for live `/map`
+- `amr_lifecycle_manager`: lifecycle bringup for managed navigation nodes
 - `amr_bringup`: navigation-only launch and parameters
 
 `amr_bringup/params/slam_toolbox.yaml` is the packaged online-async
@@ -136,6 +143,9 @@ Outputs:
 | frontier global plan overlay | `/frontier/global_plan` |
 | frontier local plan overlay | `/frontier/local_plan` |
 | frontier status | `/frontier/status` |
+| spatial segment map | `/spatial_segment_map` |
+| spatial segment markers | `/spatial_segment_markers` |
+| spatial segment array | `/spatial_segments` |
 
 Actions and services:
 
@@ -176,8 +186,7 @@ TF can become available after navigation nodes are already active.
 
 ## Unknown Goal Navigation
 
-`amr_frontier_navigator` is optional and disabled by default to preserve the
-normal 0.19.3 known-goal behavior. When enabled, clients can send
+`amr_frontier_navigator` is enabled by default. Clients can send
 `amr_msgs/action/NavigateToUnknownPose` goals to `/navigate_to_unknown_pose`.
 
 The frontier navigator never forwards an unknown or out-of-map goal directly to

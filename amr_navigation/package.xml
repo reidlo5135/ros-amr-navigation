@@ -21,6 +21,7 @@
   <exec_depend>amr_visualization</exec_depend>
   <exec_depend>amr_bt_navigator</exec_depend>
   <exec_depend>amr_runtime_observation</exec_depend>
+  <exec_depend>amr_spatial_segmenter</exec_depend>
   <exec_depend>amr_lifecycle_manager</exec_depend>
   <exec_depend>amr_bringup</exec_depend>
   <exec_depend>amr_mqtt_server</exec_depend>
@@ -54,6 +55,7 @@
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>turtlebot3_bringup</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>yaml-cpp</exec_depend>
 
   <export>

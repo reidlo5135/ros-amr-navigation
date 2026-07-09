@@ -126,6 +126,12 @@ QPixmap make_layer_icon(const QString &name, const QSize &size)
     painter.setBrush(QColor("#8cff3a"));
     painter.drawEllipse(QPointF(2.5, 11.5), 1.2, 1.2);
     painter.drawEllipse(QPointF(12.5, 4.0), 1.2, 1.2);
+  } else if (name == "spatial_overlay") {
+    pen(QColor("#0d1117"), 2.2);
+    painter.drawPolyline(QPolygonF{
+      QPointF(2.5, 11.5), QPointF(6.5, 11.5), QPointF(11.5, 6.5),
+      QPointF(13.5, 6.5)});
+    painter.drawRect(QRectF(3.0, 3.0, 6.0, 5.0));
   } else if (name == "unknown_goal") {
     pen(QColor("#ff46d2"), 1.7);
     painter.drawEllipse(QPointF(8.0, 8.0), 4.5, 4.5);
@@ -337,6 +343,9 @@ MainWindow::MainWindow(QWidget *parent)
   connect(ros_worker_.get(), &RosWorker::robotPoseChanged, this, &MainWindow::updateAimPose);
   connect(ros_worker_.get(), &RosWorker::globalPathChanged, scene_, &SceneWidget::setGlobalPath);
   connect(ros_worker_.get(), &RosWorker::localPathChanged, scene_, &SceneWidget::setLocalPath);
+  connect(
+    ros_worker_.get(), &RosWorker::spatialOverlayChanged,
+    scene_, &SceneWidget::setSpatialOverlay);
   connect(
     ros_worker_.get(), &RosWorker::frontierUnknownGoalChanged,
     scene_, &SceneWidget::setFrontierUnknownGoal);
@@ -588,6 +597,8 @@ QWidget *MainWindow::makeLeftPanel()
     makeLayerCheckBox("Global Plan", "global_plan", true);
   auto local_path =
     makeLayerCheckBox("Local Plan", "local_plan", true);
+  auto spatial_overlay =
+    makeLayerCheckBox("Spatial Overlay", "spatial_overlay", true);
   auto frontier_unknown_goal =
     makeLayerCheckBox("Original Goal", "unknown_goal", true);
   auto frontier_known_goal =
@@ -608,6 +619,7 @@ QWidget *MainWindow::makeLeftPanel()
   visualization_layout->addWidget(robot.row, 1);
   visualization_layout->addWidget(global_path.row, 1);
   visualization_layout->addWidget(local_path.row, 1);
+  visualization_layout->addWidget(spatial_overlay.row, 1);
   visualization_layout->addWidget(frontier_unknown_goal.row, 1);
   visualization_layout->addWidget(frontier_known_goal.row, 1);
   visualization_layout->addWidget(frontier_global_path.row, 1);
@@ -631,6 +643,7 @@ QWidget *MainWindow::makeLeftPanel()
   connect(tf.check, &QCheckBox::toggled, scene_, &SceneWidget::setTfVisible);
   connect(global_path.check, &QCheckBox::toggled, scene_, &SceneWidget::setGlobalPathVisible);
   connect(local_path.check, &QCheckBox::toggled, scene_, &SceneWidget::setLocalPathVisible);
+  connect(spatial_overlay.check, &QCheckBox::toggled, scene_, &SceneWidget::setSpatialOverlayVisible);
   connect(
     frontier_unknown_goal.check, &QCheckBox::toggled,
     scene_, &SceneWidget::setFrontierUnknownGoalVisible);
@@ -903,7 +916,8 @@ void MainWindow::updateMotionStatus(const MotionStatusData &status)
     motion_state = "Running";
   }
   const bool navigation_running =
-    status.active && !status.goal_reached && !status.command_completed;
+    status.active && !status.goal_reached && !status.command_completed &&
+    !status.stalled && !status.blocked;
   setWaypointEditingLocked(navigation_running);
 
   set_label_if_changed(motion_label_, motion_state);
@@ -921,6 +935,16 @@ void MainWindow::updateRuntimeSummary(const RuntimeSummary &summary)
     set_label_if_changed(goal_label_, summary.action_status);
   } else if (!summary.runtime_state.isEmpty()) {
     set_label_if_changed(goal_label_, summary.runtime_state);
+  }
+  const QString action_status = summary.action_status.toLower();
+  const QString runtime_state = summary.runtime_state.toLower();
+  if (
+    action_status.contains("aborted") ||
+    action_status.contains("canceled") ||
+    action_status.contains("succeeded") ||
+    runtime_state == "idle")
+  {
+    setWaypointEditingLocked(false);
   }
 
   if (!summary.blocked_context.isEmpty()) {

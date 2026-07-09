@@ -21,6 +21,7 @@
   <exec_depend>amr_lifecycle_manager</exec_depend>
   <exec_depend>amr_runtime_observation</exec_depend>
   <exec_depend>amr_mqtt_server</exec_depend>
+  <exec_depend>amr_spatial_segmenter</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

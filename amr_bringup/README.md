@@ -11,7 +11,8 @@ navigation.
 - `motion_controller`
 - `recovery_server`
 - `bt_navigator`
-- `ft_navigator` when `use_frontier_navigation:=true`
+- `ft_navigator` by default; disable with `use_frontier_navigation:=false`
+- `spatial_segmenter` by default; disable with `use_spatial_segmenter:=false`
 - `runtime_observation`
 - `navigation_manager`
 
@@ -33,8 +34,9 @@ that TF chain and does not publish it.
 `navigation.launch.py` keeps lifecycle nodes in the root ROS namespace with
 `namespace=""`, so node names and lifecycle manager targets remain
 `/costmap_server`, `/global_planner`, `/local_planner`, `/motion_controller`,
-`/recovery_server`, and `/bt_navigator`. When frontier navigation is enabled,
-the optional lifecycle target is `/ft_navigator`.
+`/recovery_server`, and `/bt_navigator`. Frontier navigation adds
+`/ft_navigator`, and spatial segmentation uses a dedicated lifecycle manager for
+`/spatial_segmenter`.
 
 `params/slam_toolbox.yaml` contains the packaged AMR online-async defaults for
 external `slam_toolbox`: `mode: mapping`, `use_sim_time: false`, longer TF buffer
@@ -63,5 +65,8 @@ navigation is running.
 - `/plan_recovery`
 - `/plan_local_escape`
 - `/clear_costmap`
+- `/spatial_segments`
+- `/spatial_segment_map`
+- `/spatial_segment_markers`
 
 Default frames are `map`, `odom`, and `base_footprint`.

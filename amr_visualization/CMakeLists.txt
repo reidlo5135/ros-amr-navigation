@@ -20,6 +20,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 set(${PROJECT_NAME}_SOURCES
   include/amr_visualization/main_window.hpp
@@ -56,6 +57,7 @@ ament_target_dependencies(${PROJECT_NAME}
   sensor_msgs
   std_msgs
   tf2_msgs
+  visualization_msgs
 )
 
 target_link_libraries(${PROJECT_NAME}

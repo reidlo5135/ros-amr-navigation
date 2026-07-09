@@ -20,6 +20,7 @@ int main(int argc, char ** argv)
   qRegisterMetaType<amr::visualization::GridMap>("amr::visualization::GridMap");
   qRegisterMetaType<amr::visualization::PathData>("amr::visualization::PathData");
   qRegisterMetaType<amr::visualization::ScanData>("amr::visualization::ScanData");
+  qRegisterMetaType<amr::visualization::SpatialOverlayData>("amr::visualization::SpatialOverlayData");
   qRegisterMetaType<amr::visualization::MotionStatusData>("amr::visualization::MotionStatusData");
   qRegisterMetaType<amr::visualization::RuntimeSummary>("amr::visualization::RuntimeSummary");
 

@@ -1,0 +1,154 @@
+spatial_segmenter:
+  ros__parameters:
+    topics:
+      map: "/map"
+      segments: "/spatial_segments"
+      segment_map: "/spatial_segment_map"
+      markers: "/spatial_segment_markers"
+      corridor_centerlines: "/corridor_centerlines"
+      area_boundaries: "/area_boundaries"
+      door_candidates: "/door_candidates"
+      debug_cells: "/spatial_debug_cells"
+      debug_rejected_areas: "/spatial_debug_rejected_areas"
+      debug_internal_barriers: "/spatial_debug_internal_barriers"
+      debug_scanline_intervals: "/spatial_debug_scanline_intervals"
+    frames:
+      map: "map"
+    overlay:
+      mode: "semantic_summary"
+      publish_debug: false
+    thresholds:
+      free_threshold: 25
+      occupied_threshold: 65
+    robot:
+      footprint_radius_m: 0.18
+      safety_margin_m: 0.10
+    update:
+      period_sec: 5.0
+      min_map_update_interval_sec: 3.0
+    corridor:
+      min_length_m: 1.0
+      min_width_m: 0.45
+      max_width_m: 2.20
+      detection_mode: "scanline_band"
+      axis_aligned_only: true
+      allow_diagonal: false
+      parallel_angle_tolerance_deg: 12.0
+      min_wall_overlap_m: 0.80
+      max_centerline_gap_m: 0.35
+      min_free_ratio_between_walls: 0.75
+      min_traversable_ratio_on_centerline: 0.80
+      skeleton_enabled: true
+      skeleton_min_width_variance_m: 0.30
+      split_and_merge_angle_deg: 15.0
+      min_aspect_ratio: 2.2
+      min_free_ratio: 0.70
+      min_boundary_evidence_ratio: 0.35
+      min_confidence: 0.45
+      max_corridors: 12
+    scanline:
+      max_gap_cells: 2
+      min_free_run_length_m: 0.80
+      min_band_height_m: 0.35
+      min_band_width_m: 0.35
+      run_endpoint_tolerance_m: 0.35
+      run_overlap_ratio_threshold: 0.60
+      min_rows_per_horizontal_band: 4
+      min_cols_per_vertical_band: 4
+    area:
+      detection_mode: "cell_decomposition"
+      min_area_m2: 0.50
+      min_side_m: 0.60
+      min_width_m: 0.60
+      min_height_m: 0.60
+      max_width_m: 3.00
+      max_height_m: 3.00
+      window_sizes_m: [0.8, 1.2, 1.6, 2.0]
+      window_stride_m: 0.20
+      min_local_free_ratio: 0.70
+      max_local_occupied_ratio: 0.05
+      max_local_unknown_ratio: 0.30
+      merge_iou_threshold: 0.35
+      min_confidence: 0.50
+      min_free_ratio: 0.70
+      max_aspect_ratio: 3.5
+      corridor_exclusion_radius_m: 0.25
+      portal_exclusion_radius_m: 0.20
+      reject_map_sized_bbox: true
+      max_bbox_known_extent_ratio: 0.45
+      max_bbox_area_m2: 10.0
+      max_bbox_aspect_ratio: 4.0
+      min_bbox_fill_ratio: 0.35
+      interior_validation_enabled: true
+      max_occupied_ratio: 0.08
+      max_unknown_ratio: 0.35
+      max_boundary_ratio: 0.30
+      internal_barrier_enabled: true
+      internal_barrier_min_span_ratio: 0.55
+      internal_barrier_max_gap_m: 0.15
+      internal_barrier_margin_m: 0.10
+      split_on_internal_barrier: true
+      reject_if_split_fails: true
+      max_split_depth: 2
+      min_child_area_m2: 0.50
+      reject_tiny_ambiguous: true
+      tiny_area_threshold_m2: 0.80
+      tiny_area_min_boundary_evidence: 0.55
+      tiny_area_min_free_ratio: 0.80
+      reject_largest_component_without_split: true
+      max_component_area_m2_without_split: 4.0
+      use_distance_seed: true
+      min_open_radius_m: 0.45
+      seed_suppression_radius_m: 0.80
+      publish_local_windows: false
+      use_local_windows_as_debug_only: true
+      draw_contour: false
+      draw_bbox_fallback: false
+      max_areas: 8
+    postprocess:
+      enabled: true
+      nms_iou_threshold: 0.20
+      merge_adjacent_bands: true
+      merge_gap_m: 0.30
+      merge_same_orientation_only: true
+      max_published_segments: 20
+      prefer_larger_coherent_cells: true
+      suppress_nested_boxes: true
+      nested_box_iou_threshold: 0.60
+    cell_decomposition:
+      enabled: true
+      method: "boustrophedon_scanline"
+      sweep_axis: "both"
+      interval_overlap_ratio: 0.45
+      endpoint_shift_threshold_m: 0.45
+      min_cell_area_m2: 0.50
+      min_cell_width_m: 0.60
+      min_cell_height_m: 0.60
+      max_cell_area_m2: 10.0
+      merge_adjacent_cells: true
+      merge_iou_threshold: 0.20
+      merge_gap_m: 0.20
+    debug:
+      enabled: false
+      publish_cells: false
+      publish_rejected_areas: false
+      publish_internal_barriers: false
+      publish_scanline_intervals: false
+    door:
+      enabled: true
+      min_width_m: 0.55
+      max_width_m: 1.20
+      min_confidence: 0.35
+      max_doors: 20
+    visualization:
+      marker_line_width_m: 0.045
+      marker_height_z: 0.03
+      max_area_boxes: 12
+      max_area_contour_points: 300
+      use_fixed_marker_ids: true
+      publish_labels: false
+      use_batched_line_list: true
+      max_total_marker_points: 300
+      max_corridor_points: 40
+      max_area_points: 96
+      max_door_points: 40

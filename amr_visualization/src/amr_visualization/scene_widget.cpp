@@ -178,6 +178,13 @@ void SceneWidget::setLocalPath(const PathData &path)
   update();
 }
 
+/// @copydoc SceneWidget::setSpatialOverlay
+void SceneWidget::setSpatialOverlay(const SpatialOverlayData &overlay)
+{
+  spatial_overlay_ = overlay;
+  update();
+}
+
 /// @copydoc SceneWidget::setFrontierUnknownGoal
 void SceneWidget::setFrontierUnknownGoal(const Pose2D &pose)
 {
@@ -226,6 +233,8 @@ void SceneWidget::setScanVisible(bool visible) { show_scan_ = visible; update();
 void SceneWidget::setGlobalPathVisible(bool visible) { show_global_path_ = visible; update(); }
 /// @copydoc SceneWidget::setLocalPathVisible
 void SceneWidget::setLocalPathVisible(bool visible) { show_local_path_ = visible; update(); }
+/// @copydoc SceneWidget::setSpatialOverlayVisible
+void SceneWidget::setSpatialOverlayVisible(bool visible) { show_spatial_overlay_ = visible; update(); }
 /// @copydoc SceneWidget::setFrontierUnknownGoalVisible
 void SceneWidget::setFrontierUnknownGoalVisible(bool visible) { show_frontier_unknown_goal_ = visible; update(); }
 /// @copydoc SceneWidget::setFrontierKnownGoalVisible
@@ -388,6 +397,9 @@ void SceneWidget::paintEvent(QPaintEvent *)
   }
   if (show_frontier_local_path_) {
     drawPath(painter, frontier_local_path_, QColor(95, 255, 152), 3.0, Qt::DotLine);
+  }
+  if (show_spatial_overlay_) {
+    drawSpatialOverlay(painter);
   }
   if (show_footprint_) {
     drawExactFootprint(painter);
@@ -811,6 +823,36 @@ void SceneWidget::drawPath(
   }
   painter.setPen(QPen(color, width, style, Qt::RoundCap, Qt::RoundJoin));
   painter.drawPath(painter_path);
+}
+
+/// @copydoc SceneWidget::drawSpatialOverlay
+void SceneWidget::drawSpatialOverlay(QPainter &painter) const
+{
+  painter.save();
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  for (const auto &line_strip : spatial_overlay_.line_strips) {
+    if (line_strip.points.size() < 2) {
+      continue;
+    }
+    QPainterPath painter_path(worldToScreen(line_strip.points.front()));
+    for (int i = 1; i < line_strip.points.size(); ++i) {
+      painter_path.lineTo(worldToScreen(line_strip.points[i]));
+    }
+    painter.setPen(QPen(QColor(255, 255, 255, 135), 6.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(painter_path);
+    painter.setPen(QPen(QColor(0, 0, 0, 245), 3.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(painter_path);
+  }
+  painter.setPen(QPen(QColor(255, 255, 255, 150), 2.0));
+  painter.setBrush(QColor(0, 0, 0, 235));
+  for (const auto &point : spatial_overlay_.points) {
+    if (!point.valid) {
+      continue;
+    }
+    const QPointF screen_point = worldToScreen3D(point.x, point.y, point.z + 0.03);
+    painter.drawEllipse(screen_point, 4.5, 4.5);
+  }
+  painter.restore();
 }
 
 /// @copydoc SceneWidget::drawPose
