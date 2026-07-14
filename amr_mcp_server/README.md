@@ -19,7 +19,7 @@ This package does not implement the old TypeScript/WebSocket/MQTT bridge. It is 
 
 ```text
 AMR Viz AI Chat Panel
-  -> /amr_mcp/chat (amr_msgs/srv/AiChat)
+  -> /mcp/chat (amr_msgs/srv/AiChat)
     -> AmrMcpNode
       -> PromptInterpreter
       -> RosToolExecutor
@@ -31,12 +31,12 @@ AMR Viz AI Chat Panel
 
 Service:
 
-- `/amr_mcp/chat` (`amr_msgs/srv/AiChat`)
+- `/mcp/chat` (`amr_msgs/srv/AiChat`)
 
 Publishers:
 
-- `/amr_mcp/events` (`std_msgs/msg/String`)
-- `/amr_mcp/feedback` (`std_msgs/msg/String`)
+- `/mcp/events` (`std_msgs/msg/String`)
+- `/mcp/feedback` (`std_msgs/msg/String`)
 - `/cmd_vel` (`geometry_msgs/msg/Twist`, safety-gated)
 - `/initialpose` (`geometry_msgs/msg/PoseWithCovarianceStamped`)
 
@@ -62,7 +62,7 @@ Default parameters live in `config/amr_mcp_server.yaml`. Key values:
 - `default_frame_id`: `map`
 - `ollama_base_url`: `http://127.0.0.1:11434`
 - `ollama_model`: `qwen3`
-- `chat_service_name`: `/amr_mcp/chat`
+- `chat_service_name`: `/mcp/chat`
 - `enable_direct_cmd_vel`: `false`
 - `max_linear_speed`: `0.12`
 - `max_angular_speed`: `0.8`
@@ -83,15 +83,15 @@ ros2 launch amr_visualization amr_visualization.launch.py with_mcp_server:=true
 ## Service Examples
 
 ```bash
-ros2 service call /amr_mcp/chat amr_msgs/srv/AiChat "{provider: 'ollama', robot_id: 'burger1', default_frame: 'map', message: '현재 상태 요약해줘'}"
+ros2 service call /mcp/chat amr_msgs/srv/AiChat "{provider: 'ollama', robot_id: 'burger1', default_frame: 'map', message: '현재 상태 요약해줘'}"
 ```
 
 ```bash
-ros2 service call /amr_mcp/chat amr_msgs/srv/AiChat "{provider: 'ollama', robot_id: 'burger1', default_frame: 'map', message: '현재 목표 취소해'}"
+ros2 service call /mcp/chat amr_msgs/srv/AiChat "{provider: 'ollama', robot_id: 'burger1', default_frame: 'map', message: '현재 목표 취소해'}"
 ```
 
 ```bash
-ros2 service call /amr_mcp/chat amr_msgs/srv/AiChat "{provider: 'ollama', robot_id: 'burger1', default_frame: 'map', message: 'burger1을 map 기준 x=1.0 y=0.5 yaw=0.0으로 보내줘'}"
+ros2 service call /mcp/chat amr_msgs/srv/AiChat "{provider: 'ollama', robot_id: 'burger1', default_frame: 'map', message: 'burger1을 map 기준 x=1.0 y=0.5 yaw=0.0으로 보내줘'}"
 ```
 
 ## Ollama Setup

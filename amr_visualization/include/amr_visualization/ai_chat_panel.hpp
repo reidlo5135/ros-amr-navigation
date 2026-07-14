@@ -86,7 +86,7 @@ private:
   QVBoxLayout *transcript_layout_{nullptr};
   QTextEdit *input_{nullptr};
   QPushButton *send_button_{nullptr};
-  QString service_name_{"/amr_mcp/chat"};
+  QString service_name_{"/mcp/chat"};
   QString provider_label_{"Ollama"};
   QString robot_id_{"burger1"};
   QString default_frame_{"map"};

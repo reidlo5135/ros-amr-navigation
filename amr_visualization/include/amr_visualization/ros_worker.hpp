@@ -270,7 +270,7 @@ private:
   std::string motion_status_topic_{"/motion_status"};
   std::string runtime_summary_topic_{"/observation/runtime/summary"};
   std::string runtime_event_topic_{"/observation/runtime/events"};
-  std::string mcp_feedback_topic_{"/amr_mcp/feedback"};
+  std::string mcp_feedback_topic_{"/mcp/feedback"};
   std::string battery_state_topic_{"/battery_state"};
   std::string robot_description_topic_{"/robot_description"};
   std::string scan_topic_{"/scan"};
@@ -279,7 +279,7 @@ private:
   std::string navigate_to_pose_action_{"/navigate_to_pose"};
   std::string navigate_to_poses_action_{"/navigate_to_poses"};
   std::string navigate_to_unknown_pose_action_{"/navigate_to_unknown_pose"};
-  std::string ai_chat_service_name_{"/amr_mcp/chat"};
+  std::string ai_chat_service_name_{"/mcp/chat"};
   std::string cmd_vel_topic_{"/cmd_vel"};
   double max_linear_speed_{0.22};
   double max_angular_speed_{1.8};

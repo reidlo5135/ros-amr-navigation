@@ -10,9 +10,9 @@ amr_mcp_server:
     ollama_timeout_ms: 30000
     ollama_enable: true
 
-    chat_service_name: "/amr_mcp/chat"
-    events_topic: "/amr_mcp/events"
-    feedback_topic: "/amr_mcp/feedback"
+    chat_service_name: "/mcp/chat"
+    events_topic: "/mcp/events"
+    feedback_topic: "/mcp/feedback"
 
     navigate_to_pose_action: "/navigate_to_pose"
     navigate_to_poses_action: "/navigate_to_poses"

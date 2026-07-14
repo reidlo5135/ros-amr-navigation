@@ -54,9 +54,9 @@ private:
   std::string default_provider_{"ollama"};
   std::string default_robot_id_{"burger1"};
   std::string default_frame_id_{"map"};
-  std::string chat_service_name_{"/amr_mcp/chat"};
-  std::string events_topic_{"/amr_mcp/events"};
-  std::string feedback_topic_{"/amr_mcp/feedback"};
+  std::string chat_service_name_{"/mcp/chat"};
+  std::string events_topic_{"/mcp/events"};
+  std::string feedback_topic_{"/mcp/feedback"};
   std::string battery_topic_{"/battery_state"};
   std::string pose_topic_{"/pose"};
   std::string motion_status_topic_{"/motion_status"};
