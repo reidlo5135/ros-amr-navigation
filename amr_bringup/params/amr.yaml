@@ -357,6 +357,8 @@
       use_plan_segment_validation: true
     execution:
       action_server_wait_timeout_ms: 2000
+      # Bound cancellation acknowledgement and terminal wait before goal switching.
+      nested_cancel_timeout_ms: 2000
       planner_wait_timeout_ms: 2000
       feedback_period_ms: 100
     logging:

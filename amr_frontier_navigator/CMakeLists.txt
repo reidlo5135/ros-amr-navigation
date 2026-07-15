@@ -9,6 +9,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(amr_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -32,6 +33,7 @@ target_include_directories(${PROJECT_NAME}_core
 )
 
 ament_target_dependencies(${PROJECT_NAME}_core
+  action_msgs
   amr_msgs
   geometry_msgs
   lifecycle_msgs
@@ -66,6 +68,16 @@ install(DIRECTORY
   DESTINATION include
 )
 
+install(DIRECTORY
+  docs/
+  DESTINATION share/${PROJECT_NAME}/docs
+)
+
+install(PROGRAMS
+  scripts/validate_frontier_navigation.sh
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
@@ -81,11 +93,33 @@ if(BUILD_TESTING)
     target_include_directories(test_frontier_utils PRIVATE include)
     ament_target_dependencies(test_frontier_utils geometry_msgs nav_msgs)
   endif()
+
+  ament_add_gtest(test_frontier_navigator_integration
+    test/test_frontier_navigator_integration.cpp
+    SKIP_LINKING_MAIN_LIBRARIES
+    TIMEOUT 30
+  )
+  if(TARGET test_frontier_navigator_integration)
+    target_link_libraries(test_frontier_navigator_integration ${PROJECT_NAME}_core)
+    target_include_directories(test_frontier_navigator_integration PRIVATE include)
+    ament_target_dependencies(test_frontier_navigator_integration
+      amr_msgs
+      action_msgs
+      geometry_msgs
+      lifecycle_msgs
+      nav_msgs
+      rclcpp
+      rclcpp_action
+      rclcpp_lifecycle
+      tf2_ros
+    )
+  endif()
 endif()
 
 ament_export_include_directories(include)
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(
+  action_msgs
   amr_msgs
   geometry_msgs
   lifecycle_msgs

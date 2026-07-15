@@ -9,10 +9,13 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "amr_frontier_navigator/frontier_utils.hpp"
@@ -40,7 +43,7 @@ public:
   /// @brief Construct the frontier navigator and declare parameters.
   explicit FrontierNavigator(const rclcpp::NodeOptions &options = rclcpp::NodeOptions());
   /// @brief Destroy the node.
-  ~FrontierNavigator() override = default;
+  ~FrontierNavigator() override;
 
 private:
   using CallbackReturn =
@@ -129,13 +132,18 @@ private:
     uint16_t iteration,
     bool monitor_original_goal,
     const std::shared_ptr<GoalHandleUnknown> goal_handle);
+  bool is_current_goal(const std::shared_ptr<GoalHandleUnknown> goal_handle) const;
+  bool should_stop(const std::shared_ptr<GoalHandleUnknown> goal_handle) const;
+  bool has_active_nested_goal();
   void cancel_nested_goal();
+  void stop_and_join_execution();
   void clear_active_goal(const std::shared_ptr<GoalHandleUnknown> goal_handle);
 
   void publish_pose(
     const rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr &publisher,
     const geometry_msgs::msg::PoseStamped &pose) const;
   void publish_path(const nav_msgs::msg::Path &path) const;
+  void clear_path_overlays() const;
   void publish_empty_overlays(const std::string &phase, const std::string &message);
   void publish_status_and_feedback(
     const std::string &phase,
@@ -177,6 +185,7 @@ private:
   int max_candidate_checks_{500};
   int frontier_neighbor_radius_cells_{1};
   int action_server_wait_timeout_ms_{2000};
+  int nested_cancel_timeout_ms_{2000};
   int planner_wait_timeout_ms_{2000};
   int feedback_period_ms_{100};
   bool use_plan_segment_validation_{true};
@@ -196,6 +205,7 @@ private:
     status_publisher_;
   rclcpp::Client<amr_msgs::srv::PlanSegment>::SharedPtr plan_segment_client_;
   rclcpp_action::Client<NavigateToPose>::SharedPtr navigate_to_pose_client_;
+  rclcpp::CallbackGroup::SharedPtr client_callback_group_;
   rclcpp_action::Server<NavigateToUnknownPose>::SharedPtr action_server_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -206,9 +216,16 @@ private:
 
   mutable std::mutex active_goal_mutex_;
   std::shared_ptr<GoalHandleUnknown> active_goal_handle_;
+  bool active_goal_reserved_{false};
+
+  mutable std::mutex result_mutex_;
+  std::set<rclcpp_action::GoalUUID> finalized_goal_ids_;
 
   mutable std::mutex nested_goal_mutex_;
   std::shared_ptr<NavigateGoalHandle> nested_goal_handle_;
+  mutable std::mutex execution_thread_mutex_;
+  std::thread execution_thread_;
+  std::atomic_bool execution_stop_requested_{false};
   std::atomic_bool frontier_active_{false};
 };
 

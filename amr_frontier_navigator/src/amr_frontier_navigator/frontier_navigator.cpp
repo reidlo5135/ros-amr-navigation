@@ -14,6 +14,7 @@
 #include <utility>
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <action_msgs/msg/goal_status.hpp>
 #include <tf2/exceptions.h>
 #include <tf2/time.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -91,9 +92,15 @@ FrontierNavigator::FrontierNavigator(const rclcpp::NodeOptions &options)
   this->declare_parameter("resolver.frontier_neighbor_radius_cells", this->frontier_neighbor_radius_cells_);
   this->declare_parameter("resolver.use_plan_segment_validation", this->use_plan_segment_validation_);
   this->declare_parameter("execution.action_server_wait_timeout_ms", this->action_server_wait_timeout_ms_);
+  this->declare_parameter("execution.nested_cancel_timeout_ms", this->nested_cancel_timeout_ms_);
   this->declare_parameter("execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
   this->declare_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->declare_parameter("logging.structured_enabled", this->structured_logging_enabled_);
+}
+
+FrontierNavigator::~FrontierNavigator()
+{
+  stop_and_join_execution();
 }
 
 FrontierNavigator::CallbackReturn FrontierNavigator::on_configure(
@@ -128,6 +135,7 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_configure(
   this->get_parameter("resolver.frontier_neighbor_radius_cells", this->frontier_neighbor_radius_cells_);
   this->get_parameter("resolver.use_plan_segment_validation", this->use_plan_segment_validation_);
   this->get_parameter("execution.action_server_wait_timeout_ms", this->action_server_wait_timeout_ms_);
+  this->get_parameter("execution.nested_cancel_timeout_ms", this->nested_cancel_timeout_ms_);
   this->get_parameter("execution.planner_wait_timeout_ms", this->planner_wait_timeout_ms_);
   this->get_parameter("execution.feedback_period_ms", this->feedback_period_ms_);
   this->get_parameter("logging.structured_enabled", this->structured_logging_enabled_);
@@ -137,6 +145,7 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_configure(
   this->frontier_neighbor_radius_cells_ = std::max(1, this->frontier_neighbor_radius_cells_);
   this->max_iterations_ = std::max(1, this->max_iterations_);
   this->feedback_period_ms_ = std::max(20, this->feedback_period_ms_);
+  this->nested_cancel_timeout_ms_ = std::max(1, this->nested_cancel_timeout_ms_);
 
   if (
     this->unknown_action_name_.empty() || this->navigate_action_name_.empty() ||
@@ -165,24 +174,33 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_configure(
       this->local_plan_callback(message);
     });
 
+  const auto overlay_state_qos = rclcpp::QoS(1).reliable().transient_local();
   this->unknown_goal_publisher_ =
-    this->create_publisher<geometry_msgs::msg::PoseStamped>(this->unknown_goal_topic_, rclcpp::SystemDefaultsQoS());
+    this->create_publisher<geometry_msgs::msg::PoseStamped>(
+    this->unknown_goal_topic_, overlay_state_qos);
   this->known_goal_publisher_ =
-    this->create_publisher<geometry_msgs::msg::PoseStamped>(this->known_goal_topic_, rclcpp::SystemDefaultsQoS());
+    this->create_publisher<geometry_msgs::msg::PoseStamped>(
+    this->known_goal_topic_, overlay_state_qos);
   this->frontier_global_plan_publisher_ =
     this->create_publisher<nav_msgs::msg::Path>(this->frontier_global_plan_topic_, rclcpp::SystemDefaultsQoS());
   this->frontier_local_plan_publisher_ =
     this->create_publisher<nav_msgs::msg::Path>(this->frontier_local_plan_topic_, rclcpp::SystemDefaultsQoS());
   this->status_publisher_ =
-    this->create_publisher<amr_msgs::msg::FrontierNavigationStatus>(this->status_topic_, rclcpp::SystemDefaultsQoS());
+    this->create_publisher<amr_msgs::msg::FrontierNavigationStatus>(
+    this->status_topic_, rclcpp::QoS(1).reliable().transient_local());
+  this->client_callback_group_ =
+    this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
   this->plan_segment_client_ =
-    this->create_client<amr_msgs::srv::PlanSegment>(this->plan_segment_service_);
+    this->create_client<amr_msgs::srv::PlanSegment>(
+    this->plan_segment_service_, rmw_qos_profile_services_default,
+    this->client_callback_group_);
   this->navigate_to_pose_client_ = rclcpp_action::create_client<NavigateToPose>(
     this->get_node_base_interface(),
     this->get_node_graph_interface(),
     this->get_node_logging_interface(),
     this->get_node_waitables_interface(),
-    this->navigate_action_name_);
+    this->navigate_action_name_,
+    this->client_callback_group_);
   this->action_server_ = rclcpp_action::create_server<NavigateToUnknownPose>(
     this->get_node_base_interface(),
     this->get_node_clock_interface(),
@@ -220,6 +238,7 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_activate(
   const rclcpp_lifecycle::State &state)
 {
   (void)state;
+  this->execution_stop_requested_.store(false);
   if (this->unknown_goal_publisher_) {
     this->unknown_goal_publisher_->on_activate();
   }
@@ -244,7 +263,7 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_deactivate(
   const rclcpp_lifecycle::State &state)
 {
   (void)state;
-  cancel_nested_goal();
+  stop_and_join_execution();
   publish_empty_overlays("IDLE", "Frontier navigator deactivated.");
   if (this->unknown_goal_publisher_) {
     this->unknown_goal_publisher_->on_deactivate();
@@ -269,10 +288,11 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_cleanup(
   const rclcpp_lifecycle::State &state)
 {
   (void)state;
-  cancel_nested_goal();
+  stop_and_join_execution();
   this->action_server_.reset();
   this->navigate_to_pose_client_.reset();
   this->plan_segment_client_.reset();
+  this->client_callback_group_.reset();
   this->map_subscription_.reset();
   this->local_plan_subscription_.reset();
   this->unknown_goal_publisher_.reset();
@@ -283,6 +303,10 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_cleanup(
   this->tf_listener_.reset();
   this->tf_buffer_.reset();
   {
+    std::scoped_lock lock(this->nested_goal_mutex_);
+    this->nested_goal_handle_.reset();
+  }
+  {
     std::scoped_lock lock(this->map_mutex_);
     this->latest_map_ = nav_msgs::msg::OccupancyGrid();
     this->has_map_ = false;
@@ -290,6 +314,11 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_cleanup(
   {
     std::scoped_lock lock(this->active_goal_mutex_);
     this->active_goal_handle_.reset();
+    this->active_goal_reserved_ = false;
+  }
+  {
+    std::scoped_lock lock(this->result_mutex_);
+    this->finalized_goal_ids_.clear();
   }
   this->frontier_active_.store(false);
   return CallbackReturn::SUCCESS;
@@ -299,7 +328,7 @@ FrontierNavigator::CallbackReturn FrontierNavigator::on_shutdown(
   const rclcpp_lifecycle::State &state)
 {
   (void)state;
-  cancel_nested_goal();
+  stop_and_join_execution();
   this->frontier_active_.store(false);
   return CallbackReturn::SUCCESS;
 }
@@ -310,8 +339,14 @@ rclcpp_action::GoalResponse FrontierNavigator::handle_goal(
 {
   (void)uuid;
   std::scoped_lock lock(this->active_goal_mutex_);
-  if (this->active_goal_handle_) {
+  if (this->active_goal_reserved_ || this->active_goal_handle_) {
     RCLCPP_WARN(this->get_logger(), "Rejecting unknown goal because another frontier goal is active");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+  if (has_active_nested_goal()) {
+    RCLCPP_WARN(
+      this->get_logger(),
+      "Rejecting unknown goal because a delegated goal has not reached a terminal state");
     return rclcpp_action::GoalResponse::REJECT;
   }
   if (this->get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
@@ -322,6 +357,7 @@ rclcpp_action::GoalResponse FrontierNavigator::handle_goal(
     RCLCPP_WARN(this->get_logger(), "Rejecting unknown goal with empty frame_id");
     return rclcpp_action::GoalResponse::REJECT;
   }
+  this->active_goal_reserved_ = true;
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 
@@ -329,7 +365,6 @@ rclcpp_action::CancelResponse FrontierNavigator::handle_cancel(
   const std::shared_ptr<GoalHandleUnknown> goal_handle)
 {
   (void)goal_handle;
-  cancel_nested_goal();
   RCLCPP_INFO(this->get_logger(), "Accepted frontier navigation cancel request");
   return rclcpp_action::CancelResponse::ACCEPT;
 }
@@ -340,7 +375,12 @@ void FrontierNavigator::handle_accepted(const std::shared_ptr<GoalHandleUnknown>
     std::scoped_lock lock(this->active_goal_mutex_);
     this->active_goal_handle_ = goal_handle;
   }
-  std::thread(
+  this->execution_stop_requested_.store(false);
+  std::scoped_lock thread_lock(this->execution_thread_mutex_);
+  if (this->execution_thread_.joinable()) {
+    this->execution_thread_.join();
+  }
+  this->execution_thread_ = std::thread(
     [this, goal_handle]() {
       try {
         this->execute(goal_handle);
@@ -348,20 +388,20 @@ void FrontierNavigator::handle_accepted(const std::shared_ptr<GoalHandleUnknown>
         auto result = std::make_shared<NavigateToUnknownPose::Result>();
         result->error_code = NavigateToUnknownPose::Result::UNKNOWN;
         result->error_msg = std::string("Unhandled frontier navigator exception: ") + error.what();
-        this->finalize_result(goal_handle, result, "aborted");
-        this->clear_active_goal(goal_handle);
         this->frontier_active_.store(false);
         this->publish_empty_overlays("FAILED", result->error_msg);
+        this->finalize_result(goal_handle, result, "aborted");
+        this->clear_active_goal(goal_handle);
       } catch (...) {
         auto result = std::make_shared<NavigateToUnknownPose::Result>();
         result->error_code = NavigateToUnknownPose::Result::UNKNOWN;
         result->error_msg = "Unhandled unknown frontier navigator exception.";
-        this->finalize_result(goal_handle, result, "aborted");
-        this->clear_active_goal(goal_handle);
         this->frontier_active_.store(false);
         this->publish_empty_overlays("FAILED", result->error_msg);
+        this->finalize_result(goal_handle, result, "aborted");
+        this->clear_active_goal(goal_handle);
       }
-    }).detach();
+    });
 }
 
 void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_handle)
@@ -374,6 +414,8 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
   result->original_goal_became_known = false;
   result->final_goal_reached = false;
   (void)goal->allow_final_unknown_retry;
+
+  this->publish_empty_overlays("STARTING", "Preparing frontier navigation goal.");
 
   geometry_msgs::msg::PoseStamped original_goal;
   std::string error_message;
@@ -392,19 +434,21 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
     "WAITING_FOR_MAP", original_goal, geometry_msgs::msg::PoseStamped(), 0U, true,
     "Waiting for SLAM map and current pose.", goal_handle);
 
-  const auto is_cancel_requested = [goal_handle]() {
-      return goal_handle->is_canceling();
+  const auto is_cancel_requested = [this, goal_handle]() {
+      return this->should_stop(goal_handle);
     };
   if (!wait_for_map(this->map_wait_timeout_sec_, is_cancel_requested)) {
-    result->error_code = goal_handle->is_canceling() ?
+    const bool stopped = should_stop(goal_handle);
+    result->error_code = stopped ?
       NavigateToUnknownPose::Result::CANCELED :
       NavigateToUnknownPose::Result::MAP_NOT_READY;
-    result->error_msg = goal_handle->is_canceling() ?
+    result->error_msg = stopped ?
       "Frontier navigation canceled while waiting for map." :
       "SLAM map was not received before timeout.";
     this->frontier_active_.store(false);
-    this->publish_empty_overlays(goal_handle->is_canceling() ? "CANCELED" : "FAILED", result->error_msg);
-    this->finalize_result(goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
+    this->publish_empty_overlays(stopped ? "CANCELED" : "FAILED", result->error_msg);
+    this->finalize_result(
+      goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
     this->clear_active_goal(goal_handle);
     return;
   }
@@ -431,13 +475,14 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
   std::optional<double> previous_distance_to_original;
 
   for (uint16_t iteration = 0U; iteration <= max_iterations; ++iteration) {
-    if (goal_handle->is_canceling()) {
+    if (should_stop(goal_handle)) {
       cancel_nested_goal();
       result->error_code = NavigateToUnknownPose::Result::CANCELED;
       result->error_msg = "Frontier navigation canceled.";
       this->frontier_active_.store(false);
       this->publish_empty_overlays("CANCELED", result->error_msg);
-      this->finalize_result(goal_handle, result, "canceled");
+      this->finalize_result(
+        goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
       this->clear_active_goal(goal_handle);
       return;
     }
@@ -478,6 +523,7 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
 
       nav_msgs::msg::Path final_plan;
       std::string plan_message;
+      clear_path_overlays();
       if (request_plan(current_pose, original_goal, final_plan, plan_message, is_cancel_requested)) {
         publish_path(final_plan);
       }
@@ -496,12 +542,16 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
         result->error_msg = navigation_result.message;
         this->frontier_active_.store(false);
         this->publish_empty_overlays("CANCELED", result->error_msg);
-        this->finalize_result(goal_handle, result, "canceled");
+        this->finalize_result(
+          goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
         this->clear_active_goal(goal_handle);
         return;
       }
       if (!navigation_result.success) {
-        result->error_code = NavigateToUnknownPose::Result::FINAL_NAVIGATION_FAILED;
+        result->error_code =
+          navigation_result.error_code == NavigateToUnknownPose::Result::TIMEOUT ?
+          NavigateToUnknownPose::Result::TIMEOUT :
+          NavigateToUnknownPose::Result::FINAL_NAVIGATION_FAILED;
         result->error_msg = navigation_result.message;
         this->frontier_active_.store(false);
         this->publish_empty_overlays("FAILED", result->error_msg);
@@ -554,15 +604,23 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
       current_pose, original_goal, max_search_radius, min_progress,
       previous_distance_to_original, error_message, is_cancel_requested);
     if (!staging_candidate) {
-      result->error_code = goal_handle->is_canceling() ?
+      const bool stopped = should_stop(goal_handle);
+      const bool planner_timeout =
+        error_message.find("not ready") != std::string::npos ||
+        error_message.find("timed out") != std::string::npos ||
+        error_message.find("not configured") != std::string::npos ||
+        error_message.find("response failed") != std::string::npos;
+      result->error_code = stopped ?
         NavigateToUnknownPose::Result::CANCELED :
-        NavigateToUnknownPose::Result::NO_REACHABLE_STAGING_GOAL;
-      result->error_msg = goal_handle->is_canceling() ?
+        (planner_timeout ? NavigateToUnknownPose::Result::TIMEOUT :
+        NavigateToUnknownPose::Result::NO_REACHABLE_STAGING_GOAL);
+      result->error_msg = stopped ?
         "Frontier navigation canceled while resolving staging goal." :
         error_message;
       this->frontier_active_.store(false);
-      this->publish_empty_overlays(goal_handle->is_canceling() ? "CANCELED" : "FAILED", result->error_msg);
-      this->finalize_result(goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
+      this->publish_empty_overlays(stopped ? "CANCELED" : "FAILED", result->error_msg);
+      this->finalize_result(
+        goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
       this->clear_active_goal(goal_handle);
       return;
     }
@@ -602,12 +660,16 @@ void FrontierNavigator::execute(const std::shared_ptr<GoalHandleUnknown> goal_ha
       result->error_msg = navigation_result.message;
       this->frontier_active_.store(false);
       this->publish_empty_overlays("CANCELED", result->error_msg);
-      this->finalize_result(goal_handle, result, "canceled");
+      this->finalize_result(
+        goal_handle, result, goal_handle->is_canceling() ? "canceled" : "aborted");
       this->clear_active_goal(goal_handle);
       return;
     }
     if (!navigation_result.success) {
-      result->error_code = NavigateToUnknownPose::Result::STAGING_NAVIGATION_FAILED;
+      result->error_code =
+        navigation_result.error_code == NavigateToUnknownPose::Result::TIMEOUT ?
+        NavigateToUnknownPose::Result::TIMEOUT :
+        NavigateToUnknownPose::Result::STAGING_NAVIGATION_FAILED;
       result->error_msg = navigation_result.message;
       this->frontier_active_.store(false);
       this->publish_empty_overlays("FAILED", result->error_msg);
@@ -792,7 +854,7 @@ bool FrontierNavigator::wait_for_original_goal_known(
     std::chrono::duration_cast<std::chrono::steady_clock::duration>(
     std::chrono::duration<double>(std::max(0.0, timeout_sec)));
   while (rclcpp::ok() && std::chrono::steady_clock::now() <= deadline) {
-    if (goal_handle->is_canceling()) {
+    if (should_stop(goal_handle)) {
       return false;
     }
     if (is_goal_known_free(original_goal)) {
@@ -815,6 +877,7 @@ std::optional<FrontierNavigator::StagingCandidate> FrontierNavigator::resolve_st
   std::string &error_message,
   const std::function<bool()> &is_cancel_requested)
 {
+  error_message.clear();
   nav_msgs::msg::OccupancyGrid map;
   if (!get_latest_map(map)) {
     error_message = "SLAM map is not available.";
@@ -909,6 +972,15 @@ std::optional<FrontierNavigator::StagingCandidate> FrontierNavigator::resolve_st
         std::string plan_message;
         if (this->use_plan_segment_validation_) {
           if (!request_plan(current_pose, candidate_pose, plan, plan_message, is_cancel_requested)) {
+            if (
+              plan_message.find("not ready") != std::string::npos ||
+              plan_message.find("timed out") != std::string::npos ||
+              plan_message.find("not configured") != std::string::npos ||
+              plan_message.find("response failed") != std::string::npos)
+            {
+              error_message = plan_message;
+              return std::nullopt;
+            }
             continue;
           }
         } else {
@@ -940,6 +1012,15 @@ std::optional<FrontierNavigator::StagingCandidate> FrontierNavigator::resolve_st
   int checked_local_candidates = 0;
   std::optional<StagingCandidate> best_candidate =
     evaluate_candidates(candidates, checked_local_candidates);
+
+  const bool fatal_planner_error =
+    error_message.find("not ready") != std::string::npos ||
+    error_message.find("timed out") != std::string::npos ||
+    error_message.find("not configured") != std::string::npos ||
+    error_message.find("response failed") != std::string::npos;
+  if (fatal_planner_error) {
+    return std::nullopt;
+  }
 
   std::vector<GridCell> frontier_candidates;
   int checked_frontier_candidates = 0;
@@ -1022,7 +1103,13 @@ bool FrontierNavigator::request_plan(
     }
   }
 
-  const auto response = future.get();
+  std::shared_ptr<amr_msgs::srv::PlanSegment::Response> response;
+  try {
+    response = future.get();
+  } catch (const std::exception &error) {
+    error_message = std::string("PlanSegment response failed: ") + error.what();
+    return false;
+  }
   if (!response || !response->success) {
     error_message = response ? response->message : "PlanSegment response was empty.";
     return false;
@@ -1048,13 +1135,14 @@ FrontierNavigator::NavigationOutcome FrontierNavigator::navigate_to_pose(
   const auto deadline = std::chrono::steady_clock::now() +
     std::chrono::milliseconds(std::max(1, this->action_server_wait_timeout_ms_));
   while (!this->navigate_to_pose_client_->action_server_is_ready()) {
-    if (goal_handle->is_canceling()) {
+    if (should_stop(goal_handle)) {
       outcome.canceled = true;
       outcome.error_code = NavigateToUnknownPose::Result::CANCELED;
       outcome.message = "Canceled while waiting for NavigateToPose action server.";
       return outcome;
     }
     if (std::chrono::steady_clock::now() >= deadline) {
+      outcome.error_code = NavigateToUnknownPose::Result::TIMEOUT;
       outcome.message = "NavigateToPose action server is not ready.";
       return outcome;
     }
@@ -1075,16 +1163,23 @@ FrontierNavigator::NavigationOutcome FrontierNavigator::navigate_to_pose(
     };
 
   const auto goal_future = this->navigate_to_pose_client_->async_send_goal(nested_goal, options);
+  const auto send_deadline = std::chrono::steady_clock::now() +
+    std::chrono::milliseconds(std::max(1, this->action_server_wait_timeout_ms_));
   while (goal_future.wait_for(50ms) != std::future_status::ready) {
-    if (goal_handle->is_canceling()) {
-      outcome.canceled = true;
-      outcome.error_code = NavigateToUnknownPose::Result::CANCELED;
-      outcome.message = "Canceled while sending delegated NavigateToPose goal.";
+    if (std::chrono::steady_clock::now() >= send_deadline) {
+      outcome.error_code = NavigateToUnknownPose::Result::TIMEOUT;
+      outcome.message = "Timed out while sending delegated NavigateToPose goal.";
       return outcome;
     }
   }
 
-  auto nested_handle = goal_future.get();
+  std::shared_ptr<NavigateGoalHandle> nested_handle;
+  try {
+    nested_handle = goal_future.get();
+  } catch (const std::exception &error) {
+    outcome.message = std::string("NavigateToPose goal request failed: ") + error.what();
+    return outcome;
+  }
   if (!nested_handle) {
     outcome.message = "NavigateToPose rejected delegated goal.";
     return outcome;
@@ -1095,28 +1190,79 @@ FrontierNavigator::NavigationOutcome FrontierNavigator::navigate_to_pose(
   }
 
   const auto result_future = this->navigate_to_pose_client_->async_get_result(nested_handle);
+  const auto clear_nested_handle = [this, &nested_handle]() {
+      std::scoped_lock lock(this->nested_goal_mutex_);
+      if (this->nested_goal_handle_ == nested_handle) {
+        this->nested_goal_handle_.reset();
+      }
+    };
+  const auto cancel_and_wait =
+    [this, &nested_handle, &result_future, &clear_nested_handle](
+    std::string &cancel_error) -> bool {
+      const auto cancel_deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(std::max(1, this->nested_cancel_timeout_ms_));
+      try {
+        const auto cancel_future = this->navigate_to_pose_client_->async_cancel_goal(nested_handle);
+        while (cancel_future.wait_for(50ms) != std::future_status::ready) {
+          if (std::chrono::steady_clock::now() >= cancel_deadline) {
+            cancel_error = "Timed out waiting for delegated goal cancel response.";
+            return false;
+          }
+        }
+
+        const auto cancel_response = cancel_future.get();
+        while (result_future.wait_for(50ms) != std::future_status::ready) {
+          if (std::chrono::steady_clock::now() >= cancel_deadline) {
+            cancel_error = cancel_response && !cancel_response->goals_canceling.empty() ?
+              "Delegated goal accepted cancellation but did not reach a terminal state before timeout." :
+              "Delegated goal cancellation was not accepted before timeout.";
+            return false;
+          }
+        }
+
+        (void)result_future.get();
+        clear_nested_handle();
+        cancel_error.clear();
+        return true;
+      } catch (const std::exception &error) {
+        cancel_error = std::string("Failed while canceling delegated goal: ") + error.what();
+        return false;
+      }
+    };
+
+  if (should_stop(goal_handle)) {
+    std::string cancel_error;
+    const bool terminal = cancel_and_wait(cancel_error);
+    outcome.canceled = true;
+    outcome.error_code = NavigateToUnknownPose::Result::CANCELED;
+    outcome.message = terminal ?
+      "Frontier navigation canceled delegated NavigateToPose goal." : cancel_error;
+    return outcome;
+  }
+
   while (result_future.wait_for(std::chrono::milliseconds(this->feedback_period_ms_)) !=
     std::future_status::ready)
   {
-    if (goal_handle->is_canceling()) {
-      this->navigate_to_pose_client_->async_cancel_goal(nested_handle);
+    if (should_stop(goal_handle)) {
+      std::string cancel_error;
+      const bool terminal = cancel_and_wait(cancel_error);
       outcome.canceled = true;
       outcome.error_code = NavigateToUnknownPose::Result::CANCELED;
-      outcome.message = "Frontier navigation canceled delegated NavigateToPose goal.";
-      {
-        std::scoped_lock lock(this->nested_goal_mutex_);
-        this->nested_goal_handle_.reset();
-      }
+      outcome.message = terminal ?
+        "Frontier navigation canceled delegated NavigateToPose goal." : cancel_error;
       return outcome;
     }
     if (monitor_original_goal && is_goal_known_free(original_goal)) {
-      this->navigate_to_pose_client_->async_cancel_goal(nested_handle);
-      outcome.preempted_for_original = true;
-      outcome.message = "Original goal became known/free during staging navigation.";
-      {
-        std::scoped_lock lock(this->nested_goal_mutex_);
-        this->nested_goal_handle_.reset();
+      std::string cancel_error;
+      if (!cancel_and_wait(cancel_error)) {
+        outcome.error_code = NavigateToUnknownPose::Result::TIMEOUT;
+        outcome.message =
+          "Original goal became known/free, but staging cancellation did not complete: " +
+          cancel_error;
+        return outcome;
       }
+      outcome.preempted_for_original = true;
+      outcome.message = "Original goal became known/free after staging cancellation completed.";
       return outcome;
     }
     publish_status_and_feedback(
@@ -1124,29 +1270,31 @@ FrontierNavigator::NavigationOutcome FrontierNavigator::navigate_to_pose(
       "NavigateToPose is executing delegated goal.", goal_handle);
   }
 
-  const auto wrapped_result = result_future.get();
-  {
-    std::scoped_lock lock(this->nested_goal_mutex_);
-    if (this->nested_goal_handle_ == nested_handle) {
-      this->nested_goal_handle_.reset();
-    }
+  std::optional<typename NavigateGoalHandle::WrappedResult> wrapped_result;
+  try {
+    wrapped_result = result_future.get();
+  } catch (const std::exception &error) {
+    clear_nested_handle();
+    outcome.message = std::string("NavigateToPose result failed: ") + error.what();
+    return outcome;
   }
+  clear_nested_handle();
 
-  if (wrapped_result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+  if (wrapped_result->code == rclcpp_action::ResultCode::SUCCEEDED) {
     outcome.success = true;
     outcome.error_code = NavigateToUnknownPose::Result::NONE;
     outcome.message = "Delegated NavigateToPose goal succeeded.";
     return outcome;
   }
-  if (wrapped_result.code == rclcpp_action::ResultCode::CANCELED) {
+  if (wrapped_result->code == rclcpp_action::ResultCode::CANCELED) {
     outcome.canceled = true;
     outcome.error_code = NavigateToUnknownPose::Result::CANCELED;
     outcome.message = "Delegated NavigateToPose goal was canceled.";
     return outcome;
   }
   outcome.error_code = NavigateToUnknownPose::Result::UNKNOWN;
-  outcome.message = wrapped_result.result ?
-    wrapped_result.result->error_msg :
+  outcome.message = wrapped_result->result ?
+    wrapped_result->result->error_msg :
     "Delegated NavigateToPose goal failed without a result message.";
   if (outcome.message.empty()) {
     outcome.message = "Delegated NavigateToPose goal failed.";
@@ -1160,10 +1308,56 @@ void FrontierNavigator::cancel_nested_goal()
   {
     std::scoped_lock lock(this->nested_goal_mutex_);
     handle = this->nested_goal_handle_;
-    this->nested_goal_handle_.reset();
   }
   if (handle && this->navigate_to_pose_client_) {
     this->navigate_to_pose_client_->async_cancel_goal(handle);
+  }
+}
+
+bool FrontierNavigator::is_current_goal(
+  const std::shared_ptr<GoalHandleUnknown> goal_handle) const
+{
+  std::scoped_lock lock(this->active_goal_mutex_);
+  return goal_handle && this->active_goal_handle_ == goal_handle;
+}
+
+bool FrontierNavigator::should_stop(
+  const std::shared_ptr<GoalHandleUnknown> goal_handle) const
+{
+  return
+    this->execution_stop_requested_.load() ||
+    !rclcpp::ok() ||
+    !is_current_goal(goal_handle) ||
+    goal_handle->is_canceling();
+}
+
+bool FrontierNavigator::has_active_nested_goal()
+{
+  std::scoped_lock lock(this->nested_goal_mutex_);
+  if (!this->nested_goal_handle_) {
+    return false;
+  }
+  const int8_t status = this->nested_goal_handle_->get_status();
+  if (
+    status == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
+    status == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
+    status == action_msgs::msg::GoalStatus::STATUS_CANCELED)
+  {
+    this->nested_goal_handle_.reset();
+    return false;
+  }
+  return true;
+}
+
+void FrontierNavigator::stop_and_join_execution()
+{
+  this->execution_stop_requested_.store(true);
+  cancel_nested_goal();
+  std::scoped_lock thread_lock(this->execution_thread_mutex_);
+  if (this->execution_thread_.joinable() &&
+    this->execution_thread_.get_id() != std::this_thread::get_id())
+  {
+    this->execution_thread_.join();
   }
 }
 
@@ -1172,6 +1366,7 @@ void FrontierNavigator::clear_active_goal(const std::shared_ptr<GoalHandleUnknow
   std::scoped_lock lock(this->active_goal_mutex_);
   if (this->active_goal_handle_ == goal_handle) {
     this->active_goal_handle_.reset();
+    this->active_goal_reserved_ = false;
   }
 }
 
@@ -1188,6 +1383,23 @@ void FrontierNavigator::publish_path(const nav_msgs::msg::Path &path) const
 {
   if (this->frontier_global_plan_publisher_ && this->frontier_global_plan_publisher_->is_activated()) {
     this->frontier_global_plan_publisher_->publish(path);
+  }
+}
+
+void FrontierNavigator::clear_path_overlays() const
+{
+  nav_msgs::msg::Path empty_path;
+  empty_path.header.frame_id = this->map_frame_;
+  empty_path.header.stamp = this->now();
+  if (this->frontier_global_plan_publisher_ &&
+    this->frontier_global_plan_publisher_->is_activated())
+  {
+    this->frontier_global_plan_publisher_->publish(empty_path);
+  }
+  if (this->frontier_local_plan_publisher_ &&
+    this->frontier_local_plan_publisher_->is_activated())
+  {
+    this->frontier_local_plan_publisher_->publish(empty_path);
   }
 }
 
@@ -1232,6 +1444,9 @@ void FrontierNavigator::publish_status_and_feedback(
   const std::string &message,
   const std::shared_ptr<GoalHandleUnknown> goal_handle)
 {
+  if (goal_handle && !is_current_goal(goal_handle)) {
+    return;
+  }
   geometry_msgs::msg::PoseStamped current_pose;
   std::string tf_error;
   const bool has_pose = lookup_current_pose(current_pose, tf_error);
@@ -1273,7 +1488,17 @@ void FrontierNavigator::finalize_result(
   const std::shared_ptr<NavigateToUnknownPose::Result> result,
   const std::string &state)
 {
-  if (!goal_handle || !goal_handle->is_active()) {
+  if (!goal_handle) {
+    return;
+  }
+  {
+    std::scoped_lock result_lock(this->result_mutex_);
+    if (!this->finalized_goal_ids_.insert(goal_handle->get_goal_id()).second) {
+      RCLCPP_WARN(this->get_logger(), "Ignoring duplicate frontier action terminal result");
+      return;
+    }
+  }
+  if (!goal_handle->is_active() && !goal_handle->is_canceling()) {
     return;
   }
   if (this->structured_logging_enabled_) {
@@ -1286,12 +1511,16 @@ void FrontierNavigator::finalize_result(
       bool_label(result->final_goal_reached),
       log_value(result->error_msg).c_str());
   }
-  if (state == "succeeded") {
-    goal_handle->succeed(result);
-  } else if (state == "canceled") {
-    goal_handle->canceled(result);
-  } else {
-    goal_handle->abort(result);
+  try {
+    if (state == "succeeded") {
+      goal_handle->succeed(result);
+    } else if (state == "canceled") {
+      goal_handle->canceled(result);
+    } else {
+      goal_handle->abort(result);
+    }
+  } catch (const std::exception &error) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to finalize frontier action result: %s", error.what());
   }
 }
 

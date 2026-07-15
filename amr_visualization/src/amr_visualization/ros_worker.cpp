@@ -283,6 +283,7 @@ void RosWorker::configure_ros_interfaces()
     node_->declare_parameter<int>("costmap_emit_period_ms", costmap_emit_period_ms_);
 
   const auto latched_map_qos = rclcpp::QoS(1).reliable().transient_local();
+  const auto latched_frontier_state_qos = rclcpp::QoS(1).reliable().transient_local();
   const auto live_qos = rclcpp::SystemDefaultsQoS();
 
   map_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(
@@ -313,13 +314,13 @@ void RosWorker::configure_ros_interfaces()
   if (subscribe_frontier_overlay_) {
     frontier_unknown_goal_subscription_ =
       node_->create_subscription<geometry_msgs::msg::PoseStamped>(
-      frontier_unknown_goal_topic_, live_qos,
+      frontier_unknown_goal_topic_, latched_frontier_state_qos,
       [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
         Q_EMIT frontierUnknownGoalChanged(convert_pose(*message));
       });
     frontier_known_goal_subscription_ =
       node_->create_subscription<geometry_msgs::msg::PoseStamped>(
-      frontier_known_goal_topic_, live_qos,
+      frontier_known_goal_topic_, latched_frontier_state_qos,
       [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
         Q_EMIT frontierKnownGoalChanged(convert_pose(*message));
       });
@@ -335,7 +336,7 @@ void RosWorker::configure_ros_interfaces()
       });
     frontier_status_subscription_ =
       node_->create_subscription<amr_msgs::msg::FrontierNavigationStatus>(
-      frontier_status_topic_, live_qos,
+      frontier_status_topic_, latched_frontier_state_qos,
       [this](const amr_msgs::msg::FrontierNavigationStatus::SharedPtr message) {
         FrontierStatusData status;
         status.phase = QString::fromStdString(message->phase);

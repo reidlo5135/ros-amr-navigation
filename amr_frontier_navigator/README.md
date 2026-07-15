@@ -66,6 +66,10 @@ Outputs:
 Inactive cleanup publishes empty paths and inactive status so visualization clients can
 hide overlay layers.
 
+Original/known goal markers and frontier status use reliable transient-local QoS so a
+late-starting visualization receives the current state. Frontier path topics remain
+volatile because they carry live plan data.
+
 ## Parameters
 
 Main parameters are grouped under `/ft_navigator` in
@@ -85,6 +89,7 @@ Main parameters are grouped under `/ft_navigator` in
 | `resolver.min_staging_progress_m` | `0.15` |
 | `resolver.max_candidate_checks` | `500` |
 | `resolver.use_plan_segment_validation` | `true` |
+| `execution.nested_cancel_timeout_ms` | `2000` |
 
 All topic, action, service, and frame names are parameterized.
 

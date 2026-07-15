@@ -964,10 +964,17 @@ void MainWindow::updateFrontierStatus(const FrontierStatusData &status)
   if (status.original_goal_known) {
     frontier_text += " known";
   }
+  if (status.distance_to_original_goal >= 0.0) {
+    frontier_text += QString(" %1 m").arg(status.distance_to_original_goal, 0, 'f', 2);
+  }
+  if (!status.active && status.phase != "IDLE") {
+    frontier_text += " inactive";
+  }
   if (!status.active && status.phase == "IDLE") {
     frontier_text = "IDLE";
   }
   set_label_if_changed(frontier_label_, frontier_text);
+  frontier_label_->setToolTip(status.message);
   if (status.active && !status.phase.isEmpty()) {
     set_label_if_changed(goal_label_, status.phase);
   }
